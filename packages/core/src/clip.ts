@@ -15,7 +15,8 @@ import {
 } from "./cell";
 import type { MapDocument } from "./document";
 import type { CellRect, CellPoint } from "./geometry";
-import type { CellWrite, LayerPatch } from "./ops";
+import { isGridLayer } from "./layer";
+import type { CellWrite, GridWrite, LayerPatch } from "./ops";
 import type { PaletteEntry } from "./palette";
 import type { MapStore } from "./store";
 import { isValidTileId } from "./tileset";
@@ -30,8 +31,12 @@ export interface ClipLayer {
    * `width × height` cells, row-major: cell (`x`, `y`) is `cells[y * width + x]`.
    * Palette indices refer to the clip's own `palette` (index `i` → `palette[i - 1]`);
    * flip flags are kept as-is. `0` is empty.
+   * For a grid layer (`grid: true`) the values are raw grid values (terrain
+   * ids / collision kinds) and do not use the palette.
    */
   readonly cells: Uint32Array;
+  /** True when copied from a grid layer. Grid clip layers paste only into grid layers. */
+  readonly grid?: boolean;
 }
 
 /**
@@ -77,6 +82,12 @@ export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: 
     const layer = doc.getLayer(id);
     if (!layer) throw new Error(`copyRegion: unknown layer "${id}"`);
     const cells = new Uint32Array(rect.width * rect.height);
+    if (isGridLayer(layer)) {
+      for (let y = 0; y < rect.height; y++) {
+        for (let x = 0; x < rect.width; x++) cells[y * rect.width + x] = layer.getCell(rect.x + x, rect.y + y);
+      }
+      return Object.freeze({ layerId: layer.id, name: layer.name, grid: true, cells });
+    }
     for (let y = 0; y < rect.height; y++) {
       for (let x = 0; x < rect.width; x++) {
         const cell = layer.getCell(rect.x + x, rect.y + y);
@@ -110,9 +121,14 @@ export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: 
  * remapped through `getOrAddPaletteIndex`; flip flags are preserved. Cells
  * outside the map and cells on locked layers are skipped (as with `paintCells`).
  *
+ * Grid clip layers (`grid: true`) paste into grid layers with `paintTerrain`
+ * (terrain layers re-derive their tiles); tile clip layers into tile layers.
+ * A kind mismatch throws for an explicit mapping and is skipped for `null`.
+ *
  * @returns the patches of the layers that changed.
  * @throws Error before changing anything when a mapped target layer does not
- * exist or a referenced tile is not in the target document's tilesets.
+ * exist, kinds differ, a grid value does not fit the target, or a referenced
+ * tile is not in the target document's tilesets.
  */
 export function pasteClip(
   store: MapStore,
@@ -131,16 +147,29 @@ export function pasteClip(
   for (const layer of clip.layers) {
     const targetId = mappedLayer(layerMapping, layer.layerId);
     if (targetId === undefined) continue;
-    if (!doc.getLayer(targetId)) {
+    const target = doc.getLayer(targetId);
+    if (!target) {
       if (layerMapping === null) continue;
       throw new Error(`pasteClip: unknown target layer "${targetId}"`);
+    }
+    if (isGridLayer(target) !== (layer.grid === true)) {
+      if (layerMapping === null) continue;
+      throw new Error(`pasteClip: clip layer "${layer.layerId}" and target layer "${targetId}" are of different kinds`);
+    }
+    if (isGridLayer(target)) {
+      for (const v of layer.cells) {
+        if (v > target.maxValue) throw new RangeError(`pasteClip: grid value ${v} does not fit layer "${targetId}"`);
+      }
     }
     targets.push({ layer, targetId });
   }
 
   // Validate every referenced tile before adding palette entries.
   const used = new Set<number>();
-  for (const { layer } of targets) for (const cell of layer.cells) if (cell !== EMPTY_CELL) used.add(cellPaletteIndex(cell));
+  for (const { layer } of targets) {
+    if (layer.grid) continue;
+    for (const cell of layer.cells) if (cell !== EMPTY_CELL) used.add(cellPaletteIndex(cell));
+  }
   for (const index of used) {
     const entry = clip.palette[index - 1];
     if (!entry) throw new Error(`pasteClip: clip palette index ${index} does not exist`);
@@ -160,6 +189,19 @@ export function pasteClip(
   store.beginTransaction();
   try {
     for (const { layer, targetId } of targets) {
+      if (layer.grid) {
+        const writes: GridWrite[] = [];
+        for (let cy = 0; cy < clip.height; cy++) {
+          for (let cx = 0; cx < clip.width; cx++) {
+            const value = layer.cells[cy * clip.width + cx] ?? 0;
+            if (value === 0 && !erase) continue;
+            writes.push({ x: x + cx, y: y + cy, value });
+          }
+        }
+        const patch = store.dispatch({ type: "paintTerrain", layerId: targetId, cells: writes });
+        if (patch.cells.length > 0) patches.push(patch);
+        continue;
+      }
       const cells: CellWrite[] = [];
       for (let cy = 0; cy < clip.height; cy++) {
         for (let cx = 0; cx < clip.width; cx++) {
@@ -191,9 +233,13 @@ export function cutRegion(store: MapStore, layerIds: readonly string[], rect: Ce
   for (let y = rect.y; y < rect.y + rect.height; y++) {
     for (let x = rect.x; x < rect.x + rect.width; x++) cells.push({ x, y, cell: EMPTY_CELL });
   }
+  const values: GridWrite[] = cells.map((c) => ({ x: c.x, y: c.y, value: 0 }));
   store.beginTransaction();
   try {
-    for (const layerId of layerIds) store.dispatch({ type: "paintCells", layerId, cells });
+    for (const layerId of layerIds) {
+      if (isGridLayer(store.document.getLayer(layerId))) store.dispatch({ type: "paintTerrain", layerId, cells: values });
+      else store.dispatch({ type: "paintCells", layerId, cells });
+    }
   } finally {
     store.commit();
   }
@@ -202,7 +248,8 @@ export function cutRegion(store: MapStore, layerIds: readonly string[], rect: Ce
 
 /**
  * Mirrors a clip: `"x"` swaps left/right and toggles `FLIP_H` on every
- * non-empty cell, `"y"` swaps top/bottom and toggles `FLIP_V`. Returns a new clip.
+ * non-empty cell, `"y"` swaps top/bottom and toggles `FLIP_V`. Grid clip
+ * layers are only mirrored (their values have no flags). Returns a new clip.
  */
 export function flipClip(clip: TileClip, axis: "x" | "y"): TileClip {
   const { width, height } = clip;
@@ -215,10 +262,10 @@ export function flipClip(clip: TileClip, axis: "x" | "y"): TileClip {
         if (cell === EMPTY_CELL) continue;
         const tx = axis === "x" ? width - 1 - x : x;
         const ty = axis === "y" ? height - 1 - y : y;
-        cells[ty * width + tx] = toggleFlag(cell, flag);
+        cells[ty * width + tx] = layer.grid ? cell : toggleFlag(cell, flag);
       }
     }
-    return Object.freeze({ layerId: layer.layerId, name: layer.name, cells });
+    return Object.freeze(layer.grid ? { layerId: layer.layerId, name: layer.name, grid: true, cells } : { layerId: layer.layerId, name: layer.name, cells });
   });
   return Object.freeze({ width, height, palette: clip.palette, layers: Object.freeze(layers) });
 }

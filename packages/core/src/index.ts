@@ -46,7 +46,51 @@ export {
   gridCount,
   tilesetProblem,
   relativePathProblem,
+  isTileSolid,
+  normalizeTileset,
 } from "./tileset";
+
+export {
+  type Terrain,
+  type TerrainTemplate,
+  type TerrainTemplateInfo,
+  type TerrainVariant,
+  TERRAIN_TEMPLATES,
+  MAX_TERRAIN_ID,
+  CORNER_NE,
+  CORNER_SE,
+  CORNER_SW,
+  CORNER_NW,
+  BLOB_N,
+  BLOB_NE,
+  BLOB_E,
+  BLOB_SE,
+  BLOB_S,
+  BLOB_SW,
+  BLOB_W,
+  BLOB_NW,
+  BLOB47_MASKS,
+  reduceBlobMask,
+  blob47Slot,
+  corner16Slot,
+  isTerrainTemplate,
+  terrainSlotTileId,
+  terrainCandidates,
+  terrainProblem,
+  normalizeTerrain,
+  cellHash,
+  pickVariant,
+} from "./terrain";
+
+export {
+  type TerrainSlot,
+  TerrainTiles,
+  terrainSlotAt,
+  terrainTileAt,
+  deriveTerrainTiles,
+} from "./autotile";
+
+export { type CollisionGrid, collisionAt, deriveCollision, solidPaletteMask } from "./collision";
 
 export {
   CHUNK_SHIFT,
@@ -64,6 +108,14 @@ export {
 
 export {
   TileLayer,
+  GridLayer,
+  isGridLayer,
+  isGridRole,
+  type GridRole,
+  MAX_GRID_VALUE,
+  MAX_COLLISION_VALUE,
+  COLLISION_SOLID,
+  COLLISION_PASSABLE,
   type LayerType,
   type LayerProps,
   type LayerPropValues,
@@ -77,6 +129,7 @@ export {
   type CreateDocumentOptions,
   createDocument,
   mapInfoProblem,
+  isValidSeed,
   DOCUMENT_FORMAT_VERSION,
   DEFAULT_TILE_SIZE,
   MAX_MAP_SIZE,
@@ -96,6 +149,11 @@ export type {
   SetLayerPropsOp,
   LayerPropsPatch,
   ResizeMapOp,
+  PaintTerrainOp,
+  SetTileSolidOp,
+  DefineTerrainOp,
+  RemoveTerrainOp,
+  GridWrite,
   NewLayer,
   CellWrite,
   CellChange,
@@ -116,6 +174,7 @@ export {
   type LayerHistoryChange,
   type LayerPropsHistoryChange,
   type MapHistoryChange,
+  type TilesetHistoryChange,
 } from "./store";
 
 export {

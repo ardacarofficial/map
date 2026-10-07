@@ -1,8 +1,22 @@
-import { isValidCell, cellPaletteIndex, type Cell } from "./cell";
-import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, chunkKey, localIndex, type ChunkKey } from "./chunk";
+import { terrainSlotAt, type TerrainSlot } from "./autotile";
+import { isValidCell, cellPaletteIndex, makeCell, type Cell } from "./cell";
+import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, CHUNK_SIZE, chunkKey, localIndex, parseChunkKey, type ChunkKey } from "./chunk";
 import { mapInfoProblem, type MapDocument, type MapInfo } from "./document";
-import { TileLayer, layerPropsProblem, type ChunkSnapshot, type LayerProps, type LayerPropValues } from "./layer";
+import {
+  GridLayer,
+  TileLayer,
+  isGridLayer,
+  isGridRole,
+  layerPropsProblem,
+  type ChunkSnapshot,
+  type LayerProps,
+  type LayerPropValues,
+} from "./layer";
 import type {
+  DefineTerrainOp,
+  PaintTerrainOp,
+  RemoveTerrainOp,
+  SetTileSolidOp,
   AddLayerOp,
   AddPaletteEntryOp,
   AddTilesetOp,
@@ -16,7 +30,8 @@ import type {
   ResizeMapOp,
   SetLayerPropsOp,
 } from "./ops";
-import { isValidTileId, tilesetProblem } from "./tileset";
+import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem } from "./terrain";
+import { isValidTileId, tilesetProblem, type Tileset } from "./tileset";
 
 /**
  * Structural parts of a document that can change (renderers rebuild these wholesale).
@@ -27,7 +42,12 @@ import { isValidTileId, tilesetProblem } from "./tileset";
  *   (with all their chunks) for new ids, reorder, re-read properties.
  * - `"map"`: the map was resized. Every layer's content may have moved, so
  *   rebuild all chunks of all layers and re-read `document.map`.
- * - `"tilesets"`, `"palette"`: an entry was appended.
+ * - `"tilesets"`: a tileset was appended, or a tileset's metadata (solid
+ *   flags, terrains) changed. Re-read `document.tilesets`.
+ * - `"palette"`: an entry was appended.
+ *
+ * Grid layer (terrain / collision) cell changes are reported in `cells` like
+ * tile layer changes; renderers may draw grid layers as a coloured overlay.
  */
 export type StructureChange = "layers" | "tilesets" | "palette" | "map";
 
@@ -92,11 +112,24 @@ export interface MapHistoryChange {
   }[];
 }
 
+/** Tileset metadata change (solid flags, terrains): the whole tileset before and after. */
+export interface TilesetHistoryChange {
+  readonly kind: "tileset";
+  readonly tilesetId: string;
+  readonly before: Tileset;
+  readonly after: Tileset;
+}
+
 /**
  * One reversible change. Every change stores both sides; undo applies the
  * `before` sides (in reverse order), redo the `after` sides. No inverse ops.
  */
-export type HistoryChange = CellsHistoryChange | LayerHistoryChange | LayerPropsHistoryChange | MapHistoryChange;
+export type HistoryChange =
+  | CellsHistoryChange
+  | LayerHistoryChange
+  | LayerPropsHistoryChange
+  | MapHistoryChange
+  | TilesetHistoryChange;
 
 /** One undo step: all changes of one transaction, in the order they happened. */
 export interface HistoryEntry {
@@ -315,6 +348,23 @@ class ApplyResult {
   readonly structure = new Set<StructureChange>();
 }
 
+const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map"];
+
+/**
+ * State of one op that may produce several changes (grid + derived tiles,
+ * tileset + re-derived tiles, resize + re-derived tiles). Inside a
+ * transaction it records into the transaction; otherwise into its own
+ * recorder that becomes one undo step.
+ */
+interface OpContext {
+  readonly rec: ChangeRecorder;
+  readonly local: boolean;
+  readonly dirty: DirtyTracker;
+  readonly structure: Set<StructureChange>;
+  /** terrain id → palette indices per slot (`null`: tileset missing). */
+  readonly terrainCells: Map<number, number[][] | null>;
+}
+
 /**
  * Owns a `MapDocument` and is the only thing that mutates it.
  *
@@ -404,6 +454,14 @@ export class MapStore {
         return this.#setLayerProps(op);
       case "resizeMap":
         return this.#resizeMap(op);
+      case "paintTerrain":
+        return this.#paintTerrain(op);
+      case "setTileSolid":
+        return this.#setTileSolid(op);
+      case "defineTerrain":
+        return this.#defineTerrain(op);
+      case "removeTerrain":
+        return this.#removeTerrain(op);
       default: {
         const unknown: never = op;
         throw new TypeError(`Unknown op type: ${String((unknown as { type: unknown }).type)}`);
@@ -490,6 +548,7 @@ export class MapStore {
   #paintCells(op: PaintCellsOp): LayerPatch {
     const layer = this.#doc.getLayer(op.layerId);
     if (!layer) throw new Error(`paintCells: unknown layer "${op.layerId}"`);
+    if (isGridLayer(layer)) throw new TypeError(`paintCells: "${op.layerId}" is a grid layer; use paintTerrain`);
     const palette = this.#doc.palette;
     for (const { x, y, cell } of op.cells) {
       if (!Number.isInteger(x) || !Number.isInteger(y)) {
@@ -528,6 +587,9 @@ export class MapStore {
     const problem = tilesetProblem(op.tileset);
     if (problem) throw new Error(`addTileset: ${problem}`);
     if (this.#doc.getTileset(op.tileset.id)) throw new Error(`addTileset: duplicate tileset id "${op.tileset.id}"`);
+    for (const terrain of op.tileset.terrains ?? []) {
+      if (this.#doc.getTerrain(terrain.id)) throw new Error(`addTileset: duplicate terrain id ${terrain.id}`);
+    }
     this.#doc._addTileset(op.tileset);
     this.#emit({ cause: "dispatch", cells: [], structure: ["tilesets"], historyChanged: false });
   }
@@ -548,7 +610,29 @@ export class MapStore {
     if (!Number.isInteger(index) || index < 0 || index > layers.length) {
       throw new RangeError(`addLayer: index must be an integer in [0, ${layers.length}], got ${index}`);
     }
-    const layer = new TileLayer(props);
+    const type = op.layer.type ?? "tile";
+    let layer: TileLayer;
+    if (type === "grid") {
+      const role = op.layer.role;
+      if (!isGridRole(role)) throw new Error(`addLayer: a grid layer needs role "terrain" or "collision", got ${JSON.stringify(role)}`);
+      const target = op.layer.targetLayerId;
+      if (target !== undefined) {
+        if (role !== "terrain") throw new Error("addLayer: only terrain grid layers have a targetLayerId");
+        const targetLayer = this.#doc.getLayer(target);
+        if (!targetLayer || isGridLayer(targetLayer)) throw new Error(`addLayer: target "${target}" is not a tile layer`);
+        if (this.#doc.layers.some((l) => isGridLayer(l) && l.targetLayerId === target)) {
+          throw new Error(`addLayer: tile layer "${target}" is already derived from another terrain layer`);
+        }
+      }
+      layer = new GridLayer(props, role, target ?? null);
+    } else if (type === "tile") {
+      if (op.layer.role !== undefined || op.layer.targetLayerId !== undefined) {
+        throw new Error("addLayer: role and targetLayerId are only for grid layers");
+      }
+      layer = new TileLayer(props);
+    } else {
+      throw new Error(`addLayer: unknown layer type ${JSON.stringify(type)}`);
+    }
     this.#doc._insertLayer(layer, index);
     this.#recordStructural({ kind: "layer", layer, before: null, after: index }, ["layers"]);
     return props.id;
@@ -616,10 +700,113 @@ export class MapStore {
     }
     this.#doc._setMap(after);
     for (const entry of layers) this.#doc.getLayer(entry.layerId)!._restore(entry.after);
-    this.#recordStructural(
-      { kind: "map", before, after: this.#doc.map, layers: Object.freeze(layers) },
-      ["map"],
+    const ctx = this.#openOp();
+    ctx.rec.recordStructural(
+      Object.freeze({ kind: "map", before, after: this.#doc.map, layers: Object.freeze(layers) }),
     );
+    ctx.structure.add("map");
+    // New edges change blob masks / corner spill: re-derive every terrain layer.
+    this.#deriveAllTerrain(ctx);
+    // "map" already means "rebuild every chunk"; no per-chunk report.
+    this.#closeOp(ctx, false);
+  }
+
+  #paintTerrain(op: PaintTerrainOp): LayerPatch {
+    const layer = this.#doc.getLayer(op.layerId);
+    if (!layer) throw new Error(`paintTerrain: unknown layer "${op.layerId}"`);
+    if (!isGridLayer(layer)) throw new TypeError(`paintTerrain: "${op.layerId}" is not a grid layer`);
+    const max = layer.maxValue;
+    for (const { x, y, value } of op.cells) {
+      if (!Number.isInteger(x) || !Number.isInteger(y)) {
+        throw new TypeError(`paintTerrain: coordinates must be integers, got (${x}, ${y})`);
+      }
+      if (!Number.isInteger(value) || value < 0 || value > max) {
+        throw new RangeError(`paintTerrain: value must be an integer in [0, ${max}], got ${value} at (${x}, ${y})`);
+      }
+    }
+    const empty: LayerPatch = Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
+    if (layer.locked) return empty;
+
+    const map = this.#doc.map;
+    const opPatch = new PatchBuilder(map);
+    const ctx = this.#openOp();
+    for (const { x, y, value } of op.cells) {
+      if (!this.#doc.inBounds(x, y)) continue;
+      const before = layer._setCell(x, y, value);
+      if (before === value) continue;
+      opPatch.record(layer.id, x, y, before, value);
+      ctx.rec.recordCell(map, layer.id, x, y, before, value);
+      ctx.dirty.add(layer.id, x, y);
+    }
+    const patch = opPatch.build()[0] ?? empty;
+    if (patch.cells.length === 0) return patch;
+
+    if (layer.role === "terrain") {
+      // A cell's tile depends on its 3×3 neighbourhood only.
+      const { width, height } = map;
+      const affected = new Set<number>();
+      for (const c of patch.cells) {
+        for (let y = Math.max(0, c.y - 1); y <= Math.min(height - 1, c.y + 1); y++) {
+          for (let x = Math.max(0, c.x - 1); x <= Math.min(width - 1, c.x + 1); x++) affected.add(y * width + x);
+        }
+      }
+      this.#deriveTerrain(ctx, layer, affected);
+    }
+    this.#closeOp(ctx);
+    return patch;
+  }
+
+  #setTileSolid(op: SetTileSolidOp): void {
+    const tileset = this.#doc.getTileset(op.tilesetId);
+    if (!tileset) throw new Error(`setTileSolid: unknown tileset "${op.tilesetId}"`);
+    for (const id of op.tileIds) {
+      if (!isValidTileId(tileset, id)) throw new RangeError(`setTileSolid: tile id ${id} is outside tileset "${op.tilesetId}"`);
+    }
+    const solid = new Set(tileset.solidTiles ?? []);
+    for (const id of op.tileIds) {
+      if (op.solid) solid.add(id);
+      else solid.delete(id);
+    }
+    const next = [...solid].sort((a, b) => a - b);
+    const current = tileset.solidTiles ?? [];
+    if (next.length === current.length && next.every((v, i) => v === current[i])) return;
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, { ...tileset, solidTiles: next });
+    this.#closeOp(ctx);
+  }
+
+  #defineTerrain(op: DefineTerrainOp): void {
+    const terrain = op.terrain;
+    const tileset = this.#doc.getTileset(terrain?.tilesetId);
+    if (!tileset) throw new Error(`defineTerrain: unknown tileset "${String(terrain?.tilesetId)}"`);
+    const problem = terrainProblem(tileset, terrain);
+    if (problem) throw new Error(`defineTerrain: ${problem}`);
+    const normalized = normalizeTerrain(terrain);
+    const existing = this.#doc.getTerrain(terrain.id);
+    if (existing && JSON.stringify(existing) === JSON.stringify(normalized)) return;
+
+    const ctx = this.#openOp();
+    if (existing && existing.tilesetId !== tileset.id) {
+      const owner = this.#doc.getTileset(existing.tilesetId)!;
+      this.#replaceTileset(ctx, { ...owner, terrains: (owner.terrains ?? []).filter((t) => t.id !== terrain.id) });
+    }
+    const current = this.#doc.getTileset(tileset.id)!;
+    this.#replaceTileset(ctx, {
+      ...current,
+      terrains: [...(current.terrains ?? []).filter((t) => t.id !== terrain.id), normalized],
+    });
+    this.#deriveAllTerrain(ctx);
+    this.#closeOp(ctx);
+  }
+
+  #removeTerrain(op: RemoveTerrainOp): void {
+    const existing = this.#doc.getTerrain(op.terrainId);
+    if (!existing) throw new Error(`removeTerrain: unknown terrain ${op.terrainId}`);
+    const owner = this.#doc.getTileset(existing.tilesetId)!;
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, { ...owner, terrains: (owner.terrains ?? []).filter((t) => t.id !== op.terrainId) });
+    this.#deriveAllTerrain(ctx);
+    this.#closeOp(ctx);
   }
 
   #addPaletteEntry(op: AddPaletteEntryOp): number {
@@ -637,6 +824,111 @@ export class MapStore {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  #openOp(): OpContext {
+    const local = this.#depth === 0;
+    return {
+      rec: local ? new ChangeRecorder() : this.#pending!,
+      local,
+      dirty: new DirtyTracker(),
+      structure: new Set(),
+      terrainCells: new Map(),
+    };
+  }
+
+  /** Ends an op started with `#openOp`: pushes its undo step (outside a transaction) and emits. */
+  #closeOp(ctx: OpContext, reportCells = true): void {
+    let historyChanged = false;
+    if (ctx.local) {
+      const changes = ctx.rec.build();
+      if (changes.length > 0) {
+        this.#pushUndo(makeEntry(changes));
+        historyChanged = true;
+      }
+    }
+    const cells = reportCells ? ctx.dirty.result() : [];
+    const structure = STRUCTURE_ORDER.filter((s) => ctx.structure.has(s));
+    if (cells.length === 0 && structure.length === 0 && !historyChanged) return;
+    this.#emit({ cause: "dispatch", cells, structure, historyChanged });
+  }
+
+  /** Replaces a tileset (metadata change) and records it. */
+  #replaceTileset(ctx: OpContext, next: Tileset): void {
+    const before = this.#doc.getTileset(next.id)!;
+    this.#doc._replaceTileset(next);
+    const after = this.#doc.getTileset(next.id)!;
+    ctx.rec.recordStructural(Object.freeze({ kind: "tileset", tilesetId: next.id, before, after }));
+    ctx.structure.add("tilesets");
+  }
+
+  /** Re-derives every cell of every terrain layer that can hold a tile. */
+  #deriveAllTerrain(ctx: OpContext): void {
+    const { width, height } = this.#doc.map;
+    for (const layer of this.#doc.layers) {
+      if (!isGridLayer(layer) || layer.role !== "terrain") continue;
+      const target = layer.targetLayerId === null ? undefined : this.#doc.getLayer(layer.targetLayerId);
+      if (!target || isGridLayer(target)) continue;
+      // Chunks that can hold derived tiles: grid chunks and their neighbours,
+      // plus chunks the target already has (stale tiles get cleared).
+      const keys = new Set<ChunkKey>();
+      for (const chunk of layer.chunks()) {
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(chunkKey(chunk.cx + dx, chunk.cy + dy));
+      }
+      for (const chunk of target.chunks()) keys.add(chunk.key);
+      const cells: number[] = [];
+      for (const key of keys) {
+        const { cx, cy } = parseChunkKey(key);
+        const x0 = cx << CHUNK_SHIFT;
+        const y0 = cy << CHUNK_SHIFT;
+        for (let y = Math.max(0, y0); y < Math.min(height, y0 + CHUNK_SIZE); y++) {
+          for (let x = Math.max(0, x0); x < Math.min(width, x0 + CHUNK_SIZE); x++) cells.push(y * width + x);
+        }
+      }
+      this.#deriveTerrain(ctx, layer, cells);
+    }
+  }
+
+  /** Recomputes the derived tiles of `grid` at the given cell indices (`y * width + x`). */
+  #deriveTerrain(ctx: OpContext, grid: GridLayer, cells: Iterable<number>): void {
+    if (grid.targetLayerId === null) return;
+    const target = this.#doc.getLayer(grid.targetLayerId);
+    if (!target || isGridLayer(target)) return;
+    const doc = this.#doc;
+    const map = doc.map;
+    const width = map.width;
+    const terrains = doc.terrainMap();
+    for (const index of cells) {
+      const x = index % width;
+      const y = (index - x) / width;
+      const slot = terrainSlotAt(doc, grid, x, y, terrains);
+      const cell = slot ? this.#terrainCell(ctx, slot, x, y) : 0;
+      const before = target._setCell(x, y, cell);
+      if (before === cell) continue;
+      ctx.rec.recordCell(map, target.id, x, y, before, cell);
+      ctx.dirty.add(target.id, x, y);
+    }
+  }
+
+  /** Cell for a terrain slot at (`x`, `y`); adds the terrain's palette entries on first use. */
+  #terrainCell(ctx: OpContext, slot: TerrainSlot, x: number, y: number): Cell {
+    const terrain = slot.terrain;
+    let lists = ctx.terrainCells.get(terrain.id);
+    if (lists === undefined) {
+      const tileset = this.#doc.getTileset(terrain.tilesetId);
+      if (tileset) {
+        const palette = this.#doc.palette;
+        const size = palette.size;
+        lists = terrainCandidates(tileset, terrain).map((ids) => ids.map((id) => palette._getOrAdd(tileset.id, id)));
+        if (palette.size !== size) ctx.structure.add("palette");
+      } else {
+        lists = null;
+      }
+      ctx.terrainCells.set(terrain.id, lists);
+    }
+    const list = lists?.[slot.slot];
+    if (!list || list.length === 0) return 0;
+    return makeCell(list[pickVariant(list.length, this.#doc.seed, x, y)]!);
+  }
 
   #generateLayerId(): string {
     for (let n = this.#doc.layers.length + 1; ; n++) {
@@ -699,6 +991,11 @@ export class MapStore {
         result.structure.add("layers");
         return;
       }
+      case "tileset": {
+        doc._replaceTileset(change[side]);
+        result.structure.add("tilesets");
+        return;
+      }
       case "map": {
         doc._setMap(change[side]);
         for (const entry of change.layers) {
@@ -719,8 +1016,7 @@ export class MapStore {
   /** Event fields for applied changes; dirty chunks of layers no longer in the document are dropped. */
   #eventParts(result: ApplyResult): Pick<StoreChangeEvent, "cells" | "structure"> {
     const cells = result.dirty.result().filter((d) => this.#doc.getLayer(d.layerId) !== undefined);
-    const order: StructureChange[] = ["layers", "tilesets", "palette", "map"];
-    return { cells, structure: order.filter((s) => result.structure.has(s)) };
+    return { cells, structure: STRUCTURE_ORDER.filter((s) => result.structure.has(s)) };
   }
 
   #emit(change: Omit<StoreChangeEvent, "revision">): void {

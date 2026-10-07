@@ -8,8 +8,29 @@ import {
   type ReadonlyChunk,
 } from "./chunk";
 
-/** Layer kinds. v0.1 only has `"tile"`; `"grid"` and `"entity"` come later. */
-export type LayerType = "tile";
+/**
+ * Layer kinds. `"tile"` holds cells (palette index + flip flags); `"grid"`
+ * (v0.3) holds small integers for terrain or collision. `"entity"` comes later.
+ */
+export type LayerType = "tile" | "grid";
+
+/**
+ * What a grid layer is for.
+ * - `"terrain"`: cell value = terrain id (0 = none). The linked tile layer
+ *   (`targetLayerId`) is derived from it (autotile).
+ * - `"collision"`: exceptions to the collision derived from solid tiles:
+ *   {@link COLLISION_SOLID} forces solid, {@link COLLISION_PASSABLE} forces passable.
+ */
+export type GridRole = "terrain" | "collision";
+
+/** Largest value a grid cell may hold. */
+export const MAX_GRID_VALUE = 0xffff;
+/** Collision grid value: force solid. */
+export const COLLISION_SOLID = 1;
+/** Collision grid value: force passable (e.g. a door in a solid wall tile). */
+export const COLLISION_PASSABLE = 2;
+/** Largest value of a collision grid cell. */
+export const MAX_COLLISION_VALUE = 2;
 
 /** Editable layer properties (everything in {@link LayerProps} except `id`). */
 export interface LayerPropValues {
@@ -47,6 +68,7 @@ export interface LayerProps {
  * Reading is public. Writing goes through `MapStore.dispatch` only.
  */
 export class TileLayer implements LayerProps {
+  /** `"grid"` for a {@link GridLayer} (which extends this class); check with {@link isGridLayer}. */
   readonly type: LayerType = "tile";
   readonly id: string;
   #name: string;
@@ -170,6 +192,42 @@ export class TileLayer implements LayerProps {
     this.#lastChunk = null;
     if (chunk.filled > 0) this.#chunks.set(chunk.key, chunk);
   }
+}
+
+/**
+ * A sparse grid of small integers (terrain ids or collision kinds), stored
+ * and addressed exactly like a tile layer (32×32 chunks, `>> 5`, `& 31`);
+ * cell 0 means "none". `getCell` returns the integer value.
+ *
+ * Written with the `paintTerrain` op only (`paintCells` rejects grid layers).
+ * Role and link are fixed when the layer is created.
+ */
+export class GridLayer extends TileLayer {
+  override readonly type: LayerType = "grid";
+  readonly role: GridRole;
+  /** Terrain role: id of the tile layer derived from this grid, or `null`. Always `null` for collision. */
+  readonly targetLayerId: string | null;
+
+  constructor(props: LayerProps, role: GridRole, targetLayerId: string | null = null) {
+    super(props);
+    this.role = role;
+    this.targetLayerId = role === "terrain" ? targetLayerId : null;
+  }
+
+  /** Largest value this layer accepts. */
+  get maxValue(): number {
+    return this.role === "collision" ? MAX_COLLISION_VALUE : MAX_GRID_VALUE;
+  }
+}
+
+/** True for grid (terrain / collision) layers. */
+export function isGridLayer(layer: TileLayer | undefined | null): layer is GridLayer {
+  return layer instanceof GridLayer;
+}
+
+/** True when `value` names a grid role. */
+export function isGridRole(value: unknown): value is GridRole {
+  return value === "terrain" || value === "collision";
 }
 
 /** Returns a description of what is wrong with `props`, or `null`. */

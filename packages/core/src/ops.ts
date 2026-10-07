@@ -3,6 +3,8 @@
  * Send them with `MapStore.dispatch(op)`.
  */
 import type { Cell } from "./cell";
+import type { GridRole } from "./layer";
+import type { Terrain } from "./terrain";
 import type { Tileset } from "./tileset";
 
 /** One cell write inside a `paintCells` op. */
@@ -35,8 +37,8 @@ export interface LayerPatch {
  * - If the same cell appears twice, the last write wins.
  * - Undoable. Outside a transaction it becomes its own undo step.
  *
- * Throws on an unknown layer, an invalid cell value, or a palette index the
- * palette does not have.
+ * Throws on an unknown layer, a grid layer (use `paintTerrain`), an invalid
+ * cell value, or a palette index the palette does not have.
  */
 export interface PaintCellsOp {
   readonly type: "paintCells";
@@ -54,6 +56,16 @@ export interface AddTilesetOp {
 export interface NewLayer {
   /** Defaults to a generated unique id (`"layer-1"`, `"layer-2"`, ...). */
   readonly id?: string;
+  /** `"tile"` (default) or `"grid"` (v0.3: terrain / collision). */
+  readonly type?: "tile" | "grid";
+  /** Required for grid layers. */
+  readonly role?: GridRole;
+  /**
+   * Terrain grid layers only: id of an existing tile layer whose tiles are
+   * derived from this grid. It must not already be the target of another
+   * terrain layer. Omit for a terrain grid without derived tiles.
+   */
+  readonly targetLayerId?: string;
   readonly name: string;
   /** Defaults to `true`. */
   readonly visible?: boolean;
@@ -64,7 +76,7 @@ export interface NewLayer {
 }
 
 /**
- * Adds an empty tile layer. Undoable (since v0.2).
+ * Adds an empty tile layer (or grid layer, `layer.type: "grid"`). Undoable (since v0.2).
  * `index` is the position from the bottom; defaults to the top.
  */
 export interface AddLayerOp {
@@ -142,7 +154,75 @@ export interface ResizeMapOp {
   readonly offsetY?: number;
 }
 
+/** One grid cell write inside a `paintTerrain` op. */
+export interface GridWrite {
+  readonly x: number;
+  readonly y: number;
+  /** Terrain id / collision kind; 0 erases. */
+  readonly value: number;
+}
+
+/**
+ * Writes values into a grid layer (terrain brush, collision exceptions).
+ *
+ * - Terrain layers: the linked tile layer is re-derived for the changed
+ *   cells and their 8 neighbours in the same undo step (both the grid and
+ *   the derived tile changes are stored, so undo is byte-exact). Palette
+ *   entries for all tiles of a terrain are added (not undoable, like
+ *   `addPaletteEntry`) the first time it is derived in a document.
+ * - Out-of-bounds writes are skipped, a locked grid layer is skipped (the
+ *   derived tile layer is written even when locked — it is owned by the grid).
+ * - Undoable; outside a transaction it is its own undo step.
+ *
+ * Throws on an unknown / non-grid layer or a value outside
+ * `[0, MAX_GRID_VALUE]` (`[0, 2]` for collision layers).
+ * Returns the grid cells that changed.
+ */
+export interface PaintTerrainOp {
+  readonly type: "paintTerrain";
+  readonly layerId: string;
+  readonly cells: readonly GridWrite[];
+}
+
+/**
+ * Marks tiles solid / not solid. Collision is derived from it (see
+ * `collisionAt`). Undoable; a no-op when nothing changes. Throws on an
+ * unknown tileset or a tile id outside it.
+ */
+export interface SetTileSolidOp {
+  readonly type: "setTileSolid";
+  readonly tilesetId: string;
+  readonly tileIds: readonly number[];
+  readonly solid: boolean;
+}
+
+/**
+ * Adds a terrain to `terrain.tilesetId`, or replaces the terrain with the
+ * same id (also when it lived in another tileset — it moves). Every terrain
+ * layer is re-derived in the same undo step. Undoable; a no-op when nothing
+ * changes. Throws on an invalid terrain (id range, template block outside
+ * the tileset, bad variants) or an unknown tileset.
+ */
+export interface DefineTerrainOp {
+  readonly type: "defineTerrain";
+  readonly terrain: Terrain;
+}
+
+/**
+ * Removes a terrain definition. Grid cells keep their value (they derive
+ * nothing until a terrain with that id is defined again); derived tiles are
+ * re-computed in the same undo step. Undoable. Throws on an unknown id.
+ */
+export interface RemoveTerrainOp {
+  readonly type: "removeTerrain";
+  readonly terrainId: number;
+}
+
 export type Op =
+  | PaintTerrainOp
+  | SetTileSolidOp
+  | DefineTerrainOp
+  | RemoveTerrainOp
   | PaintCellsOp
   | AddTilesetOp
   | AddLayerOp
@@ -166,6 +246,11 @@ export interface OpResultMap {
   moveLayer: void;
   setLayerProps: void;
   resizeMap: void;
+  /** Grid cells this op actually changed. */
+  paintTerrain: LayerPatch;
+  setTileSolid: void;
+  defineTerrain: void;
+  removeTerrain: void;
 }
 
 export type OpResult<O extends Op> = OpResultMap[O["type"]];

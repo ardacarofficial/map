@@ -1,6 +1,7 @@
-import type { TileLayer } from "./layer";
+import { isGridLayer, type GridLayer, type TileLayer } from "./layer";
 import { Palette } from "./palette";
-import type { Tileset } from "./tileset";
+import type { Terrain } from "./terrain";
+import { normalizeTileset, type Tileset } from "./tileset";
 
 /** The single file-format version number for project and level files. */
 export const DOCUMENT_FORMAT_VERSION = 1;
@@ -26,6 +27,13 @@ export interface CreateDocumentOptions {
   tileHeight?: number;
   /** Tilesets known to the project. */
   tilesets?: readonly Tileset[];
+  /** Variant seed (see {@link MapDocument.seed}). Defaults to 0. */
+  seed?: number;
+}
+
+/** True when `seed` is an integer in `[0, 2^32)`. */
+export function isValidSeed(seed: unknown): seed is number {
+  return typeof seed === "number" && Number.isInteger(seed) && seed >= 0 && seed <= 0xffff_ffff;
 }
 
 /**
@@ -39,11 +47,24 @@ export class MapDocument {
   readonly palette = new Palette();
   readonly #tilesets: Tileset[] = [];
   readonly #layers: TileLayer[] = [];
+  readonly #seed: number;
+  /** terrain id → terrain (rebuilt lazily after tileset changes). */
+  #terrains: Map<number, Terrain> | null = null;
 
-  constructor(map: MapInfo) {
+  constructor(map: MapInfo, seed = 0) {
     const problem = mapInfoProblem(map);
     if (problem) throw new RangeError(`Invalid map: ${problem}`);
+    if (!isValidSeed(seed)) throw new RangeError(`Invalid seed: must be an integer in [0, 2^32), got ${String(seed)}`);
     this.#map = Object.freeze({ ...map });
+    this.#seed = seed;
+  }
+
+  /**
+   * Seed for terrain variant selection: a cell with several candidate tiles
+   * shows `candidates[hash(seed, x, y) % n]`. Saved with the level.
+   */
+  get seed(): number {
+    return this.#seed;
   }
 
   /** Map dimensions. Replaced (never mutated) by a `resizeMap` op. */
@@ -69,6 +90,27 @@ export class MapDocument {
     return this.#tilesets.find((tileset) => tileset.id === id);
   }
 
+  /** Grid layer by id (`undefined` when missing or not a grid layer). */
+  getGridLayer(id: string): GridLayer | undefined {
+    const layer = this.getLayer(id);
+    return isGridLayer(layer) ? layer : undefined;
+  }
+
+  /** Terrain by id, searched in every tileset. */
+  getTerrain(id: number): Terrain | undefined {
+    return this.terrainMap().get(id);
+  }
+
+  /** All terrains of all tilesets, keyed by id. Do not mutate. */
+  terrainMap(): ReadonlyMap<number, Terrain> {
+    if (!this.#terrains) {
+      const map = new Map<number, Terrain>();
+      for (const tileset of this.#tilesets) for (const t of tileset.terrains ?? []) map.set(t.id, t);
+      this.#terrains = map;
+    }
+    return this.#terrains;
+  }
+
   /** True when (`x`, `y`) is an integer cell inside the map bounds. */
   inBounds(x: number, y: number): boolean {
     return (
@@ -83,7 +125,16 @@ export class MapDocument {
 
   /** @internal */
   _addTileset(tileset: Tileset): void {
-    this.#tilesets.push(Object.freeze({ ...tileset }));
+    this.#tilesets.push(normalizeTileset(tileset));
+    this.#terrains = null;
+  }
+
+  /** @internal Replaces the tileset with the same id (validated by the caller). */
+  _replaceTileset(tileset: Tileset): void {
+    const index = this.#tilesets.findIndex((t) => t.id === tileset.id);
+    if (index < 0) throw new Error(`no tileset "${tileset.id}"`);
+    this.#tilesets[index] = normalizeTileset(tileset);
+    this.#terrains = null;
   }
 
   /** Position of layer `id` from the bottom, or `-1`. */
@@ -111,12 +162,15 @@ export class MapDocument {
 
 /** Creates an empty document (no layers). */
 export function createDocument(options: CreateDocumentOptions): MapDocument {
-  const doc = new MapDocument({
-    width: options.width,
-    height: options.height,
-    tileWidth: options.tileWidth ?? DEFAULT_TILE_SIZE,
-    tileHeight: options.tileHeight ?? DEFAULT_TILE_SIZE,
-  });
+  const doc = new MapDocument(
+    {
+      width: options.width,
+      height: options.height,
+      tileWidth: options.tileWidth ?? DEFAULT_TILE_SIZE,
+      tileHeight: options.tileHeight ?? DEFAULT_TILE_SIZE,
+    },
+    options.seed ?? 0,
+  );
   for (const tileset of options.tilesets ?? []) doc._addTileset(tileset);
   return doc;
 }

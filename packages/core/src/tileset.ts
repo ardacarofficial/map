@@ -4,7 +4,14 @@
  * A tile id is the tile's position in the tileset grid, row-major:
  * `tileId = row * columns + col`. Tiles are only ever appended, so existing
  * ids stay stable (same rule as Tiled and Godot).
+ *
+ * Since v0.3 a tileset also carries per-tile metadata that lives in the
+ * project file: which tiles are solid (collision is derived from it) and the
+ * terrains (autotile blocks) defined on it. Both are optional; a missing
+ * field means "none". Change them with the `setTileSolid` / `defineTerrain` /
+ * `removeTerrain` ops (undoable).
  */
+import { normalizeTerrain, terrainProblem, type Terrain } from "./terrain";
 
 export interface Tileset {
   /** Stable, unique id within the project. */
@@ -21,6 +28,53 @@ export interface Tileset {
   readonly margin: number;
   /** Pixels between adjacent tiles. */
   readonly spacing: number;
+  /** Tile ids marked solid ("katı"), ascending, no duplicates. Missing = none. */
+  readonly solidTiles?: readonly number[];
+  /** Terrains defined on this tileset, sorted by id. Missing = none. */
+  readonly terrains?: readonly Terrain[];
+}
+
+/** True when `tileId` is marked solid in `tileset`. */
+export function isTileSolid(tileset: Tileset, tileId: number): boolean {
+  const solid = tileset.solidTiles;
+  if (!solid || solid.length === 0) return false;
+  // Binary search: the list is kept sorted.
+  let lo = 0;
+  let hi = solid.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const v = solid[mid]!;
+    if (v === tileId) return true;
+    if (v < tileId) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return false;
+}
+
+/**
+ * Frozen copy with canonical metadata: `solidTiles` sorted and de-duplicated,
+ * terrains sorted by id and normalized; empty lists are omitted, so a tileset
+ * without metadata looks exactly as before v0.3.
+ */
+export function normalizeTileset(tileset: Tileset): Tileset {
+  const base: Tileset = {
+    id: tileset.id,
+    name: tileset.name,
+    imagePath: tileset.imagePath,
+    tileWidth: tileset.tileWidth,
+    tileHeight: tileset.tileHeight,
+    columns: tileset.columns,
+    rows: tileset.rows,
+    margin: tileset.margin,
+    spacing: tileset.spacing,
+  };
+  const solid = [...new Set(tileset.solidTiles ?? [])].sort((a, b) => a - b);
+  const terrains = (tileset.terrains ?? []).map(normalizeTerrain).sort((a, b) => a.id - b.id);
+  return Object.freeze({
+    ...base,
+    ...(solid.length > 0 ? { solidTiles: Object.freeze(solid) } : {}),
+    ...(terrains.length > 0 ? { terrains: Object.freeze(terrains) } : {}),
+  });
 }
 
 /** Pixel rectangle of a tile inside its tileset image. */
@@ -88,6 +142,25 @@ export function tilesetProblem(tileset: Tileset): string | null {
   for (const key of ["margin", "spacing"] as const) {
     const v = tileset[key];
     if (!Number.isInteger(v) || v < 0) return `${key} must be a non-negative integer, got ${String(v)}`;
+  }
+  if (tileset.solidTiles !== undefined) {
+    if (!Array.isArray(tileset.solidTiles)) return "solidTiles must be an array";
+    const seen = new Set<number>();
+    for (const id of tileset.solidTiles) {
+      if (!isValidTileId(tileset, id)) return `solid tile id ${String(id)} is outside the tileset`;
+      if (seen.has(id)) return `duplicate solid tile id ${id}`;
+      seen.add(id);
+    }
+  }
+  if (tileset.terrains !== undefined) {
+    if (!Array.isArray(tileset.terrains)) return "terrains must be an array";
+    const ids = new Set<number>();
+    for (const terrain of tileset.terrains) {
+      const problem = terrainProblem(tileset, terrain);
+      if (problem) return problem;
+      if (ids.has(terrain.id)) return `duplicate terrain id ${terrain.id}`;
+      ids.add(terrain.id);
+    }
   }
   return null;
 }
