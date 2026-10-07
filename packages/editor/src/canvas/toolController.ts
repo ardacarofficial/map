@@ -277,7 +277,7 @@ export class ToolController {
 
   #activeInfo() {
     const layer = this.#activeLayer();
-    return layer ? layerInfo(layer) : undefined;
+    return layer ? layerInfo(layer, this.#host.scene?.store.document) : undefined;
   }
 
   #markDirty(): void {
@@ -304,7 +304,7 @@ export class ToolController {
   #editTarget(): { store: MapStore; layer: TileLayer } | null {
     const store = this.#host.scene?.store;
     const layer = this.#activeLayer();
-    if (!store || !layer || !isPaintable(layerInfo(layer))) return null;
+    if (!store || !layer || !isPaintable(layerInfo(layer, store.document))) return null;
     return { store, layer };
   }
 
@@ -455,7 +455,7 @@ export class ToolController {
         return;
       }
     }
-    const result = decidePick(doc.layers.map(layerInfo), s.activeLayerId, r, (i) => doc.palette.get(i));
+    const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i));
     if (result.kind === "none") return;
     if (result.kind === "tile") {
       s.setStamp(null);
