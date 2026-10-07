@@ -5,9 +5,9 @@
  * Stamps are flat copies (CLAUDE.md → Yapılmayacaklar): nothing in a level
  * refers to a stamp file, so deleting one only removes it from the library.
  */
-import { parseStamp, serializeStamp, STAMPS_DIR, stampPath, type Stamp } from "@smap/core";
+import { parseStamp, STAMPS_DIR, stampPath, type Stamp } from "@smap/core";
 
-import { FileNotFoundError, type ProjectFileSystem } from "./fs";
+import type { ProjectFileSystem } from "./fs";
 
 export interface LoadedStamps {
   /** Valid stamps, sorted by name. */
@@ -47,30 +47,12 @@ export async function loadStamps(fs: ProjectFileSystem): Promise<LoadedStamps> {
   return { stamps: sortStamps(stamps), broken };
 }
 
-async function readOrNull(fs: ProjectFileSystem, path: string): Promise<string | null> {
-  try {
-    return await fs.readText(path);
-  } catch (error) {
-    if (error instanceof FileNotFoundError) return null;
-    throw error;
-  }
-}
-
 /**
- * Makes `stamps/` match `stamps`: writes new and changed stamps (unchanged
- * files are not rewritten) and removes `.json` files of stamps that were
- * deleted. Paths in `keep` (files that could not be read) are left alone.
+ * Removes `.json` files in `stamps/` of stamps that are no longer in the
+ * library. Paths in `keep` (files that could not be read) are left alone.
  */
-export async function saveStamps(fs: ProjectFileSystem, stamps: readonly Stamp[], keep: Iterable<string> = []): Promise<void> {
-  await fs.mkdir(STAMPS_DIR);
-  const wanted = new Set<string>();
-  for (const stamp of stamps) {
-    const path = stampPath(stamp.id);
-    wanted.add(path);
-    const text = serializeStamp(stamp);
-    if ((await readOrNull(fs, path)) === text) continue;
-    await fs.writeText(path, text);
-  }
+export async function removeStaleStamps(fs: ProjectFileSystem, stamps: readonly Stamp[], keep: Iterable<string> = []): Promise<void> {
+  const wanted = new Set(stamps.map((s) => stampPath(s.id)));
   const kept = new Set(keep);
   for (const name of (await fs.list(STAMPS_DIR)).filter(isStampFile)) {
     const path = `${STAMPS_DIR}/${name}`;

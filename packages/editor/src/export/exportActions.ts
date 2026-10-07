@@ -9,6 +9,7 @@ import { exportBaseName, exportGameJson } from "@smap/core";
 import { getLocale, t } from "../i18n";
 import { DirectoryHandleFileSystem, ensureReadWrite, UnsupportedError } from "../io/browserFs";
 import { levelName, projectFiles } from "../io/projectIo";
+import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError, onProjectSaved } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
 import { getTilesetImage } from "../state/tilesetImages";
@@ -204,13 +205,16 @@ export async function exportJson(): Promise<boolean> {
   }
 }
 
-/** Files of the whole project as a save would write them (project.smap, levels/, tilesets/). */
+/** Files of the whole project as a save would write them (project.smap, levels/, tilesets/, stamps/). */
 export function previewZipFiles(project: OpenProject) {
+  const library = useProjectLibrary.getState();
   return projectFiles({
     name: project.name,
     document: project.store.document,
     levelPath: project.levelPath,
     tilesetBytes,
+    levels: library.levels,
+    stamps: library.stamps,
   });
 }
 

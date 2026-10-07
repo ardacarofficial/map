@@ -10,6 +10,8 @@ import {
   parseLevel,
   PROJECT_FILE_NAME,
   type MapDocument,
+  type ProjectLevel,
+  type Stamp,
 } from "@smap/core";
 
 import { t } from "../i18n";
@@ -28,7 +30,8 @@ import { AutosaveScheduler } from "./autosave";
 import { listBackups, writeBackup, type BackupEntry } from "./backups";
 import { compareDisk } from "./externalChange";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
-import { DEFAULT_LEVEL_PATH, decodePng, levelName, loadProject, ProjectOpenError, saveProject } from "./projectIo";
+import { useProjectLibrary } from "./projectLibrary";
+import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError, saveProject } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
 import { forgetRecent, rememberRecent, type RecentProject } from "./recents";
 import { hasPngSignature, inferTileSize, looksLikePng, planTileset, baseName } from "./tilesetImport";
@@ -94,7 +97,13 @@ function activate(
   images: readonly TilesetImage[],
   target: ProjectFolder | null,
   levelText: string | null = null,
+  library: { stamps: Stamp[]; brokenStampFiles: string[]; levels: ProjectLevel[] } = {
+    stamps: [],
+    brokenStampFiles: [],
+    levels: defaultLevels(project.levelPath),
+  },
 ): void {
+  useProjectLibrary.getState().load(library);
   clearTilesetImages();
   for (const image of images) setTilesetImage(image);
   setFolder(target, levelText);
@@ -150,6 +159,7 @@ export function closeProject(): void {
   useEditorStore.getState().setProject(null);
   clearTilesetImages();
   useUiStore.getState().setActiveTileset(null);
+  useProjectLibrary.getState().load({ stamps: [], levels: [] });
 }
 
 interface DecodedPng {
@@ -290,7 +300,11 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
     writesInFlight++;
     useSaveStatus.setState({ saving: true });
     try {
+      const lib = useProjectLibrary.getState();
       const levelText = await saveProject(target.fs, {
+        levels: lib.levels,
+        stamps: lib.stamps,
+        keepStampFiles: lib.brokenStampFiles,
         name: project.name,
         document: project.store.document,
         levelPath: project.levelPath,
@@ -343,10 +357,13 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
         target = { fs: new DirectoryHandleFileSystem(handle), handle };
       }
       const revision = project.store.revision;
+      const libRevision = useProjectLibrary.getState().revision;
       await writeProjectFiles(target, project, true);
       // The user may still be drawing while files are written.
       if (useEditorStore.getState().project !== project) return true;
-      if (project.store.revision === revision) useEditorStore.getState().setDirty(false);
+      if (project.store.revision === revision && useProjectLibrary.getState().revision === libRevision) {
+        useEditorStore.getState().setDirty(false);
+      }
       useSaveStatus.setState({ diskConflict: null });
       toast.success(t("toast.saved", { name: target.fs.name }));
       if (target.handle) void rememberRecent(project.name, target.handle);
@@ -394,8 +411,13 @@ export async function autosaveNow(): Promise<void> {
     return;
   }
   const revision = project.store.revision;
+  const libRevision = useProjectLibrary.getState().revision;
   await writeProjectFiles(target, project);
-  if (useEditorStore.getState().project === project && project.store.revision === revision) {
+  if (
+    useEditorStore.getState().project === project &&
+    project.store.revision === revision &&
+    useProjectLibrary.getState().revision === libRevision
+  ) {
     useEditorStore.getState().setDirty(false);
   }
 }
@@ -469,7 +491,7 @@ export async function openBackup(entry: BackupEntry): Promise<boolean> {
   if (!project || !target) return false;
   try {
     const text = await target.fs.readText(entry.path);
-    const document = parseLevel(text, project.store.document.tilesets);
+    const document = parseLevel(text, project.store.document.tilesets, project.store.document.entityTypes);
     const store = new MapStore(document);
     store.clearHistory();
     useEditorStore.getState().setProject({ ...project, store });
@@ -488,7 +510,12 @@ async function openFromFolder(target: ProjectFolder): Promise<string> {
   const store = new MapStore(loaded.document);
   store.clearHistory();
   const project: OpenProject = { name: loaded.name, store, levelPath: loaded.levelPath };
-  activate(project, loaded.images, target, loaded.levelText);
+  activate(project, loaded.images, target, loaded.levelText, {
+    stamps: loaded.stamps,
+    brokenStampFiles: loaded.brokenStamps,
+    levels: loaded.levels,
+  });
+  for (const path of loaded.brokenStamps) toast.warning(t("toast.stampUnreadable", { path }));
   for (const path of loaded.missingImages) toast.warning(t("toast.missingTilesetImage", { path }));
   return loaded.name;
 }
@@ -566,6 +593,12 @@ export function installSession(): () => void {
     });
   };
   watch(useEditorStore.getState().project);
+  // Stamp library edits are saved with the project like map edits.
+  const unsubscribeLibrary = useProjectLibrary.subscribe((state, prev) => {
+    if (state.revision === prev.revision || !useEditorStore.getState().project) return;
+    if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
+    if (folder) scheduler.notifyChange();
+  });
   const unsubscribeEditor = useEditorStore.subscribe((state, prev) => {
     if (state.project !== prev.project) watch(state.project);
   });
@@ -587,6 +620,7 @@ export function installSession(): () => void {
   return () => {
     unsubscribeStore?.();
     unsubscribeEditor();
+    unsubscribeLibrary();
     scheduler.dispose();
     if (autosave === scheduler) autosave = null;
     window.removeEventListener("beforeunload", onBeforeUnload);

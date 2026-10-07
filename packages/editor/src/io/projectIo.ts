@@ -13,6 +13,8 @@ import {
   parseProject,
   serializeLevel,
   serializeProject,
+  serializeStamp,
+  stampPath,
   type LevelRef,
   type MapDocument,
   type ProjectLevel,
@@ -21,7 +23,7 @@ import {
 
 import type { TilesetImage } from "../state/tilesetImages";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
-import { loadStamps, saveStamps } from "./stampsIo";
+import { loadStamps, removeStaleStamps } from "./stampsIo";
 
 /** The single level of a v0.1 project. */
 export const DEFAULT_LEVEL_PATH = "levels/main.json";
@@ -79,13 +81,15 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
     const bytes = input.tilesetBytes(tileset.id);
     if (bytes) files.push({ path: tileset.imagePath, data: bytes });
   }
+  for (const stamp of input.stamps ?? []) files.push({ path: stampPath(stamp.id), data: serializeStamp(stamp) });
   files.push({ path: input.levelPath, data: serializeLevel(doc) });
   files.push({
     path: PROJECT_FILE_NAME,
     data: serializeProject({
       name: input.name,
-      levels: [{ name: levelName(input.levelPath), path: input.levelPath }],
+      levels: levelsForSave(input.levels, input.levelPath),
       tilesets: doc.tilesets,
+      entityTypes: doc.entityTypes,
     }),
   });
   return files;
@@ -100,15 +104,29 @@ export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput
   for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
 
   let levelText = "";
+  const stampFiles = new Set((input.stamps ?? []).map((s) => stampPath(s.id)));
   for (const file of projectFiles(input)) {
     if (typeof file.data === "string") {
+      // Unchanged stamp files are not rewritten (a library can hold many).
+      if (stampFiles.has(file.path) && (await sameText(fs, file.path, file.data))) continue;
       await fs.writeText(file.path, file.data);
       if (file.path === input.levelPath) levelText = file.data;
     } else if (!(await sameFile(fs, file.path, file.data))) {
       await fs.writeBytes(file.path, file.data);
     }
   }
+  // Deleted stamps lose their file (after project.smap, which never refers to stamps).
+  if (input.stamps) await removeStaleStamps(fs, input.stamps, input.keepStampFiles);
   return levelText;
+}
+
+async function sameText(fs: ProjectFileSystem, path: string, text: string): Promise<boolean> {
+  try {
+    return (await fs.readText(path)) === text;
+  } catch (error) {
+    if (error instanceof FileNotFoundError) return false;
+    throw error;
+  }
 }
 
 async function sameFile(fs: ProjectFileSystem, path: string, bytes: Uint8Array): Promise<boolean> {
