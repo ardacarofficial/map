@@ -177,8 +177,8 @@ export class MapCanvas {
   #frameOnLevelView = false;
   /** Level id the current scene was loaded for. */
   #loadedLevelId: string | null = null;
-  /** Textures to destroy after the next render. */
-  #retired: Texture[] = [];
+  /** Destroy calls to run after the next render. */
+  #retired: (() => void)[] = [];
   /** Camera right after the world view framed itself (re-framed once loads finish if unchanged). */
   #worldFramedCamera: Camera | null = null;
   #worldFramedLoads = -1;
@@ -616,10 +616,20 @@ export class MapCanvas {
     this.#thumbSizeVersion = -1;
     this.#lodSprite.removeFromParent();
     this.#lod = false;
-    this.#gridOverlays?.destroy();
+    // Meshes and atlas pages go after the next render: the last frame's
+    // batches may still reference their textures (Pixi warns otherwise).
+    const gridOverlays = this.#gridOverlays;
+    const scene = this.#scene;
+    gridOverlays?.root.removeFromParent();
+    scene?.root.removeFromParent();
     this.#gridOverlays = null;
-    this.#scene?.destroy();
     this.#scene = null;
+    if (gridOverlays || scene) {
+      this.#afterRender(() => {
+        gridOverlays?.destroy();
+        scene?.destroy();
+      });
+    }
   }
 
   #loadProject(project: OpenProject | null): void {
@@ -921,7 +931,12 @@ export class MapCanvas {
    * still reference it (Pixi warns when a bound source is destroyed).
    */
   #retire(texture: Texture): void {
-    this.#retired.push(texture);
+    this.#afterRender(() => texture.destroy(true));
+  }
+
+  /** Runs `fn` after the next render (right away when nothing renders any more). */
+  #afterRender(fn: () => void): void {
+    this.#retired.push(fn);
     if (this.#destroyed || !this.#initialized) this.#flushRetired();
     else this.#requestRender();
   }
@@ -929,7 +944,13 @@ export class MapCanvas {
   #flushRetired(): void {
     const list = this.#retired;
     this.#retired = [];
-    for (const t of list) t.destroy(true);
+    for (const fn of list) {
+      try {
+        fn();
+      } catch (error) {
+        console.error("[canvas] deferred destroy failed", error);
+      }
+    }
   }
 
   #reportZoom(): void {
