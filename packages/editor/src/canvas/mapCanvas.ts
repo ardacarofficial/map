@@ -8,7 +8,7 @@
  * a brush change is drawn on the very next frame.
  */
 import type { CellPoint, MapStore } from "@smap/core";
-import { AlphaFilter, Application, Container, Graphics, Sprite, Texture } from "pixi.js";
+import { AlphaFilter, Application, Container, Graphics, Sprite, Texture, Ticker } from "pixi.js";
 
 import { useEditorStore, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
@@ -169,6 +169,10 @@ export class MapCanvas {
       return;
     }
     this.#app.ticker?.stop();
+    // Pixi's global system ticker (texture GC scheduler, pointer-move emulation) would request an
+    // animation frame forever. Stop it and advance it from our own on-demand frames instead.
+    Ticker.system.autoStart = false;
+    Ticker.system.stop();
     this.#app.stage.eventMode = "none";
     this.#preview.alpha = CANVAS_COLORS.previewAlpha;
     this.#preview.visible = false;
@@ -270,13 +274,16 @@ export class MapCanvas {
       let devW: number;
       let devH: number;
       const dev = entry.devicePixelContentBoxSize?.[0];
-      if (dev) {
+      const css = entry.contentBoxSize?.[0];
+      const cssW = css ? css.inlineSize : entry.contentRect.width;
+      // Trust the device box unless it disagrees with css × dpr by more than snapping can explain
+      // (seen with emulated device scale factors).
+      if (dev && Math.abs(dev.inlineSize - cssW * dpr) <= 2) {
         devW = dev.inlineSize;
         devH = dev.blockSize;
       } else {
-        const box = entry.contentBoxSize?.[0];
-        devW = Math.round((box ? box.inlineSize : entry.contentRect.width) * dpr);
-        devH = Math.round((box ? box.blockSize : entry.contentRect.height) * dpr);
+        devW = Math.round(cssW * dpr);
+        devH = Math.round((css ? css.blockSize : entry.contentRect.height) * dpr);
       }
       this.#resize(devW, devH, dpr);
     });
@@ -409,6 +416,7 @@ export class MapCanvas {
     this.#updateHover();
     this.#drawOverlay();
     this.#app.renderer.render(this.#app.stage);
+    Ticker.system.update(time);
     this.#reportZoom();
 
     if (animating) this.#requestRender();

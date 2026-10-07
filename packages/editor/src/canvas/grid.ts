@@ -19,14 +19,14 @@ export interface GridLayout {
   readonly alpha: number;
 }
 
-/** Below this many device pixels per cell the grid is hidden; fades in up to `GRID_FULL_PX`. */
+/** Below this many CSS pixels per cell the grid is hidden; it fades in up to `GRID_FULL_PX`. */
 export const GRID_HIDE_PX = 6;
-export const GRID_FULL_PX = 14;
+export const GRID_FULL_PX = 16;
 
-export function gridAlpha(cellDevicePx: number): number {
-  if (cellDevicePx <= GRID_HIDE_PX) return 0;
-  if (cellDevicePx >= GRID_FULL_PX) return 1;
-  return (cellDevicePx - GRID_HIDE_PX) / (GRID_FULL_PX - GRID_HIDE_PX);
+export function gridAlpha(cellCssPx: number): number {
+  if (cellCssPx <= GRID_HIDE_PX) return 0;
+  if (cellCssPx >= GRID_FULL_PX) return 1;
+  return (cellCssPx - GRID_HIDE_PX) / (GRID_FULL_PX - GRID_HIDE_PX);
 }
 
 /**
@@ -55,7 +55,7 @@ export function gridLayout(
   const top = Math.max(0, oy);
   const right = Math.min(vw, Math.round(ox + mapW * cw));
   const bottom = Math.min(vh, Math.round(oy + mapH * ch));
-  const alpha = gridAlpha(Math.min(cw, ch));
+  const alpha = gridAlpha(Math.min(cw, ch) / resolution);
   const xs: number[] = [];
   const ys: number[] = [];
   if (alpha > 0 && right > left && bottom > top) {
