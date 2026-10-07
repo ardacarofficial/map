@@ -194,7 +194,7 @@ export const browserPlatform: Platform = {
   },
 
   onOpenFile() {
-    return () => undefined;
+    return Promise.resolve(() => undefined);
   },
 
   onFileChanged(cb) {

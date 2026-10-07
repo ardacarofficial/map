@@ -1,12 +1,11 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { t } from "../i18n";
+import { getLocale, t } from "../i18n";
 import { SHORTCUTS } from "../shortcuts/shortcuts";
 import { backdropClass, popupClass } from "../ui/dialogs/styles";
 import { Button } from "../ui/primitives/Button";
 import { toast } from "../ui/toast/toastStore";
-import { getLocale } from "../i18n";
 import { readSettingsText, saveSettingsText, useAppSettings } from "./appSettings";
 import { getPlatform } from "./index";
 import { defaultSettingsText } from "./settings";

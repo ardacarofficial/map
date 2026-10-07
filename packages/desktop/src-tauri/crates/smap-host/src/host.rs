@@ -176,6 +176,25 @@ impl Host {
         Ok(self.resolve(path)?.exists())
     }
 
+    /// Klasörde gizli olmayan (nokta ile başlamayan) bir dosya ya da klasör
+    /// var mı. Yeni projeyi seçilen klasöre mi alt klasöre mi yazacağımızı
+    /// belirler. Klasör yoksa `false`.
+    pub fn dir_has_entries(&self, path: &str) -> HostResult<bool> {
+        let real = self.resolve(path)?;
+        let entries = match fs::read_dir(&real) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(HostError::io(path, &e)),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|e| HostError::io(path, &e))?;
+            if !entry.file_name().to_string_lossy().starts_with('.') {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     // ---- kullanıcının seçtiği yollar -------------------------------------
 
     /// Diyalogdan ya da işletim sisteminden (çift tıklama) gelen dosya.
@@ -408,6 +427,21 @@ mod tests {
         assert!(h.write_file_atomic(&s(&missing_dir), b"x").is_err());
         let real = crate::scope::normalize(&missing_dir).unwrap();
         assert_eq!(h.known.lock().unwrap().get(&real), None);
+    }
+
+    #[test]
+    fn dir_has_entries_ignores_hidden_and_needs_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let (h, _rx) = host(dir.path());
+        let picked = dir.path().join("picked");
+        fs::create_dir_all(&picked).unwrap();
+        assert_eq!(h.dir_has_entries(&s(&picked)).unwrap_err().kind, ErrorKind::OutOfScope);
+        let allowed = h.allow_user_dir(&picked).unwrap();
+        assert!(!h.dir_has_entries(&allowed).unwrap());
+        fs::write(picked.join(".DS_Store"), b"x").unwrap();
+        assert!(!h.dir_has_entries(&allowed).unwrap());
+        fs::create_dir_all(picked.join("art")).unwrap();
+        assert!(h.dir_has_entries(&allowed).unwrap());
     }
 
     #[test]

@@ -80,8 +80,12 @@ export interface Platform {
     open(entry: RecentEntry): Promise<ProjectLocation | null>;
   };
 
-  /** `.smap` paths the OS asks us to open (startup argv, second instance). Returns an unsubscribe. */
-  onOpenFile(cb: (path: string) => void): () => void;
+  /**
+   * `.smap` paths the OS asks us to open (startup argv, second instance).
+   * Resolves with an unsubscribe once listening, after a pending startup
+   * request (if any) has been handed to `cb`.
+   */
+  onOpenFile(cb: (path: string) => void): Promise<() => void>;
   /** Files of the watched project that changed on disk. Returns an unsubscribe. */
   onFileChanged(cb: (change: ProjectFileChange) => void): () => void;
 

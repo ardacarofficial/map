@@ -2,16 +2,36 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { fuzzyFilter, type FuzzyMatch } from "../../commands/fuzzy";
-import { allCommands, isEnabled, runCommand, type Command } from "../../commands/registry";
+import { allCommands, isEnabled, paletteEntries, runCommand, type Command } from "../../commands/registry";
+import type { CommandId } from "../../shortcuts/shortcuts";
 import { t } from "../../i18n";
 import { CommandKbd } from "../primitives/Kbd";
 import { Icon } from "../primitives/Icon";
 import { useUiStore } from "../uiStore";
 import { backdropClass, popupTopClass } from "./styles";
 
-function label(command: Command): string {
-  return `${t(`categories.${command.category}`)}: ${t(command.title)}`;
+/** One row: a registered command or a dynamic entry (e.g. "Level'a git: Zindan"). */
+interface PaletteItem {
+  id: string;
+  label: string;
+  /** Length of the quieter prefix ("Görünüm: "). */
+  split: number;
+  command?: CommandId;
+  run(): void;
 }
+
+function commandItem(command: Command): PaletteItem {
+  const prefix = t(`categories.${command.category}`);
+  return {
+    id: command.id,
+    label: `${prefix}: ${t(command.title)}`,
+    split: prefix.length + 2,
+    command: command.id,
+    run: () => runCommand(command.id),
+  };
+}
+
+const label = (item: PaletteItem) => item.label;
 
 /** Ctrl+K / Ctrl+Shift+P — fuzzy search over every enabled command. */
 export function CommandPalette() {
@@ -39,7 +59,15 @@ function PaletteBody({ onClose }: { onClose(): void }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   // Snapshot of the commands available right now (enabled state is read once per open).
-  const commands = useMemo(() => allCommands().filter((c) => c.inPalette !== false && isEnabled(c)), []);
+  const commands = useMemo<PaletteItem[]>(
+    () => [
+      ...allCommands()
+        .filter((c) => c.inPalette !== false && isEnabled(c))
+        .map(commandItem),
+      ...paletteEntries().map((e) => ({ id: e.key, label: `${e.prefix}: ${e.title}`, split: e.prefix.length + 2, run: e.run })),
+    ],
+    [],
+  );
   const results = useMemo(() => fuzzyFilter(commands, query, label), [commands, query]);
   const current = Math.min(active, Math.max(0, results.length - 1));
 
@@ -47,11 +75,11 @@ function PaletteBody({ onClose }: { onClose(): void }) {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${current}"]`)?.scrollIntoView({ block: "nearest" });
   }, [current]);
 
-  const run = (command: Command | undefined) => {
-    if (!command) return;
+  const run = (item: PaletteItem | undefined) => {
+    if (!item) return;
     onClose();
     // Run synchronously so pickers keep the user's key/click activation.
-    runCommand(command.id);
+    item.run();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -115,8 +143,8 @@ function PaletteBody({ onClose }: { onClose(): void }) {
                 index === current ? "bg-active text-text" : "text-muted"
               }`}
             >
-              <Highlighted text={label(item)} match={match} split={t(`categories.${item.category}`).length + 2} />
-              <CommandKbd command={item.id} className="ml-auto" />
+              <Highlighted text={item.label} match={match} split={item.split} />
+              {item.command && <CommandKbd command={item.command} className="ml-auto" />}
             </div>
           ))
         )}

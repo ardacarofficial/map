@@ -26,6 +26,7 @@ import {
   addLevel,
   createDocument,
   isEntityLayer,
+  isValidTileId,
   MapStore,
   moveLevel,
   parseLevel,
@@ -109,6 +110,26 @@ export function levelFileStem(name: string): string {
     .slice(0, 48)
     .replace(/-+$/, "");
   return safeFileName(slug, "level");
+}
+
+/** Palette entries of a level that cannot be drawn (shown as missing tiles, skipped by exporters). */
+export interface PaletteProblems {
+  /** Tileset ids the palette uses that are not in the project. */
+  missingTilesets: string[];
+  /** Entries whose tile id is outside its tileset (the image shrank). */
+  outOfRange: number;
+}
+
+/** What `parseLevel`'s palette warnings report, as data the UI can translate. */
+export function paletteProblems(doc: MapDocument): PaletteProblems {
+  const missing = new Set<string>();
+  let outOfRange = 0;
+  for (const entry of doc.palette.entries()) {
+    const tileset = doc.getTileset(entry.tilesetId);
+    if (!tileset) missing.add(entry.tilesetId);
+    else if (!isValidTileId(tileset, entry.tileId)) outOfRange++;
+  }
+  return { missingTilesets: [...missing].sort(), outOfRange };
 }
 
 /** True when two project-data values are the same (plain frozen data). */

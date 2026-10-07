@@ -52,6 +52,9 @@ export type CommandId =
   | "tileset.add"
   | "tileset.markSolid"
   | "tileset.defineTerrain"
+  | "level.new"
+  | "level.duplicate"
+  | "level.remove"
   | "settings.language"
   | "settings.editShortcuts";
 

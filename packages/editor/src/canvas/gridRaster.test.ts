@@ -118,7 +118,9 @@ describe("collision chunk raster", () => {
 
   it("codes tell tile solidity, forced solid and forced passable apart", () => {
     const store = setup();
-    store.dispatch({ type: "paintCells", layerId: "ground", cells: [{ x: 0, y: 0, cell: makeCell(2) }, { x: 1, y: 0, cell: makeCell(2) }] });
+    // "ground" is derived from the terrain layer (core refuses direct writes there): paint a plain layer.
+    store.dispatch({ type: "addLayer", layer: { id: "plain", name: "P" } });
+    store.dispatch({ type: "paintCells", layerId: "plain", cells: [{ x: 0, y: 0, cell: makeCell(2) }, { x: 1, y: 0, cell: makeCell(2) }] });
     store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 1, y: 0, value: COLLISION_PASSABLE }, { x: 2, y: 0, value: COLLISION_SOLID }] });
     const r = collisionChunkRaster(store.document, 0, 0, solidPaletteMask(store.document));
     expect([r[0], r[1], r[2], r[3]]).toEqual([COLL_SOLID, COLL_FORCED_PASSABLE, COLL_FORCED_SOLID, COLL_NONE]);

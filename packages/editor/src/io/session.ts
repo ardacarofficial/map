@@ -8,7 +8,6 @@ import {
   FormatError,
   MapStore,
   parseLevel,
-  PROJECT_FILE_NAME,
   type MapDocument,
   type ProjectLevel,
   type Stamp,
@@ -29,7 +28,6 @@ import { getPlatform, FolderTakenError, RecentGoneError, type ProjectLocation, t
 import { UnsupportedError } from "./browserFs";
 import { AutosaveScheduler } from "./autosave";
 import { listBackups, writeBackup, type BackupEntry } from "./backups";
-import { compareDisk } from "./externalChange";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 import { useProjectLibrary } from "./projectLibrary";
 import { LevelWorkspace, type SavedLevel } from "./levelWorkspace";
@@ -84,8 +82,7 @@ export function getLevelWorkspace(): LevelWorkspace | null {
 export function publishLevelState(options: { listChanged?: boolean } = {}): void {
   const ws = workspace;
   if (!ws) return;
-  const lib = useProjectLibrary.getState();
-  if (options.listChanged) lib.setLevels(ws.levels);
+  if (options.listChanged) useProjectLibrary.getState().setLevels(ws.levels);
   useProjectLibrary.getState().setDirtyLevels(ws.dirtyIds());
 }
 
@@ -574,6 +571,51 @@ export async function openRecentProject(recent: RecentEntry): Promise<void> {
       toast.error(t("toast.openFailed", { detail: describeError(error) }));
     }
   });
+}
+
+// ------------------------------------------------------------------ levels (v1.0)
+
+/** Level switches run one after another (a second click waits for the first file read). */
+let levelQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Opens another level of the project (from memory, or its file). The
+ * current level stays in memory while it has unsaved changes or history, so
+ * nothing is lost and its undo steps survive. Returns true when `levelId` is
+ * the active level afterwards.
+ */
+export function openLevel(levelId: string): Promise<boolean> {
+  const run = () => switchToLevel(levelId);
+  const next = levelQueue.then(run, run);
+  levelQueue = next.catch(() => false);
+  return next;
+}
+
+async function switchToLevel(levelId: string): Promise<boolean> {
+  const ws = workspace;
+  const state = useEditorStore.getState();
+  const project = state.project;
+  if (!ws || !project) return false;
+  if (levelId === ws.activeId) return true;
+  const level = ws.level(levelId);
+  if (!level || project.store.inTransaction) return false;
+  activeLayerMemory.set(ws.activeId, state.activeLayerId);
+  let entry;
+  try {
+    entry = await ws.activate(levelId, folder?.fs ?? null);
+  } catch (error) {
+    console.error(error);
+    toast.error(t("levels.openFailed", { name: level.name, detail: describeError(error) }));
+    return false;
+  }
+  if (workspace !== ws) return false;
+  const active = ws.activeLevel;
+  const current = useEditorStore.getState().project ?? project;
+  useEditorStore
+    .getState()
+    .switchLevel({ name: current.name, store: entry.store, levelPath: active.path, levelId: active.id }, activeLayerMemory.get(active.id) ?? null);
+  publishLevelState();
+  return true;
 }
 
 // ------------------------------------------------------------------ dirty tracking

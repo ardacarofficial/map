@@ -8,6 +8,7 @@ pub mod host;
 pub mod logfile;
 pub mod recent;
 pub mod scope;
+pub mod settings;
 pub mod watch;
 
 pub use host::{find_open_arg, percent_decode, ErrorKind, Host, HostError, HostResult, OpenedProject};
