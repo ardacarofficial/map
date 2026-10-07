@@ -62,6 +62,7 @@ namespace Smap.MapImporter
         public static SmapEntityField FromValue(string name, string type, object value)
         {
             var f = new SmapEntityField { name = name, type = type };
+            if (!Fits(type, value)) return f;
             switch (value)
             {
                 case string s:
@@ -85,6 +86,30 @@ namespace Smap.MapImporter
                     break;
             }
             return f;
+        }
+
+        /// <summary>
+        /// Whether a JSON value can be the value of a field of this type. A hand-edited
+        /// "int" field holding "abc" must stay unset, not read as 0. Unknown (newer) types accept anything.
+        /// </summary>
+        static bool Fits(string type, object value)
+        {
+            switch (type)
+            {
+                case "string":
+                case "enum":
+                case "levelRef":
+                    return value is string;
+                case "int":
+                case "float":
+                    return value is double;
+                case "bool":
+                    return value is bool;
+                case "point":
+                    return value is Vector2;
+                default:
+                    return true;
+            }
         }
 
         public bool TryGet(out string value)

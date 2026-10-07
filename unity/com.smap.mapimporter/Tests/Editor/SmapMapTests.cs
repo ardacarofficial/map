@@ -53,5 +53,15 @@ namespace Smap.MapImporter.Tests
             Assert.IsNotEmpty(SmapMap.Parse(Sample.Replace("3, 0, 0, 9, 1", "3, 0, 0, 64, 1")).Validate());
             Assert.IsNotEmpty(SmapMap.Parse(Sample.Replace("[0, 1, 10, 1]", "[0, 1, 10]")).Validate());
         }
+
+        [Test]
+        public void RejectsMapsWhoseCellCountOverflowsInt()
+        {
+            // 65536 x 65536 = 2^32 cells: the runs add up (as long), but width * height
+            // is 0 as an int, so the importer's collision decode would throw.
+            var huge = Sample.Replace(@"""width"": 4", @"""width"": 65536").Replace(@"""height"": 3", @"""height"": 65536")
+                .Replace("[0, 1, 10, 1]", "[2147483647, 2147483647, 2]");
+            Assert.IsNotEmpty(SmapMap.Parse(huge).Validate());
+        }
     }
 }

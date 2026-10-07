@@ -12,6 +12,8 @@ import {
   clampZoom,
   easeZoom,
   fitZoom,
+  MAX_ZOOM,
+  MIN_ZOOM,
   nextZoomStep,
   quantizeZoom,
   screenToCell,
@@ -20,7 +22,7 @@ import {
   type Camera,
   type Point,
 } from "./camera";
-import { cameraCenteredOn } from "./minimapMath";
+import { cameraCenteredOn, type Rect } from "./minimapMath";
 
 /** Time constant of the wheel-zoom easing. */
 const ZOOM_TAU_MS = 55;
@@ -48,6 +50,15 @@ export class CameraController {
   viewW = 0;
   viewH = 0;
   resolution = 1;
+  /** Zoom limits (the world view zooms further out than a level). */
+  minZoom = MIN_ZOOM;
+  maxZoom = MAX_ZOOM;
+  /**
+   * When set, {@link frameMap} frames this world rectangle (map px) instead
+   * of the map: the world view frames all levels. `null` from the provider
+   * = nothing to frame.
+   */
+  frameBounds: (() => Rect | null) | null = null;
   #anim: ZoomAnim | null = null;
   #pendingFrameMap = true;
   readonly #map: () => MapInfo | undefined;
@@ -108,7 +119,7 @@ export class CameraController {
   /** Immediately sets the zoom keeping `anchor` fixed. */
   setZoom(zoom: number, anchor: Point): void {
     this.#anim = null;
-    this.zoomLevel = clampZoom(zoom);
+    this.zoomLevel = this.#clamp(zoom);
     this.camera = cameraAnchored(anchor, this.#worldAt(anchor), this.#quantize(this.zoomLevel));
     this.#requestRender();
   }
@@ -116,7 +127,7 @@ export class CameraController {
   animateZoomTo(target: number, anchor: Point): void {
     this.#anim = {
       current: this.#anim?.current ?? this.zoomLevel,
-      target: clampZoom(target),
+      target: this.#clamp(target),
       anchorScreen: anchor,
       anchorWorld: this.#worldAt(anchor),
     };
@@ -124,7 +135,18 @@ export class CameraController {
   }
 
   zoomStep(dir: 1 | -1): void {
-    this.animateZoomTo(nextZoomStep(this.zoomTarget, dir), this.viewCenter());
+    const from = this.zoomTarget;
+    let next = nextZoomStep(from, dir);
+    // Below the smallest step (world view): keep zooming in factors.
+    if (dir < 0 && next >= from) next = from / 1.5;
+    this.animateZoomTo(next, this.viewCenter());
+  }
+
+  /** Changes the zoom limits; the current zoom is clamped into them. */
+  setZoomLimits(min: number, max: number): void {
+    this.minZoom = min;
+    this.maxZoom = max;
+    if (this.zoomLevel < min || this.zoomLevel > max) this.setZoom(this.zoomLevel, this.viewCenter());
   }
 
   /** Centers the map in the view (fit if it is larger than the view). */
@@ -135,6 +157,10 @@ export class CameraController {
     }
     this.#pendingFrameMap = false;
     this.#anim = null;
+    if (this.frameBounds) {
+      this.#frameRect(this.frameBounds());
+      return;
+    }
     const map = this.#map();
     if (!map) {
       this.zoomLevel = 1;
@@ -146,6 +172,22 @@ export class CameraController {
     const mh = map.height * map.tileHeight;
     this.zoomLevel = fitZoom(this.viewW, this.viewH, mw, mh, FRAME_PADDING);
     this.camera = centeredCamera(this.viewW, this.viewH, mw, mh, this.#quantize(this.zoomLevel));
+    this.#requestRender();
+  }
+
+  /** Fits a world rectangle into the view (continuous zoom, at most 1), centred. */
+  #frameRect(r: Rect | null): void {
+    if (!r || r.width <= 0 || r.height <= 0) {
+      this.zoomLevel = this.#clamp(1);
+      this.camera = { x: this.viewW / 2, y: this.viewH / 2, zoom: this.#quantize(this.zoomLevel) };
+      this.#requestRender();
+      return;
+    }
+    const availW = Math.max(1, this.viewW - FRAME_PADDING * 2);
+    const availH = Math.max(1, this.viewH - FRAME_PADDING * 2);
+    this.zoomLevel = this.#clamp(Math.min(availW / r.width, availH / r.height, 1));
+    const z = this.#quantize(this.zoomLevel);
+    this.camera = { x: (this.viewW - r.width * z) / 2 - r.x * z, y: (this.viewH - r.height * z) / 2 - r.y * z, zoom: z };
     this.#requestRender();
   }
 
@@ -202,7 +244,11 @@ export class CameraController {
   }
 
   #quantize(zoom: number): number {
-    return quantizeZoom(zoom, this.tileSize().tw, this.resolution);
+    return quantizeZoom(zoom, this.tileSize().tw, this.resolution, this.minZoom, this.maxZoom);
+  }
+
+  #clamp(zoom: number): number {
+    return clampZoom(zoom, this.minZoom, this.maxZoom);
   }
 
   /** World point under a screen point for the current (unsnapped) camera. */

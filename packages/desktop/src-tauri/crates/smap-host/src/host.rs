@@ -100,14 +100,17 @@ impl Host {
 
     pub fn read_file(&self, path: &str) -> HostResult<Vec<u8>> {
         let real = self.resolve(path)?;
+        // Kilit altında oku: izleyicinin aynı anda kaydettiği daha yeni
+        // içeriğin üstüne eski okumanın özeti yazılmasın.
+        let mut known = self.known.lock().unwrap();
         match fs::read(&real) {
             Ok(bytes) => {
-                self.known.lock().unwrap().record(&real, &bytes);
+                known.record(&real, &bytes);
                 Ok(bytes)
             }
             Err(e) => {
                 if e.kind() == io::ErrorKind::NotFound {
-                    self.known.lock().unwrap().record_absent(&real);
+                    known.record_absent(&real);
                 }
                 Err(HostError::io(path, &e))
             }
@@ -121,17 +124,17 @@ impl Host {
 
     pub fn write_file_atomic(&self, path: &str, bytes: &[u8]) -> HostResult<()> {
         let real = self.resolve(path)?;
-        // Özeti yazmadan önce kaydet: izleyici olayı yeniden adlandırmadan
-        // hemen sonra gelebilir. Başarısız olursa eski durumu geri koy.
-        let previous = {
-            let mut known = self.known.lock().unwrap();
-            let prev = known.get(&real);
-            known.record(&real, bytes);
-            prev
-        };
+        // Özeti yeniden adlandırmadan önce kaydet ve kilidi yazma bitene
+        // kadar tut: izleyici (diski de kilit altında okur) ya kaydın
+        // öncesini ya sonrasını görür, arasını değil. Aynı yola eşzamanlı iki
+        // kayıt da böylece sıraya girer; bilinen özet diskteki son içerikle
+        // aynı kalır. Başarısız olursa eski durumu geri koy.
+        let mut known = self.known.lock().unwrap();
+        let previous = known.get(&real);
+        known.record(&real, bytes);
         let result = atomic::write_file_atomic(&real, bytes);
         if let Err(e) = &result {
-            self.known.lock().unwrap().restore(&real, previous);
+            known.restore(&real, previous);
             log::error!("save failed {}: {e}", real.display());
         }
         result.map_err(|e| HostError::io(path, &e))

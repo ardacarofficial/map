@@ -92,6 +92,8 @@ namespace Smap.MapImporter
                 return errors;
             }
             if (width < 1 || height < 1) errors.Add($"map size must be positive, got {width}x{height}");
+            // The importer indexes cells with int (width * height); a larger map would overflow it.
+            else if ((long)width * height > int.MaxValue) errors.Add($"map size {width}x{height} is too large");
             if (tileWidth < 1 || tileHeight < 1) errors.Add($"tile size must be positive, got {tileWidth}x{tileHeight}");
             for (int t = 0; t < tilesets.Length; t++)
             {

@@ -183,6 +183,7 @@ export const en: Messages = {
   },
   commands: {
     "level.new": "New level…",
+    "view.toggleMinimap": "Show/hide minimap",
     "level.duplicate": "Duplicate open level",
     "level.remove": "Delete open level…",
     "settings.language": "Language: Türkçe / English",

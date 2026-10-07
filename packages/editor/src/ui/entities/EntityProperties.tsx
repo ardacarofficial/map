@@ -1,5 +1,6 @@
 import {
   entityCell,
+  PORTAL_TARGET_POINT,
   PORTAL_TYPE_ID,
   portalStatus,
   portalTarget,
@@ -10,6 +11,7 @@ import {
 } from "@smap/core";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { startPointPick } from "../../commands/levelActions";
 import { deleteEntity, entityFieldLabel, entityTypeName, moveEntityToCell, setEntityField } from "../../commands/entityActions";
 import { t, type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
@@ -75,6 +77,9 @@ export function EntityProperties({ doc, entity }: { doc: MapDocument; entity: En
                 label={label}
                 onCommit={(value) => setEntityField(entity.id, field.name, value)}
               />
+              {entity.typeId === PORTAL_TYPE_ID && field.name === PORTAL_TARGET_POINT && (
+                <PickOnMapButton entityId={entity.id} enabled={portalStatus({ name: "", levels, tilesets: [] }, entity) === "ok"} />
+              )}
             </FieldRow>
           );
         })}
@@ -87,6 +92,23 @@ export function EntityProperties({ doc, entity }: { doc: MapDocument; entity: En
         </div>
       )}
     </div>
+  );
+}
+
+/** "Haritada seç": opens the target level to click the point there (Esc cancels). */
+function PickOnMapButton({ entityId, enabled }: { entityId: string; enabled: boolean }) {
+  return (
+    <Tooltip label={enabled ? t("levels.pickHint") : t("levels.pickNeedsLevel")}>
+      <button
+        type="button"
+        disabled={!enabled}
+        onClick={() => void startPointPick(entityId)}
+        className="mt-1.5 flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-line text-sm text-muted transition-colors hover:border-line-strong hover:bg-hover hover:text-text disabled:pointer-events-none disabled:opacity-40"
+      >
+        <Icon name="crosshair" size={13} />
+        {t("levels.pickButton")}
+      </button>
+    </Tooltip>
   );
 }
 

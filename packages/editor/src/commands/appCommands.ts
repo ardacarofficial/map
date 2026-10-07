@@ -17,6 +17,7 @@ import {
   activeLayer,
   canCopy,
   canDeselect,
+  hasSelectedEntity,
   canErase,
   canFlip,
   canPaste,
@@ -29,7 +30,7 @@ import {
 } from "./enablement";
 import { addLayer, removeLayer } from "./layerActions";
 import { addCollisionLayer } from "./terrainActions";
-import { addEntityLayer } from "./entityActions";
+import { addEntityLayer, deleteEntity } from "./entityActions";
 import { stampRegion } from "./stampActions";
 import { askRemoveLevel, duplicateLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
 
@@ -56,6 +57,23 @@ const canvas = (fn: (h: NonNullable<ReturnType<typeof getCanvasHandle>>) => void
   const handle = getCanvasHandle();
   if (handle) fn(handle);
 };
+
+/** Minimap state before Tab hid the panels (restored when they come back); `null` = not hidden by Tab. */
+let minimapBeforeHide: boolean | null = null;
+
+/** Tab: panels and the minimap hide together (the canvas alone stays). */
+function togglePanels(): void {
+  ui().togglePanels();
+  const handle = getCanvasHandle();
+  if (!handle) return;
+  if (ui().panelsHidden) {
+    minimapBeforeHide = handle.isMinimapVisible();
+    handle.setMinimapVisible(false);
+  } else if (minimapBeforeHide !== null) {
+    handle.setMinimapVisible(minimapBeforeHide);
+    minimapBeforeHide = null;
+  }
+}
 
 const COMMANDS: Command[] = [
   // ---- File
@@ -146,7 +164,17 @@ const COMMANDS: Command[] = [
   { id: "edit.cut", title: "commands.edit.cut", category: "edit", enabled: when(canErase), run: () => void cutSelection() },
   { id: "edit.copy", title: "commands.edit.copy", category: "edit", enabled: when(canCopy), run: () => void copySelection() },
   { id: "edit.paste", title: "commands.edit.paste", category: "edit", enabled: when(canPaste), run: () => void pasteFromSystem() },
-  { id: "edit.delete", title: "commands.edit.delete", category: "edit", enabled: when(canErase), run: () => void deleteSelection() },
+  {
+    id: "edit.delete",
+    title: "commands.edit.delete",
+    category: "edit",
+    enabled: when((c) => hasSelectedEntity(c) || canErase(c)),
+    run: () => {
+      const entityId = editor().selectedEntityId;
+      if (entityId && hasSelectedEntity(ctx())) deleteEntity(entityId);
+      else void deleteSelection();
+    },
+  },
   {
     id: "edit.selectAll",
     title: "commands.edit.selectAll",
@@ -162,8 +190,12 @@ const COMMANDS: Command[] = [
     title: "commands.edit.deselect",
     category: "edit",
     enabled: when(canDeselect),
-    // Esc peels one thing at a time: the marquee first, then the stamp.
-    run: () => (editor().region ? editor().setRegion(null) : editor().setStamp(null)),
+    // Esc peels one thing at a time: the selected entity, the marquee, then the stamp.
+    run: () => {
+      if (editor().selectedEntityId) editor().setSelectedEntity(null);
+      else if (editor().region) editor().setRegion(null);
+      else editor().setStamp(null);
+    },
   },
   { id: "edit.flipX", title: "commands.edit.flipX", category: "edit", enabled: when(canFlip), run: () => void flipStampOrTile("x") },
   { id: "edit.flipY", title: "commands.edit.flipY", category: "edit", enabled: when(canFlip), run: () => void flipStampOrTile("y") },
@@ -245,7 +277,17 @@ const COMMANDS: Command[] = [
     run: () => editor().toggleCollisionOverlay(),
   },
   { id: "view.toggleGrid", title: "commands.view.toggleGrid", category: "view", enabled: hasProject, run: () => editor().toggleGrid() },
-  { id: "view.togglePanels", title: "commands.view.togglePanels", category: "view", enabled: hasProject, run: () => ui().togglePanels() },
+  { id: "view.togglePanels", title: "commands.view.togglePanels", category: "view", enabled: hasProject, run: togglePanels },
+  {
+    id: "view.toggleMinimap",
+    title: "commands.view.toggleMinimap",
+    category: "view",
+    enabled: hasProject,
+    run: canvas((h) => {
+      h.setMinimapVisible(!h.isMinimapVisible());
+      minimapBeforeHide = null;
+    }),
+  },
   { id: "view.zoomIn", title: "commands.view.zoomIn", category: "view", enabled: hasProject, run: canvas((h) => h.zoomIn()) },
   { id: "view.zoomOut", title: "commands.view.zoomOut", category: "view", enabled: hasProject, run: canvas((h) => h.zoomOut()) },
   { id: "view.zoomReset", title: "commands.view.zoomReset", category: "view", enabled: hasProject, run: canvas((h) => h.zoomReset()) },

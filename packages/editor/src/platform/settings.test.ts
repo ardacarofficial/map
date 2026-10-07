@@ -138,3 +138,15 @@ describe("file change hints", () => {
     expect(sameBytes(new Uint8Array([1]), new Uint8Array([1, 2]))).toBe(false);
   });
 });
+
+describe("formatSettings", () => {
+  it("writes one line per shortcut and stays valid JSON", async () => {
+    const { formatSettings } = await import("./settings");
+    const value = { locale: "tr", shortcuts: { "tool.brush": ["B"], "edit.redo": ["Ctrl+Y", "Ctrl+Shift+Z"], "tool.fill": [] }, $note: { a: [1] } };
+    const text = formatSettings(value);
+    expect(JSON.parse(text)).toEqual(value);
+    expect(text).toContain('    "edit.redo": ["Ctrl+Y", "Ctrl+Shift+Z"],\n');
+    expect(text).toContain('    "tool.fill": []\n');
+    expect(JSON.parse(formatSettings({ shortcuts: {} }))).toEqual({ shortcuts: {} });
+  });
+});

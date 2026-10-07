@@ -39,9 +39,9 @@ export const ZOOM_STEPS: readonly number[] = [
  */
 export const QUANTIZE_MIN_TILE_DEVICE_PX = 8;
 
-export function clampZoom(zoom: number): number {
-  if (!Number.isFinite(zoom)) return 1;
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+export function clampZoom(zoom: number, min = MIN_ZOOM, max = MAX_ZOOM): number {
+  if (!Number.isFinite(zoom)) return Math.min(max, Math.max(min, 1));
+  return Math.min(max, Math.max(min, zoom));
 }
 
 /**
@@ -50,12 +50,12 @@ export function clampZoom(zoom: number): number {
  * 125 % / 150 % Windows scaling). Tiny tiles are left continuous so zooming
  * far out stays smooth.
  */
-export function quantizeZoom(zoom: number, tileSize: number, resolution: number): number {
-  const z = clampZoom(zoom);
+export function quantizeZoom(zoom: number, tileSize: number, resolution: number, min = MIN_ZOOM, max = MAX_ZOOM): number {
+  const z = clampZoom(zoom, min, max);
   const deviceTile = tileSize * z * resolution;
   if (deviceTile < QUANTIZE_MIN_TILE_DEVICE_PX) return z;
   const q = Math.round(deviceTile) / (tileSize * resolution);
-  return q >= MIN_ZOOM && q <= MAX_ZOOM ? q : z;
+  return q >= min && q <= max ? q : z;
 }
 
 /** Offset snapped to whole device pixels, in CSS px. */

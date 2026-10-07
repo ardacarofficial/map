@@ -36,6 +36,7 @@ export type CommandId =
   | "entity.editTypes"
   | "view.toggleGrid"
   | "view.togglePanels"
+  | "view.toggleMinimap"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"

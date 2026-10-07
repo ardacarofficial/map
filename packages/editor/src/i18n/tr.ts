@@ -186,6 +186,7 @@ export const tr = {
   },
   commands: {
     "level.new": "Yeni level…",
+    "view.toggleMinimap": "Minimap'i göster/gizle",
     "level.duplicate": "Açık level'ı çoğalt",
     "level.remove": "Açık level'ı sil…",
     "settings.language": "Dil: Türkçe / English",

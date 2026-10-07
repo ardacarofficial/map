@@ -82,6 +82,8 @@ function installTitle(platform: Platform): () => void {
  * the OS passed one), and only then `appReady()` shows the hidden window.
  */
 export async function startEditor(rootElement: HTMLElement, options: StartEditorOptions = {}): Promise<void> {
+  const marks: string[] = [`script ${Math.round(performance.now())}`];
+  const mark = (name: string) => marks.push(`${name} ${Math.round(performance.now())}`);
   const platform = options.platform ?? browserPlatform;
   setPlatform(platform);
   installErrorLogging();
@@ -91,6 +93,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   installAutoExport();
 
   await loadAppSettings().catch((error: unknown) => platform.log("warn", `settings: ${String(error)}`));
+  mark("settings");
 
   createRoot(rootElement).render(
     <StrictMode>
@@ -98,6 +101,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
     </StrictMode>,
   );
 
+  mark("render");
   installTitle(platform);
   installFileChangeHandling();
   installSettingsReload();
@@ -115,12 +119,16 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
     platform.log("warn", `open requests unavailable: ${String(error)}`);
   }
 
+  mark("listening");
   await nextFrame();
+  mark("frame");
   if (startupOpen) await Promise.race([startupOpen, timeout(2500)]);
   if (getPlatform().kind === "desktop" && useEditorStore.getState().project) await canvasDrawn(1500);
   else {
     await nextFrame();
   }
-  platform.log("info", `first frame after ${Math.round(performance.now())} ms`);
+  mark("ready");
+  // Milliseconds since navigation start; the desktop's "< 1 s" budget.
+  platform.log("info", `startup ms: ${marks.join(", ")}`);
   platform.appReady();
 }

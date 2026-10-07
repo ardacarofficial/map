@@ -7,6 +7,8 @@ import type { CellRegion, EditorState } from "../state/editorStore";
 
 export type EditContext = Pick<EditorState, "activeLayerId" | "region" | "stamp" | "selection"> & {
   store: MapStore | null;
+  /** Selected entity (entity layers), if any. */
+  selectedEntityId?: string | null;
 };
 
 export function contextOf(state: EditorState): EditContext {
@@ -16,6 +18,7 @@ export function contextOf(state: EditorState): EditContext {
     region: state.region,
     stamp: state.stamp,
     selection: state.selection,
+    selectedEntityId: state.selectedEntityId,
   };
 }
 
@@ -48,7 +51,10 @@ export const canErase = (c: EditContext): boolean =>
   canCopy(c) && !activeLayer(c)?.locked && !(c.store?.inTransaction ?? true);
 export const canPaste = (c: EditContext): boolean => c.store !== null && activeLayer(c) !== undefined;
 export const canSelectAll = (c: EditContext): boolean => c.store !== null;
-export const canDeselect = (c: EditContext): boolean => c.region !== null || c.stamp !== null;
+export const canDeselect = (c: EditContext): boolean => c.region !== null || c.stamp !== null || hasSelectedEntity(c);
+/** An entity is selected and still exists (Delete removes it, Esc deselects it). */
+export const hasSelectedEntity = (c: EditContext): boolean =>
+  !!c.selectedEntityId && c.store?.document.findEntity(c.selectedEntityId) !== undefined && !c.store.inTransaction;
 export const canFlip = (c: EditContext): boolean =>
   c.stamp !== null || (c.selection !== null && activeLayer(c) !== undefined);
 export const canRemoveLayer = (c: EditContext): boolean =>

@@ -81,6 +81,27 @@ describe("AutoExporter (export to Unity on save)", () => {
     expect(exported[1]!.project.manual).toBe(true);
   });
 
+  it("exports every level of one save (v1.0), each once, even while an export runs", async () => {
+    const { exporter, target, exported, saved } = setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const folder = new MemoryFileSystem("slow");
+    target.mockImplementationOnce(async () => {
+      await gate;
+      return folder;
+    });
+    const first = exporter.onSaved(saved());
+    void exporter.onSaved({ ...saved(), levelName: "zindan" });
+    void exporter.onSaved({ ...saved(), levelName: "orman" });
+    void exporter.onSaved({ ...saved(true), levelName: "zindan" });
+    release();
+    await first;
+    await exporter.idle();
+    expect(exported.map((r) => r.project.levelName)).toEqual(["main", "zindan", "orman"]);
+    expect(exported[1]!.project.manual).toBe(true);
+    expect(exported[2]!.write.written).toEqual(["orman.smapmap"]);
+  });
+
   it("reports write errors and keeps working afterwards", async () => {
     const { exporter, target, errors, exported, saved } = setup();
     const broken = new MemoryFileSystem("broken");

@@ -175,7 +175,27 @@ export function mergeShortcuts(defaults: readonly ShortcutDef[], overrides: Read
 export function defaultSettingsText(defaults: readonly ShortcutDef[], locale: Locale): string {
   const shortcuts: Record<string, string[]> = {};
   for (const d of defaults) if (!FIXED_COMMANDS.has(d.command)) shortcuts[d.command] = [...d.keys];
-  return `${JSON.stringify({ locale, shortcuts }, null, 2)}\n`;
+  return formatSettings({ locale, shortcuts });
+}
+
+/**
+ * Pretty JSON with one line per shortcut (`"tool.brush": ["B"],`), so the
+ * file reads like a table. Other values use plain 2-space JSON.
+ */
+export function formatSettings(settings: Record<string, unknown>): string {
+  const indent = (text: string) => text.replace(/\n/g, "\n  ");
+  const lines = Object.entries(settings).map(([key, value]) => {
+    if (key === "shortcuts" && typeof value === "object" && value !== null && !Array.isArray(value)) {
+      const rows = Object.entries(value as Record<string, unknown>).map(([command, keys]) =>
+        Array.isArray(keys)
+          ? `    ${JSON.stringify(command)}: [${keys.map((k) => JSON.stringify(k)).join(", ")}]`
+          : `    ${JSON.stringify(command)}: ${indent(indent(JSON.stringify(keys, null, 2)))}`,
+      );
+      return rows.length === 0 ? `  "shortcuts": {}` : `  "shortcuts": {\n${rows.join(",\n")}\n  }`;
+    }
+    return `  ${JSON.stringify(key)}: ${indent(JSON.stringify(value, null, 2))}`;
+  });
+  return lines.length === 0 ? "{}\n" : `{\n${lines.join(",\n")}\n}\n`;
 }
 
 /**
@@ -189,7 +209,7 @@ export function withLocale(text: string | null, locale: Locale, defaults: readon
   try {
     const raw: unknown = JSON.parse(text);
     if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
-      return `${JSON.stringify({ ...(raw as Record<string, unknown>), locale }, null, 2)}\n`;
+      return formatSettings({ ...(raw as Record<string, unknown>), locale });
     }
   } catch {
     // Broken file: leave it to the user.

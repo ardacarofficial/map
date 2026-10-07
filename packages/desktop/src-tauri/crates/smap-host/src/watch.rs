@@ -126,8 +126,16 @@ pub fn process_batch(
     let unique: BTreeSet<PathBuf> = paths.into_iter().filter(|p| is_watched(root, p)).collect();
     let mut out = Vec::new();
     for path in unique {
-        let bytes = read(&path);
-        let kind = known.lock().unwrap().classify(&path, bytes.as_deref());
+        // Okuma ve karşılaştırma kilit altında: programın kendi kaydı
+        // (özeti kaydet → yeniden adlandır, aynı kilit altında) ikisinin
+        // arasına giremez. Girseydi eski diski yeni özetle karşılaştırıp
+        // bilineni eski içeriğe çevirir, ardından gelen kendi kaydımızı
+        // "dış değişiklik" sanırdık.
+        let kind = {
+            let mut known = known.lock().unwrap();
+            let bytes = read(&path);
+            known.classify(&path, bytes.as_deref())
+        };
         if let Some(kind) = kind {
             out.push(FileChange { path: path.to_string_lossy().into_owned(), kind });
         }
@@ -251,6 +259,24 @@ mod tests {
             changes,
             vec![FileChange { path: root.join("tilesets/a.png").to_string_lossy().into_owned(), kind: ChangeKind::Modified }]
         );
+    }
+
+    #[test]
+    fn batch_reads_disk_while_holding_the_known_lock() {
+        // Host::write_file_atomic records the hash and renames under the same
+        // lock; if the batch read the disk outside it, a save could land between
+        // the read and the classify and later be reported as an external change.
+        let root = Path::new("/p");
+        let known = Mutex::new(KnownHashes::new());
+        let p = root.join("levels/a.json");
+        let reads = std::cell::Cell::new(0);
+        let changes = process_batch(root, vec![p.clone()], &known, |_| {
+            reads.set(reads.get() + 1);
+            assert!(known.try_lock().is_err(), "disk must be read under the known lock");
+            Some(b"theirs".to_vec())
+        });
+        assert_eq!(reads.get(), 1);
+        assert_eq!(changes.len(), 1);
     }
 
     /// Real OS events end to end (inotify on Linux, ReadDirectoryChangesW on Windows).

@@ -12,11 +12,11 @@ export const THUMB_MAX_CELL_PX = 4;
 
 /**
  * Thumbnail px per map cell: an integer 1…{@link THUMB_MAX_CELL_PX} when the
- * map fits, otherwise a fraction so the longer side is `THUMB_MAX_PX`.
+ * map fits, otherwise a fraction so the longer side is `maxPx`.
  */
-export function thumbnailScale(mapWidth: number, mapHeight: number): number {
+export function thumbnailScale(mapWidth: number, mapHeight: number, maxPx = THUMB_MAX_PX): number {
   const longest = Math.max(1, mapWidth, mapHeight);
-  const s = THUMB_MAX_PX / longest;
+  const s = maxPx / longest;
   return s >= 1 ? Math.min(THUMB_MAX_CELL_PX, Math.floor(s)) : s;
 }
 

@@ -257,6 +257,27 @@ namespace Smap.MapImporter.Tests
         }
 
         [Test]
+        public void ValuesThatDoNotFitTheTypeAreUnset()
+        {
+            // Hand-edited file: an "int" holding text, a "bool" holding a number, a "point" holding text.
+            var notInt = SmapEntityField.FromValue("hp", "int", "abc");
+            Assert.IsFalse(notInt.hasValue);
+            Assert.IsFalse(notInt.TryGet(out int _), "\"abc\" must not read as 0");
+            Assert.IsFalse(notInt.TryGet(out float _));
+            Assert.IsFalse(SmapEntityField.FromValue("on", "bool", 1.0).TryGet(out bool _));
+            Assert.IsFalse(SmapEntityField.FromValue("goal", "point", "8,4").hasValue);
+            Assert.IsFalse(SmapEntityField.FromValue("line", "string", 3.0).hasValue);
+            // Fitting values, and unknown (newer) types, are kept.
+            Assert.IsTrue(SmapEntityField.FromValue("hp", "int", 3.0).TryGet(out int three));
+            Assert.AreEqual(3, three);
+            Assert.IsTrue(SmapEntityField.FromValue("x", "color", "#ff0000").TryGet(out string color));
+            Assert.AreEqual("#ff0000", color);
+
+            var map = SmapMap.Parse(Sample.Replace(@"""value"": -3", @"""value"": ""lots"""));
+            Assert.IsFalse(SmapEntityField.Find(map.entities[0].items[1].fields, "hp").TryGet(out int _));
+        }
+
+        [Test]
         public void RejectsBadEntities()
         {
             Assert.IsNotEmpty(SmapMap.Parse(Sample.Replace("\"id\": \"bob\"", "\"id\": \"\"")).Validate());

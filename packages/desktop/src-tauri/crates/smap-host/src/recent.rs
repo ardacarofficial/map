@@ -11,6 +11,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -46,11 +47,14 @@ pub struct RecentView {
 
 pub struct RecentStore {
     file: PathBuf,
+    /// Oku → değiştir → yaz adımlarını sıraya koyar: komutlar eşzamanlı
+    /// çalışır (async), aynı anda iki ekleme birbirinin girdisini silmesin.
+    edit: Mutex<()>,
 }
 
 impl RecentStore {
     pub fn new(file: PathBuf) -> Self {
-        Self { file }
+        Self { file, edit: Mutex::new(()) }
     }
 
     /// En yeni önce. Bozuk ya da eksik dosya boş liste demektir.
@@ -80,6 +84,7 @@ impl RecentStore {
     }
 
     pub fn add(&self, path: &str, name: &str, now_ms: u64) -> io::Result<Vec<RecentEntry>> {
+        let _edit = self.edit.lock().unwrap_or_else(|e| e.into_inner());
         let mut list = self.load();
         list.retain(|e| !same_path(&e.path, path));
         list.insert(0, RecentEntry { path: path.to_owned(), name: name.to_owned(), opened_at: now_ms });
@@ -89,6 +94,7 @@ impl RecentStore {
     }
 
     pub fn remove(&self, path: &str) -> io::Result<Vec<RecentEntry>> {
+        let _edit = self.edit.lock().unwrap_or_else(|e| e.into_inner());
         let mut list = self.load();
         list.retain(|e| !same_path(&e.path, path));
         self.save(&list)?;
@@ -102,7 +108,8 @@ impl RecentStore {
         let body = RecentFile { version: FORMAT_VERSION, projects: list.to_vec() };
         let mut text = serde_json::to_string_pretty(&body).map_err(io::Error::other)?;
         text.push('\n');
-        crate::atomic::write_file_atomic(&self.file, text.as_bytes())
+        // Bağlıysa (ayarlar bir dotfile deposundan bağlanmış) bağı koru.
+        crate::atomic::write_file_atomic(&crate::atomic::follow_symlink(&self.file), text.as_bytes())
     }
 }
 
@@ -150,6 +157,37 @@ mod tests {
             text,
             "{\n  \"version\": 1,\n  \"projects\": [\n    {\n      \"path\": \"/a/project.smap\",\n      \"name\": \"Dünyam\",\n      \"openedAt\": 1\n    }\n  ]\n}\n"
         );
+    }
+
+    #[test]
+    fn concurrent_adds_are_not_lost() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = std::sync::Arc::new(RecentStore::new(tmp.path().join("recent.json")));
+        let threads: Vec<_> = (0..8u64)
+            .map(|i| {
+                let store = store.clone();
+                std::thread::spawn(move || store.add(&format!("/p{i}/project.smap"), "P", i).unwrap())
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(store.load().len(), 8);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_file_stays_a_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("dotfiles/recent.json");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, b"{\"version\":1,\"projects\":[]}").unwrap();
+        let link = tmp.path().join("recent.json");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let store = RecentStore::new(link.clone());
+        store.add("/a/project.smap", "A", 1).unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(RecentStore::new(real).load().len(), 1);
     }
 
     #[test]

@@ -31,6 +31,7 @@ export class MapThumbnail {
   readonly #store: MapStore;
   readonly #images: ThumbImageLookup;
   readonly #onChange: () => void;
+  readonly #maxPx: number | undefined;
   readonly #unsubscribe: () => void;
   /** Thumbnail px per cell. */
   #scale = 1;
@@ -48,8 +49,10 @@ export class MapThumbnail {
   /** Bumps when the canvas is resized (textures must be recreated). */
   sizeVersion = 0;
 
-  constructor(store: MapStore, images: ThumbImageLookup, onChange: () => void) {
+  /** `maxPx`: longest side of the picture (default `THUMB_MAX_PX`; the world view uses smaller ones). */
+  constructor(store: MapStore, images: ThumbImageLookup, onChange: () => void, maxPx?: number) {
     this.#store = store;
+    this.#maxPx = maxPx;
     this.#images = images;
     this.#onChange = onChange;
     const ctx = this.canvas.getContext("2d", { willReadFrequently: false });
@@ -124,7 +127,7 @@ export class MapThumbnail {
 
   #resize(): void {
     const map = this.#store.document.map;
-    this.#scale = thumbnailScale(map.width, map.height);
+    this.#scale = thumbnailScale(map.width, map.height, this.#maxPx);
     this.#k = this.#scale >= 1 ? this.#scale : 1;
     this.#blocks = [];
     this.canvas.width = Math.max(1, Math.ceil(map.width * this.#scale));

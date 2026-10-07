@@ -24,7 +24,8 @@ export function PointPickOverlay() {
     if (!pick) return;
     const host = document.querySelector<HTMLElement>(`[${CANVAS_HOST_ATTR}]`);
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
+      console.log("PICKDOWN", event.button, String(event.target), JSON.stringify(useEditorStore.getState().hoverCell));
+      if (event.button !== 0) return;
       // Capture phase on the host: the canvas never starts a tool gesture.
       event.preventDefault();
       event.stopPropagation();

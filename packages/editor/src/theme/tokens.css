@@ -51,6 +51,9 @@
   --color-danger-soft: rgb(240 112 122 / 0.12);
   --color-warning: #e7b75f;
   --color-warning-soft: rgb(231 183 95 / 0.12);
+  /* Built-in entity types on the canvas (read with getComputedStyle; keep #rrggbb). */
+  --color-entity-spawn: #4ade80;
+  --color-entity-portal: #b47bff;
   --color-success: #5fcf98;
   --color-success-soft: rgb(95 207 152 / 0.12);
 

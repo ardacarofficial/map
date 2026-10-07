@@ -88,6 +88,7 @@ pub fn write_file_atomic_with(
     let temp = temp_path(dir, &file_name.to_string_lossy());
     let result = (|| {
         write_and_sync(&temp, bytes)?;
+        keep_permissions(target, &temp);
         rename_with_retry(&temp, target, &mut rename, &mut sleep)?;
         sync_dir(dir);
         Ok(())
@@ -107,6 +108,30 @@ fn write_and_sync(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file: File = OpenOptions::new().write(true).create_new(true).open(path)?;
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+/// Yeniden adlandırma hedefin izinlerini geçici dosyanınkiyle değiştirir:
+/// kullanıcının `chmod 600` ya da grup yazma izni verdiği bir dosya her
+/// kayıtta varsayılana (umask) dönmesin diye hedefin izinleri kopyalanır.
+fn keep_permissions(target: &Path, temp: &Path) {
+    #[cfg(unix)]
+    if let Ok(meta) = fs::metadata(target) {
+        let _ = fs::set_permissions(temp, meta.permissions());
+    }
+    #[cfg(not(unix))]
+    let _ = (target, temp);
+}
+
+/// Hedef bir sembolik bağsa bağın gösterdiği gerçek dosya; değilse (ya da
+/// bağ çözülemiyorsa) yolun kendisi. Yeniden adlandırma bağı düz bir dosyayla
+/// değiştirirdi (ör. dotfile yöneticisinin bağladığı ayar dosyası kopar).
+/// Kapsam denetimli yollarda kullanılmaz: orada yol zaten kanoniktir ve
+/// sonradan konan bir bağı izlemek kapsam dışına yazmak olurdu.
+pub fn follow_symlink(target: &Path) -> PathBuf {
+    match fs::symlink_metadata(target) {
+        Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf()),
+        _ => target.to_path_buf(),
+    }
 }
 
 fn rename_with_retry(
@@ -236,6 +261,36 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         assert_eq!(calls, 1);
         assert!(!target.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeps_the_targets_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("private.json");
+        fs::write(&target, b"old").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        write_file_atomic(&target, b"new").unwrap();
+        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o664)).unwrap();
+        write_file_atomic(&target, b"newer").unwrap();
+        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o664);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follow_symlink_resolves_links_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("dotfiles/recent.json");
+        fs::create_dir_all(real.parent().unwrap()).unwrap();
+        fs::write(&real, b"old").unwrap();
+        let link = tmp.path().join("recent.json");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert_eq!(follow_symlink(&link), fs::canonicalize(&real).unwrap());
+        assert_eq!(follow_symlink(&real), real);
+        let missing = tmp.path().join("nope.json");
+        assert_eq!(follow_symlink(&missing), missing);
     }
 
     #[test]
