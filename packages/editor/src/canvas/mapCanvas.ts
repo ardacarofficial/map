@@ -177,6 +177,8 @@ export class MapCanvas {
   #frameOnLevelView = false;
   /** Level id the current scene was loaded for. */
   #loadedLevelId: string | null = null;
+  /** Textures to destroy after the next render. */
+  #retired: Texture[] = [];
   /** Camera right after the world view framed itself (re-framed once loads finish if unchanged). */
   #worldFramedCamera: Camera | null = null;
   #worldFramedLoads = -1;
@@ -255,6 +257,7 @@ export class MapCanvas {
       release: (id) => this.#input.release(id),
       levelMoved: (event) => this.#emit(this.#movedListeners, event, "level moved"),
       openLevel: (levelId) => void this.#emit(this.#openListeners, levelId, "open level"),
+      retire: (texture) => this.#retire(texture),
       requestRender: () => this.#requestRender(),
     });
     this.#input = new PointerInput(canvas, {
@@ -578,6 +581,7 @@ export class MapCanvas {
     this.#worldView.destroy();
     const s = useEditorStore.getState();
     if (s.hoverCell) s.setHoverCell(null);
+    this.#flushRetired();
     if (this.#initialized) this.#teardownApp();
     else this.#removeCanvas(); // init still running (it tears the app down when it resolves) or failed
   }
@@ -603,10 +607,13 @@ export class MapCanvas {
     this.#thumbTimer = null;
     this.#thumb?.destroy();
     this.#thumb = null;
-    this.#thumbTexture?.destroy(true);
+    this.#lodSprite.texture = Texture.EMPTY;
+    if (this.#thumbTexture) {
+      this.#worldView.unbind(this.#thumbTexture);
+      this.#retire(this.#thumbTexture);
+    }
     this.#thumbTexture = null;
     this.#thumbSizeVersion = -1;
-    this.#lodSprite.texture = Texture.EMPTY;
     this.#lodSprite.removeFromParent();
     this.#lod = false;
     this.#gridOverlays?.destroy();
@@ -751,6 +758,7 @@ export class MapCanvas {
     this.#entities.draw();
     this.#minimap?.draw();
     this.#app.renderer.render(this.#app.stage);
+    this.#flushRetired();
     Ticker.system.update(time);
     this.#reportZoom();
 
@@ -771,6 +779,7 @@ export class MapCanvas {
     this.#worldView.draw();
     this.#input.updateCursor();
     this.#app.renderer.render(this.#app.stage);
+    this.#flushRetired();
     Ticker.system.update(time);
     this.#reportZoom();
     if (animating || more) this.#requestRender();
@@ -821,7 +830,10 @@ export class MapCanvas {
         source: new CanvasSource({ resource: thumb.canvas, scaleMode: "linear", autoGenerateMipmaps: true, antialias: false }),
       });
       this.#lodSprite.texture = this.#thumbTexture;
-      old?.destroy(true);
+      if (old) {
+        this.#worldView.unbind(old);
+        this.#retire(old);
+      }
     } else {
       this.#thumbTexture.source.update();
     }
@@ -902,6 +914,22 @@ export class MapCanvas {
         console.error("[canvas] navigate listener failed", error);
       }
     }
+  }
+
+  /**
+   * Destroys `texture` after the next render: the last frame's batches may
+   * still reference it (Pixi warns when a bound source is destroyed).
+   */
+  #retire(texture: Texture): void {
+    this.#retired.push(texture);
+    if (this.#destroyed || !this.#initialized) this.#flushRetired();
+    else this.#requestRender();
+  }
+
+  #flushRetired(): void {
+    const list = this.#retired;
+    this.#retired = [];
+    for (const t of list) t.destroy(true);
   }
 
   #reportZoom(): void {

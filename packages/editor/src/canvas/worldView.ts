@@ -98,6 +98,8 @@ export interface WorldViewHost {
   /** Emits the move; returns true when someone listens (the move is then shown until the list catches up). */
   levelMoved(event: LevelMovedEvent): boolean;
   openLevel(levelId: string): void;
+  /** Destroys a texture after the next render (a batch may still reference it). */
+  retire(texture: Texture): void;
   requestRender(): void;
 }
 
@@ -143,14 +145,6 @@ interface LabelItem {
   key: string;
 }
 
-function disposeThumb(t: LevelThumb): void {
-  t.thumb?.destroy();
-  t.texture?.destroy(true);
-  t.texture = null;
-  t.canvas.width = 0;
-  t.canvas.height = 0;
-}
-
 export class WorldView {
   /** Screen-space root (the camera transform is applied to the sprite layer inside). */
   readonly root = new Container();
@@ -161,7 +155,7 @@ export class WorldView {
   readonly #spritePool = new Map<string, Sprite>();
   readonly #labelPool = new Map<string, LabelItem>();
   readonly #host: WorldViewHost;
-  readonly #cache = new ThumbCache<LevelThumb>(disposeThumb);
+  readonly #cache = new ThumbCache<LevelThumb>((t) => this.#disposeThumb(t));
   /** Last known map px size per level (placeholders keep their size while reloading). */
   readonly #sizes = new Map<string, { width: number; height: number }>();
   /** Positions dropped but not yet reported back by the level list. */
@@ -491,11 +485,31 @@ export class WorldView {
     );
   }
 
+  #disposeThumb(t: LevelThumb): void {
+    t.thumb?.destroy();
+    this.#destroyTexture(t.texture);
+    t.texture = null;
+    t.canvas.width = 0;
+    t.canvas.height = 0;
+  }
+
+  /** Unbinds a texture from the sprites and retires it (destroyed after the next render). */
+  #destroyTexture(texture: Texture | null): void {
+    if (!texture) return;
+    this.unbind(texture);
+    this.#host.retire(texture);
+  }
+
+  /** Detaches `texture` from every level sprite (it is about to be destroyed). */
+  unbind(texture: Texture): void {
+    for (const sprite of this.#spritePool.values()) if (sprite.texture === texture) sprite.texture = Texture.EMPTY;
+  }
+
   /** Uploads a level's picture to its texture (created on first use / resize). */
   #upload(t: LevelThumb): void {
     const sizeVersion = t.thumb?.sizeVersion ?? 0;
     if (!t.texture || t.sizeVersion !== sizeVersion) {
-      t.texture?.destroy(true);
+      this.#destroyTexture(t.texture);
       t.texture = new Texture({
         source: new CanvasSource({ resource: t.canvas, scaleMode: "linear", autoGenerateMipmaps: true, antialias: false }),
       });
@@ -662,6 +676,8 @@ export class WorldView {
     for (const q of placed) {
       const id = q.box.id;
       const failed = id !== activeId && this.#cache.status(id) === "failed";
+      // Plain frames go under the pictures (an overlapping level covers them);
+      // the active / dragged / hovered highlight stays on top.
       if (id === activeId || (pressId === id && this.#press?.dragging)) {
         frame(over, q.x0 - 2 * k, q.y0 - 2 * k, q.x1 + 2 * k, q.y1 + 2 * k, 2 * k, px);
         over.fill(colors.accent);
@@ -669,8 +685,8 @@ export class WorldView {
         frame(over, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
         over.fill(colors.danger);
       } else {
-        frame(over, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
-        over.fill({ color: CANVAS_COLORS.mapBorder, alpha: 1 });
+        frame(under, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
+        under.fill({ color: colors.mapBorder, alpha: 1 });
       }
       if (id === this.#hover && id !== activeId) {
         frame(over, q.x0 - 2 * k, q.y0 - 2 * k, q.x1 + 2 * k, q.y1 + 2 * k, k, px);
@@ -685,7 +701,7 @@ export class WorldView {
       if (!ends) continue;
       const a = { x: (ox + ends.from.x * z) * px, y: (oy + ends.from.y * z) * px };
       const b = { x: (ox + ends.to.x * z) * px, y: (oy + ends.to.y * z) * px };
-      const head = arrowHead(a, b, 9 * k * px, 4.5 * k * px);
+      const head = arrowHead(a, b, 10 * k * px, 5 * k * px);
       if (!head) continue;
       const [, l, r] = head;
       const base = { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };

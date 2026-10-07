@@ -40,15 +40,20 @@ function Root() {
   );
 }
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
 function timeout(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Resolves once the canvas has mounted and drawn (or after `limitMs`). */
+/**
+ * The next frame, or 50 ms: a hidden window (the desktop starts hidden until
+ * `appReady`) gets no animation frames in WebKitGTK / WebView2, so waiting
+ * for a real frame there would only end at Rust's 3 s fallback.
+ */
+function nextFrame(): Promise<void> {
+  return Promise.race([new Promise<void>((resolve) => requestAnimationFrame(() => resolve())), timeout(50)]);
+}
+
+/** Resolves once the canvas has mounted (or after `limitMs`), plus a frame for its first draw. */
 async function canvasDrawn(limitMs: number): Promise<void> {
   const start = performance.now();
   while (!getCanvasHandle() && performance.now() - start < limitMs) await nextFrame();

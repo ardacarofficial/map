@@ -9,7 +9,11 @@ import { getPlatform } from "./index";
 let installed = false;
 
 function describe(value: unknown): string {
-  if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`;
+  if (value instanceof Error) {
+    // WebKit's `stack` has no message line; V8's starts with it.
+    const head = `${value.name}: ${value.message}`;
+    return value.stack ? (value.stack.startsWith(head) ? value.stack : `${head}\n${value.stack}`) : head;
+  }
   if (typeof value === "string") return value;
   try {
     return JSON.stringify(value);
