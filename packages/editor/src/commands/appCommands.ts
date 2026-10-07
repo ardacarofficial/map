@@ -33,6 +33,7 @@ import { addCollisionLayer } from "./terrainActions";
 import { addEntityLayer, deleteEntity } from "./entityActions";
 import { stampRegion } from "./stampActions";
 import { askRemoveLevel, duplicateLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
+import { isWorldView, setCanvasView } from "./worldActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
@@ -40,12 +41,13 @@ const editor = () => useEditorStore.getState();
 const noPick = () => hasProject() && useLevelUi.getState().pick === null;
 const ui = () => useUiStore.getState();
 const ctx = (): EditContext => contextOf(editor());
-const when = (predicate: (c: EditContext) => boolean) => () => predicate(ctx());
+/** Map edits (tools, clipboard, selection) are off while the world map (v1.2) is shown. */
+const when = (predicate: (c: EditContext) => boolean) => () => !isWorldView() && predicate(ctx());
 const tool = (id: ToolId): Command => ({
   id: `tool.${id}`,
   title: `commands.tool.${id}`,
   category: "tool",
-  enabled: hasProject,
+  enabled: () => hasProject() && !isWorldView(),
   run: () => editor().setTool(id),
 });
 const markDirty = () => {
@@ -147,7 +149,7 @@ const COMMANDS: Command[] = [
     id: "edit.undo",
     title: "commands.edit.undo",
     category: "edit",
-    enabled: when(canUndo),
+    enabled: () => canUndo(ctx()),
     run: () => {
       if (editor().project?.store.undo()) markDirty();
     },
@@ -156,7 +158,7 @@ const COMMANDS: Command[] = [
     id: "edit.redo",
     title: "commands.edit.redo",
     category: "edit",
-    enabled: when(canRedo),
+    enabled: () => canRedo(ctx()),
     run: () => {
       if (editor().project?.store.redo()) markDirty();
     },
@@ -189,10 +191,11 @@ const COMMANDS: Command[] = [
     id: "edit.deselect",
     title: "commands.edit.deselect",
     category: "edit",
-    enabled: when(canDeselect),
-    // Esc peels one thing at a time: the selected entity, the marquee, then the stamp.
+    enabled: () => (hasProject() && isWorldView()) || canDeselect(ctx()),
+    // Esc peels one thing at a time: the world map (back to the level), the selected entity, the marquee, then the stamp.
     run: () => {
-      if (editor().selectedEntityId) editor().setSelectedEntity(null);
+      if (isWorldView()) setCanvasView("level");
+      else if (editor().selectedEntityId) editor().setSelectedEntity(null);
       else if (editor().region) editor().setRegion(null);
       else editor().setStamp(null);
     },
@@ -229,7 +232,7 @@ const COMMANDS: Command[] = [
     id: "stamp.saveSelection",
     title: "commands.stamp.saveSelection",
     category: "edit",
-    enabled: () => hasProject() && stampRegion() !== null,
+    enabled: () => hasProject() && !isWorldView() && stampRegion() !== null,
     run: () => ui().setSaveStampOpen(true),
   },
   {

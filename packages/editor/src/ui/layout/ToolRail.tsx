@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { runCommand } from "../../commands/registry";
+import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import type { CommandId } from "../../shortcuts/shortcuts";
 import { useEditorStore, type ToolId } from "../../state/editorStore";
@@ -24,9 +25,12 @@ export function ToolRail() {
   const tool = useEditorStore((s) => s.tool);
   const grid = useEditorStore((s) => s.gridVisible);
   const collision = useEditorStore((s) => s.collisionOverlay);
+  // v1.2: the world map only pans (drag empty space) and moves levels; map tools are off.
+  const world = useWorldView((s) => s.view === "world");
   return (
     <nav
       aria-label={t("status.tool")}
+      title={world ? t("world.toolsDisabled") : undefined}
       className="flex w-rail shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2"
     >
       {TOOLS.map(({ id, icon, command }, index) => (
@@ -35,8 +39,9 @@ export function ToolRail() {
           <Tooltip label={t(`tools.${id}`)} command={command} side="right">
           <IconButton
             aria-label={t(`tools.${id}`)}
-            aria-pressed={tool === id}
-            active={tool === id}
+            aria-pressed={!world && tool === id}
+            active={!world && tool === id}
+            disabled={world}
             onClick={() => runCommand(command)}
           >
             <Icon name={icon} size={17} />
@@ -49,7 +54,8 @@ export function ToolRail() {
           <IconButton
             aria-label={t("commands.view.toggleGrid")}
             aria-pressed={grid}
-            active={grid}
+            active={grid && !world}
+            disabled={world}
             onClick={() => runCommand("view.toggleGrid")}
           >
             <Icon name="grid" size={17} />
@@ -59,7 +65,8 @@ export function ToolRail() {
           <IconButton
             aria-label={t("commands.view.toggleCollision")}
             aria-pressed={collision}
-            active={collision}
+            active={collision && !world}
+            disabled={world}
             onClick={() => runCommand("view.toggleCollision")}
           >
             <Icon name="shield" size={17} />

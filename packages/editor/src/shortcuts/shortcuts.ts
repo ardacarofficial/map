@@ -42,6 +42,7 @@ export type CommandId =
   | "view.zoomReset"
   | "view.frameMap"
   | "view.pan"
+  | "view.world"
   | "palette.open"
   | "file.new"
   | "file.open"
@@ -90,6 +91,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "view.frameMap", keys: ["Shift+Digit1"] },
   /** Held while dragging to pan (handled by the canvas). */
   { command: "view.pan", keys: ["Space"] },
+  /** v1.2: level view ↔ world map (Esc also returns). */
+  { command: "view.world", keys: ["W"] },
   { command: "palette.open", keys: ["Ctrl+K", "Ctrl+Shift+P"] },
   { command: "file.new", keys: ["Ctrl+N"] },
   { command: "file.open", keys: ["Ctrl+O"] },

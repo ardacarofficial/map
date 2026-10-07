@@ -3,6 +3,7 @@ import type { ProjectLevel } from "@smap/core";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { askRemoveLevel, duplicateLevel, moveLevel, openNewLevelDialog, renameLevel, useLevelUi } from "../../commands/levelActions";
+import { openLevelFromWorld, useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { openLevel } from "../../io/session";
@@ -56,6 +57,8 @@ export function LevelsPanel() {
   const dirtyIds = useProjectLibrary((s) => s.dirtyLevelIds);
   const activeId = useEditorStore((s) => s.project?.levelId ?? null);
   const picking = useLevelUi((s) => s.pick !== null);
+  // v1.2: on the world map the list is the only panel (taller), and a click opens the level in the level view.
+  const world = useWorldView((s) => s.view === "world");
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -105,7 +108,7 @@ export function LevelsPanel() {
     setDrag(null);
     if (!current) return;
     if (!current.active) {
-      void openLevel(level.id);
+      void (world ? openLevelFromWorld(level.id) : openLevel(level.id));
       return;
     }
     const target = dropIndex(current.from, current.dy, ROW, count);
@@ -122,7 +125,7 @@ export function LevelsPanel() {
   return (
     <PanelSection
       title={t("levels.title")}
-      className="shrink-0"
+      className={world ? "min-h-0 shrink" : "shrink-0"}
       heading={
         <button
           type="button"
@@ -148,7 +151,7 @@ export function LevelsPanel() {
         <ul
           role="listbox"
           aria-label={t("levels.title")}
-          className="relative flex max-h-[168px] flex-col overflow-y-auto px-1.5 pb-1.5"
+          className={`relative flex flex-col overflow-y-auto px-1.5 pb-1.5 ${world ? "min-h-0" : "max-h-[168px]"}`}
         >
           {levels.map((level, index) => {
             const isActive = level.id === activeId;

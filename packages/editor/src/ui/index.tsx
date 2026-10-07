@@ -19,6 +19,7 @@ import { EntityTypesDialog } from "./entities/EntityTypesDialog";
 import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
 import { installLevelActions } from "../commands/levelActions";
+import { installWorldActions } from "../commands/worldActions";
 import { NewLevelDialog, RemoveLevelDialog } from "./levels/LevelDialogs";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -34,11 +35,13 @@ export function App() {
     const uninstallSession = installSession();
     const uninstallLayerSync = installLayerSync();
     const uninstallLevelActions = installLevelActions();
+    const uninstallWorldActions = installWorldActions();
     return () => {
       uninstallShortcuts();
       uninstallSession();
       uninstallLayerSync();
       uninstallLevelActions();
+      uninstallWorldActions();
     };
   }, []);
 

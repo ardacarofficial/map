@@ -8,6 +8,7 @@ import { Tooltip } from "../primitives/Tooltip";
 import { useUiStore } from "../uiStore";
 import { useHistoryState } from "../hooks";
 import { ExportIcon } from "../../export/ExportDialog";
+import { ViewToggle } from "./ViewToggle";
 
 export function Toolbar() {
   const name = useEditorStore((s) => s.project?.name ?? "");
@@ -48,6 +49,8 @@ export function Toolbar() {
       </button>
 
       <div className="flex items-center justify-end gap-0.5">
+        <ViewToggle />
+        <div aria-hidden className="mx-1.5 h-4 w-px bg-line" />
         <Tooltip label={t("toolbar.undo")} command="edit.undo">
           <IconButton aria-label={t("toolbar.undo")} disabled={!canUndo} onClick={() => runCommand("edit.undo")}>
             <Icon name="undo" />

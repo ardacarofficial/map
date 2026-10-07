@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 
 import { formatNumber, getLocale, t } from "../../i18n";
+import { useProjectLibrary } from "../../io/projectLibrary";
 import { useSaveStatus } from "../../io/saveStatus";
+import { useWorldView } from "../../commands/worldActions";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 
@@ -44,8 +46,27 @@ export function StatusBar() {
   const hover = useEditorStore((s) => s.hoverCell);
   const zoom = useEditorStore((s) => s.zoom);
   const tool = useEditorStore((s) => s.tool);
+  const world = useWorldView((s) => s.view === "world");
+  const levelCount = useProjectLibrary((s) => s.levels.length);
   useStructureVersion(project?.store);
   const map = project?.store.document.map;
+
+  if (world) {
+    return (
+      <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
+        <div data-status-world="" className="flex items-center px-2.5 whitespace-pre">
+          <span className="text-accent">{t("world.status")}</span>
+          <span className="text-faint">{" · "}</span>
+          <span className="text-muted tabular">{t("world.levelCount", { count: levelCount })}</span>
+        </div>
+        <Item label={t("status.zoom")}>
+          <span className="inline-block min-w-[5ch]">{formatNumber(Math.round(zoom * 100))}%</span>
+        </Item>
+        <div className="flex items-center gap-1.5 px-2.5 text-faint">{t("world.hintBack")}</div>
+        <SaveState />
+      </footer>
+    );
+  }
 
   return (
     <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">

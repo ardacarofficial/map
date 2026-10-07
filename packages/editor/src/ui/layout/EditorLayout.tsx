@@ -5,6 +5,8 @@ import { LibraryPanel } from "../panels/LibraryPanel";
 import { LevelsPanel } from "../levels/LevelsPanel";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
 import { useUiStore } from "../uiStore";
+import { useWorldView } from "../../commands/worldActions";
+import { WorldHint } from "../levels/WorldHint";
 import { StatusBar } from "./StatusBar";
 import { ToolRail } from "./ToolRail";
 import { Toolbar } from "./Toolbar";
@@ -16,6 +18,8 @@ import { Toolbar } from "./Toolbar";
  */
 export function EditorLayout() {
   const hidden = useUiStore((s) => s.panelsHidden);
+  // v1.2 world map: only the level list (plus a short hint); the map panels stay mounted but hidden.
+  const world = useWorldView((s) => s.view === "world");
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto]">
       <Toolbar />
@@ -31,9 +35,12 @@ export function EditorLayout() {
           className={`w-sidebar shrink-0 flex-col border-l border-line bg-panel ${hidden ? "hidden" : "flex"}`}
         >
           <LevelsPanel />
-          <LayersPanel />
-          <LibraryPanel />
-          <PropertiesPanel />
+          {world && <WorldHint />}
+          <div className={world ? "hidden" : "contents"}>
+            <LayersPanel />
+            <LibraryPanel />
+            <PropertiesPanel />
+          </div>
         </aside>
       </div>
       <StatusBar />

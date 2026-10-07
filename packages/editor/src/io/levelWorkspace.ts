@@ -331,11 +331,31 @@ export class LevelWorkspace {
 
   #insert(name: string, store: MapStore, index: number, diskFiles: readonly string[]): ProjectLevel {
     const path = this.#freePath(name, diskFiles);
-    const project = addLevel(this.#data(), { name, path }, index);
+    const world = this.#freeWorldSpot(store.document);
+    const project = addLevel(this.#data(), { name, path, world }, index);
     this.#apply(project);
     const level = project.levels.find((l) => l.path === path)!;
     this.#entries.set(level.id, { id: level.id, store, dirty: true, knownText: null });
     return level;
+  }
+
+  /**
+   * v1.2: where a new level appears on the world map: right of the levels
+   * (by their known size; levels only on disk count as big as the new one),
+   * level with the active one, on the new level's tile grid. Not an overlap
+   * check (CLAUDE.md v1.2), only a sensible start so levels do not pile up.
+   */
+  #freeWorldSpot(doc: MapDocument): WorldPoint {
+    const tile = doc.map.tileWidth;
+    const width = (id: string) => {
+      const map = this.#entries.get(id)?.store.document.map;
+      return map ? map.width * map.tileWidth : doc.map.width * tile;
+    };
+    let right = -Infinity;
+    for (const level of this.#levels) right = Math.max(right, level.world.x + width(level.id));
+    if (!Number.isFinite(right)) return { x: 0, y: 0 };
+    const gap = 2 * tile;
+    return { x: Math.ceil((right + gap) / tile) * tile, y: Math.round(this.activeLevel.world.y / tile) * tile };
   }
 
   /** `levels/<stem>.json`, unique (case-insensitively) among levels, removed files and `diskFiles` (names in `levels/`). */
