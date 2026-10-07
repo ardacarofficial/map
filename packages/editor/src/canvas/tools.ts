@@ -53,6 +53,19 @@ export function isEditable(layer: LayerInfo | undefined | null): layer is LayerI
   return !!layer && layer.visible && !layer.locked && !layer.grid;
 }
 
+/** True when grid tools (values, not tiles) may write to the layer. */
+export function isGridEditable(layer: LayerInfo | undefined | null): layer is LayerInfo {
+  return !!layer && layer.visible && !layer.locked && layer.grid;
+}
+
+/**
+ * True when the paint tools (brush, eraser, fill, rectangle) may write to the
+ * layer: tiles on a tile layer, values on a grid layer.
+ */
+export function isPaintable(layer: LayerInfo | undefined | null): layer is LayerInfo {
+  return isEditable(layer) || isGridEditable(layer);
+}
+
 /**
  * Layer a single-cell pick reads from: the active layer when it is a visible
  * tile layer with a tile at (`x`, `y`), otherwise the top-most visible tile
@@ -254,7 +267,7 @@ export interface CursorInput {
   readonly hasMap: boolean;
   /** Pointer over a map cell. */
   readonly overMap: boolean;
-  /** Active layer can be edited (visible, unlocked, tile layer). */
+  /** Active layer can be painted with the current tool (see {@link isPaintable}). */
   readonly editable: boolean;
 }
 

@@ -24,7 +24,22 @@ export const CANVAS_COLORS = {
   regionFillAlpha: 0.1,
   /** Fill-tool hover highlight. */
   fillPreviewAlpha: 0.35,
+  /** Brush / rectangle footprint on a grid layer (accent). */
+  gridBrushAlpha: 0.35,
+  /** Painted cells of the active terrain layer (accent). */
+  terrainTintAlpha: 0.15,
+  /** Solid cells of the collision overlay — token `--color-collision-solid`. */
+  collisionSolid: 0xff5a5a,
+  collisionSolidAlpha: 0.3,
+  /** Outline of solid areas (same colour). */
+  collisionLineAlpha: 0.9,
+  /** Cells a collision layer forces passable — token `--color-collision-passable`. */
+  collisionPassable: 0x3ddc84,
+  collisionPassableAlpha: 0.45,
 };
+
+/** The canvas colour set (fallbacks merged with theme tokens). */
+export type CanvasColors = typeof CANVAS_COLORS;
 
 function parseHex(value: string): number | null {
   const m = /^#([0-9a-f]{6})$/i.exec(value.trim());
@@ -32,7 +47,7 @@ function parseHex(value: string): number | null {
 }
 
 /** Applies theme tokens (if the stylesheet exposes them as CSS variables) over the fallbacks. */
-export function readThemeColors(el: Element): typeof CANVAS_COLORS {
+export function readThemeColors(el: Element): CanvasColors {
   const style = getComputedStyle(el);
   const token = (name: string, fallback: number) => parseHex(style.getPropertyValue(name)) ?? fallback;
   return {
@@ -40,5 +55,7 @@ export function readThemeColors(el: Element): typeof CANVAS_COLORS {
     outside: token("--color-canvas", CANVAS_COLORS.outside),
     mapBorder: token("--color-line", CANVAS_COLORS.mapBorder),
     accent: token("--color-accent", CANVAS_COLORS.accent),
+    collisionSolid: token("--color-collision-solid", CANVAS_COLORS.collisionSolid),
+    collisionPassable: token("--color-collision-passable", CANVAS_COLORS.collisionPassable),
   };
 }

@@ -141,6 +141,7 @@ export const en: Messages = {
     "file.openBackup": "Open backup…",
     "tool.brush": "Pencil",
     "tool.eraser": "Eraser",
+    "view.toggleCollision": "Show/hide collision",
     "view.toggleGrid": "Toggle grid",
     "view.togglePanels": "Hide/show panels",
     "view.zoomIn": "Zoom in",

@@ -33,6 +33,12 @@ const TEXT_COMMANDS = new Set<CommandId>([
   "edit.delete",
 ]);
 
+/**
+ * When Ctrl+V went down. Paste events without it are ignored: on Linux a
+ * middle click (our pan button) pastes the primary selection.
+ */
+let pasteKeyAt = -Infinity;
+
 /** Modal state when the key went down, before any dialog reacted to it. */
 let modalAtKeyDown = false;
 
@@ -66,7 +72,10 @@ function onKeyDown(event: KeyboardEvent): void {
   if (typing && (!withCtrl || TEXT_COMMANDS.has(id))) return;
   if (id === "view.togglePanels" && !isCanvasFocused()) return;
   const modal = modalOpen() || modalAtKeyDown;
-  if (id === "edit.paste" && !modal) return; // → onPaste
+  if (id === "edit.paste" && !modal) {
+    pasteKeyAt = performance.now();
+    return; // → onPaste
+  }
   // Nothing to copy/undo here: leave the key to the browser (e.g. copying toast text).
   if (TEXT_COMMANDS.has(id) && !isEnabled(command)) return;
 
@@ -84,6 +93,8 @@ function onKeyDownCapture(): void {
 
 function onPaste(event: ClipboardEvent): void {
   if (event.defaultPrevented || isTypingTarget(event.target) || modalOpen()) return;
+  if (performance.now() - pasteKeyAt > 1000) return;
+  pasteKeyAt = -Infinity;
   const command = getCommand("edit.paste");
   if (!command || !isEnabled(command) || !useEditorStore.getState().project) return;
   event.preventDefault();

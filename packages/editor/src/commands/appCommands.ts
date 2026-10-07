@@ -169,6 +169,13 @@ const COMMANDS: Command[] = [
   tool("eyedropper"),
 
   // ---- View
+  {
+    id: "view.toggleCollision",
+    title: "commands.view.toggleCollision",
+    category: "view",
+    enabled: hasProject,
+    run: () => editor().toggleCollisionOverlay(),
+  },
   { id: "view.toggleGrid", title: "commands.view.toggleGrid", category: "view", enabled: hasProject, run: () => editor().toggleGrid() },
   { id: "view.togglePanels", title: "commands.view.togglePanels", category: "view", enabled: hasProject, run: () => ui().togglePanels() },
   { id: "view.zoomIn", title: "commands.view.zoomIn", category: "view", enabled: hasProject, run: canvas((h) => h.zoomIn()) },

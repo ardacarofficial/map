@@ -554,9 +554,20 @@ export function installSession(): () => void {
   };
   window.addEventListener("beforeunload", onBeforeUnload);
 
+  const onFocus = () => void checkDiskForChanges();
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") void checkDiskForChanges();
+  };
+  window.addEventListener("focus", onFocus);
+  document.addEventListener("visibilitychange", onVisibility);
+
   return () => {
     unsubscribeStore?.();
     unsubscribeEditor();
+    scheduler.dispose();
+    if (autosave === scheduler) autosave = null;
     window.removeEventListener("beforeunload", onBeforeUnload);
+    window.removeEventListener("focus", onFocus);
+    document.removeEventListener("visibilitychange", onVisibility);
   };
 }

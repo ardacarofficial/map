@@ -144,6 +144,7 @@ export const tr = {
     "file.openBackup": "Yedekten aç…",
     "tool.brush": "Kalem",
     "tool.eraser": "Silgi",
+    "view.toggleCollision": "Collision'ı göster/gizle",
     "view.toggleGrid": "Izgarayı aç/kapa",
     "view.togglePanels": "Panelleri gizle/göster",
     "view.zoomIn": "Yakınlaştır",
