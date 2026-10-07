@@ -2,6 +2,8 @@ import { CanvasHost } from "../canvas/CanvasHost";
 import { LayersPanel } from "../panels/LayersPanel";
 import { PropertiesPanel } from "../panels/PropertiesPanel";
 import { LibraryPanel } from "../panels/LibraryPanel";
+import { LevelsPanel } from "../levels/LevelsPanel";
+import { PointPickOverlay } from "../levels/PointPickOverlay";
 import { useUiStore } from "../uiStore";
 import { StatusBar } from "./StatusBar";
 import { ToolRail } from "./ToolRail";
@@ -23,10 +25,12 @@ export function EditorLayout() {
         </div>
         <main className="relative min-w-0 flex-1">
           <CanvasHost />
+          <PointPickOverlay />
         </main>
         <aside
           className={`w-sidebar shrink-0 flex-col border-l border-line bg-panel ${hidden ? "hidden" : "flex"}`}
         >
+          <LevelsPanel />
           <LayersPanel />
           <LibraryPanel />
           <PropertiesPanel />

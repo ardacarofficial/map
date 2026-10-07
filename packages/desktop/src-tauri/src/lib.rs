@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use smap_host::settings::SettingsFile;
 use smap_host::{find_open_arg, percent_decode, ErrorKind, FileChange, Host, HostError, OpenedProject};
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -82,6 +83,39 @@ async fn remove_file(host: State<'_, Host>, path: String) -> Result<(), HostErro
 #[tauri::command]
 async fn exists(host: State<'_, Host>, path: String) -> Result<bool, HostError> {
     host.exists(&path)
+}
+
+#[tauri::command]
+async fn dir_has_entries(host: State<'_, Host>, path: String) -> Result<bool, HostError> {
+    host.dir_has_entries(&path)
+}
+
+// ---- ayar dosyası ---------------------------------------------------------
+// `settings.json` uygulama ayar klasöründe; yol webview'den gelmez.
+
+fn settings_error(settings: &SettingsFile, e: std::io::Error) -> HostError {
+    let kind = if e.kind() == std::io::ErrorKind::NotFound { ErrorKind::NotFound } else { ErrorKind::Io };
+    HostError { kind, path: settings.path().to_string_lossy().into_owned(), message: e.to_string() }
+}
+
+#[tauri::command]
+async fn settings_read(settings: State<'_, SettingsFile>) -> Result<Option<String>, HostError> {
+    settings.read().map_err(|e| settings_error(&settings, e))
+}
+
+#[tauri::command]
+async fn settings_write(settings: State<'_, SettingsFile>, text: String) -> Result<(), HostError> {
+    settings.write(&text).map_err(|e| settings_error(&settings, e))
+}
+
+#[tauri::command]
+fn settings_path(settings: State<'_, SettingsFile>) -> String {
+    settings.path().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+fn window_set_title(window: WebviewWindow, title: String) {
+    let _ = window.set_title(&title);
 }
 
 // ---- diyaloglar -------------------------------------------------------------
@@ -287,7 +321,9 @@ pub fn run() {
             install_panic_hook();
             log::info!("starting v{}", app.package_info().version);
 
-            let recent_file = app.path().app_config_dir().map(|d| d.join("recent.json")).unwrap_or_else(|_| PathBuf::from("recent.json"));
+            let config_dir = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let recent_file = config_dir.join("recent.json");
+            app.manage(SettingsFile::new(config_dir.join("settings.json")));
             let emitter = handle.clone();
             let host = Host::new(
                 recent_file,
@@ -324,6 +360,11 @@ pub fn run() {
             create_dir_all,
             remove_file,
             exists,
+            dir_has_entries,
+            settings_read,
+            settings_write,
+            settings_path,
+            window_set_title,
             dialog_open_project,
             dialog_pick_folder,
             dialog_pick_files,

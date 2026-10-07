@@ -6,7 +6,7 @@
  * yeniden adlandırma → kilitliyse tekrar dene.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { FileNotFoundError, type ProjectFileSystem } from "@smap/editor/src/io/fs";
+import { FileNotFoundError, type ProjectFileSystem } from "@smap/editor";
 
 /** Rust `HostError`'ın webview'e gelen biçimi. */
 export interface HostErrorPayload {
@@ -63,6 +63,15 @@ export function toProjectPath(root: string, absolute: string): string | null {
 async function call<T>(cmd: string, path: string, args: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(cmd, args);
+  } catch (error) {
+    throw toFsError(error, path);
+  }
+}
+
+/** Writes `bytes` to an absolute, already permitted path (save dialog result) with the safe-save command. */
+export async function writeFileAbsolute(path: string, bytes: Uint8Array): Promise<void> {
+  try {
+    await invoke<void>("write_file_atomic", bytes, { headers: { "x-smap-path": encodeURIComponent(path) } });
   } catch (error) {
     throw toFsError(error, path);
   }

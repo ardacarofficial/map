@@ -10,7 +10,17 @@ export function getCanvasHandle(): CanvasHandle | null {
   return current;
 }
 
+const listeners = new Set<(handle: CanvasHandle | null) => void>();
+
+/** Runs `cb` with the current canvas and again whenever it is mounted / unmounted. Returns an unsubscribe. */
+export function watchCanvasHandle(cb: (handle: CanvasHandle | null) => void): () => void {
+  listeners.add(cb);
+  cb(current);
+  return () => listeners.delete(cb);
+}
+
 /** @internal Set by `CanvasHost`. */
 export function setCanvasHandle(handle: CanvasHandle | null): void {
   current = handle;
+  for (const cb of [...listeners]) cb(handle);
 }

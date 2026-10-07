@@ -31,9 +31,12 @@ import { addLayer, removeLayer } from "./layerActions";
 import { addCollisionLayer } from "./terrainActions";
 import { addEntityLayer } from "./entityActions";
 import { stampRegion } from "./stampActions";
+import { askRemoveLevel, duplicateLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
+/** A project is open and no portal target point is being picked. */
+const noPick = () => hasProject() && useLevelUi.getState().pick === null;
 const ui = () => useUiStore.getState();
 const ctx = (): EditContext => contextOf(editor());
 const when = (predicate: (c: EditContext) => boolean) => () => predicate(ctx());
@@ -205,6 +208,25 @@ const COMMANDS: Command[] = [
     run: () => ui().setEntityTypesOpen(true),
   },
   { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => ui().setResizeOpen(true) },
+  // ---- Levels (v1.0)
+  { id: "level.new", title: "commands.level.new", category: "level", enabled: noPick, run: () => openNewLevelDialog() },
+  {
+    id: "level.duplicate",
+    title: "commands.level.duplicate",
+    category: "level",
+    enabled: noPick,
+    run: () => {
+      const id = editor().project?.levelId;
+      if (id) void duplicateLevel(id);
+    },
+  },
+  {
+    id: "level.remove",
+    title: "commands.level.remove",
+    category: "level",
+    enabled: noPick,
+    run: () => askRemoveLevel(editor().project?.levelId ?? null),
+  },
   // ---- Tools
   tool("brush"),
   tool("eraser"),

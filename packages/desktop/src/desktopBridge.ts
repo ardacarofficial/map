@@ -1,13 +1,6 @@
 /**
- * Editörün masaüstü köprüsü. Yalnız Tauri içinde yüklenmeli:
- *
- * ```ts
- * import { isTauri } from "<desktop>/src/isTauri";
- * if (isTauri()) {
- *   const desktop = await import("<desktop>/src/desktopBridge");
- *   ...
- * }
- * ```
+ * Tauri komutlarının ince TS sarmalayıcıları. Editör bunu tanımaz:
+ * `desktopPlatform.ts` bunlardan editörün `Platform` arayüzünü kurar.
  *
  * Dosya erişimi uygulamanın kendi kapsamlı Rust komutlarıyladır: webview
  * yalnız açık projenin klasörüne ve kullanıcının diyalogla / çift tıklamayla
@@ -162,13 +155,35 @@ export function log(level: LogLevel, message: string): void {
   void invoke("log_write", { level, message }).catch(() => undefined);
 }
 
-/** Yakalanmamış hataları log dosyasına da yazar. Bir kez çağrılır. */
-export function installErrorLogging(): void {
-  window.addEventListener("error", (e) => log("error", `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`));
-  window.addEventListener("unhandledrejection", (e) => {
-    const reason: unknown = e.reason;
-    log("error", `unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`);
-  });
+// ---- ayarlar, pencere --------------------------------------------------------
+
+/** `settings.json`'un metni (uygulama ayar klasöründe); yoksa `null`. */
+export function settingsRead(): Promise<string | null> {
+  return command("settings_read");
+}
+
+/** `settings.json`'u güvenli kayıtla yazar. */
+export function settingsWrite(text: string): Promise<void> {
+  return command("settings_write", { text });
+}
+
+/** `settings.json`'un mutlak yolu (ayar diyaloğunda gösterilir). */
+export function settingsPath(): Promise<string> {
+  return command("settings_path");
+}
+
+export function setWindowTitle(title: string): Promise<void> {
+  return command("window_set_title", { title });
+}
+
+/** Kapsamdaki bir yol var mı. */
+export function pathExists(path: string): Promise<boolean> {
+  return command("exists", { path }, path);
+}
+
+/** Klasörde gizli olmayan bir girdi var mı (yoksa ya da boşsa `false`). */
+export function dirHasEntries(path: string): Promise<boolean> {
+  return command("dir_has_entries", { path }, path);
 }
 
 /**

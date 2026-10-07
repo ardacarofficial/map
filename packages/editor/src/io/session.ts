@@ -30,7 +30,7 @@ import { AutosaveScheduler } from "./autosave";
 import { listBackups, writeBackup, type BackupEntry } from "./backups";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 import { useProjectLibrary } from "./projectLibrary";
-import { LevelWorkspace, type SavedLevel } from "./levelWorkspace";
+import { LevelWorkspace, paletteProblems, type SavedLevel } from "./levelWorkspace";
 import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
 import { hasPngSignature, inferTileSize, looksLikePng, planTileset, baseName } from "./tilesetImport";
@@ -508,6 +508,7 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
   });
   for (const path of loaded.brokenStamps) toast.warning(t("toast.stampUnreadable", { path }));
   for (const path of loaded.missingImages) toast.warning(t("toast.missingTilesetImage", { path }));
+  warnPalette(loaded.levels.find((l) => l.id === loaded.levelId)?.name ?? levelName(loaded.levelPath), loaded.document);
   return loaded.name;
 }
 
@@ -575,6 +576,15 @@ export async function openRecentProject(recent: RecentEntry): Promise<void> {
 
 // ------------------------------------------------------------------ levels (v1.0)
 
+/** Toasts the palette entries of a freshly read level that cannot be drawn (core `paletteWarnings`, translated). */
+function warnPalette(level: string, document: MapDocument): void {
+  const problems = paletteProblems(document);
+  if (problems.missingTilesets.length > 0) {
+    toast.warning(t("levels.paletteMissingTileset", { level, ids: problems.missingTilesets.join(", ") }));
+  }
+  if (problems.outOfRange > 0) toast.warning(t("levels.paletteOutOfRange", { level, count: problems.outOfRange }));
+}
+
 /** Level switches run one after another (a second click waits for the first file read). */
 let levelQueue: Promise<unknown> = Promise.resolve();
 
@@ -601,8 +611,10 @@ async function switchToLevel(levelId: string): Promise<boolean> {
   if (!level || project.store.inTransaction) return false;
   activeLayerMemory.set(ws.activeId, state.activeLayerId);
   let entry;
+  const fromDisk = !ws.entry(levelId);
   try {
     entry = await ws.activate(levelId, folder?.fs ?? null);
+    if (fromDisk) warnPalette(level.name, entry.store.document);
   } catch (error) {
     console.error(error);
     toast.error(t("levels.openFailed", { name: level.name, detail: describeError(error) }));

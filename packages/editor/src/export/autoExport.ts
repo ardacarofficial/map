@@ -4,8 +4,8 @@
  * (settings, folder permission, toasts) is in `exportActions.ts`.
  *
  * Saves can follow each other faster than an export finishes. Exports never
- * overlap: a save during an export queues exactly one more export, of the
- * newest state.
+ * overlap: a save during an export queues exactly one more export per level
+ * (v1.0: one save can write several levels), of the newest state.
  */
 import type { MapDocument } from "@smap/core";
 
@@ -42,7 +42,8 @@ export interface AutoExportDeps {
 export class AutoExporter {
   readonly #deps: AutoExportDeps;
   #running: Promise<void> | null = null;
-  #pending: SavedProject | null = null;
+  /** Queued exports by level name (insertion order kept). */
+  readonly #pending = new Map<string, SavedProject>();
 
   constructor(deps: AutoExportDeps) {
     this.#deps = deps;
@@ -51,9 +52,9 @@ export class AutoExporter {
   /** Call after a save finished. Resolves when this save's state has been exported (or skipped). */
   onSaved(project: SavedProject): Promise<void> {
     if (this.#running) {
-      // A later save wins; a manual save keeps its "manual" (toast) flag.
-      const manual = project.manual || (this.#pending?.manual ?? false);
-      this.#pending = { ...project, manual };
+      // A later save of the same level wins; a manual save keeps its "manual" (toast) flag.
+      const manual = project.manual || (this.#pending.get(project.levelName)?.manual ?? false);
+      this.#pending.set(project.levelName, { ...project, manual });
       return this.#running;
     }
     this.#running = this.#loop(project);
@@ -70,9 +71,10 @@ export class AutoExporter {
     try {
       while (next) {
         const project: SavedProject = next;
-        this.#pending = null;
         await this.#exportOnce(project);
-        next = this.#pending;
+        const [key, queued] = this.#pending.entries().next().value ?? [null, null];
+        if (key !== null) this.#pending.delete(key);
+        next = queued;
       }
     } finally {
       this.#running = null;

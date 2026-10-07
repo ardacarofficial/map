@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Explicit: the desktop shell builds this from its own Vite root (packages/desktop). */
+@source "./";
 @import "./theme/tokens.css";
 
 @layer base {

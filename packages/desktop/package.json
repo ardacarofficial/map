@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Tauri shell, v0.5",
   "scripts": {
+    "dev": "pnpm --filter @smap/editor exec vite --config ../desktop/vite.config.ts",
+    "build": "pnpm --filter @smap/editor exec vite build --config ../desktop/vite.config.ts",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",

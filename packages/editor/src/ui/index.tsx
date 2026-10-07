@@ -18,6 +18,8 @@ import { ExportDialog } from "../export/ExportDialog";
 import { EntityTypesDialog } from "./entities/EntityTypesDialog";
 import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
+import { installLevelActions } from "../commands/levelActions";
+import { NewLevelDialog, RemoveLevelDialog } from "./levels/LevelDialogs";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
 import { TooltipProvider } from "./primitives/Tooltip";
@@ -31,10 +33,12 @@ export function App() {
     const uninstallShortcuts = installGlobalShortcuts();
     const uninstallSession = installSession();
     const uninstallLayerSync = installLayerSync();
+    const uninstallLevelActions = installLevelActions();
     return () => {
       uninstallShortcuts();
       uninstallSession();
       uninstallLayerSync();
+      uninstallLevelActions();
     };
   }, []);
 
@@ -51,6 +55,8 @@ export function App() {
       <ExportDialog />
       <SaveStampDialog />
       <EntityTypesDialog />
+      <NewLevelDialog />
+      <RemoveLevelDialog />
       <Toaster />
     </TooltipProvider>
   );

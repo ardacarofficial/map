@@ -7,10 +7,11 @@
 import { exportBaseName, exportGameJson } from "@smap/core";
 
 import { getLocale, t } from "../i18n";
+import { getPlatform, type SaveFileFilter } from "../platform";
 import { DirectoryHandleFileSystem, ensureReadWrite, UnsupportedError } from "../io/browserFs";
 import { levelName, projectFiles } from "../io/projectIo";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { describeError, onProjectSaved } from "../io/session";
+import { describeError, getLevelWorkspace, getProjectFolder, onProjectSaved } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
 import { getTilesetImage } from "../state/tilesetImages";
 import { toast } from "../ui/toast/toastStore";
@@ -149,6 +150,19 @@ export function exportToTiled(): Promise<ExportFileSet | null> {
   return exportToFolder("tmj");
 }
 
+/**
+ * Hands an exported file to the user: a native save dialog on the desktop,
+ * a download in the browser. Resolves false when the user cancels.
+ */
+export async function deliverFile(blob: Blob, fileName: string, filter: SaveFileFilter): Promise<boolean> {
+  const platform = getPlatform();
+  if (!platform.saveFile) {
+    downloadBlob(blob, fileName);
+    return true;
+  }
+  return platform.saveFile(fileName, new Uint8Array(await blob.arrayBuffer()), filter);
+}
+
 /** Starts a browser download of `blob`. */
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
@@ -170,7 +184,7 @@ export async function exportPng(scale: PngScale): Promise<boolean> {
     try {
       const png = await renderMapPng(project.store.document, scale, (id) => getTilesetImage(id)?.bitmap);
       const fileName = `${exportBaseName(projectLevelName(project))}.png`;
-      downloadBlob(png.blob, fileName);
+      if (!(await deliverFile(png.blob, fileName, { name: "PNG", extensions: ["png"] }))) return false;
       await updateExportSettings(project.name, { target: "png", pngScale: scale });
       toast.success(t("export.toastPng", { file: fileName, width: png.width, height: png.height }));
       if (png.missing.length > 0) {
@@ -194,7 +208,7 @@ export async function exportJson(): Promise<boolean> {
   try {
     const fileName = `${exportBaseName(projectLevelName(project))}.json`;
     const text = exportGameJson(project.store.document);
-    downloadBlob(new Blob([text], { type: "application/json" }), fileName);
+    if (!(await deliverFile(new Blob([text], { type: "application/json" }), fileName, { name: "JSON", extensions: ["json"] }))) return false;
     await updateExportSettings(project.name, { target: "json" });
     toast.success(t("export.toastJson", { file: fileName }));
     return true;
@@ -205,17 +219,47 @@ export async function exportJson(): Promise<boolean> {
   }
 }
 
-/** Files of the whole project as a save would write them (project.smap, levels/, tilesets/, stamps/). */
+/**
+ * Files of the whole project as a save would write them (project.smap,
+ * levels/, tilesets/, stamps/). v1.0: levels in memory are serialized; a
+ * level only on disk is listed with empty data (`zipFiles` reads it).
+ */
 export function previewZipFiles(project: OpenProject) {
   const library = useProjectLibrary.getState();
-  return projectFiles({
+  const ws = getLevelWorkspace();
+  const others = ws
+    ? ws
+        .cachedIds()
+        .filter((id) => id !== ws.activeId && ws.level(id))
+        .map((id) => ({ path: ws.level(id)!.path, document: ws.entry(id)!.store.document }))
+    : [];
+  const files = projectFiles({
     name: project.name,
     document: project.store.document,
     levelPath: project.levelPath,
     tilesetBytes,
     levels: library.levels,
     stamps: library.stamps,
+    otherLevels: others,
+    ...(ws ? { retiredLevelIds: ws.retiredLevelIds } : {}),
   });
+  const listed = new Set(files.map((f) => f.path));
+  const onDisk = library.levels.filter((l) => !listed.has(l.path)).map((l) => ({ path: l.path, data: "" }));
+  // Before project.smap (the last file).
+  return [...files.slice(0, -1), ...onDisk, ...files.slice(-1)];
+}
+
+/** {@link previewZipFiles} with the levels that are only on disk read from the project folder. */
+async function zipFiles(project: OpenProject) {
+  const files = previewZipFiles(project);
+  const fs = getProjectFolder()?.fs;
+  const cached = new Set(getLevelWorkspace()?.cachedIds().map((id) => getLevelWorkspace()?.level(id)?.path) ?? []);
+  const levelPaths = new Set(useProjectLibrary.getState().levels.map((l) => l.path));
+  return Promise.all(
+    files.map(async (f) =>
+      fs && f.data === "" && levelPaths.has(f.path) && !cached.has(f.path) ? { path: f.path, data: await fs.readText(f.path) } : f,
+    ),
+  );
 }
 
 /** Downloads the whole project folder as `<project>.zip` (no backups/). */
@@ -225,8 +269,8 @@ export async function exportZip(): Promise<boolean> {
   const result = await withExportBusy(async () => {
     try {
       const fileName = `${project.name}.zip`;
-      const bytes = await zipCompressed(projectZipEntries(previewZipFiles(project)));
-      downloadBlob(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }), fileName);
+      const bytes = await zipCompressed(projectZipEntries(await zipFiles(project)));
+      if (!(await deliverFile(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }), fileName, { name: "Zip", extensions: ["zip"] }))) return false;
       await updateExportSettings(project.name, { target: "zip" });
       toast.success(t("export.toastZip", { file: fileName }));
       const missing = project.store.document.tilesets.filter((ts) => !tilesetBytes(ts.id)).map((ts) => ts.imagePath);
@@ -283,12 +327,15 @@ export function installAutoExport(): () => void {
       autoProblemShown = true;
     },
   });
-  return onProjectSaved(({ project, manual }) => {
-    void exporter.onSaved({
-      name: project.name,
-      document: project.store.document,
-      levelName: projectLevelName(project),
-      manual,
-    });
+  // v1.0: every level the save wrote is exported (not just the open one).
+  return onProjectSaved(({ project, manual, levels }) => {
+    for (const level of levels) {
+      void exporter.onSaved({
+        name: project.name,
+        document: level.store.document,
+        levelName: levelName(level.path),
+        manual,
+      });
+    }
   });
 }

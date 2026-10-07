@@ -54,6 +54,16 @@ export default tseslint.config(
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      // The host comes in through `platform/` (setPlatform), never by import.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["@smap/desktop", "@smap/desktop/**", "**/desktop/src/**"], message: "Bağımlılık yönü: desktop → editor → core." },
+            { group: ["@tauri-apps/**"], message: "editor Tauri'yi tanımaz; platform/ üzerinden gelir." },
+          ],
+        },
+      ],
     },
   },
 );
