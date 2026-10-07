@@ -139,6 +139,22 @@ const THUMB_LOD_BUDGET_MS = 6;
 /** Dev-only `window.__smap` hooks of the live canvases, oldest first. */
 const debugHooks: unknown[] = [];
 
+/**
+ * `window.__smap` exists in dev and in the perf harness build
+ * (`VITE_SMAP_DEBUG=1`, see `e2e/perf`); the normal production build has none.
+ */
+const DEBUG_HOOK = import.meta.env.DEV || import.meta.env.VITE_SMAP_DEBUG === "1";
+
+/** Perf harness frame log (`window.__smapPerf`, debug builds only). */
+interface PerfLog {
+  frames: { start: number; end: number; revision: number; scene: boolean; lod: boolean }[];
+}
+
+function perfLog(): PerfLog | null {
+  if (!DEBUG_HOOK) return null;
+  return (window as unknown as { __smapPerf?: PerfLog }).__smapPerf ?? null;
+}
+
 export class MapCanvas {
   readonly #container: HTMLElement;
   readonly #canvas: HTMLCanvasElement;
@@ -375,7 +391,7 @@ export class MapCanvas {
       }),
     );
     this.#loadProject(useEditorStore.getState().project);
-    if (import.meta.env.DEV) this.#installDebugHook();
+    if (DEBUG_HOOK) this.#installDebugHook();
   }
 
   /** Dev-only `window.__smap` for e2e scripts and the console. */
@@ -739,6 +755,15 @@ export class MapCanvas {
   #frame(time: number): void {
     this.#raf = 0;
     if (this.#destroyed) return;
+    const log = perfLog();
+    const start = log ? performance.now() : 0;
+    this.#frameBody(time);
+    if (log) {
+      log.frames.push({ start, end: performance.now(), revision: this.#scene?.store.revision ?? -1, scene: this.#scene !== null, lod: this.#lod });
+    }
+  }
+
+  #frameBody(time: number): void {
     const dt = this.#lastFrameTime > 0 ? Math.min(64, time - this.#lastFrameTime) : 16;
     this.#lastFrameTime = time;
     const cam = this.#camera;
