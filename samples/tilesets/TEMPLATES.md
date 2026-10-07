@@ -11,11 +11,23 @@ A terrain definition (stored in its tileset entry in `project.smap`):
 |---|---|
 | `id` | grid value painted into terrain layers, integer 1..65535, unique in the project |
 | `name` | display name |
-| `template` | `"corner16"` or `"blob47"` |
+| `template` | `"blob47-godot"`, `"blob47-cr31"`, `"corner16"` or `"blob47"` (legacy) |
 | `origin` | `{col, row}` of the block's top-left tile in the tileset grid |
 | `variants` | optional `[{slot, tileIds}]`: extra tiles for a slot, anywhere in the same tileset |
 
-Slot `s` of a block is the tile at `(origin.col + s % columns, origin.row + floor(s / columns))`.
+Slot `s` of a block is the tile at `(origin.col + s % columns, origin.row + floor(s / columns))`
+— a block cell index. Each template lists the mask every slot shows; some
+layouts have unused cells. In code the list is `TERRAIN_TEMPLATES` (id,
+family, language-neutral name, columns, rows, slot → mask table, `legacy`)
+and `DEFAULT_TERRAIN_TEMPLATE` (`"blob47-godot"`) is the one new terrains
+should start with.
+
+| template | family | block | unused cells | sample |
+|---|---|---|---|---|
+| `blob47-godot` (default) | blob47 | 12×4 | (10, 1) | `blob47-godot-32.png` |
+| `blob47-cr31` | blob47 | 7×7 | (6, 0), (0, 6) | `blob47-cr31-32.png` |
+| `corner16` | corner16 | 4×4 | — | `wang16-32.png` |
+| `blob47` (legacy, "smap-sorted") | blob47 | 8×6 | (7, 5) | `blob47-32.png` |
 
 ## corner16 — 2-corner Wang, 4×4 block
 
@@ -43,31 +55,63 @@ edge draws no border. A 1-cell hole in a painted area is fully covered (all
 four of its corners are touched by painted neighbours) — that is inherent to
 corner tiles.
 
-## blob47 — 47-tile blob, 8×6 block
+## blob47 family — 47-tile blob
 
 Neighbour bits (cr31 convention): `N = 1, NE = 2, E = 4, SE = 8, S = 16,
 SW = 32, W = 64, NW = 128`. A corner bit counts only when both adjacent edge
 bits are set (`NE` needs `N` and `E`, ...); this reduction maps the 256 raw
-masks onto exactly 47 masks. The block holds those 47 reduced masks **sorted
-ascending**: slot = rank, at column `slot % 8`, row `floor(slot / 8)`. The 48th
-cell (col 7, row 5) is unused. The full slot → mask table is in
-`blob47-32.md` (index 0 = mask 0 = isolated tile, index 46 = mask 255 = fully
-surrounded).
+masks onto exactly 47 masks. Every blob layout holds each of the 47 masks
+exactly once (tested); only the arrangement differs.
 
-**Painting semantics.** A painted cell gets the tile for its 8-neighbour mask;
-a neighbour bit is set when that neighbour holds the same terrain **or lies
-outside the map** (the map edge draws no border). Unpainted cells stay empty.
-Diagonal-only contact does not connect (corner bits need both edges).
+### `blob47-godot` — 12×4, default
 
-**Why this layout.** CLAUDE.md wants the layout most ready-made tilesets
-use. There is no single blob layout every tileset follows (cr31's 7×7 picture
-sheet, Godot 3's 12×4 "3x3 minimal" sheet, RPG Maker's A2 sub-tile format
-and tool-specific exports all differ), and the cr31 picture arrangement
-could not be reproduced here with certainty. The ascending-mask layout is
-unambiguous, documented tile by tile, and already used by `blob47-32.png`,
-so it is the v0.3 standard. **The sample PNG does not need to be
-regenerated.** Supporting another layout later means adding another
-template value with its own slot table; the derivation stays the same.
+The Godot 3 "3×3 minimal" autotile template, decoded from the official
+Godot docs image `tutorials/2d/img/autotile_template_3x3_minimal.png`
+(godot-docs branches 3.2–3.6, identical; the docs' "top-down floor" template
+uses the same arrangement). Ready-made blob tilesets (itch.io and the like)
+are most often drawn on this sheet, so it is the default for new terrains.
+Cell (10, 1) is blank.
+
+| row | col 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 16 | 20 | 84 | 80 | 213 | 92 | 116 | 87 | 28 | 125 | 124 | 112 |
+| 1 | 17 | 21 | 85 | 81 | 29 | 127 | 253 | 113 | 31 | 119 | – | 245 |
+| 2 | 1 | 5 | 69 | 65 | 23 | 223 | 247 | 209 | 95 | 255 | 221 | 241 |
+| 3 | 0 | 4 | 68 | 64 | 117 | 71 | 197 | 93 | 7 | 199 | 215 | 193 |
+
+### `blob47-cr31` — 7×7
+
+cr31's blob reference sheet (www.cr31.co.uk/stagecast/wang/blob.html, image
+`art/atlas/blob/wangbl.png`; mirrored on boristhebrave.com). Every tile in the
+source is labelled with its mask, and the art agrees. The source repeats the
+empty tile at (6, 0) and (0, 6); here those cells are unused (mask 0 is (0, 0)).
+
+| row | col 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|---|
+| 0 | 0 | 4 | 92 | 124 | 116 | 80 | – |
+| 1 | 16 | 20 | 87 | 223 | 241 | 21 | 64 |
+| 2 | 29 | 117 | 85 | 71 | 221 | 125 | 112 |
+| 3 | 31 | 253 | 113 | 28 | 127 | 247 | 209 |
+| 4 | 23 | 199 | 213 | 95 | 255 | 245 | 81 |
+| 5 | 5 | 84 | 93 | 119 | 215 | 193 | 17 |
+| 6 | – | 1 | 7 | 197 | 69 | 68 | 65 |
+
+### `blob47` — legacy "smap-sorted", 8×6
+
+The 47 reduced masks **sorted ascending**: slot = rank, cell (7, 5) unused.
+This was the v0.3 draft layout; no real tileset uses it. It stays only so
+existing files keep working (the template picker should hide it). Full
+table in `blob47-32.md`.
+
+**Painting semantics (all blob layouts).** A painted cell gets the tile for
+its 8-neighbour mask; a neighbour bit is set when that neighbour holds the
+same terrain **or lies outside the map** (the map edge draws no border).
+Unpainted cells stay empty. Diagonal-only contact does not connect (corner
+bits need both edges).
+
+Another layout later (for example cr31's 8×6 sheet, or a tool's export) is one
+more entry in `TERRAIN_TEMPLATES` with its slot → mask table; the derivation
+stays the same.
 
 ## Variants
 

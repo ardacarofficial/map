@@ -2,51 +2,68 @@
  * Terrain templates (autotile) and terrain definitions.
  *
  * The user never writes rules (CLAUDE.md → Yapılmayacaklar). They mark a
- * block in a tileset as "this terrain" and pick one of two standard
- * templates; the template alone says which tile of the block goes where.
- * Layouts are documented in `samples/tilesets/TEMPLATES.md` as well.
+ * block in a tileset as "this terrain" and pick a standard template; the
+ * template alone says which tile of the block goes where. Layouts are
+ * documented in `samples/tilesets/TEMPLATES.md` as well.
+ *
+ * A template belongs to a **family** (how a cell's mask is computed:
+ * `corner16` or `blob47`) and fixes a **layout** (where each mask's tile sits
+ * in the block). A **slot** is a block cell index, row-major:
+ * slot `s` = block column `s % columns`, row `floor(s / columns)`. Every
+ * template lists the mask each slot shows ({@link TerrainTemplateInfo.masks});
+ * `null` marks an unused cell.
  *
  * ## `corner16` — 2-corner Wang, 4×4 block
  *
  * Each tile shows the terrain in some of its four corners. Corner bits:
- * `NE = 1`, `SE = 2`, `SW = 4`, `NW = 8`. Slot (= mask) `s` sits at block
- * column `s % 4`, row `s >> 2` (row-major). Slot 0 is "no terrain in any
- * corner", slot 15 "terrain everywhere". Same layout as `wang16-32.png`.
+ * `NE = 1`, `SE = 2`, `SW = 4`, `NW = 8`. Slot = mask. Same layout as
+ * `wang16-32.png`.
  *
- * ## `blob47` — 47-tile blob, 8×6 block
+ * ## `blob47-*` — 47-tile blob
  *
  * Each tile depends on the 8 neighbours. Direction bits (cr31 convention):
  * `N = 1, NE = 2, E = 4, SE = 8, S = 16, SW = 32, W = 64, NW = 128`.
  * A corner bit only counts when both of its edge bits are set
- * ({@link reduceBlobMask}); that leaves exactly 47 distinct masks. The block
- * lists those 47 reduced masks sorted ascending: slot = rank, at block
- * column `slot % 8`, row `slot >> 3`; the 48th cell (column 7, row 5) is
- * unused. Same layout as `blob47-32.png`.
+ * ({@link reduceBlobMask}); that leaves exactly 47 distinct masks. Layouts:
+ *
+ * - `blob47-godot` (default for new terrains) — 12×4, the Godot 3 "3×3
+ *   minimal" autotile template from the official Godot docs
+ *   (`autotile_template_3x3_minimal.png`). The de-facto layout of
+ *   ready-made blob tilesets. Cell (10, 1) is unused.
+ * - `blob47-cr31` — 7×7, cr31's "blob" reference sheet (`wangbl.png`).
+ *   Cells (6, 0) and (0, 6) repeat the empty tile and are unused.
+ * - `blob47` — legacy "smap-sorted" 8×6: the 47 reduced masks sorted
+ *   ascending (slot = rank), cell (7, 5) unused. No real tileset uses it;
+ *   kept so v0.3 files keep working. Same layout as `blob47-32.png`.
  */
 import type { Tileset } from "./tileset";
 
-/** The two standard templates. */
-export type TerrainTemplate = "corner16" | "blob47";
+/** Every template id. `blob47` is the legacy sorted layout; see the module doc. */
+export type TerrainTemplate = "corner16" | "blob47-godot" | "blob47-cr31" | "blob47";
 
-/** Block geometry of a template. */
+/** How a template's masks are computed: corner Wang (4 bits) or 8-neighbour blob. */
+export type TerrainTemplateFamily = "corner16" | "blob47";
+
+/** One template: block geometry and the slot → mask table. */
 export interface TerrainTemplateInfo {
+  readonly id: TerrainTemplate;
+  readonly family: TerrainTemplateFamily;
+  /** Language-neutral display name (proper nouns and sizes only). */
+  readonly name: string;
   /** Block width in tiles. */
   readonly columns: number;
   /** Block height in tiles. */
   readonly rows: number;
-  /** Number of used slots (tiles) in the block. */
+  /**
+   * Mask shown by each block cell, row-major (index = slot, length =
+   * `columns × rows`); `null` = unused cell. corner16: corner mask
+   * (`NE 1, SE 2, SW 4, NW 8`); blob47: reduced 8-neighbour mask.
+   */
+  readonly masks: readonly (number | null)[];
+  /** Number of used cells (16 or 47). */
   readonly slots: number;
-}
-
-/** Geometry of every template. */
-export const TERRAIN_TEMPLATES: Readonly<Record<TerrainTemplate, TerrainTemplateInfo>> = Object.freeze({
-  corner16: Object.freeze({ columns: 4, rows: 4, slots: 16 }),
-  blob47: Object.freeze({ columns: 8, rows: 6, slots: 47 }),
-});
-
-/** True when `value` names a template. */
-export function isTerrainTemplate(value: unknown): value is TerrainTemplate {
-  return value === "corner16" || value === "blob47";
+  /** Kept only for old files; a template picker should hide it. */
+  readonly legacy: boolean;
 }
 
 // ------------------------------------------------------------------ corner16
@@ -91,22 +108,130 @@ export function reduceBlobMask(mask: number): number {
   return m;
 }
 
-/** The 47 reduced masks, ascending. `BLOB47_MASKS[slot]` is the mask the slot's tile shows. */
+/**
+ * The 47 reduced masks, ascending. Also the legacy `blob47` layout:
+ * `BLOB47_MASKS[slot]` is the mask that slot's tile shows.
+ */
 export const BLOB47_MASKS: readonly number[] = Object.freeze(
   [...new Set(Array.from({ length: 256 }, (_, m) => reduceBlobMask(m)))].sort((a, b) => a - b),
 );
 
-/** Raw (unreduced) 8-neighbour mask → slot, for all 256 masks. */
-const BLOB47_SLOT_OF_RAW: Uint8Array = (() => {
-  const rank = new Map(BLOB47_MASKS.map((m, i) => [m, i]));
-  const table = new Uint8Array(256);
-  for (let m = 0; m < 256; m++) table[m] = rank.get(reduceBlobMask(m))!;
-  return table;
-})();
+/** Unused block cell in the tables below. */
+const X = null;
 
-/** `blob47` slot for any 8-neighbour mask (reduced first). */
+/**
+ * `blob47-godot`, 12×4. Decoded from the Godot 3.x docs image
+ * `tutorials/2d/img/autotile_template_3x3_minimal.png` (identical in the
+ * 3.2–3.6 branches of godot-docs; the "top-down floor" template uses the
+ * same arrangement). Cell (10, 1) is blank in the source.
+ */
+const GODOT_MASKS: readonly (number | null)[] = [
+  16, 20, 84, 80, 213,  92, 116,  87, 28, 125, 124, 112,
+  17, 21, 85, 81,  29, 127, 253, 113, 31, 119,   X, 245,
+   1,  5, 69, 65,  23, 223, 247, 209, 95, 255, 221, 241,
+   0,  4, 68, 64, 117,  71, 197,  93,  7, 199, 215, 193,
+];
+
+/**
+ * `blob47-cr31`, 7×7. cr31 "Blob" page (www.cr31.co.uk/stagecast/wang/blob.html,
+ * mirrored by boristhebrave.com), image `art/atlas/blob/wangbl.png`: each
+ * tile is labelled with its mask and the art agrees. Cells (6, 0) and
+ * (0, 6) repeat tile 0 there; here they are unused.
+ */
+const CR31_MASKS: readonly (number | null)[] = [
+   0,   4,  92, 124, 116,  80,  X,
+  16,  20,  87, 223, 241,  21, 64,
+  29, 117,  85,  71, 221, 125, 112,
+  31, 253, 113,  28, 127, 247, 209,
+  23, 199, 213,  95, 255, 245,  81,
+   5,  84,  93, 119, 215, 193,  17,
+   X,   1,   7, 197,  69,  68,  65,
+];
+
+function template(
+  id: TerrainTemplate,
+  family: TerrainTemplateFamily,
+  name: string,
+  columns: number,
+  rows: number,
+  masks: readonly (number | null)[],
+  legacy = false,
+): TerrainTemplateInfo {
+  if (masks.length !== columns * rows) throw new Error(`template ${id}: mask table size`);
+  return Object.freeze({
+    id,
+    family,
+    name,
+    columns,
+    rows,
+    masks: Object.freeze([...masks]),
+    slots: masks.filter((m) => m !== null).length,
+    legacy,
+  });
+}
+
+/**
+ * Every template, in picker order (most common first; legacy last).
+ * Look one up with {@link terrainTemplateInfo}.
+ */
+export const TERRAIN_TEMPLATES: readonly TerrainTemplateInfo[] = Object.freeze([
+  template("blob47-godot", "blob47", "Blob 47 · Godot 3×3 minimal (12×4)", 12, 4, GODOT_MASKS),
+  template("blob47-cr31", "blob47", "Blob 47 · cr31 (7×7)", 7, 7, CR31_MASKS),
+  template("corner16", "corner16", "Corner 16 · Wang (4×4)", 4, 4, Array.from({ length: 16 }, (_, i) => i)),
+  template("blob47", "blob47", "Blob 47 · smap sorted (8×6, legacy)", 8, 6, [...BLOB47_MASKS, null], true),
+]);
+
+/** Template for new blob terrains: the layout most ready-made tilesets use. */
+export const DEFAULT_TERRAIN_TEMPLATE: TerrainTemplate = "blob47-godot";
+
+const TEMPLATE_BY_ID: ReadonlyMap<string, TerrainTemplateInfo> = new Map(TERRAIN_TEMPLATES.map((t) => [t.id, t]));
+
+/** True when `value` names a template. */
+export function isTerrainTemplate(value: unknown): value is TerrainTemplate {
+  return typeof value === "string" && TEMPLATE_BY_ID.has(value);
+}
+
+/**
+ * Descriptor of template `id`.
+ * @throws Error for an unknown id.
+ */
+export function terrainTemplateInfo(id: TerrainTemplate): TerrainTemplateInfo {
+  const info = TEMPLATE_BY_ID.get(id);
+  if (!info) throw new Error(`unknown terrain template ${JSON.stringify(id)}`);
+  return info;
+}
+
+/** Raw mask → slot table per template (256 entries for blob47, 16 for corner16). */
+const SLOT_OF_MASK: ReadonlyMap<TerrainTemplate, Uint8Array> = new Map(
+  TERRAIN_TEMPLATES.map((info) => {
+    const slotOfMask = new Map<number, number>();
+    info.masks.forEach((m, slot) => {
+      if (m !== null && !slotOfMask.has(m)) slotOfMask.set(m, slot);
+    });
+    const size = info.family === "blob47" ? 256 : 16;
+    const table = new Uint8Array(size);
+    for (let m = 0; m < size; m++) {
+      const key = info.family === "blob47" ? reduceBlobMask(m) : m;
+      const slot = slotOfMask.get(key);
+      if (slot === undefined) throw new Error(`template ${info.id}: no tile for mask ${key}`);
+      table[m] = slot;
+    }
+    return [info.id, table];
+  }),
+);
+
+/**
+ * Slot (block cell) of `template` that shows `mask`. blob47 templates
+ * take any 8-neighbour mask (reduced first); corner16 a corner mask.
+ */
+export function terrainSlotForMask(template: TerrainTemplate, mask: number): number {
+  const table = SLOT_OF_MASK.get(template)!;
+  return table[mask & (table.length - 1)]!;
+}
+
+/** Legacy `blob47` (sorted) slot for any 8-neighbour mask. Same as `terrainSlotForMask("blob47", mask)`. */
 export function blob47Slot(mask: number): number {
-  return BLOB47_SLOT_OF_RAW[mask & 255]!;
+  return terrainSlotForMask("blob47", mask);
 }
 
 // ------------------------------------------------------------------ definitions
@@ -116,7 +241,7 @@ export const MAX_TERRAIN_ID = 0xffff;
 
 /** Extra tiles for one template slot; one is picked per cell by `hash(seed, x, y)`. */
 export interface TerrainVariant {
-  /** Template slot (`0..15` for corner16 — equal to the corner mask; `0..46` for blob47 — rank of the reduced mask). */
+  /** Template slot: block cell index, row-major. Must be a used cell of the template. */
   readonly slot: number;
   /** Alternative tile ids (anywhere in the same tileset). The block's own tile stays a candidate too. */
   readonly tileIds: readonly number[];
@@ -140,7 +265,7 @@ export interface Terrain {
 
 /** Tile id of a template slot's base tile (the tile inside the block). */
 export function terrainSlotTileId(tileset: Tileset, terrain: Terrain, slot: number): number {
-  const info = TERRAIN_TEMPLATES[terrain.template];
+  const info = terrainTemplateInfo(terrain.template);
   const col = terrain.origin.col + (slot % info.columns);
   const row = terrain.origin.row + Math.floor(slot / info.columns);
   return row * tileset.columns + col;
@@ -148,12 +273,12 @@ export function terrainSlotTileId(tileset: Tileset, terrain: Terrain, slot: numb
 
 /**
  * Candidate tile ids per slot: `[base, ...variants]`. Index with the slot,
- * then pick with {@link pickVariant}.
+ * then pick with {@link pickVariant}. Unused cells get an empty list.
  */
 export function terrainCandidates(tileset: Tileset, terrain: Terrain): number[][] {
-  const info = TERRAIN_TEMPLATES[terrain.template];
+  const info = terrainTemplateInfo(terrain.template);
   const out: number[][] = [];
-  for (let s = 0; s < info.slots; s++) out.push([terrainSlotTileId(tileset, terrain, s)]);
+  for (let s = 0; s < info.masks.length; s++) out.push(info.masks[s] === null ? [] : [terrainSlotTileId(tileset, terrain, s)]);
   for (const v of terrain.variants ?? []) out[v.slot]!.push(...v.tileIds);
   return out;
 }
@@ -236,7 +361,7 @@ export function terrainProblem(tileset: Tileset, terrain: Terrain): string | nul
   if (typeof col !== "number" || typeof row !== "number" || !Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0) {
     return `terrain ${terrain.id} origin must be non-negative integers`;
   }
-  const info = TERRAIN_TEMPLATES[terrain.template];
+  const info = terrainTemplateInfo(terrain.template);
   if (col + info.columns > tileset.columns || row + info.rows > tileset.rows) {
     return `terrain ${terrain.id}: a ${info.columns}×${info.rows} ${terrain.template} block at (${col}, ${row}) does not fit in the ${tileset.columns}×${tileset.rows} tileset`;
   }
@@ -245,8 +370,8 @@ export function terrainProblem(tileset: Tileset, terrain: Terrain): string | nul
     const seen = new Set<number>();
     const count = tileset.columns * tileset.rows;
     for (const v of terrain.variants) {
-      if (!Number.isInteger(v?.slot) || v.slot < 0 || v.slot >= info.slots) {
-        return `terrain ${terrain.id}: variant slot must be an integer in [0, ${info.slots - 1}], got ${String(v?.slot)}`;
+      if (!Number.isInteger(v?.slot) || v.slot < 0 || v.slot >= info.masks.length || info.masks[v.slot] === null) {
+        return `terrain ${terrain.id}: variant slot must be a used cell of the ${terrain.template} block, got ${String(v?.slot)}`;
       }
       if (seen.has(v.slot)) return `terrain ${terrain.id}: duplicate variant slot ${v.slot}`;
       seen.add(v.slot);

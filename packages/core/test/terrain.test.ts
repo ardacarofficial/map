@@ -2,8 +2,13 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   BLOB47_MASKS,
+  DEFAULT_TERRAIN_TEMPLATE,
   TERRAIN_TEMPLATES,
   blob47Slot,
+  isTerrainTemplate,
+  terrainSlotForMask,
+  terrainTemplateInfo,
+  type TerrainTemplate,
   cellHash,
   cellPaletteIndex,
   corner16Slot,
@@ -18,7 +23,7 @@ import {
   type MapStore,
   type StoreChangeEvent,
 } from "../src";
-import { BLOB_ID, CORNER_ID, TERRAIN_TILESET, blobTile, cornerTile, makeTerrainStore } from "./helpers";
+import { BLOB_ID, BLOB_TEMPLATES, CORNER_ID, TERRAIN_TILESET, blobMaskTile, blobTile, cornerTile, makeTerrainStore } from "./helpers";
 
 /** Tile id in the derived layer at (x, y), or null. */
 function tileAt(store: MapStore, x: number, y: number): number | null {
@@ -44,7 +49,6 @@ function expectTiles(store: MapStore, expected: Record<string, number>) {
   expect(actual).toEqual(expected);
 }
 
-const blob = (slots: Record<string, number>) => Object.fromEntries(Object.entries(slots).map(([k, s]) => [k, blobTile(s)]));
 const corner = (slots: Record<string, number>) => Object.fromEntries(Object.entries(slots).map(([k, s]) => [k, cornerTile(s)]));
 const square = (x0: number, y0: number, x1: number, y1: number): [number, number][] => {
   const out: [number, number][] = [];
@@ -53,11 +57,32 @@ const square = (x0: number, y0: number, x1: number, y1: number): [number, number
 };
 
 describe("templates", () => {
+  it("descriptor list: unique ids, tables fill the block, default is the Godot layout", () => {
+    const ids = TERRAIN_TEMPLATES.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.sort()).toEqual(["blob47", "blob47-cr31", "blob47-godot", "corner16"]);
+    for (const t of TERRAIN_TEMPLATES) {
+      expect(t.masks.length).toBe(t.columns * t.rows);
+      expect(t.slots).toBe(t.masks.filter((m) => m !== null).length);
+      expect(terrainTemplateInfo(t.id)).toBe(t);
+      expect(isTerrainTemplate(t.id)).toBe(true);
+      expect(Object.isFrozen(t) && Object.isFrozen(t.masks)).toBe(true);
+    }
+    expect(DEFAULT_TERRAIN_TEMPLATE).toBe("blob47-godot");
+    expect(TERRAIN_TEMPLATES[0]!.id).toBe(DEFAULT_TERRAIN_TEMPLATE);
+    expect(TERRAIN_TEMPLATES.filter((t) => t.legacy).map((t) => t.id)).toEqual(["blob47"]);
+    expect(isTerrainTemplate("blob47-rpgmaker")).toBe(false);
+    expect(isTerrainTemplate(undefined)).toBe(false);
+    expect(() => terrainTemplateInfo("nope" as TerrainTemplate)).toThrow(/unknown terrain template/);
+  });
+
   it("corner16: 16 masks map to 16 distinct slots in a 4×4 block, slot = NE + 2SE + 4SW + 8NW", () => {
     const slots = Array.from({ length: 16 }, (_, m) => corner16Slot(m));
     expect(new Set(slots).size).toBe(16);
     expect(slots).toEqual(Array.from({ length: 16 }, (_, i) => i));
-    expect(TERRAIN_TEMPLATES.corner16).toEqual({ columns: 4, rows: 4, slots: 16 });
+    const info = terrainTemplateInfo("corner16");
+    expect([info.family, info.columns, info.rows, info.slots]).toEqual(["corner16", 4, 4, 16]);
+    for (let m = 0; m < 16; m++) expect(terrainSlotForMask("corner16", m)).toBe(m);
   });
 
   it("blob47: reduce is idempotent and all 256 raw masks land in the 47-mask set", () => {
@@ -68,85 +93,142 @@ describe("templates", () => {
       expect(reduceBlobMask(r)).toBe(r);
       expect(set.has(r)).toBe(true);
     }
-    // every one of the 47 masks has a unique slot, which is its rank
-    const slots = BLOB47_MASKS.map((m) => blob47Slot(m));
-    expect(slots).toEqual(Array.from({ length: 47 }, (_, i) => i));
     expect([...BLOB47_MASKS]).toEqual([...BLOB47_MASKS].sort((a, b) => a - b));
-    expect(TERRAIN_TEMPLATES.blob47).toEqual({ columns: 8, rows: 6, slots: 47 });
   });
 
-  it("blob47 table matches samples/tilesets/blob47-32.md", () => {
+  it.each(BLOB_TEMPLATES)("%s: the used cells are a bijection onto the 47 reduced masks", (id) => {
+    const info = terrainTemplateInfo(id);
+    expect(info.family).toBe("blob47");
+    const used = info.masks.filter((m): m is number => m !== null);
+    expect(used.length).toBe(47);
+    expect(info.slots).toBe(47);
+    expect([...used].sort((a, b) => a - b)).toEqual([...BLOB47_MASKS]);
+    // every raw mask → the cell that shows its reduced mask
+    for (let m = 0; m < 256; m++) expect(info.masks[terrainSlotForMask(id, m)]).toBe(reduceBlobMask(m));
+  });
+
+  it("legacy blob47: 8×6, slot = rank of the reduced mask (smap-sorted)", () => {
+    const info = terrainTemplateInfo("blob47");
+    expect([info.columns, info.rows, info.legacy]).toEqual([8, 6, true]);
+    expect(BLOB47_MASKS.map((m) => blob47Slot(m))).toEqual(Array.from({ length: 47 }, (_, i) => i));
+    expect(info.masks[47]).toBe(null);
+  });
+
+  it("legacy blob47 table matches samples/tilesets/blob47-32.md", () => {
     // spot checks from the sample table: index → mask
     const sample: [number, number][] = [[0, 0], [1, 1], [4, 7], [10, 28], [12, 31], [26, 112], [34, 193], [42, 241], [46, 255]];
     for (const [index, mask] of sample) expect(BLOB47_MASKS[index]).toBe(mask);
   });
 
+  // Hand-checked against the source images (col, row → mask; null = unused cell).
+  const spot: Record<string, [number, number, number | null][]> = {
+    // godot-docs 3.x tutorials/2d/img/autotile_template_3x3_minimal.png
+    "blob47-godot": [
+      [0, 0, 16], // centre + S: top of a vertical strip
+      [0, 3, 0], // isolated
+      [1, 3, 4], [2, 3, 68], [3, 3, 64], // horizontal strip: E, E+W, W
+      [9, 2, 255], // fully surrounded
+      [4, 0, 213], // N E S W NW (missing NE, SE, SW)
+      [8, 3, 7], // N NE E
+      [11, 3, 193], // N W NW
+      [10, 1, null], // blank cell
+    ],
+    // cr31 blob page, art/atlas/blob/wangbl.png (tiles are labelled)
+    "blob47-cr31": [
+      [0, 0, 0], [1, 0, 4], [5, 0, 80], [0, 1, 16], [2, 2, 85], [3, 3, 28], [4, 4, 255], [0, 5, 5], [6, 6, 65],
+      [6, 0, null], [0, 6, null],
+    ],
+  };
+  it.each(Object.keys(spot))("%s: spot checks against the source sheet", (id) => {
+    const info = terrainTemplateInfo(id as TerrainTemplate);
+    expect(spot[id]!.length).toBeGreaterThanOrEqual(6);
+    for (const [col, row, mask] of spot[id]!) expect([col, row, info.masks[row * info.columns + col]]).toEqual([col, row, mask]);
+    expect([info.columns, info.rows]).toEqual(id === "blob47-godot" ? [12, 4] : [7, 7]);
+  });
+
   it("slot → tile id follows the block layout", () => {
     const blobTerrain = { id: 1, name: "", tilesetId: "terrain", template: "blob47" as const, origin: { col: 0, row: 0 } };
     const cornerTerrain = { id: 2, name: "", tilesetId: "terrain", template: "corner16" as const, origin: { col: 8, row: 0 } };
+    const godot = { ...blobTerrain, template: "blob47-godot" as const };
     for (let s = 0; s < 47; s++) expect(terrainSlotTileId(TERRAIN_TILESET, blobTerrain, s)).toBe(blobTile(s));
     for (let s = 0; s < 16; s++) expect(terrainSlotTileId(TERRAIN_TILESET, cornerTerrain, s)).toBe(cornerTile(s));
+    for (let s = 0; s < 48; s++) expect(terrainSlotTileId(TERRAIN_TILESET, godot, s)).toBe(s);
     expect(cornerTile(15)).toBe(8 + 3 + 36);
   });
 });
 
-describe("blob47 derivation", () => {
+describe.each(BLOB_TEMPLATES)("blob47 derivation (%s)", (template) => {
+  const N = 1, NE = 2, E = 4, SE = 8, S = 16, SW = 32, W = 64, NW = 128;
+  const store = (w = 16, h = 16) => makeTerrainStore(w, h, 0, template);
+  /** `"x,y" → mask` to `"x,y" → tile id`. */
+  const blob = (masks: Record<string, number>) => Object.fromEntries(Object.entries(masks).map(([k, m]) => [k, blobMaskTile(template, m)]));
+
   it("single cell → isolated tile, neighbours empty", () => {
-    const store = makeTerrainStore();
-    paint(store, [[5, 5]], BLOB_ID);
-    expectTiles(store, blob({ "5,5": 0 }));
+    const st = store();
+    paint(st, [[5, 5]], BLOB_ID);
+    expectTiles(st, blob({ "5,5": 0 }));
   });
 
   it("3×3 block", () => {
-    const store = makeTerrainStore();
-    paint(store, square(5, 5, 7, 7), BLOB_ID);
-    expectTiles(store, blob({
-      "5,5": 10, "6,5": 31, "7,5": 26,
-      "5,6": 12, "6,6": 46, "7,6": 42,
-      "5,7": 4, "6,7": 36, "7,7": 34,
+    const st = store();
+    paint(st, square(5, 5, 7, 7), BLOB_ID);
+    expectTiles(st, blob({
+      "5,5": E | SE | S, "6,5": E | SE | S | SW | W, "7,5": S | SW | W,
+      "5,6": N | NE | E | SE | S, "6,6": 255, "7,6": N | S | SW | W | NW,
+      "5,7": N | NE | E, "6,7": N | NE | E | W | NW, "7,7": N | W | NW,
     }));
   });
 
   it("ring with a hole", () => {
-    const store = makeTerrainStore();
-    paint(store, square(5, 5, 7, 7).filter(([x, y]) => !(x === 6 && y === 6)), BLOB_ID);
-    expectTiles(store, blob({
-      "5,5": 7, "6,5": 15, "7,5": 18,
-      "5,6": 6, "7,6": 6,
-      "5,7": 3, "6,7": 15, "7,7": 14,
+    const st = store();
+    paint(st, square(5, 5, 7, 7).filter(([x, y]) => !(x === 6 && y === 6)), BLOB_ID);
+    expectTiles(st, blob({
+      "5,5": E | S, "6,5": E | W, "7,5": S | W,
+      "5,6": N | S, "7,6": N | S,
+      "5,7": N | E, "6,7": E | W, "7,7": N | W,
     }));
   });
 
   it("L-shape: corners need both edges", () => {
-    const store = makeTerrainStore();
-    paint(store, [[5, 5], [5, 6], [5, 7], [6, 7], [7, 7]], BLOB_ID);
-    expectTiles(store, blob({ "5,5": 5, "5,6": 6, "5,7": 3, "6,7": 15, "7,7": 13 }));
+    const st = store();
+    paint(st, [[5, 5], [5, 6], [5, 7], [6, 7], [7, 7]], BLOB_ID);
+    expectTiles(st, blob({ "5,5": S, "5,6": N | S, "5,7": N | E, "6,7": E | W, "7,7": W }));
   });
 
   it("diagonal touch: corners alone do not connect", () => {
-    const store = makeTerrainStore();
-    paint(store, [[5, 5], [6, 6]], BLOB_ID);
-    expectTiles(store, blob({ "5,5": 0, "6,6": 0 }));
+    const st = store();
+    paint(st, [[5, 5], [6, 6]], BLOB_ID);
+    expectTiles(st, blob({ "5,5": 0, "6,6": 0 }));
   });
 
   it("outside the map counts as the same terrain (no border at the edge)", () => {
-    const store = makeTerrainStore();
-    paint(store, [[0, 0]], BLOB_ID); // N, W, NW set by the edge; NE/SW dropped
-    expect(tileAt(store, 0, 0)).toBe(blobTile(BLOB47_MASKS.indexOf(1 + 64 + 128)));
-    paint(store, square(0, 0, 15, 15), BLOB_ID);
-    expect(tileAt(store, 0, 0)).toBe(blobTile(46));
-    expect(tileAt(store, 15, 15)).toBe(blobTile(46));
+    const st = store();
+    paint(st, [[0, 0]], BLOB_ID); // N, W, NW set by the edge; NE/SW dropped
+    expect(tileAt(st, 0, 0)).toBe(blobMaskTile(template, N | W | NW));
+    paint(st, square(0, 0, 15, 15), BLOB_ID);
+    expect(tileAt(st, 0, 0)).toBe(blobMaskTile(template, 255));
+    expect(tileAt(st, 15, 15)).toBe(blobMaskTile(template, 255));
   });
 
   it("erasing re-derives the neighbours", () => {
-    const store = makeTerrainStore();
-    paint(store, square(5, 5, 7, 7), BLOB_ID);
-    paint(store, [[6, 6]], 0);
-    expectTiles(store, blob({
-      "5,5": 7, "6,5": 15, "7,5": 18,
-      "5,6": 6, "7,6": 6,
-      "5,7": 3, "6,7": 15, "7,7": 14,
+    const st = store();
+    paint(st, square(5, 5, 7, 7), BLOB_ID);
+    paint(st, [[6, 6]], 0);
+    expectTiles(st, blob({
+      "5,5": E | S, "6,5": E | W, "7,5": S | W,
+      "5,6": N | S, "7,6": N | S,
+      "5,7": N | E, "6,7": E | W, "7,7": N | W,
     }));
+  });
+
+  it("matches the from-scratch derivation and survives save/reopen", () => {
+    const st = store(12, 12);
+    paint(st, [...square(1, 1, 5, 4), [7, 7], [8, 7], [8, 8], [3, 9], [4, 10]], BLOB_ID);
+    const project = parseProject(serializeProject({ name: "p", levels: [], tilesets: st.document.tilesets }));
+    expect(project.tilesets[0]!.terrains!.find((t) => t.id === BLOB_ID)!.template).toBe(template);
+    const reopened = parseLevel(serializeLevel(st.document), project.tilesets);
+    const derived = deriveTerrainTiles(reopened, "terrain");
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) expect(derived[y * 12 + x]?.tileId ?? null).toBe(tileAt(st, x, y));
   });
 });
 

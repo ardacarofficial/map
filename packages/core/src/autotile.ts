@@ -4,7 +4,7 @@
  *
  * Rules (see also `samples/tilesets/TEMPLATES.md`):
  *
- * - **blob47** — a cell whose grid value is terrain `t` gets the tile for
+ * - **blob47** (every `blob47-*` layout) — a cell whose grid value is terrain `t` gets the tile for
  *   its 8-neighbour mask: a neighbour bit is set when that neighbour holds
  *   `t` **or lies outside the map** (the map edge draws no border). Cells
  *   that do not hold a blob terrain get nothing from it.
@@ -41,10 +41,10 @@ import {
   CORNER_NW,
   CORNER_SE,
   CORNER_SW,
-  blob47Slot,
   corner16Slot,
   pickVariant,
   terrainCandidates,
+  terrainSlotForMask,
   type Terrain,
 } from "./terrain";
 
@@ -86,13 +86,14 @@ export function terrainSlotAt(
     const terrain = terrains.get(value);
     if (!terrain) return null;
     if (terrain.template === "corner16") return { terrain, slot: corner16Slot(15) };
+    // Every other template is a blob47 layout.
     let mask = 0;
     for (const [dx, dy, bit] of NEIGHBOURS) {
       const nx = x + dx;
       const ny = y + dy;
       if (!inMap(nx, ny) || grid.getCell(nx, ny) === value) mask |= bit;
     }
-    return { terrain, slot: blob47Slot(mask) };
+    return { terrain, slot: terrainSlotForMask(terrain.template, mask) };
   }
 
   // Empty cell: corner16 terrains of neighbours spill onto its corners.
