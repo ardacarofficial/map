@@ -35,9 +35,11 @@ import {
   renameLevel,
   safeFileName,
   serializeLevel,
+  setLevelWorldPosition,
   type MapDocument,
   type ProjectLevel,
   type Stamp,
+  type WorldPoint,
 } from "@smap/core";
 
 import { compareDisk } from "./externalChange";
@@ -253,8 +255,7 @@ export class LevelWorkspace {
       if (!fs) throw new FileNotFoundError(level.path);
       const text = await fs.readText(level.path);
       // The active level may have changed project data while we read.
-      const current = this.active.store.document;
-      entry = { id, store: new MapStore(parseLevel(text, current.tilesets, current.entityTypes)), dirty: false, knownText: text };
+      entry = { id, store: new MapStore(this.#parse(text)), dirty: false, knownText: text };
       if (!this.level(id)) throw new Error(`activate: level "${id}" was removed`);
       this.#entries.set(id, entry);
     }
@@ -262,6 +263,30 @@ export class LevelWorkspace {
     this.#activeId = id;
     if (this.#droppable(previous)) this.#entries.delete(previous.id);
     return entry;
+  }
+
+  /** A level file's text parsed with the active level's project data (tilesets, entity types). */
+  #parse(text: string): MapDocument {
+    const current = this.active.store.document;
+    return parseLevel(text, current.tilesets, current.entityTypes);
+  }
+
+  /**
+   * v1.2: a level's document for display (world map thumbnails, portal
+   * links): the cached store's document when the level is in memory (unsaved
+   * edits included), otherwise parsed from its file. Reading a level this way
+   * neither caches nor activates it. Callers must not mutate the result.
+   * @throws on an unknown id, a level that is neither cached nor readable.
+   */
+  async documentOf(id: string, fs: ProjectFileSystem | null): Promise<MapDocument> {
+    const cached = this.#entries.get(id);
+    if (cached) return cached.store.document;
+    const level = this.level(id);
+    if (!level) throw new Error(`documentOf: unknown level "${id}"`);
+    if (!fs) throw new FileNotFoundError(level.path);
+    const text = await fs.readText(level.path);
+    // It may have been edited (opened) while we read.
+    return this.#entries.get(id)?.store.document ?? this.#parse(text);
   }
 
   #droppable(entry: LevelEntry): boolean {
@@ -351,6 +376,18 @@ export class LevelWorkspace {
   /** Moves a level to `index` in the list. */
   move(id: string, index: number): void {
     this.#apply(moveLevel(this.#data(), id, index));
+  }
+
+  /**
+   * v1.2: moves a level on the world map (`position` already snapped by the
+   * caller; whole px). Returns false when it is already there.
+   */
+  setWorldPosition(id: string, position: WorldPoint): boolean {
+    const level = this.level(id);
+    if (!level) throw new Error(`setWorldPosition: unknown level "${id}"`);
+    if (level.world.x === Math.round(position.x) && level.world.y === Math.round(position.y)) return false;
+    this.#apply(setLevelWorldPosition(this.#data(), id, position));
+    return true;
   }
 
   #data() {
