@@ -128,13 +128,8 @@ export function pasteText(text: string | null | undefined): boolean {
 
 /** Paste from the command palette / toolbar: reads the system clipboard if allowed. */
 export async function pasteFromSystem(): Promise<boolean> {
-  let text: string | null = null;
-  try {
-    text = (await navigator.clipboard?.readText()) ?? null;
-  } catch {
-    text = null;
-  }
-  return pasteText(text);
+  const text = await Promise.resolve(navigator.clipboard?.readText()).catch(() => null);
+  return pasteText(text ?? null);
 }
 
 /** X / Y: flips the stamp, or turns the selected tile into a flipped 1×1 stamp. */

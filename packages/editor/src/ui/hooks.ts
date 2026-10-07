@@ -30,3 +30,22 @@ export function useTilesetImage(tilesetId: string | null | undefined): TilesetIm
   const subscribe = useCallback((notify: () => void) => onTilesetImage(() => notify()), []);
   return useSyncExternalStore(subscribe, () => (tilesetId ? getTilesetImage(tilesetId) : undefined));
 }
+
+const NO_HISTORY = "00";
+
+/** `canUndo` / `canRedo` of the store, re-rendering only when they change. */
+export function useHistoryState(store: MapStore | undefined): { canUndo: boolean; canRedo: boolean } {
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!store) return () => undefined;
+      return store.subscribe((event) => {
+        if (event.historyChanged) notify();
+      });
+    },
+    [store],
+  );
+  const key = useSyncExternalStore(subscribe, () =>
+    store ? `${store.canUndo ? 1 : 0}${store.canRedo ? 1 : 0}` : NO_HISTORY,
+  );
+  return { canUndo: key[0] === "1", canRedo: key[1] === "1" };
+}

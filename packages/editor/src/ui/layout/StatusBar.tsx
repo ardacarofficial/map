@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import { formatNumber, t } from "../../i18n";
+import { formatNumber, getLocale, t } from "../../i18n";
+import { useSaveStatus } from "../../io/saveStatus";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 
@@ -9,6 +10,31 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
     <div className="flex items-center gap-1.5 px-2.5">
       <span className="text-faint">{label}</span>
       <span className="font-mono text-muted tabular">{children}</span>
+    </div>
+  );
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(getLocale() === "tr" ? "tr-TR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** "Kaydediliyor…" / "Kaydedildi · 12:04" / "Kaydedilmedi" (no folder yet). */
+function SaveState() {
+  const dirty = useEditorStore((s) => s.dirty);
+  const { saving, lastSavedAt, failed, hasFolder } = useSaveStatus();
+  let text: string;
+  let tone = "text-faint";
+  if (saving) text = t("status.saving");
+  else if (failed) {
+    text = t("status.saveFailed");
+    tone = "text-danger";
+  } else if (lastSavedAt !== null && hasFolder) text = t("status.savedAt", { time: formatTime(lastSavedAt) });
+  else if (dirty) text = t("status.notSaved");
+  else return null;
+  return (
+    <div role="status" className={`ml-auto flex items-center gap-1.5 px-2.5 ${tone}`}>
+      {saving && <span className="size-1.5 animate-pulse rounded-full bg-accent" />}
+      {text}
     </div>
   );
 }
@@ -39,6 +65,7 @@ export function StatusBar() {
         <span className="text-faint">{t("status.tool")}</span>
         <span className="text-muted">{t(`tools.${tool}`)}</span>
       </div>
+      <SaveState />
     </footer>
   );
 }

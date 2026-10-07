@@ -30,7 +30,7 @@ export function NewProjectDialog() {
   );
 }
 
-function parseIntInRange(text: string, min: number, max: number): number | null {
+export function parseIntInRange(text: string, min: number, max: number): number | null {
   if (!/^\s*\d+\s*$/.test(text)) return null;
   const n = Number(text);
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
@@ -135,7 +135,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
   );
 }
 
-function Field({
+export function Field({
   label,
   value,
   onChange,

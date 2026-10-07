@@ -1,0 +1,14 @@
+{
+  "name": "Smap.MapImporter.Editor",
+  "rootNamespace": "Smap.MapImporter",
+  "references": [],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

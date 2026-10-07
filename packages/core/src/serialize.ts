@@ -26,7 +26,7 @@ import type { ClipLayer, TileClip } from "./clip";
 import { CHUNK_AREA, CHUNK_SHIFT, CHUNK_SIZE } from "./chunk";
 import { DOCUMENT_FORMAT_VERSION, MapDocument, isValidSeed, mapInfoProblem, type MapInfo } from "./document";
 import { GridLayer, MAX_GRID_VALUE, TileLayer, isGridLayer, isGridRole, layerPropsProblem, type LayerProps } from "./layer";
-import type { Terrain, TerrainVariant } from "./terrain";
+import { isTerrainTemplate, type Terrain, type TerrainVariant } from "./terrain";
 import { normalizeTileset, relativePathProblem, tilesetProblem, type Tileset } from "./tileset";
 
 /** `format` field of a project file. */
@@ -451,7 +451,7 @@ function readTerrain(item: unknown, path: string, tilesetId: string): Terrain {
   const t = obj(item, path);
   const originObj = obj(t["origin"], `${path}.origin`);
   const template = str(t, "template", path);
-  if (template !== "corner16" && template !== "blob47") throw new FormatError(`${path}.template`, `unknown template "${template}"`);
+  if (!isTerrainTemplate(template)) throw new FormatError(`${path}.template`, `unknown template "${template}"`);
   let variants: TerrainVariant[] | undefined;
   if (t["variants"] !== undefined) {
     variants = arr(t, "variants", path).map((v, i): TerrainVariant => {

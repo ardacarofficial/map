@@ -11,6 +11,10 @@ import { useEditorStore } from "../state/editorStore";
 import { CommandPalette } from "./dialogs/CommandPalette";
 import { NewProjectDialog } from "./dialogs/NewProjectDialog";
 import { UnsavedDialog } from "./dialogs/UnsavedDialog";
+import { BackupsDialog } from "./dialogs/BackupsDialog";
+import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
+import { ResizeMapDialog } from "./dialogs/ResizeMapDialog";
+import { installLayerSync } from "../commands/layerSync";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
 import { TooltipProvider } from "./primitives/Tooltip";
@@ -23,9 +27,11 @@ export function App() {
   useEffect(() => {
     const uninstallShortcuts = installGlobalShortcuts();
     const uninstallSession = installSession();
+    const uninstallLayerSync = installLayerSync();
     return () => {
       uninstallShortcuts();
       uninstallSession();
+      uninstallLayerSync();
     };
   }, []);
 
@@ -36,6 +42,9 @@ export function App() {
       <CommandPalette />
       <NewProjectDialog />
       <UnsavedDialog />
+      <ResizeMapDialog />
+      <BackupsDialog />
+      <DiskChangedDialog />
       <Toaster />
     </TooltipProvider>
   );

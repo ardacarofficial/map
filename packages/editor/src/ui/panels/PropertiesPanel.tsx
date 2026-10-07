@@ -5,6 +5,9 @@ import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion, useTilesetImage } from "../hooks";
 import { PanelSection } from "./PanelSection";
+import { runCommand } from "../../commands/registry";
+import { Button } from "../primitives/Button";
+import { Icon } from "../primitives/Icon";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -61,6 +64,12 @@ export function PropertiesPanel() {
                   <span className="font-mono tabular">{t("common.px", { value: map.tileWidth })}</span>
                 </Row>
               </dl>
+            )}
+            {map && (
+              <Button className="h-7 self-start px-2.5 text-sm" onClick={() => runCommand("map.resize")}>
+                <Icon name="resize" size={14} />
+                {t("properties.resizeMap")}
+              </Button>
             )}
           </div>
         )}

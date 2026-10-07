@@ -1,0 +1,18 @@
+{
+  "name": "Smap.MapImporter.Editor.Tests",
+  "rootNamespace": "Smap.MapImporter.Tests",
+  "references": [
+    "Smap.MapImporter.Editor",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": false,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

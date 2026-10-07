@@ -208,7 +208,6 @@ export const en: Messages = {
     loading: "Loading…",
     open: "Open",
     latest: "Latest",
-    size: "{size} KB",
   },
   disk: {
     title: "File changed on disk",

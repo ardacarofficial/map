@@ -6,12 +6,15 @@ import { Icon } from "../primitives/Icon";
 import { CommandKbd } from "../primitives/Kbd";
 import { Tooltip } from "../primitives/Tooltip";
 import { useUiStore } from "../uiStore";
+import { useHistoryState } from "../hooks";
 
 export function Toolbar() {
   const name = useEditorStore((s) => s.project?.name ?? "");
   const dirty = useEditorStore((s) => s.dirty);
   const busy = useUiStore((s) => s.busy);
   const panelsHidden = useUiStore((s) => s.panelsHidden);
+  const store = useEditorStore((s) => s.project?.store);
+  const { canUndo, canRedo } = useHistoryState(store);
 
   return (
     <header className="grid h-toolbar grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-line bg-panel px-2">
@@ -44,6 +47,17 @@ export function Toolbar() {
       </button>
 
       <div className="flex items-center justify-end gap-0.5">
+        <Tooltip label={t("toolbar.undo")} command="edit.undo">
+          <IconButton aria-label={t("toolbar.undo")} disabled={!canUndo} onClick={() => runCommand("edit.undo")}>
+            <Icon name="undo" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip label={t("toolbar.redo")} command="edit.redo">
+          <IconButton aria-label={t("toolbar.redo")} disabled={!canRedo} onClick={() => runCommand("edit.redo")}>
+            <Icon name="redo" />
+          </IconButton>
+        </Tooltip>
+        <div aria-hidden className="mx-1 h-4 w-px bg-line" />
         <Tooltip label={t("toolbar.save")} command="file.save">
           <IconButton aria-label={t("toolbar.save")} disabled={busy} onClick={() => runCommand("file.save")}>
             <Icon name="save" />

@@ -211,7 +211,6 @@ export const tr = {
     loading: "Yükleniyor…",
     open: "Aç",
     latest: "En yeni",
-    size: "{size} KB",
   },
   disk: {
     title: "Dosya diskte değişti",
