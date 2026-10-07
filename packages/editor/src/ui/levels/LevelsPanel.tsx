@@ -81,6 +81,8 @@ export function LevelsPanel() {
 
   const onPointerDown = (event: ReactPointerEvent<HTMLLIElement>, level: ProjectLevel, index: number) => {
     if (event.button !== 0 || editingId === level.id || picking) return;
+    // React events bubble out of portals (the row menu): only presses on the row itself count.
+    if (!event.currentTarget.contains(event.target as Node)) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const next = { levelId: level.id, from: index, startY: event.clientY, dy: 0, active: false };
@@ -166,6 +168,7 @@ export function LevelsPanel() {
                 onPointerUp={() => onPointerUp(level)}
                 onPointerCancel={onPointerCancel}
                 onDoubleClick={(e) => {
+                  if (!e.currentTarget.contains(e.target as Node)) return;
                   if (!picking && !(e.target as HTMLElement).closest("button")) setEditingId(level.id);
                 }}
                 style={{ transform: y ? `translateY(${y}px)` : undefined }}
