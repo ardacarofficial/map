@@ -221,6 +221,8 @@ export class MapCanvas {
           y: r.top + c.y + (y + 0.5) * map.tileHeight * c.zoom,
         };
       },
+      /** Collision overlay code of a cell as last rasterized (0 when not built). */
+      collisionCode: (x: number, y: number) => this.#gridOverlays?.collisionCode(x, y) ?? 0,
       handle: this.handle,
     };
     // StrictMode mounts two canvases whose async inits may resolve in either order; the
