@@ -28,6 +28,7 @@ import {
   type EditContext,
 } from "./enablement";
 import { addLayer, removeLayer } from "./layerActions";
+import { addCollisionLayer } from "./terrainActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
@@ -104,6 +105,20 @@ const COMMANDS: Command[] = [
     enabled: hasProject,
     run: () => ui().setBackupsOpen(true),
   },
+  {
+    id: "tileset.markSolid",
+    title: "commands.tileset.markSolid",
+    category: "tileset",
+    enabled: () => hasProject() && (editor().project?.store.document.tilesets.length ?? 0) > 0,
+    run: () => ui().toggleTilesetMode("solid"),
+  },
+  {
+    id: "tileset.defineTerrain",
+    title: "commands.tileset.defineTerrain",
+    category: "tileset",
+    enabled: () => hasProject() && (editor().project?.store.document.tilesets.length ?? 0) > 0,
+    run: () => ui().toggleTilesetMode("terrain"),
+  },
   // ---- Edit
   {
     id: "edit.undo",
@@ -149,6 +164,13 @@ const COMMANDS: Command[] = [
   { id: "edit.flipY", title: "commands.edit.flipY", category: "edit", enabled: when(canFlip), run: () => void flipStampOrTile("y") },
   // ---- Layers / map
   { id: "layer.add", title: "commands.layer.add", category: "layer", enabled: hasProject, run: () => void addLayer() },
+  {
+    id: "layer.addCollision",
+    title: "commands.layer.addCollision",
+    category: "layer",
+    enabled: hasProject,
+    run: () => void addCollisionLayer(),
+  },
   {
     id: "layer.remove",
     title: "commands.layer.remove",

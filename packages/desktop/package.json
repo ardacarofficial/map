@@ -4,12 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Tauri shell, v0.5",
+  "scripts": {
+    "tauri": "tauri",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml -p smap-host"
+  },
   "dependencies": {
     "@smap/editor": "workspace:*",
     "@tauri-apps/api": "2.12.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
   }
 }

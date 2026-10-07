@@ -6,8 +6,13 @@
  *
  * The default Tailwind palette and type scale are cleared on purpose so that
  * only tokens defined here can be used.
+ *
+ * `static`: every token is emitted as a CSS variable on `:root`, even when no
+ * utility uses it — the canvas reads some of them with `getComputedStyle`
+ * (`--color-canvas`, `--color-line`, `--color-accent`, the overlay colours
+ * below). Keep canvas-read colours as `#rrggbb`.
  */
-@theme {
+@theme static {
   --color-*: initial;
   --text-*: initial;
   --radius-*: initial;
@@ -54,6 +59,11 @@
   --color-tile-grid: rgb(255 255 255 / 0.07);
   --color-checker-a: #1c1c20;
   --color-checker-b: #232328;
+
+  /* ---- Map overlays (canvas + tileset panel). Opaque hex; alpha is applied where drawn. */
+  --color-collision-solid: #ff5468; /* solid tiles / cells: warm red, reads on dark and on grass */
+  --color-collision-pass: #3fe0a0; /* "force passable" exception cells: mint */
+  --color-terrain-tint: #c39bff; /* terrain blocks and painted terrain cells: soft violet (≠ accent) */
 
   /* ---- Type */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;

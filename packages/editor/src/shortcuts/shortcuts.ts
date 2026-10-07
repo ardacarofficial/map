@@ -25,6 +25,7 @@ export type CommandId =
   | "edit.flipX"
   | "edit.flipY"
   | "layer.add"
+  | "layer.addCollision"
   | "layer.remove"
   | "map.resize"
   | "view.toggleCollision"
@@ -42,7 +43,9 @@ export type CommandId =
   | "file.saveAs"
   | "file.close"
   | "file.openBackup"
-  | "tileset.add";
+  | "tileset.add"
+  | "tileset.markSolid"
+  | "tileset.defineTerrain";
 
 export interface ShortcutDef {
   command: CommandId;
@@ -88,6 +91,9 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.remove", keys: [] },
   { command: "map.resize", keys: [] },
   { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
+  { command: "layer.addCollision", keys: [] },
+  { command: "tileset.markSolid", keys: [] },
+  { command: "tileset.defineTerrain", keys: [] },
 ];
 
 export function keysFor(command: CommandId): string[] {

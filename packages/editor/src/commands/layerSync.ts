@@ -3,11 +3,14 @@
  * including undo / redo:
  * - `activeLayerId` always names an existing layer (falls back to the layer
  *   at the removed one's position);
- * - the marquee region stays inside the map after a resize.
+ * - the marquee region stays inside the map after a resize;
+ * - `gridValue` is a value the active grid layer accepts (collision: 1/2,
+ *   terrain: a defined terrain id).
  */
 import type { OpenProject } from "../state/editorStore";
 import { useEditorStore } from "../state/editorStore";
 import { clampRegion } from "./enablement";
+import { validGridValue } from "./terrainActions";
 
 export function installLayerSync(): () => void {
   let unsubscribe: (() => void) | null = null;
@@ -29,6 +32,10 @@ export function installLayerSync(): () => void {
     if (r && (!region || region.x !== r.x || region.y !== r.y || region.width !== r.width || region.height !== r.height)) {
       state.setRegion(region);
     }
+    const current = useEditorStore.getState();
+    const active = current.activeLayerId ? project.store.document.getLayer(current.activeLayerId) : undefined;
+    const value = validGridValue(project.store.document, active, current.gridValue);
+    if (value !== current.gridValue) current.setGridValue(value);
   };
 
   const watch = (project: OpenProject | null) => {
@@ -37,7 +44,9 @@ export function installLayerSync(): () => void {
     if (!project) return;
     fix(project);
     unsubscribe = project.store.subscribe((event) => {
-      if (event.structure.includes("layers") || event.structure.includes("map")) fix(project);
+      if (event.structure.includes("layers") || event.structure.includes("map") || event.structure.includes("tilesets")) {
+        fix(project);
+      }
     });
   };
   watch(useEditorStore.getState().project);

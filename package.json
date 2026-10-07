@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
-    "test:e2e": "pnpm --filter @smap/e2e exec playwright test"
+    "test:e2e": "pnpm --filter @smap/e2e exec playwright test",
+    "desktop:dev": "pnpm --filter @smap/desktop tauri dev",
+    "desktop:build": "pnpm --filter @smap/desktop tauri build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
