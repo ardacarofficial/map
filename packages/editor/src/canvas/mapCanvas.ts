@@ -616,7 +616,10 @@ export class MapCanvas {
         if (r) {
           this.#showPatternPreview(r, gesture.start);
           const box = this.#cellBox(r);
-          rectOutline(g, box.x0, box.y0, box.x1, box.y1, this.#lineWidth(), px);
+          const k = this.#lineWidth();
+          rectOutline(g, box.x0 - k, box.y0 - k, box.x1 + k, box.y1 + k, k, px);
+          g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.45 });
+          rectOutline(g, box.x0, box.y0, box.x1, box.y1, k, px);
           g.fill(this.#colors.accent);
         }
         return;
@@ -701,7 +704,11 @@ export class MapCanvas {
       color: this.#colors.accent,
       alpha: CANVAS_COLORS.regionFillAlpha,
     });
-    rectOutline(g, b.x0, b.y0, b.x1, b.y1, this.#lineWidth(), px);
+    const k = this.#lineWidth();
+    // Dark halo just outside keeps the accent line readable on any tile.
+    rectOutline(g, b.x0 - k, b.y0 - k, b.x1 + k, b.y1 + k, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.45 });
+    rectOutline(g, b.x0, b.y0, b.x1, b.y1, k, px);
     g.fill(this.#colors.accent);
   }
 
@@ -761,6 +768,8 @@ export class MapCanvas {
     if (this.#tilePreview.key?.startsWith(`${key}|`) !== true) this.#setTilePreview(key, stampPreviewCells(clip, mapping));
     else this.#tilePreview.root.visible = true;
     this.#tilePreview.root.position.set(origin.x * map.tileWidth, origin.y * map.tileHeight);
+    // Bounds, so empty / same-looking parts of the stamp are still visible.
+    this.#drawCellCursor({ x: origin.x, y: origin.y, width: clip.width, height: clip.height });
   }
 
   /** Rectangle (or single-cell) preview with the current pattern tiled from `anchor`. */
