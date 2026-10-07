@@ -190,7 +190,9 @@ export class MapScene {
     for (const layer of doc.layers) {
       const view = this.#views.get(layer.id);
       if (!view) continue;
-      for (const [key, c] of view.chunks) if (c.tilesets.has(tilesetId)) this.#rebuildChunk(layer, view, key);
+      // Snapshot: #rebuildChunk re-inserts keys, which a live Map iteration would visit again.
+      const keys = [...view.chunks].filter(([, c]) => c.tilesets.has(tilesetId)).map(([key]) => key);
+      for (const key of keys) this.#rebuildChunk(layer, view, key);
     }
     if (old) {
       for (let i = 0; i < old.atlas.pages.length; i++) this.#groupTextures.delete(old.groupBase + i);

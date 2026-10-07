@@ -82,7 +82,8 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
 
   const imgW = image?.bitmap.width ?? tileset.columns * tileset.tileWidth;
   const imgH = image?.bitmap.height ?? tileset.rows * tileset.tileHeight;
-  const fit = availWidth > 0 ? (availWidth - PADDING * 2) / imgW : 1;
+  // contentRect excludes the padding already.
+  const fit = availWidth > 0 ? availWidth / imgW : 1;
   const fitScale = fit >= 1 ? Math.min(MAX_FIT_SCALE, Math.floor(fit)) : fit;
   const scale = zoom ?? fitScale;
   const cssW = Math.round(imgW * scale);
@@ -185,8 +186,9 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
       >
         {image ? (
           <div
-            className="checker relative mx-auto cursor-pointer"
-            style={{ width: cssW, height: cssH }}
+            className="checker relative cursor-pointer"
+            // Whole-pixel centering keeps tile edges crisp.
+            style={{ width: cssW, height: cssH, marginLeft: Math.max(0, Math.floor((availWidth - cssW) / 2)) }}
             onPointerMove={(e) => {
               const cell = cellAt(e);
               setHover((h) => (h?.col === cell?.col && h?.row === cell?.row ? h : cell));
@@ -213,7 +215,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
             {hover && (hover.col !== selected?.col || hover.row !== selected?.row) && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/40"
+                className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
                 style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH }}
               />
             )}

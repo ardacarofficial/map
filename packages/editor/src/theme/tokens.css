@@ -50,7 +50,7 @@
   --color-success-soft: rgb(95 207 152 / 0.12);
 
   /* ---- Tile hover / checkerboard in the tileset panel */
-  --color-hover-tile: rgb(255 255 255 / 0.16);
+  --color-hover-tile: rgb(255 255 255 / 0.2);
   --color-tile-grid: rgb(255 255 255 / 0.07);
   --color-checker-a: #1c1c20;
   --color-checker-b: #232328;
@@ -91,7 +91,7 @@
   --spacing-toolbar: 40px;
   --spacing-statusbar: 24px;
   --spacing-rail: 44px;
-  --spacing-sidebar: 280px;
+  --spacing-sidebar: 296px;
 
   /* ---- Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
