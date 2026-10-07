@@ -3,9 +3,12 @@ import { create } from "zustand";
 
 /**
  * What a click in the tileset panel does: pick tiles (default), toggle
- * "katı" (solid), or place a terrain block.
+ * "katı" (solid), place a terrain block, or toggle tiles of the random brush.
  */
-export type TilesetMode = "pick" | "solid" | "terrain";
+export type TilesetMode = "pick" | "solid" | "terrain" | "random";
+
+/** What the library section of the right column shows. */
+export type LibraryTab = "tileset" | "stamps";
 
 /**
  * Panel/dialog state that only the React UI cares about (the canvas never
@@ -26,6 +29,9 @@ export interface UiState {
   tilesetMode: TilesetMode;
   /** Template used by "Arazi tanımla". */
   terrainTemplate: TerrainTemplate;
+  libraryTab: LibraryTab;
+  saveStampOpen: boolean;
+  entityTypesOpen: boolean;
 
   togglePanels(): void;
   setPaletteOpen(open: boolean): void;
@@ -39,6 +45,9 @@ export interface UiState {
   toggleTilesetMode(mode: TilesetMode): void;
   setTilesetMode(mode: TilesetMode): void;
   setTerrainTemplate(template: TerrainTemplate): void;
+  setLibraryTab(tab: LibraryTab): void;
+  setSaveStampOpen(open: boolean): void;
+  setEntityTypesOpen(open: boolean): void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -52,6 +61,9 @@ export const useUiStore = create<UiState>()((set) => ({
   draggingFiles: false,
   tilesetMode: "pick",
   terrainTemplate: DEFAULT_TERRAIN_TEMPLATE,
+  libraryTab: "tileset",
+  saveStampOpen: false,
+  entityTypesOpen: false,
 
   togglePanels: () => set((s) => ({ panelsHidden: !s.panelsHidden })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
@@ -64,4 +76,7 @@ export const useUiStore = create<UiState>()((set) => ({
   toggleTilesetMode: (mode) => set((s) => ({ tilesetMode: s.tilesetMode === mode ? "pick" : mode })),
   setTilesetMode: (tilesetMode) => set({ tilesetMode }),
   setTerrainTemplate: (terrainTemplate) => set({ terrainTemplate }),
+  setLibraryTab: (libraryTab) => set({ libraryTab }),
+  setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
+  setEntityTypesOpen: (entityTypesOpen) => set({ entityTypesOpen }),
 }));

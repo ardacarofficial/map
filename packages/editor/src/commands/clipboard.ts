@@ -20,6 +20,7 @@ import {
   parseClip,
   serializeClip,
   type MapDocument,
+  type Stamp,
   type TileClip,
 } from "@smap/core";
 import { t } from "../i18n";
@@ -138,7 +139,14 @@ export async function pasteFromSystem(): Promise<boolean> {
 export function flipStampOrTile(axis: "x" | "y"): boolean {
   const state = useEditorStore.getState();
   if (state.stamp) {
-    state.setStamp(flipClip(state.stamp, axis));
+    const flipped = flipClip(state.stamp, axis);
+    // A saved stamp stays one (id + name kept), so the canvas still places it with `placeStamp`.
+    const saved = state.stamp as Partial<Stamp>;
+    state.setStamp(
+      typeof saved.id === "string" && typeof saved.name === "string"
+        ? Object.freeze({ ...flipped, id: saved.id, name: saved.name })
+        : flipped,
+    );
     return true;
   }
   const layer = activeLayer(contextOf(state));

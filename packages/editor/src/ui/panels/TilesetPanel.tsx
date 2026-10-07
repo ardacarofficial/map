@@ -31,6 +31,8 @@ import { TerrainList, useActiveTerrainId } from "../terrain/TerrainList";
 import { templateGlyphs } from "../terrain/templateGlyph";
 import { toast } from "../toast/toastStore";
 import { useUiStore, type TilesetMode } from "../uiStore";
+import { toggleRandomTile } from "../../commands/randomBrush";
+import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
 
 const PADDING = 12;
@@ -55,6 +57,7 @@ export function TilesetPanel() {
   return (
     <PanelSection
       title={t("panels.tileset")}
+      heading={<LibraryTabs />}
       className="min-h-[160px] flex-1"
       actions={
         <>
@@ -62,6 +65,7 @@ export function TilesetPanel() {
             <>
               <ModeButton mode="solid" current={mode} icon="bricks" label={t("tileset.solidMode")} onClick={toggleMode} />
               <ModeButton mode="terrain" current={mode} icon="terrain" label={t("tileset.terrainMode")} onClick={toggleMode} />
+              <ModeButton mode="random" current={mode} icon="dice" label={t("tileset.randomMode")} onClick={toggleMode} />
               <div aria-hidden className="mx-0.5 h-4 w-px bg-line" />
             </>
           )}
@@ -105,7 +109,7 @@ function ModeButton({
 }: {
   mode: TilesetMode;
   current: TilesetMode;
-  icon: "bricks" | "terrain";
+  icon: "bricks" | "terrain" | "dice";
   label: string;
   onClick(mode: TilesetMode): void;
 }) {
@@ -314,6 +318,9 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
   };
 
   const select = (col: number, row: number) => {
+    // A normal pick is a single tile: it ends a random brush and a stamp on the brush.
+    useEditorStore.getState().setRandomSet([]);
+    useEditorStore.getState().setStamp(null);
     setSelection({ tilesetId: tileset.id, tileId: row * tileset.columns + col });
     // Picking a tile while a terrain / collision layer is active: paint it on a tile layer.
     const state = useEditorStore.getState();
@@ -323,8 +330,10 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     setTool("brush");
   };
 
+  const randomSet = useEditorStore((s) => s.randomSet);
+  const randomHere = randomSet.length >= 2 ? randomSet.filter((r) => r.tilesetId === tileset.id) : [];
   const selected =
-    selection && selection.tilesetId === tileset.id
+    randomSet.length < 2 && selection && selection.tilesetId === tileset.id
       ? { col: selection.tileId % tileset.columns, row: Math.floor(selection.tileId / tileset.columns) }
       : null;
 
@@ -365,7 +374,9 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     if (e.button !== 0) return;
     const cell = cellAt(e);
     if (!cell) return;
-    if (mode === "pick") {
+    if (mode === "random" || (e.altKey && mode === "pick")) {
+      toggleRandomTile({ tilesetId: tileset.id, tileId: cell.row * tileset.columns + cell.col });
+    } else if (mode === "pick") {
       select(cell.col, cell.row);
     } else if (mode === "solid") {
       if (!store || store.inTransaction || !store.document.getTileset(tileset.id)) return;
@@ -381,7 +392,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
   };
 
   const solidCount = tileset.solidTiles?.length ?? 0;
-  const cursor = mode === "pick" ? "cursor-pointer" : mode === "terrain" && blockProblem ? "cursor-not-allowed" : "cursor-crosshair";
+  const cursor = mode === "pick" || mode === "random" ? "cursor-pointer" : mode === "terrain" && blockProblem ? "cursor-not-allowed" : "cursor-crosshair";
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -389,6 +400,14 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
         <ModeBar icon="bricks" tone="solid" onDone={() => setMode("pick")}>
           <span className="min-w-0 flex-1 text-xs leading-4 text-muted">{t("tileset.solidModeHint")}</span>
           <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.solidCount", { count: solidCount })}</span>
+        </ModeBar>
+      )}
+      {mode === "random" && (
+        <ModeBar icon="dice" tone="random" onDone={() => setMode("pick")}>
+          <span className="min-w-0 flex-1 text-xs leading-4 text-muted">{t("tileset.randomModeHint")}</span>
+          {randomSet.length >= 2 && (
+            <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.randomCount", { count: randomSet.length })}</span>
+          )}
         </ModeBar>
       )}
       {mode === "terrain" && (
@@ -467,7 +486,26 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
                   </div>
                 );
               })}
-            {mode === "pick" && hover && (hover.col !== selected?.col || hover.row !== selected?.row) && (
+            {randomHere.map((r) => {
+              const col = r.tileId % tileset.columns;
+              const row = Math.floor(r.tileId / tileset.columns);
+              return (
+                <div
+                  key={r.tileId}
+                  aria-hidden
+                  data-random-tile={r.tileId}
+                  className="pointer-events-none absolute rounded-[1px] outline-2 outline-accent"
+                  style={{ left: col * cellW, top: row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
+                >
+                  {cellW >= 14 && (
+                    <span className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-accent text-on-accent shadow-popup">
+                      <Icon name="dice" size={9} strokeWidth={2.5} />
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {(mode === "pick" || mode === "random") && hover && (hover.col !== selected?.col || hover.row !== selected?.row) && (
               <div
                 aria-hidden
                 className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
@@ -561,14 +599,18 @@ function ModeBar({
   onDone,
   children,
 }: {
-  icon: "bricks" | "terrain";
-  tone: "solid" | "terrain";
+  icon: "bricks" | "terrain" | "dice";
+  tone: "solid" | "terrain" | "random";
   onDone(): void;
   children: ReactNode;
 }) {
   return (
     <div className="mx-2 mb-1 flex shrink-0 items-center gap-2 rounded-md border border-line bg-raised py-1 pr-1 pl-2">
-      <Icon name={icon} size={14} className={`shrink-0 ${tone === "solid" ? "text-collision-solid" : "text-terrain-tint"}`} />
+      <Icon
+        name={icon}
+        size={14}
+        className={`shrink-0 ${tone === "solid" ? "text-collision-solid" : tone === "random" ? "text-accent" : "text-terrain-tint"}`}
+      />
       {children}
       <Button variant="ghost" className="h-6 shrink-0 px-2 text-sm" onClick={onDone}>
         {t("tileset.done")}

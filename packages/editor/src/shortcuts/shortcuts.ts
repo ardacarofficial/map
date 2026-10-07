@@ -31,6 +31,8 @@ export type CommandId =
   | "view.toggleCollision"
   | "tool.entity"
   | "stamp.saveSelection"
+  | "layer.addEntity"
+  | "entity.editTypes"
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.zoomIn"
@@ -97,6 +99,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
   { command: "tool.entity", keys: ["O"] },
   { command: "stamp.saveSelection", keys: [] },
+  { command: "layer.addEntity", keys: [] },
+  { command: "entity.editTypes", keys: [] },
   { command: "layer.addCollision", keys: [] },
   { command: "tileset.markSolid", keys: [] },
   { command: "tileset.defineTerrain", keys: [] },

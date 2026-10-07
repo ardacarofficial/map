@@ -29,6 +29,8 @@ import {
 } from "./enablement";
 import { addLayer, removeLayer } from "./layerActions";
 import { addCollisionLayer } from "./terrainActions";
+import { addEntityLayer } from "./entityActions";
+import { stampRegion } from "./stampActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
@@ -181,6 +183,27 @@ const COMMANDS: Command[] = [
       if (layer) removeLayer(layer.id);
     },
   },
+  {
+    id: "layer.addEntity",
+    title: "commands.layer.addEntity",
+    category: "layer",
+    enabled: hasProject,
+    run: () => void addEntityLayer(),
+  },
+  {
+    id: "stamp.saveSelection",
+    title: "commands.stamp.saveSelection",
+    category: "edit",
+    enabled: () => hasProject() && stampRegion() !== null,
+    run: () => ui().setSaveStampOpen(true),
+  },
+  {
+    id: "entity.editTypes",
+    title: "commands.entity.editTypes",
+    category: "entity",
+    enabled: hasProject,
+    run: () => ui().setEntityTypesOpen(true),
+  },
   { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => ui().setResizeOpen(true) },
   // ---- Tools
   tool("brush"),
@@ -189,6 +212,7 @@ const COMMANDS: Command[] = [
   tool("rect"),
   tool("select"),
   tool("eyedropper"),
+  tool("entity"),
 
   // ---- View
   {

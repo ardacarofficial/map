@@ -7,7 +7,7 @@ import type { MessageKey } from "../i18n";
 import { SHORTCUTS, type CommandId } from "../shortcuts/shortcuts";
 import { matchesChord, parseChord, type KeyChord, type KeyEventLike } from "./keymap";
 
-export type CommandCategory = "file" | "edit" | "view" | "tool" | "layer" | "map" | "tileset" | "general";
+export type CommandCategory = "file" | "edit" | "view" | "tool" | "layer" | "map" | "tileset" | "entity" | "general";
 
 export interface Command {
   id: CommandId;
