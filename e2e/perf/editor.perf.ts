@@ -24,6 +24,9 @@ const RESULTS = fileURLToPath(new URL("./results/", import.meta.url));
 const LABEL = process.env.PERF_LABEL ?? "latest";
 const RUNS = Number(process.env.PERF_RUNS ?? 5);
 const PROFILE = process.env.PERF_PROFILE === "1";
+/** `PERF_ONLY=c,e` runs only those scenarios ((b) always opens the project for the rest). */
+const ONLY = process.env.PERF_ONLY?.split(",").map((s) => s.trim());
+const want = (scenario: string) => !ONLY || ONLY.includes(scenario);
 
 interface Frame {
   start: number;
@@ -103,6 +106,7 @@ async function newPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession;
   await page.addInitScript(initScript);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  if (process.env.PERF_DEBUG) page.on("console", (m) => console.log(`console.${m.type()}: ${m.text()}`));
   const cdp = await context.newCDPSession(page);
   return {
     page,
@@ -242,7 +246,7 @@ test("editor perf", async ({ browser }) => {
   };
 
   // ---------------------------------------------------------------- (a) welcome
-  {
+  if (want("a")) {
     const fcp: number[] = [];
     const welcome: number[] = [];
     const tti: number[] = [];
@@ -284,7 +288,7 @@ test("editor perf", async ({ browser }) => {
     await resetLog(page, false);
     if (profileName) await startProfile(cdp);
     const clickAt = await page.evaluate(() => {
-      const button = [...document.querySelectorAll("button")].find((b) => /Bir proje klasörü seç/.test(b.textContent ?? ""));
+      const button = Array.from(document.querySelectorAll("button")).find((b) => /Bir proje klasörü seç/.test(b.textContent ?? ""));
       if (!button) throw new Error("open button not found");
       const t = performance.now();
       button.click();
@@ -312,7 +316,7 @@ test("editor perf", async ({ browser }) => {
     return { firstFrame: first.end - clickAt, firstFrameJs: first.end - first.start, busy: lastLong - clickAt, longest };
   };
 
-  {
+  if (want("b")) {
     const runs: Awaited<ReturnType<typeof openRun>>[] = [];
     for (let run = 0; run < Math.max(1, Math.min(RUNS, 3)); run++) {
       const { page, cdp, close } = await newPage(browser);
@@ -335,7 +339,7 @@ test("editor perf", async ({ browser }) => {
   const heapOpen = await heapMb(cdp);
 
   // ---------------------------------------------------------------- (d) pan / zoom
-  for (const zoom of [1, 0.5, 0.25, 0.125, 0.09, 0.03]) {
+  for (const zoom of want("d") ? [1, 0.5, 0.25, 0.125, 0.09, 0.03] : []) {
     await setCamera(page, 300, 300, zoom);
     await page.mouse.move(cx - 400, cy - 200);
     await settle(page, 100);
@@ -349,7 +353,7 @@ test("editor perf", async ({ browser }) => {
     put(`d.pan @${zoom * 100}%${fr.some((f) => f.lod) ? " (LOD)" : ""} frame p95`, s.p95);
     put(`d.pan @${zoom * 100}% frame max`, s.max);
   }
-  {
+  if (want("d")) {
     await setCamera(page, 512, 512, 1);
     await page.mouse.move(cx, cy);
     await settle(page, 100);
@@ -377,7 +381,7 @@ test("editor perf", async ({ browser }) => {
     s.setTool!("brush");
     s.setSelection!({ tilesetId: "overworld", tileId: 9 });
   });
-  for (const zoom of [1, 0.25]) {
+  for (const zoom of want("c") ? [1, 0.25] : []) {
     await setCamera(page, 512, 512, zoom);
     const strokes: { latency: number[]; handler: number[]; coalesced: number[] } = { latency: [], handler: [], coalesced: [] };
     const fr: Frame[] = [];
@@ -395,7 +399,17 @@ test("editor perf", async ({ browser }) => {
         await page.mouse.move(cx - dx / 2, cy + 200 - k * 40, { steps });
         await page.mouse.up();
         await settle(page, 30);
-        const l = inputLatencies(await inputs(page), await frames(page));
+        const rawInputs = await inputs(page);
+        if (process.env.PERF_DEBUG) {
+          console.log(await page.evaluate(([x, y]) => {
+            const el = document.elementFromPoint(x! - 600, y! - 250);
+            const s = (window as unknown as { __smap: { editor: { getState(): Record<string, unknown> } } }).__smap.editor.getState();
+            const st = (window as unknown as { __smap: { store: { revision: number; inTransaction: boolean; document: { tilesets: { id: string }[]; layers: { id: string; locked: boolean; visible: boolean }[] } } } }).__smap.store;
+            return `${JSON.stringify(st.document.tilesets.map((t) => t.id))} ${JSON.stringify(st.document.layers)} tx=${st.inTransaction} rev=${st.revision} ${el?.tagName} ${el?.getAttribute("aria-label")} tool=${String(s.tool)} layer=${String(s.activeLayerId)} sel=${JSON.stringify(s.selection)}`;
+          }, [cx, cy]));
+          await page.screenshot({ path: `${RESULTS}debug.png` });
+        }
+        const l = inputLatencies(rawInputs, await frames(page));
         strokes.latency.push(...l.latency);
         strokes.handler.push(...l.handler);
         strokes.coalesced.push(...l.coalesced);
@@ -417,7 +431,7 @@ test("editor perf", async ({ browser }) => {
   await quiet(page, 0, 800);
 
   // ---------------------------------------------------------------- (e) fill + undo
-  {
+  if (want("e")) {
     await page.evaluate(() => {
       const hook = (window as unknown as {
         __smap: { store: { dispatch(op: unknown): string }; editor: { getState(): Record<string, (...a: unknown[]) => void> } };
@@ -462,7 +476,7 @@ test("editor perf", async ({ browser }) => {
   }
 
   // ---------------------------------------------------------------- (g) save
-  {
+  if (want("g")) {
     await settle(page, 50);
     await startProfile(cdp);
     const t = await page.evaluate(() => performance.now());
@@ -470,7 +484,7 @@ test("editor perf", async ({ browser }) => {
     const handle = await page.waitForFunction(
       () => (document.querySelector("[aria-label='Tüm değişiklikler kaydedildi']") ? performance.now() : 0),
       undefined,
-      { timeout: 60_000, polling: "mutation" },
+      { timeout: 60_000, polling: 10 },
     );
     const savedAt = (await handle.jsonValue()) as number;
     await stopProfile(cdp, "save", results);

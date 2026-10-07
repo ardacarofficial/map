@@ -243,6 +243,7 @@ export class PointerInput {
   }
 
   #onPointerDown(e: PointerEvent): void {
+    console.log("DBG top", !!this.#host.world());
     const tools = this.#host.tools;
     this.#canvasRect = null;
     this.pointer = this.toLocal(e);
@@ -261,6 +262,7 @@ export class PointerInput {
       this.updateCursor();
       return;
     }
+    console.log("DBG down", e.button, !!this.#pan, !!tools.gesture, this.#spaceDown, JSON.stringify(this.pointerCell()), JSON.stringify(this.pointer));
     if (e.button === 2 && tools.isCancelable()) {
       tools.cancel();
       return;
