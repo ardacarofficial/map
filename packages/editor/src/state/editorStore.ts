@@ -6,7 +6,7 @@ import type { MapStore, TileClip } from "@smap/core";
  * `MapStore`. Canvas (`src/canvas`) and panels (`src/ui`) both read this store.
  */
 
-export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper";
+export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity";
 
 /** Rectangular region in cell coordinates (inclusive x/y, width/height ≥ 1). */
 export interface CellRegion {
@@ -58,6 +58,15 @@ export interface EditorState {
   gridValue: number;
   /** Show derived collision as an overlay on the canvas. */
   collisionOverlay: boolean;
+  /**
+   * Random brush: when non-empty (2+ tiles picked in the tileset with Alt),
+   * the brush picks per cell with core `pickRandomTile` instead of `selection`.
+   */
+  randomSet: { tilesetId: string; tileId: number; weight?: number }[];
+  /** Entity type placed by the "entity" tool (e.g. "spawn", "portal", custom id). */
+  entityTypeId: string | null;
+  /** Selected entity on the map (entity layer), shown in Özellik. */
+  selectedEntityId: string | null;
 
   setProject(project: OpenProject | null): void;
   setTool(tool: ToolId): void;
@@ -71,6 +80,9 @@ export interface EditorState {
   setStamp(stamp: TileClip | null): void;
   setGridValue(value: number): void;
   toggleCollisionOverlay(): void;
+  setRandomSet(set: { tilesetId: string; tileId: number; weight?: number }[]): void;
+  setEntityTypeId(id: string | null): void;
+  setSelectedEntity(id: string | null): void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -86,6 +98,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   stamp: null,
   gridValue: 1,
   collisionOverlay: false,
+  randomSet: [],
+  entityTypeId: null,
+  selectedEntityId: null,
 
   setProject: (project) =>
     set({
@@ -95,6 +110,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
       dirty: false,
       region: null,
       stamp: null,
+      randomSet: [],
+      selectedEntityId: null,
     }),
   setTool: (tool) => set({ tool }),
   setSelection: (selection) => set({ selection }),
@@ -106,5 +123,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setRegion: (region) => set({ region }),
   setStamp: (stamp) => set({ stamp }),
   setGridValue: (gridValue) => set({ gridValue }),
+  setRandomSet: (randomSet) => set({ randomSet }),
+  setEntityTypeId: (entityTypeId) => set({ entityTypeId }),
+  setSelectedEntity: (selectedEntityId) => set({ selectedEntityId }),
   toggleCollisionOverlay: () => set((s) => ({ collisionOverlay: !s.collisionOverlay })),
 }));

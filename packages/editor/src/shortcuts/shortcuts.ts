@@ -29,6 +29,8 @@ export type CommandId =
   | "layer.remove"
   | "map.resize"
   | "view.toggleCollision"
+  | "tool.entity"
+  | "stamp.saveSelection"
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.zoomIn"
@@ -93,6 +95,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.remove", keys: [] },
   { command: "map.resize", keys: [] },
   { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
+  { command: "tool.entity", keys: ["O"] },
+  { command: "stamp.saveSelection", keys: [] },
   { command: "layer.addCollision", keys: [] },
   { command: "tileset.markSolid", keys: [] },
   { command: "tileset.defineTerrain", keys: [] },
