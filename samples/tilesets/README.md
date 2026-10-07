@@ -8,3 +8,5 @@ All PNG, RGBA, no margin or spacing.
 | dungeon-16.png | 16 | 6 | 4 | 96x64 | 24 tiles, dark palette; tile 7 has alpha (torch) |
 | blob47-32.png | 32 | 8 | 6 | 256x192 | 47 blob autotile tiles (last slot empty); see blob47-32.md |
 | wang16-32.png | 32 | 4 | 4 | 128x128 | 16 corner-Wang tiles; see wang16-32.md |
+
+Terrain templates (`corner16`, `blob47`) and how the editor derives tiles from them: see TEMPLATES.md.
