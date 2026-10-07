@@ -26,14 +26,15 @@ export const CANVAS_COLORS = {
   fillPreviewAlpha: 0.35,
   /** Brush / rectangle footprint on a grid layer (accent). */
   gridBrushAlpha: 0.35,
-  /** Painted cells of the active terrain layer (accent). */
+  /** Painted cells of the active terrain layer — token `--color-terrain-tint` (default: the accent). */
+  terrainTint: 0x6d8cff,
   terrainTintAlpha: 0.15,
   /** Solid cells of the collision overlay — token `--color-collision-solid`. */
   collisionSolid: 0xff5a5a,
   collisionSolidAlpha: 0.3,
   /** Outline of solid areas (same colour). */
   collisionLineAlpha: 0.9,
-  /** Cells a collision layer forces passable — token `--color-collision-passable`. */
+  /** Cells a collision layer forces passable — token `--color-collision-pass`. */
   collisionPassable: 0x3ddc84,
   collisionPassableAlpha: 0.45,
 };
@@ -56,6 +57,7 @@ export function readThemeColors(el: Element): CanvasColors {
     mapBorder: token("--color-line", CANVAS_COLORS.mapBorder),
     accent: token("--color-accent", CANVAS_COLORS.accent),
     collisionSolid: token("--color-collision-solid", CANVAS_COLORS.collisionSolid),
-    collisionPassable: token("--color-collision-passable", CANVAS_COLORS.collisionPassable),
+    collisionPassable: token("--color-collision-pass", CANVAS_COLORS.collisionPassable),
+    terrainTint: token("--color-terrain-tint", token("--color-accent", CANVAS_COLORS.terrainTint)),
   };
 }

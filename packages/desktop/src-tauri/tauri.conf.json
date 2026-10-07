@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Harita Tasarlayıcı",
+  "mainBinaryName": "harita-tasarlayici",
+  "version": "0.5.0",
+  "identifier": "com.smap.haritatasarlayici",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../editor/dist",
+    "beforeDevCommand": "pnpm --filter @smap/editor dev --port 5173 --strictPort",
+    "beforeBuildCommand": "pnpm --filter @smap/editor build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Harita Tasarlayıcı",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "visible": false,
+        "backgroundColor": "#141416",
+        "theme": "Dark",
+        "zoomHotkeysEnabled": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "2D tile harita editörü",
+    "fileAssociations": [
+      {
+        "ext": ["smap"],
+        "name": "Harita Tasarlayıcı Projesi",
+        "description": "Harita Tasarlayıcı projesi",
+        "role": "Editor",
+        "mimeType": "application/x-smap"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Turkish", "English"],
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

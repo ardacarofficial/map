@@ -40,7 +40,7 @@ import {
 
 /** Colours the overlays need (from `CANVAS_COLORS` / theme tokens). */
 export interface GridOverlayColors {
-  readonly accent: number;
+  readonly terrainTint: number;
   readonly terrainTintAlpha: number;
   readonly collisionSolid: number;
   readonly collisionSolidAlpha: number;
@@ -245,7 +245,7 @@ export class GridOverlays {
 }
 
 function terrainColors(c: GridOverlayColors): CodeColors {
-  return [null, rgba(c.accent, c.terrainTintAlpha)];
+  return [null, rgba(c.terrainTint, c.terrainTintAlpha)];
 }
 
 function collisionColors(c: GridOverlayColors): CodeColors {

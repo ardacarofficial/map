@@ -19,6 +19,7 @@ import { Application, Container, Ticker } from "pixi.js";
 
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
+import { snappedOffset } from "./camera";
 import { CameraController } from "./cameraController";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
 import { GridOverlays, type GridOverlayColors } from "./gridOverlays";
@@ -40,7 +41,7 @@ export interface CanvasHandle {
 
 function gridOverlayColors(c: CanvasColors): GridOverlayColors {
   return {
-    accent: c.accent,
+    terrainTint: c.terrainTint,
     terrainTintAlpha: c.terrainTintAlpha,
     collisionSolid: c.collisionSolid,
     collisionSolidAlpha: c.collisionSolidAlpha,
@@ -372,7 +373,7 @@ export class MapCanvas {
     const animating = cam.step(dt);
 
     this.#scene?.flush();
-    const off = { x: Math.round(cam.camera.x * cam.resolution) / cam.resolution, y: Math.round(cam.camera.y * cam.resolution) / cam.resolution };
+    const off = snappedOffset(cam.camera, cam.resolution);
     this.#world.position.set(off.x, off.y);
     this.#world.scale.set(cam.camera.zoom);
 
