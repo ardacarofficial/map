@@ -35,7 +35,7 @@ export interface CreateDocumentOptions {
  */
 export class MapDocument {
   readonly documentFormatVersion = DOCUMENT_FORMAT_VERSION;
-  readonly map: MapInfo;
+  #map: MapInfo;
   readonly palette = new Palette();
   readonly #tilesets: Tileset[] = [];
   readonly #layers: TileLayer[] = [];
@@ -43,7 +43,12 @@ export class MapDocument {
   constructor(map: MapInfo) {
     const problem = mapInfoProblem(map);
     if (problem) throw new RangeError(`Invalid map: ${problem}`);
-    this.map = Object.freeze({ ...map });
+    this.#map = Object.freeze({ ...map });
+  }
+
+  /** Map dimensions. Replaced (never mutated) by a `resizeMap` op. */
+  get map(): MapInfo {
+    return this.#map;
   }
 
   /** Tilesets in project order. */
@@ -81,9 +86,26 @@ export class MapDocument {
     this.#tilesets.push(Object.freeze({ ...tileset }));
   }
 
+  /** Position of layer `id` from the bottom, or `-1`. */
+  indexOfLayer(id: string): number {
+    return this.#layers.findIndex((layer) => layer.id === id);
+  }
+
   /** @internal */
   _insertLayer(layer: TileLayer, index: number): void {
     this.#layers.splice(index, 0, layer);
+  }
+
+  /** @internal Removes the layer at `index` and returns it. */
+  _removeLayerAt(index: number): TileLayer {
+    const [layer] = this.#layers.splice(index, 1);
+    if (!layer) throw new RangeError(`no layer at index ${index}`);
+    return layer;
+  }
+
+  /** @internal Replaces the map dimensions (bounds checked by the caller). */
+  _setMap(map: MapInfo): void {
+    this.#map = Object.freeze({ ...map });
   }
 }
 

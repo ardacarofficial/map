@@ -13,6 +13,7 @@
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
 import { cellPaletteIndex, isValidCell } from "./cell";
+import type { ClipLayer, TileClip } from "./clip";
 import { CHUNK_AREA, CHUNK_SHIFT, CHUNK_SIZE } from "./chunk";
 import { DOCUMENT_FORMAT_VERSION, MapDocument, mapInfoProblem, type MapInfo } from "./document";
 import { TileLayer, layerPropsProblem, type LayerProps } from "./layer";
@@ -22,6 +23,8 @@ import { relativePathProblem, tilesetProblem, type Tileset } from "./tileset";
 export const PROJECT_FORMAT = "smap-project";
 /** `format` field of a level file. */
 export const LEVEL_FORMAT = "smap-level";
+/** `format` field of a serialized clip (system clipboard). */
+export const CLIP_FORMAT = "smap-clip";
 /** Conventional project file name. */
 export const PROJECT_FILE_NAME = "project.smap";
 
@@ -90,6 +93,21 @@ export function serializeLevel(doc: MapDocument): string {
         .sort((a, b) => a.cy - b.cy || a.cx - b.cx)
         .map((chunk) => ({ cx: chunk.cx, cy: chunk.cy, data: encodeUint32LE(chunk.data) })),
     })),
+  });
+}
+
+/**
+ * Clip text for the system clipboard. Deterministic: same clip, same bytes.
+ * Each layer's cells are little-endian `Uint32`, base64-encoded.
+ */
+export function serializeClip(clip: TileClip): string {
+  return toJson({
+    format: CLIP_FORMAT,
+    documentFormatVersion: DOCUMENT_FORMAT_VERSION,
+    width: clip.width,
+    height: clip.height,
+    palette: clip.palette.map((entry, i) => ({ index: i + 1, tilesetId: entry.tilesetId, tileId: entry.tileId })),
+    layers: clip.layers.map((layer) => ({ layerId: layer.layerId, name: layer.name, data: encodeUint32LE(layer.cells) })),
   });
 }
 
@@ -198,6 +216,55 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
   });
 
   return doc;
+}
+
+/**
+ * Parses and validates clip text (e.g. from the system clipboard).
+ * @throws FormatError on any problem (also when the text is not a clip at all).
+ */
+export function parseClip(text: string): TileClip {
+  const root = readRoot(text, CLIP_FORMAT, "clip");
+  const width = int(root, "width", "");
+  const height = int(root, "height", "");
+  if (width < 1 || height < 1 || width * height > 1 << 26) {
+    throw new FormatError("", `clip size ${width}×${height} is invalid`);
+  }
+  const palette = arr(root, "palette", "").map((item, i) => {
+    const path = `palette[${i}]`;
+    const entry = obj(item, path);
+    const index = int(entry, "index", path);
+    if (index !== i + 1) throw new FormatError(`${path}.index`, `expected ${i + 1}, got ${index}`);
+    const tilesetId = str(entry, "tilesetId", path);
+    if (tilesetId.length === 0) throw new FormatError(`${path}.tilesetId`, "must not be empty");
+    const tileId = int(entry, "tileId", path);
+    if (tileId < 0) throw new FormatError(`${path}.tileId`, `must be ≥ 0, got ${tileId}`);
+    return Object.freeze({ tilesetId, tileId });
+  });
+  const layers = arr(root, "layers", "").map((item, i): ClipLayer => {
+    const path = `layers[${i}]`;
+    const layerObj = obj(item, path);
+    const layerId = str(layerObj, "layerId", path);
+    const name = str(layerObj, "name", path);
+    let cells: Uint32Array;
+    try {
+      cells = decodeUint32LE(str(layerObj, "data", path));
+    } catch (error) {
+      if (error instanceof FormatError) throw error;
+      throw new FormatError(`${path}.data`, `invalid base64: ${(error as Error).message}`);
+    }
+    if (cells.length !== width * height) {
+      throw new FormatError(`${path}.data`, `expected ${width * height} cells, got ${cells.length}`);
+    }
+    for (const cell of cells) {
+      if (!isValidCell(cell)) throw new FormatError(`${path}.data`, `invalid cell value ${cell}`);
+      if (cellPaletteIndex(cell) > palette.length) {
+        throw new FormatError(`${path}.data`, `palette index ${cellPaletteIndex(cell)} does not exist`);
+      }
+    }
+    return Object.freeze({ layerId, name, cells });
+  });
+  assertUnique(layers.map((l) => l.layerId), "layers", "layerId");
+  return Object.freeze({ width, height, palette: Object.freeze(palette), layers: Object.freeze(layers) });
 }
 
 function readChunks(items: unknown[], path: string, layer: TileLayer, doc: MapDocument): void {

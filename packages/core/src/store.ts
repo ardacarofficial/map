@@ -1,21 +1,35 @@
 import { isValidCell, cellPaletteIndex, type Cell } from "./cell";
-import { CHUNK_SHIFT, chunkKey, type ChunkKey } from "./chunk";
-import type { MapDocument } from "./document";
-import { TileLayer, layerPropsProblem, type LayerProps } from "./layer";
+import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, chunkKey, localIndex, type ChunkKey } from "./chunk";
+import { mapInfoProblem, type MapDocument, type MapInfo } from "./document";
+import { TileLayer, layerPropsProblem, type ChunkSnapshot, type LayerProps, type LayerPropValues } from "./layer";
 import type {
   AddLayerOp,
   AddPaletteEntryOp,
   AddTilesetOp,
   CellChange,
   LayerPatch,
+  MoveLayerOp,
   Op,
   OpResult,
   PaintCellsOp,
+  RemoveLayerOp,
+  ResizeMapOp,
+  SetLayerPropsOp,
 } from "./ops";
 import { isValidTileId, tilesetProblem } from "./tileset";
 
-/** Structural parts of a document that can change (renderers rebuild these wholesale). */
-export type StructureChange = "layers" | "tilesets" | "palette";
+/**
+ * Structural parts of a document that can change (renderers rebuild these wholesale).
+ *
+ * - `"layers"`: the layer list changed — a layer was added, removed or moved,
+ *   or its properties (name, visible, locked, opacity) changed. Re-sync by id
+ *   against `document.layers`: drop views of ids that are gone, create views
+ *   (with all their chunks) for new ids, reorder, re-read properties.
+ * - `"map"`: the map was resized. Every layer's content may have moved, so
+ *   rebuild all chunks of all layers and re-read `document.map`.
+ * - `"tilesets"`, `"palette"`: an entry was appended.
+ */
+export type StructureChange = "layers" | "tilesets" | "palette" | "map";
 
 /** Chunks of one layer whose cells changed. A key whose chunk no longer exists was emptied. */
 export interface DirtyChunks {
@@ -41,8 +55,53 @@ export interface StoreChangeEvent {
 
 export type StoreListener = (event: StoreChangeEvent) => void;
 
-/** One undo step: all cell changes of one transaction. */
+/** Cell changes of one layer inside a history entry. */
+export interface CellsHistoryChange extends LayerPatch {
+  readonly kind: "cells";
+}
+
+/**
+ * A layer's position in the layer list: `null` means "not in the document".
+ * Add = `null → i`, remove = `i → null`, move = `i → j`. The layer object
+ * (with its chunks and properties) is kept, so undoing a removal restores it whole.
+ */
+export interface LayerHistoryChange {
+  readonly kind: "layer";
+  readonly layer: TileLayer;
+  readonly before: number | null;
+  readonly after: number | null;
+}
+
+/** Property change of one layer. */
+export interface LayerPropsHistoryChange {
+  readonly kind: "layerProps";
+  readonly layerId: string;
+  readonly before: LayerPropValues;
+  readonly after: LayerPropValues;
+}
+
+/** Map resize: dimensions plus full chunk copies of every layer whose content moved or was clipped. */
+export interface MapHistoryChange {
+  readonly kind: "map";
+  readonly before: MapInfo;
+  readonly after: MapInfo;
+  readonly layers: readonly {
+    readonly layerId: string;
+    readonly before: readonly ChunkSnapshot[];
+    readonly after: readonly ChunkSnapshot[];
+  }[];
+}
+
+/**
+ * One reversible change. Every change stores both sides; undo applies the
+ * `before` sides (in reverse order), redo the `after` sides. No inverse ops.
+ */
+export type HistoryChange = CellsHistoryChange | LayerHistoryChange | LayerPropsHistoryChange | MapHistoryChange;
+
+/** One undo step: all changes of one transaction, in the order they happened. */
 export interface HistoryEntry {
+  readonly changes: readonly HistoryChange[];
+  /** The cell changes among `changes` (kept for v0.1 compatibility). */
   readonly patches: readonly LayerPatch[];
 }
 
@@ -51,35 +110,85 @@ export interface MapStoreOptions {
   historyLimit?: number;
 }
 
+type MutableChange = { x: number; y: number; before: Cell; after: Cell };
+
+/** Per-layer change list plus an index from cell to its slot in the list. */
+class LayerChanges {
+  readonly changes: MutableChange[] = [];
+  /** Sparse index (`cell index → slot`) for small change sets. */
+  #sparse: Map<number, number> | null = new Map();
+  /** Dense index (`cell index → slot + 1`, 0 = none) once the set grows large. */
+  #dense: Int32Array | null = null;
+  readonly #area: number;
+
+  constructor(area: number) {
+    this.#area = area;
+  }
+
+  slot(index: number): number | undefined {
+    if (this.#dense) {
+      const s = this.#dense[index]!;
+      return s === 0 ? undefined : s - 1;
+    }
+    return this.#sparse!.get(index);
+  }
+
+  add(index: number, change: MutableChange): void {
+    const slot = this.changes.length;
+    this.changes.push(change);
+    if (this.#dense) {
+      this.#dense[index] = slot + 1;
+      return;
+    }
+    const sparse = this.#sparse!;
+    sparse.set(index, slot);
+    // A Map of millions of keys is slow; switch to a typed array once the
+    // change set is a sizeable part of the map (fill, big paste, cut).
+    if (sparse.size >= DENSE_THRESHOLD && this.#area <= DENSE_MAX_AREA && sparse.size * 64 >= this.#area) {
+      const dense = new Int32Array(this.#area);
+      for (const [i, sl] of sparse) dense[i] = sl + 1;
+      this.#dense = dense;
+      this.#sparse = null;
+    }
+  }
+}
+
+const DENSE_THRESHOLD = 4096;
+const DENSE_MAX_AREA = 1 << 26;
+
 /** Collects cell changes, keeping the first `before` and last `after` per cell. */
 class PatchBuilder {
-  readonly #layers = new Map<string, Map<number, { x: number; y: number; before: Cell; after: Cell }>>();
+  readonly #layers = new Map<string, LayerChanges>();
   readonly #width: number;
+  readonly #area: number;
+  #lastId: string | null = null;
+  #last: LayerChanges | null = null;
 
-  constructor(width: number) {
-    this.#width = width;
+  constructor(map: MapInfo) {
+    this.#width = map.width;
+    this.#area = map.width * map.height;
   }
 
   record(layerId: string, x: number, y: number, before: Cell, after: Cell): void {
-    let cells = this.#layers.get(layerId);
-    if (!cells) {
-      cells = new Map();
-      this.#layers.set(layerId, cells);
+    let layer = this.#lastId === layerId ? this.#last : this.#layers.get(layerId);
+    if (!layer) {
+      layer = new LayerChanges(this.#area);
+      this.#layers.set(layerId, layer);
     }
+    this.#lastId = layerId;
+    this.#last = layer;
     const index = y * this.#width + x;
-    const existing = cells.get(index);
-    if (existing) existing.after = after;
-    else cells.set(index, { x, y, before, after });
+    const slot = layer.slot(index);
+    if (slot !== undefined) layer.changes[slot]!.after = after;
+    else layer.add(index, { x, y, before, after });
   }
 
   /** Patches with no-op cells (`before === after`) dropped; layers without changes omitted. */
   build(): LayerPatch[] {
     const patches: LayerPatch[] = [];
-    for (const [layerId, cells] of this.#layers) {
+    for (const [layerId, layer] of this.#layers) {
       const changes: CellChange[] = [];
-      for (const c of cells.values()) {
-        if (c.before !== c.after) changes.push(Object.freeze({ x: c.x, y: c.y, before: c.before, after: c.after }));
-      }
+      for (const c of layer.changes) if (c.before !== c.after) changes.push(Object.freeze(c));
       if (changes.length > 0) patches.push(Object.freeze({ layerId, cells: Object.freeze(changes) }));
     }
     return patches;
@@ -90,18 +199,120 @@ class PatchBuilder {
 class DirtyTracker {
   readonly #layers = new Map<string, Set<ChunkKey>>();
 
+  #lastId: string | null = null;
+  #lastCx = Number.NaN;
+  #lastCy = Number.NaN;
+
   add(layerId: string, x: number, y: number): void {
+    const cx = x >> CHUNK_SHIFT;
+    const cy = y >> CHUNK_SHIFT;
+    if (layerId === this.#lastId && cx === this.#lastCx && cy === this.#lastCy) return;
+    this.#lastId = layerId;
+    this.#lastCx = cx;
+    this.#lastCy = cy;
     let keys = this.#layers.get(layerId);
     if (!keys) {
       keys = new Set();
       this.#layers.set(layerId, keys);
     }
-    keys.add(chunkKey(x >> CHUNK_SHIFT, y >> CHUNK_SHIFT));
+    keys.add(chunkKey(cx, cy));
   }
 
   result(): DirtyChunks[] {
     return [...this.#layers].map(([layerId, keys]) => ({ layerId, chunks: [...keys] }));
   }
+}
+
+/**
+ * Collects the changes of an open transaction. Consecutive cell writes are
+ * merged per cell (first `before`, last `after`); a structural change closes
+ * the current cell segment so ordering across structure changes is kept.
+ */
+class ChangeRecorder {
+  readonly #changes: HistoryChange[] = [];
+  #cells: PatchBuilder | null = null;
+
+  recordCell(map: MapInfo, layerId: string, x: number, y: number, before: Cell, after: Cell): void {
+    this.#cells ??= new PatchBuilder(map);
+    this.#cells.record(layerId, x, y, before, after);
+  }
+
+  recordStructural(change: HistoryChange): void {
+    this.#flush();
+    this.#changes.push(change);
+  }
+
+  build(): HistoryChange[] {
+    this.#flush();
+    return this.#changes;
+  }
+
+  #flush(): void {
+    if (!this.#cells) return;
+    for (const patch of this.#cells.build()) this.#changes.push(cellsChange(patch));
+    this.#cells = null;
+  }
+}
+
+function cellsChange(patch: LayerPatch): CellsHistoryChange {
+  return Object.freeze({ kind: "cells", layerId: patch.layerId, cells: patch.cells });
+}
+
+function makeEntry(changes: readonly HistoryChange[]): HistoryEntry {
+  const patches = changes
+    .filter((c): c is CellsHistoryChange => c.kind === "cells")
+    .map((c): LayerPatch => Object.freeze({ layerId: c.layerId, cells: c.cells }));
+  return Object.freeze({ changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
+}
+
+function samePropValues(a: LayerPropValues, b: LayerPropValues): boolean {
+  return a.name === b.name && a.visible === b.visible && a.locked === b.locked && a.opacity === b.opacity;
+}
+
+/**
+ * Moves every cell of `chunks` by (`dx`, `dy`) and drops cells outside
+ * `width` × `height`. Returns the new chunks (sorted) and whether anything changed.
+ */
+function shiftChunks(
+  chunks: readonly ChunkSnapshot[],
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+): { chunks: ChunkSnapshot[]; changed: boolean } {
+  const out = new Map<ChunkKey, { cx: number; cy: number; data: Uint32Array }>();
+  let changed = dx !== 0 || dy !== 0;
+  for (const chunk of chunks) {
+    const baseX = (chunk.cx << CHUNK_SHIFT) + dx;
+    const baseY = (chunk.cy << CHUNK_SHIFT) + dy;
+    const data = chunk.data;
+    for (let i = 0; i < CHUNK_AREA; i++) {
+      const cell = data[i]!;
+      if (cell === 0) continue;
+      const x = baseX + (i & CHUNK_MASK);
+      const y = baseY + (i >> CHUNK_SHIFT);
+      if (x < 0 || y < 0 || x >= width || y >= height) {
+        changed = true;
+        continue;
+      }
+      const cx = x >> CHUNK_SHIFT;
+      const cy = y >> CHUNK_SHIFT;
+      const key = chunkKey(cx, cy);
+      let target = out.get(key);
+      if (!target) {
+        target = { cx, cy, data: new Uint32Array(CHUNK_AREA) };
+        out.set(key, target);
+      }
+      target.data[localIndex(x & CHUNK_MASK, y & CHUNK_MASK)] = cell;
+    }
+  }
+  return { chunks: [...out.values()].sort((a, b) => a.cy - b.cy || a.cx - b.cx), changed };
+}
+
+/** Accumulates the effects of applying history changes. */
+class ApplyResult {
+  readonly dirty = new DirtyTracker();
+  readonly structure = new Set<StructureChange>();
 }
 
 /**
@@ -111,7 +322,8 @@ class DirtyTracker {
  * - `beginTransaction()` / `commit()` group many ops into one undo step
  *   (mouse-down → mouse-up). Transactions nest; only the outermost commit
  *   creates the step. `rollback()` reverts the open transaction.
- * - `undo()` / `redo()` swap the `before` / `after` of a step's patches.
+ * - `undo()` / `redo()` swap the `before` / `after` of a step's changes
+ *   (cell patches, layer add/remove/move/props, map resize).
  * - `subscribe(listener)` reports dirty chunks and structural changes.
  */
 export class MapStore {
@@ -122,7 +334,7 @@ export class MapStore {
   readonly #historyLimit: number;
   #revision = 0;
   #depth = 0;
-  #pending: PatchBuilder | null = null;
+  #pending: ChangeRecorder | null = null;
 
   constructor(document: MapDocument, options: MapStoreOptions = {}) {
     this.#doc = document;
@@ -184,6 +396,14 @@ export class MapStore {
         return this.#addLayer(op);
       case "addPaletteEntry":
         return this.#addPaletteEntry(op);
+      case "removeLayer":
+        return this.#removeLayer(op);
+      case "moveLayer":
+        return this.#moveLayer(op);
+      case "setLayerProps":
+        return this.#setLayerProps(op);
+      case "resizeMap":
+        return this.#resizeMap(op);
       default: {
         const unknown: never = op;
         throw new TypeError(`Unknown op type: ${String((unknown as { type: unknown }).type)}`);
@@ -200,14 +420,14 @@ export class MapStore {
   beginTransaction(): void {
     this.#depth++;
     if (this.#depth > 1) return;
-    this.#pending = new PatchBuilder(this.#doc.map.width);
+    this.#pending = new ChangeRecorder();
     // canUndo/canRedo read false while a transaction is open.
     this.#emit({ cause: "begin", cells: [], structure: [], historyChanged: true });
   }
 
   /**
    * Closes a transaction. When the outermost transaction closes and it changed
-   * any cell, it becomes one undo step and the redo stack is cleared.
+   * anything undoable, it becomes one undo step and the redo stack is cleared.
    *
    * @throws Error when no transaction is open.
    */
@@ -215,25 +435,26 @@ export class MapStore {
     if (this.#depth === 0) throw new Error("commit() called without an open transaction");
     this.#depth--;
     if (this.#depth > 0) return;
-    const patches = this.#pending?.build() ?? [];
+    const changes = this.#pending?.build() ?? [];
     this.#pending = null;
-    if (patches.length > 0) this.#pushUndo({ patches });
+    if (changes.length > 0) this.#pushUndo(makeEntry(changes));
     this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true });
   }
 
   /**
-   * Reverts every cell change of the open transaction (all nesting levels)
-   * and closes it without creating an undo step. Non-undoable ops stay.
+   * Reverts every undoable change of the open transaction (all nesting levels)
+   * and closes it without creating an undo step. Non-undoable ops
+   * (tilesets, palette entries) stay.
    *
    * @throws Error when no transaction is open.
    */
   rollback(): void {
     if (this.#depth === 0) throw new Error("rollback() called without an open transaction");
-    const patches = this.#pending?.build() ?? [];
+    const changes = this.#pending?.build() ?? [];
     this.#pending = null;
     this.#depth = 0;
-    const dirty = this.#applyPatches(patches, "before");
-    this.#emit({ cause: "rollback", cells: dirty, structure: [], historyChanged: true });
+    const result = this.#applyChanges(changes, "before");
+    this.#emit({ cause: "rollback", ...this.#eventParts(result), historyChanged: true });
   }
 
   /** Undoes the last step. Returns false (and does nothing) if impossible or a transaction is open. */
@@ -241,8 +462,8 @@ export class MapStore {
     if (!this.canUndo) return false;
     const entry = this.#undo.pop()!;
     this.#redo.push(entry);
-    const dirty = this.#applyPatches(entry.patches, "before");
-    this.#emit({ cause: "undo", cells: dirty, structure: [], historyChanged: true });
+    const result = this.#applyChanges(entry.changes, "before");
+    this.#emit({ cause: "undo", ...this.#eventParts(result), historyChanged: true });
     return true;
   }
 
@@ -251,12 +472,12 @@ export class MapStore {
     if (!this.canRedo) return false;
     const entry = this.#redo.pop()!;
     this.#undo.push(entry);
-    const dirty = this.#applyPatches(entry.patches, "after");
-    this.#emit({ cause: "redo", cells: dirty, structure: [], historyChanged: true });
+    const result = this.#applyChanges(entry.changes, "after");
+    this.#emit({ cause: "redo", ...this.#eventParts(result), historyChanged: true });
     return true;
   }
 
-  /** Drops all undo/redo steps (e.g. after opening a file). */
+  /** Drops all undo/redo steps (e.g. after opening a file or setting up a new document). */
   clearHistory(): void {
     if (this.#undo.length === 0 && this.#redo.length === 0) return;
     this.#undo.length = 0;
@@ -281,14 +502,15 @@ export class MapStore {
     }
     if (layer.locked) return Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
 
-    const opPatch = new PatchBuilder(this.#doc.map.width);
+    const map = this.#doc.map;
+    const opPatch = new PatchBuilder(map);
     const dirty = new DirtyTracker();
     for (const { x, y, cell } of op.cells) {
       if (!this.#doc.inBounds(x, y)) continue;
       const before = layer._setCell(x, y, cell);
       if (before === cell) continue;
       opPatch.record(layer.id, x, y, before, cell);
-      this.#pending?.record(layer.id, x, y, before, cell);
+      this.#pending?.recordCell(map, layer.id, x, y, before, cell);
       dirty.add(layer.id, x, y);
     }
 
@@ -297,7 +519,7 @@ export class MapStore {
     if (patch.cells.length === 0) return patch;
 
     const autoCommit = this.#depth === 0;
-    if (autoCommit) this.#pushUndo({ patches });
+    if (autoCommit) this.#pushUndo(makeEntry(patches.map(cellsChange)));
     this.#emit({ cause: "dispatch", cells: dirty.result(), structure: [], historyChanged: autoCommit });
     return patch;
   }
@@ -326,9 +548,78 @@ export class MapStore {
     if (!Number.isInteger(index) || index < 0 || index > layers.length) {
       throw new RangeError(`addLayer: index must be an integer in [0, ${layers.length}], got ${index}`);
     }
-    this.#doc._insertLayer(new TileLayer(props), index);
-    this.#emit({ cause: "dispatch", cells: [], structure: ["layers"], historyChanged: false });
+    const layer = new TileLayer(props);
+    this.#doc._insertLayer(layer, index);
+    this.#recordStructural({ kind: "layer", layer, before: null, after: index }, ["layers"]);
     return props.id;
+  }
+
+  #removeLayer(op: RemoveLayerOp): void {
+    const index = this.#doc.indexOfLayer(op.layerId);
+    if (index < 0) throw new Error(`removeLayer: unknown layer "${op.layerId}"`);
+    const layer = this.#doc._removeLayerAt(index);
+    this.#recordStructural({ kind: "layer", layer, before: index, after: null }, ["layers"]);
+  }
+
+  #moveLayer(op: MoveLayerOp): void {
+    const from = this.#doc.indexOfLayer(op.layerId);
+    if (from < 0) throw new Error(`moveLayer: unknown layer "${op.layerId}"`);
+    const max = this.#doc.layers.length - 1;
+    if (!Number.isInteger(op.index) || op.index < 0 || op.index > max) {
+      throw new RangeError(`moveLayer: index must be an integer in [0, ${max}], got ${op.index}`);
+    }
+    if (op.index === from) return;
+    const layer = this.#doc._removeLayerAt(from);
+    this.#doc._insertLayer(layer, op.index);
+    this.#recordStructural({ kind: "layer", layer, before: from, after: op.index }, ["layers"]);
+  }
+
+  #setLayerProps(op: SetLayerPropsOp): void {
+    const layer = this.#doc.getLayer(op.layerId);
+    if (!layer) throw new Error(`setLayerProps: unknown layer "${op.layerId}"`);
+    const before = layer.props();
+    const after: LayerPropValues = {
+      name: op.props.name ?? before.name,
+      visible: op.props.visible ?? before.visible,
+      locked: op.props.locked ?? before.locked,
+      opacity: op.props.opacity ?? before.opacity,
+    };
+    const problem = layerPropsProblem({ id: layer.id, ...after });
+    if (problem) throw new Error(`setLayerProps: ${problem}`);
+    if (samePropValues(before, after)) return;
+    layer._setProps(after);
+    this.#recordStructural(
+      { kind: "layerProps", layerId: layer.id, before: Object.freeze(before), after: Object.freeze(after) },
+      ["layers"],
+    );
+  }
+
+  #resizeMap(op: ResizeMapOp): void {
+    const before = this.#doc.map;
+    const after: MapInfo = { ...before, width: op.width, height: op.height };
+    const problem = mapInfoProblem(after);
+    if (problem) throw new RangeError(`resizeMap: ${problem}`);
+    const dx = op.offsetX ?? 0;
+    const dy = op.offsetY ?? 0;
+    if (!Number.isInteger(dx) || !Number.isInteger(dy)) {
+      throw new TypeError(`resizeMap: offsets must be integers, got (${dx}, ${dy})`);
+    }
+    if (after.width === before.width && after.height === before.height && dx === 0 && dy === 0) return;
+
+    const layers: MapHistoryChange["layers"][number][] = [];
+    for (const layer of this.#doc.layers) {
+      if (layer.chunkCount === 0) continue;
+      const snapshot = layer._snapshot();
+      const shifted = shiftChunks(snapshot, dx, dy, after.width, after.height);
+      if (!shifted.changed) continue;
+      layers.push(Object.freeze({ layerId: layer.id, before: snapshot, after: shifted.chunks }));
+    }
+    this.#doc._setMap(after);
+    for (const entry of layers) this.#doc.getLayer(entry.layerId)!._restore(entry.after);
+    this.#recordStructural(
+      { kind: "map", before, after: this.#doc.map, layers: Object.freeze(layers) },
+      ["map"],
+    );
   }
 
   #addPaletteEntry(op: AddPaletteEntryOp): number {
@@ -354,6 +645,14 @@ export class MapStore {
     }
   }
 
+  /** Records an already applied structural change (own undo step outside a transaction) and emits. */
+  #recordStructural(change: HistoryChange, structure: StructureChange[]): void {
+    const autoCommit = this.#depth === 0;
+    if (autoCommit) this.#pushUndo(makeEntry([Object.freeze(change)]));
+    else this.#pending?.recordStructural(Object.freeze(change));
+    this.#emit({ cause: "dispatch", cells: [], structure, historyChanged: autoCommit });
+  }
+
   #pushUndo(entry: HistoryEntry): void {
     this.#undo.push(entry);
     this.#redo.length = 0;
@@ -362,19 +661,66 @@ export class MapStore {
     }
   }
 
-  /** Writes `before` or `after` of every change (patches in reverse for undo). */
-  #applyPatches(patches: readonly LayerPatch[], side: "before" | "after"): DirtyChunks[] {
-    const dirty = new DirtyTracker();
-    const ordered = side === "before" ? [...patches].reverse() : patches;
-    for (const patch of ordered) {
-      const layer = this.#doc.getLayer(patch.layerId);
-      if (!layer) continue;
-      for (const change of patch.cells) {
-        layer._setCell(change.x, change.y, change[side]);
-        dirty.add(layer.id, change.x, change.y);
+  /** Applies one side of `changes`: `before` in reverse order (undo), `after` in order (redo). */
+  #applyChanges(changes: readonly HistoryChange[], side: "before" | "after"): ApplyResult {
+    const result = new ApplyResult();
+    if (side === "before") {
+      for (let i = changes.length - 1; i >= 0; i--) this.#applyChange(changes[i]!, side, result);
+    } else {
+      for (const change of changes) this.#applyChange(change, side, result);
+    }
+    return result;
+  }
+
+  #applyChange(change: HistoryChange, side: "before" | "after", result: ApplyResult): void {
+    const doc = this.#doc;
+    switch (change.kind) {
+      case "cells": {
+        const layer = doc.getLayer(change.layerId);
+        if (!layer) throw new Error(`history: layer "${change.layerId}" is missing`);
+        for (const c of change.cells) {
+          layer._setCell(c.x, c.y, c[side]);
+          result.dirty.add(layer.id, c.x, c.y);
+        }
+        return;
+      }
+      case "layer": {
+        const current = doc.layers.indexOf(change.layer);
+        if (current >= 0) doc._removeLayerAt(current);
+        const index = change[side];
+        if (index !== null) doc._insertLayer(change.layer, index);
+        result.structure.add("layers");
+        return;
+      }
+      case "layerProps": {
+        const layer = doc.getLayer(change.layerId);
+        if (!layer) throw new Error(`history: layer "${change.layerId}" is missing`);
+        layer._setProps(change[side]);
+        result.structure.add("layers");
+        return;
+      }
+      case "map": {
+        doc._setMap(change[side]);
+        for (const entry of change.layers) {
+          const layer = doc.getLayer(entry.layerId);
+          if (!layer) throw new Error(`history: layer "${entry.layerId}" is missing`);
+          layer._restore(entry[side]);
+        }
+        result.structure.add("map");
+        return;
+      }
+      default: {
+        const unknown: never = change;
+        throw new TypeError(`Unknown history change: ${String((unknown as { kind: unknown }).kind)}`);
       }
     }
-    return dirty.result();
+  }
+
+  /** Event fields for applied changes; dirty chunks of layers no longer in the document are dropped. */
+  #eventParts(result: ApplyResult): Pick<StoreChangeEvent, "cells" | "structure"> {
+    const cells = result.dirty.result().filter((d) => this.#doc.getLayer(d.layerId) !== undefined);
+    const order: StructureChange[] = ["layers", "tilesets", "palette", "map"];
+    return { cells, structure: order.filter((s) => result.structure.has(s)) };
   }
 
   #emit(change: Omit<StoreChangeEvent, "revision">): void {

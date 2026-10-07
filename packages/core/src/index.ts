@@ -62,7 +62,14 @@ export {
   parseChunkKey,
 } from "./chunk";
 
-export { TileLayer, type LayerType, type LayerProps, layerPropsProblem } from "./layer";
+export {
+  TileLayer,
+  type LayerType,
+  type LayerProps,
+  type LayerPropValues,
+  type ChunkSnapshot,
+  layerPropsProblem,
+} from "./layer";
 
 export {
   MapDocument,
@@ -84,6 +91,11 @@ export type {
   AddTilesetOp,
   AddLayerOp,
   AddPaletteEntryOp,
+  RemoveLayerOp,
+  MoveLayerOp,
+  SetLayerPropsOp,
+  LayerPropsPatch,
+  ResizeMapOp,
   NewLayer,
   CellWrite,
   CellChange,
@@ -99,6 +111,11 @@ export {
   type DirtyChunks,
   type ChangeCause,
   type HistoryEntry,
+  type HistoryChange,
+  type CellsHistoryChange,
+  type LayerHistoryChange,
+  type LayerPropsHistoryChange,
+  type MapHistoryChange,
 } from "./store";
 
 export {
@@ -106,6 +123,9 @@ export {
   serializeLevel,
   parseProject,
   parseLevel,
+  serializeClip,
+  parseClip,
+  CLIP_FORMAT,
   FormatError,
   type ProjectData,
   type LevelRef,
@@ -116,4 +136,25 @@ export {
 
 export { encodeBase64, decodeBase64, encodeUint32LE, decodeUint32LE } from "./base64";
 
-export { lineCells, type CellPoint } from "./geometry";
+export {
+  lineCells,
+  rectCells,
+  normalizeRect,
+  type CellPoint,
+  type CellBounds,
+  type CellRect,
+} from "./geometry";
+
+export { floodFill, type CellSource } from "./fill";
+
+export {
+  copyRegion,
+  pasteClip,
+  cutRegion,
+  flipClip,
+  clipLayerPoints,
+  type TileClip,
+  type ClipLayer,
+  type LayerMapping,
+  type PasteOptions,
+} from "./clip";

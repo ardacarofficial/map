@@ -11,6 +11,22 @@ import {
 /** Layer kinds. v0.1 only has `"tile"`; `"grid"` and `"entity"` come later. */
 export type LayerType = "tile";
 
+/** Editable layer properties (everything in {@link LayerProps} except `id`). */
+export interface LayerPropValues {
+  readonly name: string;
+  readonly visible: boolean;
+  readonly locked: boolean;
+  /** 0..1 */
+  readonly opacity: number;
+}
+
+/** @internal Copy of one stored chunk (see `TileLayer._snapshot`). */
+export interface ChunkSnapshot {
+  readonly cx: number;
+  readonly cy: number;
+  readonly data: Uint32Array;
+}
+
 /** Properties shared by every layer kind. */
 export interface LayerProps {
   readonly id: string;
@@ -38,6 +54,8 @@ export class TileLayer implements LayerProps {
   #locked: boolean;
   #opacity: number;
   readonly #chunks = new Map<ChunkKey, Chunk>();
+  /** Last chunk written by `_setCell` (cache; cleared whenever chunks are removed). */
+  #lastChunk: Chunk | null = null;
 
   constructor(props: LayerProps) {
     this.id = props.id;
@@ -96,22 +114,60 @@ export class TileLayer implements LayerProps {
   _setCell(x: number, y: number, cell: Cell): Cell {
     const cx = x >> CHUNK_SHIFT;
     const cy = y >> CHUNK_SHIFT;
-    const key = chunkKey(cx, cy);
-    let chunk = this.#chunks.get(key);
-    if (!chunk) {
-      if (cell === EMPTY_CELL) return EMPTY_CELL;
-      chunk = new Chunk(cx, cy);
-      this.#chunks.set(key, chunk);
+    let chunk = this.#lastChunk;
+    if (!chunk || chunk.cx !== cx || chunk.cy !== cy) {
+      const key = chunkKey(cx, cy);
+      chunk = this.#chunks.get(key) ?? null;
+      if (!chunk) {
+        if (cell === EMPTY_CELL) return EMPTY_CELL;
+        chunk = new Chunk(cx, cy);
+        this.#chunks.set(key, chunk);
+      }
+      this.#lastChunk = chunk;
     }
     const before = chunk.set(localIndex(x & 31, y & 31), cell);
-    if (chunk.filled === 0) this.#chunks.delete(key);
+    if (chunk.filled === 0) {
+      this.#chunks.delete(chunk.key);
+      this.#lastChunk = null;
+    }
     return before;
+  }
+
+  /** Current editable properties as a plain object. */
+  props(): LayerPropValues {
+    return { name: this.#name, visible: this.#visible, locked: this.#locked, opacity: this.#opacity };
+  }
+
+  /** @internal Replaces the editable properties (validated by the caller). */
+  _setProps(props: LayerPropValues): void {
+    this.#name = props.name;
+    this.#visible = props.visible;
+    this.#locked = props.locked;
+    this.#opacity = props.opacity;
+  }
+
+  /** @internal Copies of all stored chunks, sorted by `cy`, then `cx`. */
+  _snapshot(): ChunkSnapshot[] {
+    return [...this.#chunks.values()]
+      .sort((a, b) => a.cy - b.cy || a.cx - b.cx)
+      .map((chunk) => ({ cx: chunk.cx, cy: chunk.cy, data: chunk.data.slice() }));
+  }
+
+  /** @internal Replaces all chunks with copies of `snapshot`. */
+  _restore(snapshot: readonly ChunkSnapshot[]): void {
+    this.#chunks.clear();
+    this.#lastChunk = null;
+    for (const chunk of snapshot) this._putChunk(chunk.cx, chunk.cy, chunk.data);
   }
 
   /** @internal Installs a decoded chunk (parser). Empty data is ignored. */
   _putChunk(cx: number, cy: number, data: Uint32Array): void {
     const chunk = new Chunk(cx, cy);
-    for (let i = 0; i < data.length; i++) chunk.set(i, data[i] ?? EMPTY_CELL);
+    chunk.data.set(data.subarray(0, chunk.data.length));
+    let filled = 0;
+    for (let i = 0; i < chunk.data.length; i++) if (chunk.data[i] !== EMPTY_CELL) filled++;
+    chunk.filled = filled;
+    this.#lastChunk = null;
     if (chunk.filled > 0) this.#chunks.set(chunk.key, chunk);
   }
 }

@@ -19,5 +19,7 @@ export function makeStore(width = 100, height = 80, paletteSize = 6) {
   for (let t = 0; t < paletteSize; t++) store.getOrAddPaletteIndex(TILESET.id, t);
   const ground = store.dispatch({ type: "addLayer", layer: { id: "ground", name: "Ground" } });
   const top = store.dispatch({ type: "addLayer", layer: { id: "top", name: "Top" } });
+  // addLayer is undoable since v0.2; the setup is the starting point, not a user step.
+  store.clearHistory();
   return { store, ground, top, cell: (i: number, flags = 0) => makeCell(i, flags) };
 }

@@ -64,7 +64,7 @@ export interface NewLayer {
 }
 
 /**
- * Adds an empty tile layer. Not undoable (v0.1).
+ * Adds an empty tile layer. Undoable (since v0.2).
  * `index` is the position from the bottom; defaults to the top.
  */
 export interface AddLayerOp {
@@ -84,7 +84,73 @@ export interface AddPaletteEntryOp {
   readonly tileId: number;
 }
 
-export type Op = PaintCellsOp | AddTilesetOp | AddLayerOp | AddPaletteEntryOp;
+/**
+ * Removes a layer with all its cells. Undoable: undo puts the same layer back
+ * at the same position with its chunks and properties. Throws on an unknown layer.
+ */
+export interface RemoveLayerOp {
+  readonly type: "removeLayer";
+  readonly layerId: string;
+}
+
+/**
+ * Moves a layer so that it ends up at `index` (from the bottom) in the new
+ * order. Undoable; moving to its current index is a no-op.
+ * Throws on an unknown layer or an index outside `[0, layers.length - 1]`.
+ */
+export interface MoveLayerOp {
+  readonly type: "moveLayer";
+  readonly layerId: string;
+  readonly index: number;
+}
+
+/** Layer properties for `setLayerProps`; omitted fields stay unchanged. */
+export interface LayerPropsPatch {
+  readonly name?: string;
+  readonly visible?: boolean;
+  readonly locked?: boolean;
+  /** 0..1 */
+  readonly opacity?: number;
+}
+
+/**
+ * Changes layer properties (name, visibility, lock, opacity). Undoable;
+ * setting the current values is a no-op. Works on locked layers (that is
+ * how they get unlocked). Throws on an unknown layer or invalid values.
+ */
+export interface SetLayerPropsOp {
+  readonly type: "setLayerProps";
+  readonly layerId: string;
+  readonly props: LayerPropsPatch;
+}
+
+/**
+ * Changes the map size. Existing content is shifted by (`offsetX`, `offsetY`)
+ * first — e.g. growing by 3 columns on the left is
+ * `{ width: w + 3, height: h, offsetX: 3, offsetY: 0 }` — and cells that end
+ * up outside the new bounds are dropped. Undoable: undo restores the old
+ * size and every dropped cell. Same size with zero offset is a no-op.
+ * Throws on a size outside `[1, MAX_MAP_SIZE]` or non-integer offsets.
+ */
+export interface ResizeMapOp {
+  readonly type: "resizeMap";
+  readonly width: number;
+  readonly height: number;
+  /** Defaults to 0. */
+  readonly offsetX?: number;
+  /** Defaults to 0. */
+  readonly offsetY?: number;
+}
+
+export type Op =
+  | PaintCellsOp
+  | AddTilesetOp
+  | AddLayerOp
+  | AddPaletteEntryOp
+  | RemoveLayerOp
+  | MoveLayerOp
+  | SetLayerPropsOp
+  | ResizeMapOp;
 export type OpType = Op["type"];
 
 /** What `dispatch` returns for each op type. */
@@ -96,6 +162,10 @@ export interface OpResultMap {
   addLayer: string;
   /** Palette index of the entry. */
   addPaletteEntry: number;
+  removeLayer: void;
+  moveLayer: void;
+  setLayerProps: void;
+  resizeMap: void;
 }
 
 export type OpResult<O extends Op> = OpResultMap[O["type"]];
