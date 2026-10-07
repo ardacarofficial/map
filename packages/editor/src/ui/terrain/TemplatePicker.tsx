@@ -28,7 +28,7 @@ function TemplateItem({ info }: { info: TerrainTemplateInfo }) {
             {info.columns}×{info.rows} · {t("terrain.slots", { count: info.slots })}
           </span>
         </span>
-        <TemplateDiagram template={info.id} unit={3} gap={2} />
+        <TemplateDiagram template={info.id} unit={3} gap={3} />
       </span>
     </Menu.RadioItem>
   );

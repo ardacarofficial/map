@@ -3,6 +3,7 @@
  * Send them with `MapStore.dispatch(op)`.
  */
 import type { Cell } from "./cell";
+import type { EntityFieldValue, EntityType } from "./entity";
 import type { GridRole } from "./layer";
 import type { Terrain } from "./terrain";
 import type { Tileset } from "./tileset";
@@ -56,8 +57,8 @@ export interface AddTilesetOp {
 export interface NewLayer {
   /** Defaults to a generated unique id (`"layer-1"`, `"layer-2"`, ...). */
   readonly id?: string;
-  /** `"tile"` (default) or `"grid"` (v0.3: terrain / collision). */
-  readonly type?: "tile" | "grid";
+  /** `"tile"` (default), `"grid"` (v0.3: terrain / collision) or `"entity"` (v0.6). */
+  readonly type?: "tile" | "grid" | "entity";
   /** Required for grid layers. */
   readonly role?: GridRole;
   /**
@@ -220,7 +221,96 @@ export interface RemoveTerrainOp {
   readonly terrainId: number;
 }
 
+/** Entity data for `addEntity`; omitted fields get defaults. */
+export interface NewEntity {
+  /** Defaults to a generated id unique in the document (`"e1"`, `"e2"`, ...). */
+  readonly id?: string;
+  /** Built-in (`"spawn"`, `"portal"`) or user-defined type id. */
+  readonly typeId: string;
+  /** Integer pixels in map space (top-left corner; see `Entity`). */
+  readonly x: number;
+  readonly y: number;
+  readonly width?: number;
+  readonly height?: number;
+  /** Values for some fields of the type; the rest get the type's defaults. */
+  readonly fields?: Readonly<Record<string, EntityFieldValue>>;
+}
+
+/**
+ * Places an entity on an entity layer at `index` (default: top). Undoable.
+ * Returns its id, or `null` when the layer is locked (nothing happens).
+ * Throws on an unknown / non-entity layer, an unknown type, a duplicate id,
+ * a position outside the map, invalid field values, or a second spawn
+ * point in the level (at most one entity of type `"spawn"`).
+ */
+export interface AddEntityOp {
+  readonly type: "addEntity";
+  readonly layerId: string;
+  readonly entity: NewEntity;
+  readonly index?: number;
+}
+
+/** Removes an entity. Undoable. No-op on a locked layer. Throws on an unknown id. */
+export interface RemoveEntityOp {
+  readonly type: "removeEntity";
+  readonly entityId: string;
+}
+
+/**
+ * Moves an entity to (`x`, `y`) pixels. Undoable (a drag inside a
+ * transaction is one step). No-op on a locked layer or when nothing
+ * changes. Throws on an unknown id or a position outside the map.
+ */
+export interface MoveEntityOp {
+  readonly type: "moveEntity";
+  readonly entityId: string;
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Changes field values and / or size of an entity. `fields` is merged into
+ * the current values (each must be a field of the entity's type and valid
+ * for it); `width` / `height` `null` resets to "one cell". Undoable; no-op
+ * on a locked layer or when nothing changes. The type of an entity is
+ * fixed. Throws on an unknown id, an unknown type, or invalid values.
+ */
+export interface UpdateEntityOp {
+  readonly type: "updateEntity";
+  readonly entityId: string;
+  readonly fields?: Readonly<Record<string, EntityFieldValue>>;
+  readonly width?: number | null;
+  readonly height?: number | null;
+}
+
+/**
+ * Adds a user-defined entity type (appended) or replaces the one with the
+ * same id (in place). Project-level, like tilesets; undoable. Entities keep
+ * their stored values (exporters fall back to defaults for values that no
+ * longer fit). Throws on an invalid type or a reserved id (`spawn`, `portal`).
+ */
+export interface DefineEntityTypeOp {
+  readonly type: "defineEntityType";
+  readonly entityType: EntityType;
+}
+
+/**
+ * Removes a user-defined entity type. Entities of that type stay (they
+ * show as "unknown type" until it is defined again). Undoable. Throws on an
+ * unknown or built-in id.
+ */
+export interface RemoveEntityTypeOp {
+  readonly type: "removeEntityType";
+  readonly typeId: string;
+}
+
 export type Op =
+  | AddEntityOp
+  | RemoveEntityOp
+  | MoveEntityOp
+  | UpdateEntityOp
+  | DefineEntityTypeOp
+  | RemoveEntityTypeOp
   | PaintTerrainOp
   | SetTileSolidOp
   | DefineTerrainOp
@@ -253,6 +343,13 @@ export interface OpResultMap {
   setTileSolid: void;
   defineTerrain: void;
   removeTerrain: void;
+  /** Id of the new entity, `null` when the layer is locked. */
+  addEntity: string | null;
+  removeEntity: void;
+  moveEntity: void;
+  updateEntity: void;
+  defineEntityType: void;
+  removeEntityType: void;
 }
 
 export type OpResult<O extends Op> = OpResultMap[O["type"]];

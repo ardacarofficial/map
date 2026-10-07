@@ -14,6 +14,7 @@ import { UnsavedDialog } from "./dialogs/UnsavedDialog";
 import { BackupsDialog } from "./dialogs/BackupsDialog";
 import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
 import { ResizeMapDialog } from "./dialogs/ResizeMapDialog";
+import { ExportDialog } from "../export/ExportDialog";
 import { installLayerSync } from "../commands/layerSync";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -45,6 +46,7 @@ export function App() {
       <ResizeMapDialog />
       <BackupsDialog />
       <DiskChangedDialog />
+      <ExportDialog />
       <Toaster />
     </TooltipProvider>
   );

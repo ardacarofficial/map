@@ -22,6 +22,7 @@ const GROUP_BREAK = 3;
 export function ToolRail() {
   const tool = useEditorStore((s) => s.tool);
   const grid = useEditorStore((s) => s.gridVisible);
+  const collision = useEditorStore((s) => s.collisionOverlay);
   return (
     <nav
       aria-label={t("status.tool")}
@@ -51,6 +52,16 @@ export function ToolRail() {
             onClick={() => runCommand("view.toggleGrid")}
           >
             <Icon name="grid" size={17} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip label={t("commands.view.toggleCollision")} command="view.toggleCollision" side="right">
+          <IconButton
+            aria-label={t("commands.view.toggleCollision")}
+            aria-pressed={collision}
+            active={collision}
+            onClick={() => runCommand("view.toggleCollision")}
+          >
+            <Icon name="shield" size={17} />
           </IconButton>
         </Tooltip>
         <Tooltip label={t("commands.view.frameMap")} command="view.frameMap" side="right">

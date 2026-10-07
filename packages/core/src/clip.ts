@@ -15,7 +15,7 @@ import {
 } from "./cell";
 import type { MapDocument } from "./document";
 import type { CellRect, CellPoint } from "./geometry";
-import { isGridLayer } from "./layer";
+import { isEntityLayer, isGridLayer, type GridRole } from "./layer";
 import type { CellWrite, GridWrite, LayerPatch } from "./ops";
 import type { PaletteEntry } from "./palette";
 import type { MapStore } from "./store";
@@ -37,6 +37,8 @@ export interface ClipLayer {
   readonly cells: Uint32Array;
   /** True when copied from a grid layer. Grid clip layers paste only into grid layers. */
   readonly grid?: boolean;
+  /** Grid layers: role of the source layer (v0.6; used by `placeStamp` to match or create layers). */
+  readonly role?: GridRole;
 }
 
 /**
@@ -69,6 +71,7 @@ export interface PasteOptions {
 
 /**
  * Copies `rect` of the given layers. Cells outside the map read as empty.
+ * Entity layers hold no cells and are left out of the clip.
  * The clip palette lists referenced tiles in first-use order (layers in the
  * given order, then row-major), so the same input always gives the same clip.
  *
@@ -78,15 +81,18 @@ export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: 
   assertRect(rect, "copyRegion");
   const remap = new Map<number, number>();
   const palette: PaletteEntry[] = [];
-  const layers = layerIds.map((id): ClipLayer => {
+  const sources = layerIds.map((id) => {
     const layer = doc.getLayer(id);
     if (!layer) throw new Error(`copyRegion: unknown layer "${id}"`);
+    return layer;
+  });
+  const layers = sources.filter((layer) => !isEntityLayer(layer)).map((layer): ClipLayer => {
     const cells = new Uint32Array(rect.width * rect.height);
     if (isGridLayer(layer)) {
       for (let y = 0; y < rect.height; y++) {
         for (let x = 0; x < rect.width; x++) cells[y * rect.width + x] = layer.getCell(rect.x + x, rect.y + y);
       }
-      return Object.freeze({ layerId: layer.id, name: layer.name, grid: true, cells });
+      return Object.freeze({ layerId: layer.id, name: layer.name, grid: true, role: layer.role, cells });
     }
     for (let y = 0; y < rect.height; y++) {
       for (let x = 0; x < rect.width; x++) {
@@ -151,6 +157,10 @@ export function pasteClip(
     if (!target) {
       if (layerMapping === null) continue;
       throw new Error(`pasteClip: unknown target layer "${targetId}"`);
+    }
+    if (isEntityLayer(target)) {
+      if (layerMapping === null) continue;
+      throw new Error(`pasteClip: target layer "${targetId}" is an entity layer`);
     }
     if (isGridLayer(target) !== (layer.grid === true)) {
       if (layerMapping === null) continue;
@@ -225,7 +235,7 @@ export function pasteClip(
 
 /**
  * Cut: copies `rect` of the layers, then clears it, as one undo step.
- * Locked layers are copied but not cleared.
+ * Locked layers are copied but not cleared; entity layers are skipped.
  */
 export function cutRegion(store: MapStore, layerIds: readonly string[], rect: CellRect): TileClip {
   const clip = copyRegion(store.document, layerIds, rect);
@@ -237,6 +247,7 @@ export function cutRegion(store: MapStore, layerIds: readonly string[], rect: Ce
   store.beginTransaction();
   try {
     for (const layerId of layerIds) {
+      if (isEntityLayer(store.document.getLayer(layerId))) continue;
       if (isGridLayer(store.document.getLayer(layerId))) store.dispatch({ type: "paintTerrain", layerId, cells: values });
       else store.dispatch({ type: "paintCells", layerId, cells });
     }
@@ -265,7 +276,11 @@ export function flipClip(clip: TileClip, axis: "x" | "y"): TileClip {
         cells[ty * width + tx] = layer.grid ? cell : toggleFlag(cell, flag);
       }
     }
-    return Object.freeze(layer.grid ? { layerId: layer.layerId, name: layer.name, grid: true, cells } : { layerId: layer.layerId, name: layer.name, cells });
+    return Object.freeze(
+      layer.grid
+        ? { layerId: layer.layerId, name: layer.name, grid: true, ...(layer.role ? { role: layer.role } : {}), cells }
+        : { layerId: layer.layerId, name: layer.name, cells },
+    );
   });
   return Object.freeze({ width, height, palette: clip.palette, layers: Object.freeze(layers) });
 }

@@ -7,6 +7,7 @@ import { CommandKbd } from "../primitives/Kbd";
 import { Tooltip } from "../primitives/Tooltip";
 import { useUiStore } from "../uiStore";
 import { useHistoryState } from "../hooks";
+import { ExportIcon } from "../../export/ExportDialog";
 
 export function Toolbar() {
   const name = useEditorStore((s) => s.project?.name ?? "");
@@ -61,6 +62,11 @@ export function Toolbar() {
         <Tooltip label={t("toolbar.save")} command="file.save">
           <IconButton aria-label={t("toolbar.save")} disabled={busy} onClick={() => runCommand("file.save")}>
             <Icon name="save" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip label={t("export.toolbar")} command="file.export">
+          <IconButton aria-label={t("export.toolbar")} onClick={() => runCommand("file.export")}>
+            <ExportIcon />
           </IconButton>
         </Tooltip>
         <Tooltip label={t("toolbar.togglePanels")} command="view.togglePanels">

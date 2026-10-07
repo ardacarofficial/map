@@ -1,24 +1,53 @@
-import type { Tileset } from "@smap/core";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { isTileSolid, terrainTemplateInfo, type TerrainTemplate, type Tileset } from "@smap/core";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 
 import { runCommand } from "../../commands/registry";
+import { SolidStroke } from "../../commands/solidStroke";
+import {
+  activateTerrain,
+  defineTerrain,
+  terrainBlockProblem,
+  tileLayerForPick,
+  uniqueTerrainName,
+} from "../../commands/terrainActions";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion, useTilesetImage } from "../hooks";
-import { IconButton } from "../primitives/Button";
+import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
-import { useUiStore } from "../uiStore";
+import { TemplatePicker } from "../terrain/TemplatePicker";
+import { TerrainList, useActiveTerrainId } from "../terrain/TerrainList";
+import { templateGlyphs } from "../terrain/templateGlyph";
+import { toast } from "../toast/toastStore";
+import { useUiStore, type TilesetMode } from "../uiStore";
 import { PanelSection } from "./PanelSection";
 
 const PADDING = 12;
 const MAX_FIT_SCALE = 4;
 const ZOOM_STEPS = [0.25, 0.5, 1, 2, 3, 4, 6, 8];
 
+interface TileCell {
+  col: number;
+  row: number;
+}
+
 export function TilesetPanel() {
   const store = useEditorStore((s) => s.project?.store);
   const activeId = useUiStore((s) => s.activeTilesetId);
   const setActive = useUiStore((s) => s.setActiveTileset);
+  const mode = useUiStore((s) => s.tilesetMode);
+  const toggleMode = useUiStore((s) => s.toggleTilesetMode);
   useStructureVersion(store);
   const tilesets = store?.document.tilesets ?? [];
   const active = tilesets.find((ts) => ts.id === activeId) ?? tilesets[0];
@@ -28,11 +57,20 @@ export function TilesetPanel() {
       title={t("panels.tileset")}
       className="min-h-[160px] flex-1"
       actions={
-        <Tooltip label={t("tileset.add")}>
-          <IconButton aria-label={t("tileset.add")} className="size-7" onClick={() => runCommand("tileset.add")}>
-            <Icon name="plus" size={15} />
-          </IconButton>
-        </Tooltip>
+        <>
+          {active && (
+            <>
+              <ModeButton mode="solid" current={mode} icon="bricks" label={t("tileset.solidMode")} onClick={toggleMode} />
+              <ModeButton mode="terrain" current={mode} icon="terrain" label={t("tileset.terrainMode")} onClick={toggleMode} />
+              <div aria-hidden className="mx-0.5 h-4 w-px bg-line" />
+            </>
+          )}
+          <Tooltip label={t("tileset.add")}>
+            <IconButton aria-label={t("tileset.add")} className="size-7" onClick={() => runCommand("tileset.add")}>
+              <Icon name="plus" size={15} />
+            </IconButton>
+          </Tooltip>
+        </>
       }
     >
       {tilesets.length > 1 && (
@@ -58,6 +96,29 @@ export function TilesetPanel() {
   );
 }
 
+function ModeButton({
+  mode,
+  current,
+  icon,
+  label,
+  onClick,
+}: {
+  mode: TilesetMode;
+  current: TilesetMode;
+  icon: "bricks" | "terrain";
+  label: string;
+  onClick(mode: TilesetMode): void;
+}) {
+  const on = current === mode;
+  return (
+    <Tooltip label={label}>
+      <IconButton aria-label={label} aria-pressed={on} active={on} className="size-7" onClick={() => onClick(mode)}>
+        <Icon name={icon} size={15} />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 function EmptyTilesets() {
   return (
     <div className="mx-3 mb-3 flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-4 text-center">
@@ -68,17 +129,110 @@ function EmptyTilesets() {
   );
 }
 
+/** `#rrggbb` CSS variable → `[r, g, b]`. */
+function cssColor(name: string, fallback: [number, number, number]): [number, number, number] {
+  const m = /^#([0-9a-f]{6})$/i.exec(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
+  if (!m) return fallback;
+  const n = parseInt(m[1]!, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * Solid tiles on top of the tileset image. In "Katı işaretle" mode: tinted,
+ * hatched and outlined; otherwise a small corner mark so the state stays
+ * visible without getting in the way.
+ */
+function drawSolidOverlay(
+  canvas: HTMLCanvasElement,
+  tileset: Tileset,
+  cellW: number,
+  cellH: number,
+  cssW: number,
+  cssH: number,
+  marking: boolean,
+): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(cssW * dpr));
+  canvas.height = Math.max(1, Math.round(cssH * dpr));
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const solid = tileset.solidTiles ?? [];
+  if (solid.length === 0) return;
+  const [r, g, b] = cssColor("--color-collision-solid", [255, 84, 104]);
+  const rgba = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
+  const cw = cellW * dpr;
+  const ch = cellH * dpr;
+  if (!marking && Math.min(cellW, cellH) < 10) return;
+  for (const id of solid) {
+    const col = id % tileset.columns;
+    const row = Math.floor(id / tileset.columns);
+    const x0 = Math.round(col * cw);
+    const y0 = Math.round(row * ch);
+    const x1 = Math.round((col + 1) * cw);
+    const y1 = Math.round((row + 1) * ch);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (marking) {
+      ctx.fillStyle = rgba(0.24);
+      ctx.fillRect(x0, y0, w, h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, w, h);
+      ctx.clip();
+      ctx.strokeStyle = rgba(0.75);
+      ctx.lineWidth = Math.max(1, Math.round(dpr));
+      const step = Math.max(4, Math.round(6 * dpr));
+      ctx.beginPath();
+      for (let d = -h; d < w; d += step) {
+        ctx.moveTo(x0 + d, y1);
+        ctx.lineTo(x0 + d + h, y0);
+      }
+      ctx.stroke();
+      ctx.restore();
+      const line = Math.max(1, Math.round(1.5 * dpr));
+      ctx.strokeStyle = rgba(1);
+      ctx.lineWidth = line;
+      ctx.strokeRect(x0 + line / 2, y0 + line / 2, w - line, h - line);
+    } else {
+      const s = Math.round(Math.max(4, Math.min(cellW, cellH) * 0.26) * dpr);
+      ctx.beginPath();
+      ctx.moveTo(x1 - s, y0);
+      ctx.lineTo(x1, y0);
+      ctx.lineTo(x1, y0 + s);
+      ctx.closePath();
+      ctx.fillStyle = rgba(1);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+      ctx.lineWidth = Math.max(1, Math.round(dpr));
+      ctx.beginPath();
+      ctx.moveTo(x1 - s, y0);
+      ctx.lineTo(x1, y0 + s);
+      ctx.stroke();
+    }
+  }
+}
+
 function TilesetView({ tileset }: { tileset: Tileset }) {
   const image = useTilesetImage(tileset.id);
+  const store = useEditorStore((s) => s.project?.store);
   const selection = useEditorStore((s) => s.selection);
   const setSelection = useEditorStore((s) => s.setSelection);
   const setTool = useEditorStore((s) => s.setTool);
+  const mode = useUiStore((s) => s.tilesetMode);
+  const setMode = useUiStore((s) => s.setTilesetMode);
+  const template = useUiStore((s) => s.terrainTemplate);
+  const activeTerrainId = useActiveTerrainId();
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const solidRef = useRef<HTMLCanvasElement>(null);
+  const strokeRef = useRef<SolidStroke | null>(null);
   const [availWidth, setAvailWidth] = useState(0);
   const [zoom, setZoom] = useState<number | null>(null); // null = fit
-  const [hover, setHover] = useState<{ col: number; row: number } | null>(null);
+  const [hover, setHover] = useState<TileCell | null>(null);
+  /** Terrain block placed with a click, waiting for its name. */
+  const [pending, setPending] = useState<TileCell | null>(null);
 
   const imgW = image?.bitmap.width ?? tileset.columns * tileset.tileWidth;
   const imgH = image?.bitmap.height ?? tileset.rows * tileset.tileHeight;
@@ -90,6 +244,11 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
   const cssH = Math.round(imgH * scale);
   const cellW = tileset.tileWidth * scale;
   const cellH = tileset.tileHeight * scale;
+
+  // A placed block belongs to one mode / template.
+  useEffect(() => setPending(null), [mode, template]);
+  // A stroke never outlives the view.
+  useEffect(() => () => strokeRef.current?.end(), []);
 
   // Track the panel width for zoom-to-fit.
   useLayoutEffect(() => {
@@ -135,16 +294,32 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     ctx.drawImage(image.bitmap, 0, 0, canvas.width, canvas.height);
   }, [image, cssW, cssH]);
 
-  const cellAt = (event: PointerEvent<HTMLElement>) => {
+  // Solid marks.
+  useEffect(() => {
+    if (solidRef.current) drawSolidOverlay(solidRef.current, tileset, cellW, cellH, cssW, cssH, mode === "solid");
+  }, [tileset, cellW, cellH, cssW, cssH, mode, image]);
+
+  /** Tile under the pointer, not clamped (may be outside the tileset). */
+  const rawCellAt = (event: PointerEvent<HTMLElement>): TileCell => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const col = Math.floor((event.clientX - rect.left) / cellW);
-    const row = Math.floor((event.clientY - rect.top) / cellH);
-    if (col < 0 || row < 0 || col >= tileset.columns || row >= tileset.rows) return null;
-    return { col, row };
+    return {
+      col: Math.floor((event.clientX - rect.left) / cellW),
+      row: Math.floor((event.clientY - rect.top) / cellH),
+    };
+  };
+  const inside = (c: TileCell) => c.col >= 0 && c.row >= 0 && c.col < tileset.columns && c.row < tileset.rows;
+  const cellAt = (event: PointerEvent<HTMLElement>): TileCell | null => {
+    const c = rawCellAt(event);
+    return inside(c) ? c : null;
   };
 
   const select = (col: number, row: number) => {
     setSelection({ tilesetId: tileset.id, tileId: row * tileset.columns + col });
+    // Picking a tile while a terrain / collision layer is active: paint it on a tile layer.
+    const state = useEditorStore.getState();
+    const doc = state.project?.store.document;
+    const target = doc ? tileLayerForPick(doc, state.activeLayerId) : null;
+    if (target) state.setActiveLayer(target);
     setTool("brush");
   };
 
@@ -153,8 +328,21 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
       ? { col: selection.tileId % tileset.columns, row: Math.floor(selection.tileId / tileset.columns) }
       : null;
 
-  // Arrow keys move the selection while the tileset view has focus.
+  // Terrain placement.
+  const info = terrainTemplateInfo(template);
+  const blockAt = mode === "terrain" ? (pending ?? hover) : null;
+  const tooSmall = mode === "terrain" ? terrainBlockProblem(tileset, template, 0, 0) : null;
+  const blockProblem = blockAt ? terrainBlockProblem(tileset, template, blockAt.col, blockAt.row) : null;
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape" && (pending || mode !== "pick")) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (pending) setPending(null);
+      else setMode("pick");
+      return;
+    }
+    // Arrow keys move the selection while the tileset view has focus.
     const delta: Record<string, [number, number]> = {
       ArrowLeft: [-1, 0],
       ArrowRight: [1, 0],
@@ -162,7 +350,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
       ArrowDown: [0, 1],
     };
     const d = delta[event.key];
-    if (!d || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!d || event.ctrlKey || event.metaKey || event.altKey || mode !== "pick") return;
     event.preventDefault();
     const from = selected ?? { col: 0, row: 0 };
     const col = Math.min(tileset.columns - 1, Math.max(0, from.col + (selected ? d[0] : 0)));
@@ -173,8 +361,46 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const cell = cellAt(e);
+    if (!cell) return;
+    if (mode === "pick") {
+      select(cell.col, cell.row);
+    } else if (mode === "solid") {
+      if (!store || store.inTransaction || !store.document.getTileset(tileset.id)) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      strokeRef.current = new SolidStroke(store, tileset.id, cell.col, cell.row);
+    } else if (terrainBlockProblem(tileset, template, cell.col, cell.row) === null) {
+      setPending(cell);
+    }
+  };
+  const endStroke = () => {
+    strokeRef.current?.end();
+    strokeRef.current = null;
+  };
+
+  const solidCount = tileset.solidTiles?.length ?? 0;
+  const cursor = mode === "pick" ? "cursor-pointer" : mode === "terrain" && blockProblem ? "cursor-not-allowed" : "cursor-crosshair";
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {mode === "solid" && (
+        <ModeBar icon="bricks" tone="solid" onDone={() => setMode("pick")}>
+          <span className="min-w-0 flex-1 text-xs leading-4 text-muted">{t("tileset.solidModeHint")}</span>
+          <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.solidCount", { count: solidCount })}</span>
+        </ModeBar>
+      )}
+      {mode === "terrain" && (
+        <TerrainBar
+          tileset={tileset}
+          template={template}
+          pending={pending}
+          problem={tooSmall ?? (pending ? null : blockProblem)}
+          onCancel={() => setPending(null)}
+          onDone={() => setMode("pick")}
+        />
+      )}
       <div
         ref={viewportRef}
         tabIndex={0}
@@ -182,23 +408,26 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
         aria-label={tileset.name}
         onKeyDown={onKeyDown}
         className="min-h-0 flex-1 overflow-auto rounded-sm focus-visible:outline-offset-[-2px]"
-        style={{ padding: PADDING, paddingTop: 0 }}
+        style={{ padding: PADDING, paddingTop: mode === "pick" ? 0 : 8 }}
       >
         {image ? (
           <div
-            className="checker relative cursor-pointer"
+            className={`checker relative touch-none ${cursor}`}
             // Whole-pixel centering keeps tile edges crisp.
             style={{ width: cssW, height: cssH, marginLeft: Math.max(0, Math.floor((availWidth - cssW) / 2)) }}
             onPointerMove={(e) => {
+              if (strokeRef.current) {
+                const c = rawCellAt(e);
+                strokeRef.current.moveTo(c.col, c.row);
+              }
               const cell = cellAt(e);
               setHover((h) => (h?.col === cell?.col && h?.row === cell?.row ? h : cell));
             }}
             onPointerLeave={() => setHover(null)}
-            onPointerDown={(e) => {
-              if (e.button !== 0) return;
-              const cell = cellAt(e);
-              if (cell) select(cell.col, cell.row);
-            }}
+            onPointerDown={onPointerDown}
+            onPointerUp={endStroke}
+            onPointerCancel={endStroke}
+            onLostPointerCapture={endStroke}
           >
             <canvas ref={canvasRef} role="img" aria-label={t("tileset.preview")} className="absolute inset-0 block size-full pixelated" />
             {cellW >= 12 && (
@@ -212,14 +441,56 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
                 }}
               />
             )}
-            {hover && (hover.col !== selected?.col || hover.row !== selected?.row) && (
+            <canvas ref={solidRef} aria-hidden className="pointer-events-none absolute inset-0 block size-full" />
+            {mode !== "solid" &&
+              (tileset.terrains ?? []).map((terrain) => {
+                const ti = terrainTemplateInfo(terrain.template);
+                const strong = mode === "terrain" || terrain.id === activeTerrainId;
+                return (
+                  <div
+                    key={terrain.id}
+                    aria-hidden
+                    data-terrain-outline={terrain.id}
+                    className={`pointer-events-none absolute outline-terrain-tint ${strong ? "outline-2" : "outline-1 opacity-70"}`}
+                    style={{
+                      left: terrain.origin.col * cellW,
+                      top: terrain.origin.row * cellH,
+                      width: ti.columns * cellW,
+                      height: ti.rows * cellH,
+                      outlineStyle: "solid",
+                      outlineOffset: -1,
+                    }}
+                  >
+                    <span className="absolute top-0 left-0 max-w-full truncate rounded-br-sm bg-terrain-tint px-1 text-2xs leading-[14px] font-medium text-inverse">
+                      {terrain.name}
+                    </span>
+                  </div>
+                );
+              })}
+            {mode === "pick" && hover && (hover.col !== selected?.col || hover.row !== selected?.row) && (
               <div
                 aria-hidden
                 className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
                 style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH }}
               />
             )}
-            {selected && (
+            {mode === "solid" && hover && (
+              <div
+                aria-hidden
+                className={`pointer-events-none absolute outline-2 outline-collision-solid ${
+                  isTileSolid(tileset, hover.row * tileset.columns + hover.col) ? "" : "bg-collision-solid/20"
+                }`}
+                style={{
+                  left: hover.col * cellW,
+                  top: hover.row * cellH,
+                  width: cellW,
+                  height: cellH,
+                  outlineStyle: "solid",
+                  outlineOffset: -2,
+                }}
+              />
+            )}
+            {mode === "pick" && selected && (
               <div
                 data-selected-tile
                 aria-hidden
@@ -234,6 +505,19 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
                 }}
               />
             )}
+            {blockAt && !tooSmall && (
+              <BlockGhost
+                template={template}
+                left={blockAt.col * cellW}
+                top={blockAt.row * cellH}
+                cellW={cellW}
+                cellH={cellH}
+                invalid={blockProblem !== null}
+                pinned={pending !== null}
+                columns={info.columns}
+                rows={info.rows}
+              />
+            )}
           </div>
         ) : (
           <div className="py-6 text-center text-sm text-faint">
@@ -242,11 +526,19 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
         )}
       </div>
 
+      <TerrainList tileset={tileset} />
+
       <div className="flex h-7 shrink-0 items-center gap-2 border-t border-line-subtle px-3 text-xs text-faint">
         <span className="truncate">{t("tileset.tileCount", { count: tileset.columns * tileset.rows })}</span>
         <span className="font-mono tabular">
           {tileset.columns}×{tileset.rows}
         </span>
+        {solidCount > 0 && mode !== "solid" && (
+          <span className="flex items-center gap-1 truncate">
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-collision-solid" />
+            {t("tileset.solidCount", { count: solidCount })}
+          </span>
+        )}
         <span className="ml-auto font-mono tabular">{Math.round(scale * 100)}%</span>
         {zoom !== null && (
           <button
@@ -258,6 +550,189 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Strip above the tileset while a mode is on: what to do, and "Bitti". */
+function ModeBar({
+  icon,
+  tone,
+  onDone,
+  children,
+}: {
+  icon: "bricks" | "terrain";
+  tone: "solid" | "terrain";
+  onDone(): void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mx-2 mb-1 flex shrink-0 items-center gap-2 rounded-md border border-line bg-raised py-1 pr-1 pl-2">
+      <Icon name={icon} size={14} className={`shrink-0 ${tone === "solid" ? "text-collision-solid" : "text-terrain-tint"}`} />
+      {children}
+      <Button variant="ghost" className="h-6 shrink-0 px-2 text-sm" onClick={onDone}>
+        {t("tileset.done")}
+      </Button>
+    </div>
+  );
+}
+
+/** "Arazi tanımla": template picker, then the name of the placed block. */
+function TerrainBar({
+  tileset,
+  template,
+  pending,
+  problem,
+  onCancel,
+  onDone,
+}: {
+  tileset: Tileset;
+  template: TerrainTemplate;
+  pending: TileCell | null;
+  problem: string | null;
+  onCancel(): void;
+  onDone(): void;
+}) {
+  const setTemplate = useUiStore((s) => s.setTerrainTemplate);
+  return (
+    <div className="mx-2 mb-1 flex shrink-0 flex-col gap-1.5 rounded-md border border-line bg-raised p-1.5">
+      <div className="flex items-center gap-1.5">
+        <TemplatePicker value={template} onChange={setTemplate} />
+        <Button variant="ghost" className="h-7 shrink-0 px-2 text-sm" onClick={onDone}>
+          {t("tileset.done")}
+        </Button>
+      </div>
+      {pending ? (
+        <NameForm key={`${pending.col},${pending.row}`} tileset={tileset} template={template} origin={pending} onCancel={onCancel} onDone={onDone} />
+      ) : problem ? (
+        <div role="alert" className="flex items-start gap-1.5 px-0.5 text-xs leading-4 text-danger">
+          <Icon name="alert" size={13} className="mt-px shrink-0" />
+          {problem}
+        </div>
+      ) : (
+        <div className="px-0.5 text-xs leading-4 text-muted">{t("tileset.terrainModeHint")}</div>
+      )}
+    </div>
+  );
+}
+
+function NameForm({
+  tileset,
+  template,
+  origin,
+  onCancel,
+  onDone,
+}: {
+  tileset: Tileset;
+  template: TerrainTemplate;
+  origin: TileCell;
+  onCancel(): void;
+  onDone(): void;
+}) {
+  const store = useEditorStore((s) => s.project?.store);
+  const [name, setName] = useState(() => (store ? uniqueTerrainName(store.document) : ""));
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const terrain = defineTerrain(tileset.id, template, origin, name);
+    if (!terrain) return;
+    onDone();
+    toast.withAction(t("toast.terrainDefined", { name: terrain.name }), {
+      label: t("terrain.paint"),
+      run: () => activateTerrain(terrain.id),
+    });
+  };
+  return (
+    <form onSubmit={submit} className="flex items-center gap-1.5">
+      <input
+        autoFocus
+        value={name}
+        aria-label={t("terrain.name")}
+        onChange={(e) => setName(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+          }
+        }}
+        spellCheck={false}
+        autoComplete="off"
+        maxLength={64}
+        className="h-7 min-w-0 flex-1 rounded-md border border-line bg-panel px-2 text-md text-text focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+      />
+      <Button type="submit" variant="primary" className="h-7 px-2.5 text-sm">
+        {t("terrain.define")}
+      </Button>
+      <Button variant="ghost" className="h-7 px-2 text-sm" onClick={onCancel}>
+        {t("common.cancel")}
+      </Button>
+    </form>
+  );
+}
+
+/** Block-sized outline that follows the cursor; each cell shows its template glyph. */
+function BlockGhost({
+  template,
+  left,
+  top,
+  cellW,
+  cellH,
+  columns,
+  rows,
+  invalid,
+  pinned,
+}: {
+  template: TerrainTemplate;
+  left: number;
+  top: number;
+  cellW: number;
+  cellH: number;
+  columns: number;
+  rows: number;
+  invalid: boolean;
+  pinned: boolean;
+}) {
+  const glyphs = useMemo(() => templateGlyphs(terrainTemplateInfo(template)), [template]);
+  const width = columns * cellW;
+  const height = rows * cellH;
+  const unit = Math.floor(Math.min(cellW, cellH) * 0.42 / 3);
+  return (
+    <div
+      aria-hidden
+      data-terrain-ghost
+      className={`pointer-events-none absolute ${invalid ? "bg-danger/15 outline-danger" : "bg-terrain-tint/10 outline-terrain-tint"} ${
+        pinned ? "" : "transition-[left,top] duration-75"
+      }`}
+      style={{ left, top, width, height, outlineWidth: 2, outlineStyle: pinned ? "solid" : "dashed", outlineOffset: -1 }}
+    >
+      {unit >= 2 && !invalid && (
+        <svg width={width} height={height} className="absolute inset-0" shapeRendering="crispEdges">
+          {glyphs.map((glyph, s) => {
+            const size = unit * 3;
+            const x0 = Math.round((s % columns) * cellW + (cellW - size) / 2);
+            const y0 = Math.round(Math.floor(s / columns) * cellH + (cellH - size) / 2);
+            if (!glyph) return null;
+            return (
+              <g key={s}>
+                <rect x={x0 - 1} y={y0 - 1} width={size + 2} height={size + 2} fill="var(--color-overlay)" />
+                {glyph.map((on, i) =>
+                  on ? (
+                    <rect
+                      key={i}
+                      x={x0 + (i % 3) * unit}
+                      y={y0 + Math.floor(i / 3) * unit}
+                      width={unit}
+                      height={unit}
+                      fill="var(--color-terrain-tint)"
+                    />
+                  ) : null,
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 }

@@ -41,6 +41,7 @@ export type CommandId =
   | "file.open"
   | "file.save"
   | "file.saveAs"
+  | "file.export"
   | "file.close"
   | "file.openBackup"
   | "tileset.add"
@@ -83,6 +84,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "file.open", keys: ["Ctrl+O"] },
   { command: "file.save", keys: ["Ctrl+S"] },
   { command: "file.saveAs", keys: ["Ctrl+Shift+S"] },
+  { command: "file.export", keys: ["Ctrl+E"] },
   /** Commands without a default key (reachable from the command palette). */
   { command: "file.close", keys: [] },
   { command: "file.openBackup", keys: [] },

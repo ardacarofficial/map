@@ -16,6 +16,10 @@ import {
   serializeLevel,
   serializeProject,
   isGridLayer,
+  isTileLayer,
+  SPAWN_TYPE_ID,
+  type EntityFieldValue,
+  type EntityType,
   type StoreChangeEvent,
 } from "../src";
 import { BLOB_ID, CORNER_ID, TERRAIN_TILESET, TILESET, makeStore, terrainArb } from "./helpers";
@@ -220,6 +224,42 @@ const actionArb = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("defineTerrain" as const), terrain: terrainArb() }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeTerrain" as const), id: fc.constantFrom(1, 2, 3) }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("addGrid" as const), index: pick, target: pick }) },
+  // v0.6 entity ops
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("addEntity" as const),
+      layer: pick,
+      type: pick,
+      x: coord,
+      y: coord,
+      dx: fc.constantFrom(0, 5, 31),
+      n: fc.integer({ min: -3, max: 9 }),
+      index: pick,
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeEntity" as const), entity: pick }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("moveEntity" as const),
+      entity: pick,
+      path: fc.array(fc.record({ x: coord, y: coord }), { minLength: 1, maxLength: 4 }),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("updateEntity" as const),
+      entity: pick,
+      field: pick,
+      n: fc.integer({ min: 0, max: 9 }),
+      width: fc.constantFrom(undefined, null, 16, 64),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("defineEntityType" as const), variant: fc.nat({ max: 3 }) }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeEntityType" as const), id: fc.constantFrom("chest", "npc") }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("addEntityLayer" as const), index: pick }) },
   { weight: 2, arbitrary: fc.constant({ kind: "undo" as const }) },
   { weight: 2, arbitrary: fc.constant({ kind: "redo" as const }) },
 );
@@ -232,8 +272,47 @@ const stepArb = fc.oneof(
   { weight: 1, arbitrary: fc.array(editArb, { minLength: 2, maxLength: 4 }).map((group) => group as Action[]) },
 );
 
+const CHEST: EntityType = {
+  id: "chest",
+  name: "Chest",
+  color: "#aa5500",
+  fields: [
+    { name: "count", type: "int", default: 1 },
+    { name: "kind", type: "enum", default: "wood", enumValues: ["wood", "gold"] },
+  ],
+};
+
+/** Entity type variants the property test defines. */
+const TYPE_VARIANTS: readonly EntityType[] = [
+  { ...CHEST, name: "Sandık" },
+  { ...CHEST, fields: [{ name: "count", type: "int", default: 3 }] },
+  { id: "npc", name: "NPC", color: "#3366ff", icon: "user", fields: [{ name: "line", type: "string", default: "" }, { name: "home", type: "point", default: null }] },
+  { id: "npc", name: "NPC", color: "#3366ff", fields: [{ name: "speed", type: "float", default: 1.5 }, { name: "to", type: "levelRef", default: null }, { name: "boss", type: "bool", default: false }] },
+];
+
+function fieldValue(type: string, n: number, enumValues: readonly string[] = []): EntityFieldValue {
+  switch (type) {
+    case "int": return n;
+    case "float": return n / 4;
+    case "bool": return n % 2 === 0;
+    case "enum": return enumValues[n % enumValues.length]!;
+    case "levelRef": return n % 3 === 0 ? null : `lvl-${n}`;
+    case "point": return n % 3 === 0 ? null : { x: n * 32, y: n };
+    default: return `s${n}`;
+  }
+}
+
+function allEntities(store: MapStore) {
+  return store.document.entityLayers().flatMap((l) => l.entities);
+}
+
 function setup(): MapStore {
   const { store } = makeStore(W0, H0, PALETTE);
+  // v0.6: an entity type, an entity layer with a chest and the spawn point.
+  store.dispatch({ type: "defineEntityType", entityType: CHEST });
+  store.dispatch({ type: "addLayer", layer: { id: "ents", name: "Entities", type: "entity" } });
+  store.dispatch({ type: "addEntity", layerId: "ents", entity: { id: "c1", typeId: "chest", x: 64, y: 32, fields: { count: 4 } } });
+  store.dispatch({ type: "addEntity", layerId: "ents", entity: { typeId: SPAWN_TYPE_ID, x: 0, y: 0 } });
   // v0.3: a terrain tileset, a terrain grid deriving into "top", a collision grid.
   // Every terrain tile is in the palette up front: palette entries are
   // append-only (not undoable), so derivation never grows it during the test.
@@ -257,7 +336,7 @@ function layerAt(store: MapStore, n: number): string | undefined {
 }
 
 function tileLayerAt(store: MapStore, n: number): string | undefined {
-  const layers = store.document.layers.filter((l) => !isGridLayer(l));
+  const layers = store.document.layers.filter((l) => isTileLayer(l));
   return layers.length === 0 ? undefined : layers[n % layers.length]!.id;
 }
 
@@ -268,7 +347,10 @@ function gridLayerAt(store: MapStore, n: number): string | undefined {
 
 /** Level and project bytes (tileset metadata lives in the project file). */
 function snap(store: MapStore): string {
-  return serializeLevel(store.document) + serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets });
+  return (
+    serializeLevel(store.document) +
+    serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets, entityTypes: store.document.entityTypes })
+  );
 }
 
 function layerSet(store: MapStore, picks: readonly number[]): string[] {
@@ -363,10 +445,67 @@ function applyEdit(store: MapStore, a: EditAction): void {
       else store.dispatch({ type: "addLayer", layer: { name: "C", type: "grid", role: "collision" }, index });
       return;
     }
+    case "addEntityLayer":
+      store.dispatch({ type: "addLayer", layer: { name: "E", type: "entity" }, index: a.index % (doc.layers.length + 1) });
+      return;
+    case "addEntity": {
+      const layers = doc.entityLayers();
+      if (layers.length === 0) return;
+      const layer = layers[a.layer % layers.length]!;
+      const types = doc.allEntityTypes();
+      const type = types[a.type % types.length]!;
+      if (type.id === SPAWN_TYPE_ID && doc.spawn()) return;
+      const { tileWidth, tileHeight } = doc.map;
+      const x = a.x * tileWidth + a.dx;
+      const y = a.y * tileHeight;
+      if (!doc.inBounds(Math.floor(x / tileWidth), Math.floor(y / tileHeight))) return;
+      const first = type.fields[0];
+      const fields = first && a.n >= 0 ? { [first.name]: fieldValue(first.type, a.n, first.enumValues) } : {};
+      store.dispatch({ type: "addEntity", layerId: layer.id, entity: { typeId: type.id, x, y, fields }, index: a.index % (layer.entities.length + 1) });
+      return;
+    }
+    case "removeEntity": {
+      const all = allEntities(store);
+      if (all.length > 0) store.dispatch({ type: "removeEntity", entityId: all[a.entity % all.length]!.id });
+      return;
+    }
+    case "moveEntity": {
+      const all = allEntities(store);
+      if (all.length === 0) return;
+      const id = all[a.entity % all.length]!.id;
+      // A drag: one transaction, consecutive moves merge into one change.
+      store.beginTransaction();
+      for (const p of a.path) {
+        if (doc.inBounds(p.x, p.y)) store.dispatch({ type: "moveEntity", entityId: id, x: p.x * doc.map.tileWidth, y: p.y * doc.map.tileHeight });
+      }
+      store.commit();
+      return;
+    }
+    case "updateEntity": {
+      const all = allEntities(store);
+      if (all.length === 0) return;
+      const entity = all[a.entity % all.length]!;
+      const type = doc.getEntityType(entity.typeId);
+      if (!type) return;
+      const field = type.fields.length > 0 ? type.fields[a.field % type.fields.length]! : undefined;
+      store.dispatch({
+        type: "updateEntity",
+        entityId: entity.id,
+        ...(field ? { fields: { [field.name]: fieldValue(field.type, a.n, field.enumValues) } } : {}),
+        ...(a.width !== undefined ? { width: a.width } : {}),
+      });
+      return;
+    }
+    case "defineEntityType":
+      store.dispatch({ type: "defineEntityType", entityType: TYPE_VARIANTS[a.variant]! });
+      return;
+    case "removeEntityType":
+      if (doc.entityTypes.some((t) => t.id === a.id)) store.dispatch({ type: "removeEntityType", typeId: a.id });
+      return;
   }
 }
 
-describe("v0.2/v0.3 Bitti: random op sequences (incl. terrain, solid, terrain definitions) are fully reversible", () => {
+describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terrain definitions, entities, entity types) are fully reversible", () => {
   it("undo all → initial bytes, redo all → final bytes; every state roundtrips; matches a snapshot model", () => {
     fc.assert(
       fc.property(fc.array(stepArb, { maxLength: 60 }).map((steps) => steps.flat().slice(0, 60)), (actions) => {
@@ -405,7 +544,7 @@ describe("v0.2/v0.3 Bitti: random op sequences (incl. terrain, solid, terrain de
           }
           expect(snap(store)).toBe(states[at]);
           const text = serializeLevel(store.document);
-          expect(serializeLevel(parseLevel(text, store.document.tilesets))).toBe(text);
+          expect(serializeLevel(parseLevel(text, store.document.tilesets, store.document.entityTypes))).toBe(text);
         }
 
         const final = snap(store);

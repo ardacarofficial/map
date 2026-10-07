@@ -1,13 +1,17 @@
+import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
-import { isGridLayer, type TileLayer } from "@smap/core";
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { opacityDrag, moveLayer, removeLayer, renameLayer, setLayerProps } from "../../commands/layerActions";
-import { runCommand } from "../../commands/registry";
+import { isGridLayer, type MapDocument, type TileLayer } from "@smap/core";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { addLayer, opacityDrag, moveLayer, removeLayer, renameLayer, setLayerProps } from "../../commands/layerActions";
+import { addCollisionLayer } from "../../commands/terrainActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 import { IconButton } from "../primitives/Button";
-import { Icon } from "../primitives/Icon";
+import { Icon, type IconName } from "../primitives/Icon";
+import { CommandKbd } from "../primitives/Kbd";
+import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
+import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { displayToCore, dropIndex, rowShift } from "./layerOrder";
 import { PanelSection } from "./PanelSection";
@@ -98,11 +102,7 @@ export function LayersPanel() {
       className="shrink-0"
       actions={
         <>
-          <Tooltip label={t("layers.add")} command="layer.add">
-            <IconButton aria-label={t("layers.add")} className="size-7" onClick={() => runCommand("layer.add")}>
-              <Icon name="plus" size={15} />
-            </IconButton>
-          </Tooltip>
+          <AddLayerMenu />
           <Tooltip label={t("layers.remove")}>
             <IconButton
               aria-label={t("layers.remove")}
@@ -150,13 +150,14 @@ export function LayersPanel() {
             >
               {isActive && <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
               <Icon
-                name={isGridLayer(layer) ? "grid" : "layers"}
+                name={layerIcon(layer)}
                 size={14}
-                className={`shrink-0 ${isActive ? "text-accent" : "text-faint"}`}
+                className={`shrink-0 ${isActive ? (isGridLayer(layer) ? roleTint(layer) : "text-accent") : "text-faint"}`}
               />
               {editingId === layer.id ? (
                 <RenameInput
                   initial={layer.name}
+                  label={t("layers.rename")}
                   onDone={(name) => {
                     setEditingId(null);
                     if (name !== null) renameLayer(layer.id, name);
@@ -165,14 +166,10 @@ export function LayersPanel() {
               ) : (
                 <span
                   title={t("layers.renameHint")}
-                  className={`min-w-0 flex-1 truncate ${layer.visible ? "" : "text-faint line-through decoration-line-strong"}`}
+                  className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${layer.visible ? "" : "text-faint line-through decoration-line-strong"}`}
                 >
-                  {layer.name}
-                  {isGridLayer(layer) && (
-                    <span className="ml-1.5 text-xs text-faint">
-                      {t(layer.role === "terrain" ? "layers.terrain" : "layers.collision")}
-                    </span>
-                  )}
+                  <span className="min-w-0 shrink truncate">{layer.name}</span>
+                  <LayerLink doc={store!.document} layer={layer} />
                 </span>
               )}
               {layer.opacity < 1 && editingId !== layer.id && (
@@ -198,6 +195,81 @@ export function LayersPanel() {
       </ul>
       {active && <OpacityRow layer={active} />}
     </PanelSection>
+  );
+}
+
+function layerIcon(layer: TileLayer): IconName {
+  if (!isGridLayer(layer)) return "layers";
+  return layer.role === "terrain" ? "terrain" : "shield";
+}
+
+function roleTint(layer: TileLayer): string {
+  return isGridLayer(layer) && layer.role === "collision" ? "text-collision-solid" : "text-terrain-tint";
+}
+
+/**
+ * The terrain ↔ tile layer link, as a faint note after the name:
+ * a terrain layer shows "→ Çimen" (the tile layer it writes into); that tile
+ * layer shows a small terrain mark ("derived").
+ */
+function LayerLink({ doc, layer }: { doc: MapDocument; layer: TileLayer }) {
+  if (isGridLayer(layer)) {
+    if (layer.role !== "terrain") return null;
+    const target = layer.targetLayerId ? doc.getLayer(layer.targetLayerId) : undefined;
+    return (
+      <span
+        title={target ? t("layers.terrainTarget", { name: target.name }) : t("layers.terrainNoTarget")}
+        className="flex min-w-0 shrink-[2] items-center gap-0.5 truncate text-xs text-faint no-underline"
+      >
+        <Icon name="cornerDownRight" size={11} className="shrink-0" />
+        <span className="truncate">{target?.name ?? "—"}</span>
+      </span>
+    );
+  }
+  const source = doc.layers.find((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layer.id);
+  if (!source) return null;
+  return (
+    <span title={t("layers.derived", { name: source.name })} className="flex shrink-0 items-center self-center text-terrain-tint/80">
+      <Icon name="terrain" size={11} />
+    </span>
+  );
+}
+
+/** "+" in the layers header: tile layer or collision (exceptions) layer. */
+function AddLayerMenu() {
+  return (
+    <Menu.Root>
+      <Tooltip label={t("layers.add")} command="layer.add">
+        <Menu.Trigger
+          render={
+            <IconButton aria-label={t("layers.add")} className="size-7 data-popup-open:bg-hover data-popup-open:text-text">
+              <Icon name="plus" size={15} />
+            </IconButton>
+          }
+        />
+      </Tooltip>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
+          <Menu.Popup className={`${menuPopupClass} w-[260px]`}>
+            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addLayer()}>
+              <Icon name="layers" size={15} className="mt-0.5 shrink-0 text-muted" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span>{t("layers.addTile")}</span>
+                <span className="text-xs text-faint">{t("layers.addTileHint")}</span>
+              </span>
+              <CommandKbd command="layer.add" className="mt-0.5" />
+            </Menu.Item>
+            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addCollisionLayer()}>
+              <Icon name="shield" size={15} className="mt-0.5 shrink-0 text-collision-solid" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span>{t("layers.addCollision")}</span>
+                <span className="text-xs text-faint">{t("layers.addCollisionHint")}</span>
+              </span>
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 
@@ -228,41 +300,6 @@ function RowToggle({
     >
       <Icon name={icon} size={14} />
     </button>
-  );
-}
-
-function RenameInput({ initial, onDone }: { initial: string; onDone(name: string | null): void }) {
-  const [value, setValue] = useState(initial);
-  const done = useRef(false);
-  const finish = (name: string | null) => {
-    if (done.current) return;
-    done.current = true;
-    onDone(name);
-  };
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      finish(value);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      finish(null);
-    }
-  };
-  return (
-    <input
-      autoFocus
-      value={value}
-      aria-label={t("layers.rename")}
-      onChange={(e) => setValue(e.target.value)}
-      onFocus={(e) => e.currentTarget.select()}
-      onBlur={() => finish(value)}
-      onKeyDown={onKeyDown}
-      spellCheck={false}
-      autoComplete="off"
-      maxLength={64}
-      className="h-6 min-w-0 flex-1 rounded-sm border border-accent bg-panel px-1.5 text-md text-text ring-2 ring-accent-soft focus-visible:outline-none"
-    />
   );
 }
 

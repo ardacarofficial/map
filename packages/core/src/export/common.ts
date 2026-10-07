@@ -3,14 +3,15 @@
  * exported, the cells of a tile layer in a fixed order, and the image file
  * names written next to the exported map.
  *
- * Only tile layers are exported. Grid layers (terrain / collision) are not:
+ * Only tile layers are exported as cells (entity layers are exported as
+ * entities / objects by each exporter). Grid layers (terrain / collision) are not:
  * a terrain grid's look is already in its derived tile layer, and collision
  * exceptions are folded into the derived collision grid.
  */
 import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V } from "../cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT } from "../chunk";
 import type { MapDocument } from "../document";
-import { isGridLayer, type TileLayer } from "../layer";
+import { isTileLayer, type TileLayer } from "../layer";
 import type { Tileset } from "../tileset";
 
 /** Export flip flags (small bits, so they fit any int parser). */
@@ -41,9 +42,9 @@ export interface ExportCell {
   readonly cellFlags: number;
 }
 
-/** Tile layers (grid layers excluded), bottom to top. */
+/** Tile layers (grid and entity layers excluded), bottom to top. */
 export function exportedLayers(doc: MapDocument): TileLayer[] {
-  return doc.layers.filter((layer) => !isGridLayer(layer));
+  return doc.layers.filter((layer) => isTileLayer(layer));
 }
 
 /**

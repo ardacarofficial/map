@@ -83,6 +83,36 @@ export function planTerrainLayer(doc: MapDocument, activeLayerId: string | null)
   return { kind: "create", index: activeIndex >= 0 ? activeIndex + 1 : layers.length };
 }
 
+/** Ids of tile layers that a terrain layer writes into (derived, not for hand painting). */
+function derivedLayerIds(doc: MapDocument): Set<string> {
+  const ids = new Set<string>();
+  for (const layer of doc.layers) {
+    if (isGridLayer(layer) && layer.role === "terrain" && layer.targetLayerId !== null) ids.add(layer.targetLayerId);
+  }
+  return ids;
+}
+
+/**
+ * Picking a tile in the tileset while a grid (terrain / collision) layer is
+ * active means "paint this tile": returns the tile layer to switch to — the
+ * nearest hand-painted tile layer below the active one, else the topmost.
+ * `null` when the active layer already takes tiles or no such layer exists.
+ */
+export function tileLayerForPick(doc: MapDocument, activeLayerId: string | null): string | null {
+  const active = activeLayerId ? doc.getLayer(activeLayerId) : undefined;
+  if (active && !isGridLayer(active)) return null;
+  const derived = derivedLayerIds(doc);
+  const layers = doc.layers;
+  const plain = (i: number) => {
+    const l = layers[i]!;
+    return !isGridLayer(l) && !derived.has(l.id);
+  };
+  const from = active ? doc.indexOfLayer(active.id) : layers.length;
+  for (let i = from - 1; i >= 0; i--) if (plain(i)) return layers[i]!.id;
+  for (let i = layers.length - 1; i > from; i--) if (plain(i)) return layers[i]!.id;
+  return null;
+}
+
 /**
  * The value the brush should paint on `layer`, keeping `gridValue` when it
  * is valid there: collision layers take 1 (force solid) or 2 (force

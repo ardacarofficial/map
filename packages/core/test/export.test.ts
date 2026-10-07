@@ -109,7 +109,7 @@ describe("game JSON export", () => {
     expect(text.endsWith("}\n")).toBe(true);
     expect(text).not.toContain("\r");
     const game = JSON.parse(text) as Game;
-    expect(Object.keys(game)).toEqual(["smapExport", "width", "height", "tileWidth", "tileHeight", "yUp", "tilesets", "layers", "collision"]);
+    expect(Object.keys(game)).toEqual(["smapExport", "width", "height", "tileWidth", "tileHeight", "yUp", "tilesets", "layers", "collision", "entities", "spawn"]);
     expect(game).toMatchObject({ smapExport: 1, width: 4, height: 3, tileWidth: 32, tileHeight: 32, yUp: false });
     expect(game.tilesets.map((t) => t.image)).toEqual(["grass.png", "items.png"]);
     expect(game.tilesets[1]).toEqual({ name: "Items", image: "items.png", tileWidth: 16, tileHeight: 16, columns: 4, rows: 2, margin: 1, spacing: 2 });

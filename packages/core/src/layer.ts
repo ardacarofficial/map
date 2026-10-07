@@ -1,4 +1,5 @@
 import { EMPTY_CELL, type Cell } from "./cell";
+import type { Entity } from "./entity";
 import {
   Chunk,
   CHUNK_SHIFT,
@@ -10,9 +11,10 @@ import {
 
 /**
  * Layer kinds. `"tile"` holds cells (palette index + flip flags); `"grid"`
- * (v0.3) holds small integers for terrain or collision. `"entity"` comes later.
+ * (v0.3) holds small integers for terrain or collision; `"entity"` (v0.6)
+ * holds placed entities and no cells.
  */
-export type LayerType = "tile" | "grid";
+export type LayerType = "tile" | "grid" | "entity";
 
 /**
  * What a grid layer is for.
@@ -218,6 +220,56 @@ export class GridLayer extends TileLayer {
   get maxValue(): number {
     return this.role === "collision" ? MAX_COLLISION_VALUE : MAX_GRID_VALUE;
   }
+}
+
+/**
+ * A layer of placed entities (v0.6). It holds no cells: it extends
+ * {@link TileLayer} only so that `MapDocument.layers` keeps one element
+ * type; its chunk list is always empty and cell writes are rejected.
+ * Check with {@link isEntityLayer}; "real" tile layers with {@link isTileLayer}.
+ *
+ * Entities are written with the entity ops only (`addEntity`, `moveEntity`,
+ * `updateEntity`, `removeEntity`).
+ */
+export class EntityLayer extends TileLayer {
+  override readonly type: LayerType = "entity";
+  #entities: readonly Entity[] = Object.freeze([]);
+
+  /** Entities in drawing order (first = bottom). Frozen; replaced on every change. */
+  get entities(): readonly Entity[] {
+    return this.#entities;
+  }
+
+  /** Entity by id, or `undefined`. */
+  getEntity(id: string): Entity | undefined {
+    return this.#entities.find((e) => e.id === id);
+  }
+
+  /** @internal Replaces the entity list (validated by the caller). */
+  _setEntities(entities: readonly Entity[]): void {
+    this.#entities = Object.isFrozen(entities) ? entities : Object.freeze([...entities]);
+  }
+
+  /** @internal Entity layers hold no cells. */
+  override _setCell(x: number, y: number, cell: Cell): Cell {
+    if (cell === EMPTY_CELL) return EMPTY_CELL;
+    throw new TypeError(`entity layer "${this.id}" holds no cells (write at (${x}, ${y}))`);
+  }
+
+  /** @internal Entity layers hold no cells. */
+  override _putChunk(cx: number, cy: number, data: Uint32Array): void {
+    if (data.some((v) => v !== EMPTY_CELL)) throw new TypeError(`entity layer "${this.id}" holds no cells (chunk ${cx}, ${cy})`);
+  }
+}
+
+/** True for entity layers. */
+export function isEntityLayer(layer: TileLayer | undefined | null): layer is EntityLayer {
+  return layer instanceof EntityLayer;
+}
+
+/** True for plain tile layers (not grid, not entity). */
+export function isTileLayer(layer: TileLayer | undefined | null): layer is TileLayer {
+  return layer instanceof TileLayer && layer.type === "tile";
 }
 
 /** True for grid (terrain / collision) layers. */

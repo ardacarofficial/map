@@ -18,14 +18,48 @@
  * - level `seed` (default 0), written only when non-zero;
  * - layer `type: "grid"` with `role` and (terrain only) `target`.
  *
+ * v0.6 / v1.0 additions, also optional (version stays 1):
+ * - layer `type: "entity"` with `entities` (instead of `chunks`): each
+ *   `{ id, typeId, x, y, width?, height?, fields: [{ name, value }] }`,
+ *   fields sorted by name (ordered array, not an object map);
+ * - project `entityTypes` (written only when non-empty);
+ * - project level `id` and `world` (always written; old files get a
+ *   path-derived id when read, see `normalizeProject`);
+ * - clip / stamp grid layer `role`;
+ * - stamp files `stamps/<id>.json` (`format: "smap-stamp"`).
+ *
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
 import { cellPaletteIndex, isValidCell } from "./cell";
 import type { ClipLayer, TileClip } from "./clip";
+import {
+  entityProblem,
+  entityTypesProblem,
+  isEntityFieldType,
+  isEntityFieldValue,
+  normalizeEntity,
+  SPAWN_TYPE_ID,
+  type Entity,
+  type EntityFieldDef,
+  type EntityFieldValue,
+  type EntityType,
+} from "./entity";
+import { normalizeProject, type Project, type ProjectData } from "./project";
+import { stampIdProblem, type Stamp } from "./stamp";
 import { CHUNK_AREA, CHUNK_SHIFT, CHUNK_SIZE } from "./chunk";
 import { DOCUMENT_FORMAT_VERSION, MapDocument, isValidSeed, mapInfoProblem, type MapInfo } from "./document";
-import { GridLayer, MAX_GRID_VALUE, TileLayer, isGridLayer, isGridRole, layerPropsProblem, type LayerProps } from "./layer";
+import {
+  EntityLayer,
+  GridLayer,
+  MAX_GRID_VALUE,
+  TileLayer,
+  isEntityLayer,
+  isGridLayer,
+  isGridRole,
+  layerPropsProblem,
+  type LayerProps,
+} from "./layer";
 import { isTerrainTemplate, type Terrain, type TerrainVariant } from "./terrain";
 import { normalizeTileset, relativePathProblem, tilesetProblem, type Tileset } from "./tileset";
 
@@ -35,22 +69,12 @@ export const PROJECT_FORMAT = "smap-project";
 export const LEVEL_FORMAT = "smap-level";
 /** `format` field of a serialized clip (system clipboard). */
 export const CLIP_FORMAT = "smap-clip";
+/** `format` field of a stamp file (`stamps/<id>.json`). */
+export const STAMP_FORMAT = "smap-stamp";
 /** Conventional project file name. */
 export const PROJECT_FILE_NAME = "project.smap";
 
-/** A level listed in the project file. */
-export interface LevelRef {
-  readonly name: string;
-  /** Project-relative path, e.g. `"levels/main.json"`. */
-  readonly path: string;
-}
-
-/** Contents of `project.smap`. */
-export interface ProjectData {
-  readonly name: string;
-  readonly levels: readonly LevelRef[];
-  readonly tilesets: readonly Tileset[];
-}
+export type { LevelRef, ProjectData } from "./project";
 
 /** Thrown by `parseProject` / `parseLevel`. `path` points at the offending value, e.g. `layers[0].chunks[2].data`. */
 export class FormatError extends Error {
@@ -65,14 +89,22 @@ export class FormatError extends Error {
 
 // ------------------------------------------------------------------ writing
 
-/** Project file text. */
+/**
+ * Project file text. Missing level ids are derived from the path and
+ * missing world positions written as `{ x: 0, y: 0 }` (see `normalizeProject`).
+ * @throws Error on duplicate level ids / paths or invalid entity types.
+ */
 export function serializeProject(project: ProjectData): string {
+  const p = normalizeProject(project);
+  const problem = entityTypesProblem(p.entityTypes);
+  if (problem) throw new Error(`serializeProject: ${problem}`);
   return toJson({
     format: PROJECT_FORMAT,
     documentFormatVersion: DOCUMENT_FORMAT_VERSION,
-    name: project.name,
-    levels: project.levels.map((level) => ({ name: level.name, path: level.path })),
-    tilesets: project.tilesets.map(tilesetJson),
+    name: p.name,
+    levels: p.levels.map((level) => ({ id: level.id, name: level.name, path: level.path, world: { x: level.world.x, y: level.world.y } })),
+    tilesets: p.tilesets.map(tilesetJson),
+    ...(p.entityTypes.length > 0 ? { entityTypes: p.entityTypes.map(entityTypeJson) } : {}),
   });
 }
 
@@ -103,10 +135,27 @@ export function serializeLevel(doc: MapDocument): string {
       visible: layer.visible,
       locked: layer.locked,
       opacity: layer.opacity,
-      chunks: [...layer.chunks()]
-        .sort((a, b) => a.cy - b.cy || a.cx - b.cx)
-        .map((chunk) => ({ cx: chunk.cx, cy: chunk.cy, data: encodeUint32LE(chunk.data) })),
+      ...(isEntityLayer(layer)
+        ? { entities: layer.entities.map(entityJson) }
+        : {
+            chunks: [...layer.chunks()]
+              .sort((a, b) => a.cy - b.cy || a.cx - b.cx)
+              .map((chunk) => ({ cx: chunk.cx, cy: chunk.cy, data: encodeUint32LE(chunk.data) })),
+          }),
     })),
+  });
+}
+
+/** Stamp file text for `stamps/<id>.json` (deterministic). */
+export function serializeStamp(stamp: Stamp): string {
+  const problem = stampIdProblem(stamp.id);
+  if (problem) throw new Error(`serializeStamp: ${problem}`);
+  return toJson({
+    format: STAMP_FORMAT,
+    documentFormatVersion: DOCUMENT_FORMAT_VERSION,
+    id: stamp.id,
+    name: stamp.name,
+    ...clipBodyJson(stamp),
   });
 }
 
@@ -115,19 +164,54 @@ export function serializeLevel(doc: MapDocument): string {
  * Each layer's cells are little-endian `Uint32`, base64-encoded.
  */
 export function serializeClip(clip: TileClip): string {
-  return toJson({
-    format: CLIP_FORMAT,
-    documentFormatVersion: DOCUMENT_FORMAT_VERSION,
+  return toJson({ format: CLIP_FORMAT, documentFormatVersion: DOCUMENT_FORMAT_VERSION, ...clipBodyJson(clip) });
+}
+
+function clipBodyJson(clip: TileClip): Record<string, unknown> {
+  return {
     width: clip.width,
     height: clip.height,
     palette: clip.palette.map((entry, i) => ({ index: i + 1, tilesetId: entry.tilesetId, tileId: entry.tileId })),
     layers: clip.layers.map((layer) => ({
       layerId: layer.layerId,
       name: layer.name,
-      ...(layer.grid ? { grid: true } : {}),
+      ...(layer.grid ? { grid: true, ...(layer.role ? { role: layer.role } : {}) } : {}),
       data: encodeUint32LE(layer.cells),
     })),
-  });
+  };
+}
+
+function entityTypeJson(t: EntityType): Record<string, unknown> {
+  return {
+    id: t.id,
+    name: t.name,
+    color: t.color,
+    ...(t.icon !== undefined ? { icon: t.icon } : {}),
+    fields: t.fields.map((f) => ({
+      name: f.name,
+      type: f.type,
+      default: valueJson(f.default),
+      ...(f.enumValues ? { enumValues: f.enumValues } : {}),
+    })),
+  };
+}
+
+function entityJson(e: Entity): Record<string, unknown> {
+  return {
+    id: e.id,
+    typeId: e.typeId,
+    x: e.x,
+    y: e.y,
+    ...(e.width !== undefined ? { width: e.width } : {}),
+    ...(e.height !== undefined ? { height: e.height } : {}),
+    fields: Object.keys(e.fields)
+      .sort()
+      .map((name) => ({ name, value: valueJson(e.fields[name]!) })),
+  };
+}
+
+function valueJson(v: EntityFieldValue): unknown {
+  return typeof v === "object" && v !== null ? { x: v.x, y: v.y } : v;
 }
 
 function tilesetJson(tileset: Tileset): Record<string, unknown> {
@@ -168,22 +252,43 @@ function toJson(value: unknown): string {
  * Parses and validates `project.smap`.
  * @throws FormatError with a descriptive message on any problem, including a newer `documentFormatVersion`.
  */
-export function parseProject(text: string): ProjectData {
+export function parseProject(text: string): Project {
   const root = readRoot(text, PROJECT_FORMAT, "project");
   const name = str(root, "name", "");
-  const levels = arr(root, "levels", "").map((item, i): LevelRef => {
+  const levels = arr(root, "levels", "").map((item, i) => {
     const path = `levels[${i}]`;
     const level = obj(item, path);
     const ref = { name: str(level, "name", path), path: str(level, "path", path) };
     const problem = relativePathProblem(ref.path);
     if (problem) throw new FormatError(`${path}.path`, problem);
-    return ref;
+    let id: string | undefined;
+    if (level["id"] !== undefined) {
+      id = str(level, "id", path);
+      if (id.length === 0) throw new FormatError(`${path}.id`, "must not be empty");
+    }
+    let world: { x: number; y: number } | undefined;
+    if (level["world"] !== undefined) {
+      const w = obj(level["world"], `${path}.world`);
+      world = { x: int(w, "x", `${path}.world`), y: int(w, "y", `${path}.world`) };
+    }
+    return { ...(id !== undefined ? { id } : {}), ...ref, ...(world ? { world } : {}) };
   });
   assertUnique(levels.map((l) => l.path), "levels", "path");
+  assertUnique(levels.filter((l) => l.id !== undefined).map((l) => l.id!), "levels", "id");
   const tilesets = arr(root, "tilesets", "").map((item, i) => readTileset(item, `tilesets[${i}]`));
   assertUnique(tilesets.map((t) => t.id), "tilesets", "id");
   assertUniqueTerrains(tilesets, "tilesets");
-  return { name, levels, tilesets };
+  let entityTypes: EntityType[] = [];
+  if (root["entityTypes"] !== undefined) {
+    entityTypes = arr(root, "entityTypes", "").map((item, i) => readEntityType(item, `entityTypes[${i}]`));
+    const problem = entityTypesProblem(entityTypes);
+    if (problem) throw new FormatError("", problem);
+  }
+  try {
+    return normalizeProject({ name, levels, tilesets, entityTypes });
+  } catch (error) {
+    throw new FormatError("levels", (error as Error).message);
+  }
 }
 
 /**
@@ -195,7 +300,7 @@ export function parseProject(text: string): ProjectData {
  *
  * @throws FormatError with a descriptive message on any problem, including a newer `documentFormatVersion`.
  */
-export function parseLevel(text: string, tilesets: readonly Tileset[] = []): MapDocument {
+export function parseLevel(text: string, tilesets: readonly Tileset[] = [], entityTypes: readonly EntityType[] = []): MapDocument {
   const root = readRoot(text, LEVEL_FORMAT, "level");
 
   const mapObj = obj(root["map"], "map");
@@ -219,6 +324,9 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
     doc._addTileset(tileset);
   }
   assertUniqueTerrains(doc.tilesets, "tilesets");
+  const typesProblem = entityTypesProblem(entityTypes);
+  if (typesProblem) throw new FormatError("", typesProblem);
+  doc._setEntityTypes(entityTypes);
 
   arr(root, "palette", "").forEach((item, i) => {
     const path = `palette[${i}]`;
@@ -236,11 +344,13 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
   });
 
   const targets: { path: string; target: string }[] = [];
+  const entityIds = new Set<string>();
+  let spawnSeen = false;
   arr(root, "layers", "").forEach((item, i) => {
     const path = `layers[${i}]`;
     const layerObj = obj(item, path);
     const type = str(layerObj, "type", path);
-    if (type !== "tile" && type !== "grid") throw new FormatError(`${path}.type`, `unsupported layer type "${type}"`);
+    if (type !== "tile" && type !== "grid" && type !== "entity") throw new FormatError(`${path}.type`, `unsupported layer type "${type}"`);
     const props: LayerProps = {
       id: str(layerObj, "id", path),
       name: str(layerObj, "name", path),
@@ -266,9 +376,23 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
       layer = new GridLayer(props, role, target);
     } else {
       if (layerObj["role"] !== undefined) throw new FormatError(`${path}.role`, "only grid layers have a role");
-      layer = new TileLayer(props);
+      layer = type === "entity" ? new EntityLayer(props) : new TileLayer(props);
     }
-    readChunks(arr(layerObj, "chunks", path), `${path}.chunks`, layer, doc);
+    if (isEntityLayer(layer)) {
+      if (layerObj["chunks"] !== undefined) throw new FormatError(`${path}.chunks`, "entity layers have no chunks");
+      const entities = arr(layerObj, "entities", path).map((e, j) => readEntity(e, `${path}.entities[${j}]`, doc));
+      for (const [j, entity] of entities.entries()) {
+        if (entityIds.has(entity.id)) throw new FormatError(`${path}.entities[${j}].id`, `duplicate entity id "${entity.id}"`);
+        entityIds.add(entity.id);
+        if (entity.typeId === SPAWN_TYPE_ID) {
+          if (spawnSeen) throw new FormatError(`${path}.entities[${j}]`, "a level has at most one spawn point");
+          spawnSeen = true;
+        }
+      }
+      layer._setEntities(Object.freeze(entities));
+    } else {
+      readChunks(arr(layerObj, "chunks", path), `${path}.chunks`, layer, doc);
+    }
     doc._insertLayer(layer, doc.layers.length);
   });
 
@@ -288,7 +412,24 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
  * @throws FormatError on any problem (also when the text is not a clip at all).
  */
 export function parseClip(text: string): TileClip {
-  const root = readRoot(text, CLIP_FORMAT, "clip");
+  return readClipBody(readRoot(text, CLIP_FORMAT, "clip"));
+}
+
+/**
+ * Parses and validates a stamp file (`stamps/<id>.json`).
+ * @throws FormatError on any problem.
+ */
+export function parseStamp(text: string): Stamp {
+  const root = readRoot(text, STAMP_FORMAT, "stamp");
+  const id = str(root, "id", "");
+  const problem = stampIdProblem(id);
+  if (problem) throw new FormatError("id", problem);
+  const name = str(root, "name", "");
+  const clip = readClipBody(root);
+  return Object.freeze({ id, name, width: clip.width, height: clip.height, palette: clip.palette, layers: clip.layers });
+}
+
+function readClipBody(root: Record<string, unknown>): TileClip {
   const width = int(root, "width", "");
   const height = int(root, "height", "");
   if (width < 1 || height < 1 || width * height > 1 << 26) {
@@ -311,6 +452,13 @@ export function parseClip(text: string): TileClip {
     const layerId = str(layerObj, "layerId", path);
     const name = str(layerObj, "name", path);
     const grid = layerObj["grid"] === undefined ? false : bool(layerObj, "grid", path);
+    let role: "terrain" | "collision" | undefined;
+    if (layerObj["role"] !== undefined) {
+      const r = str(layerObj, "role", path);
+      if (!grid) throw new FormatError(`${path}.role`, "only grid layers have a role");
+      if (!isGridRole(r)) throw new FormatError(`${path}.role`, `unknown grid role "${r}"`);
+      role = r;
+    }
     let cells: Uint32Array;
     try {
       cells = decodeUint32LE(str(layerObj, "data", path));
@@ -331,7 +479,7 @@ export function parseClip(text: string): TileClip {
         throw new FormatError(`${path}.data`, `palette index ${cellPaletteIndex(cell)} does not exist`);
       }
     }
-    return Object.freeze(grid ? { layerId, name, grid: true, cells } : { layerId, name, cells });
+    return Object.freeze(grid ? { layerId, name, grid: true, ...(role ? { role } : {}), cells } : { layerId, name, cells });
   });
   assertUnique(layers.map((l) => l.layerId), "layers", "layerId");
   return Object.freeze({ width, height, palette: Object.freeze(palette), layers: Object.freeze(layers) });
@@ -474,6 +622,65 @@ function readTerrain(item: unknown, path: string, tilesetId: string): Terrain {
     origin: { col: int(originObj, "col", `${path}.origin`), row: int(originObj, "row", `${path}.origin`) },
     ...(variants && variants.length > 0 ? { variants } : {}),
   };
+}
+
+function readValue(value: unknown, path: string): EntityFieldValue {
+  if (!isEntityFieldValue(value)) throw new FormatError(path, `invalid field value ${describe(value)}`);
+  return typeof value === "object" && value !== null ? Object.freeze({ x: value.x, y: value.y }) : value;
+}
+
+function readEntityType(item: unknown, path: string): EntityType {
+  const t = obj(item, path);
+  const fields = arr(t, "fields", path).map((f, i): EntityFieldDef => {
+    const fp = `${path}.fields[${i}]`;
+    const fo = obj(f, fp);
+    const type = str(fo, "type", fp);
+    if (!isEntityFieldType(type)) throw new FormatError(`${fp}.type`, `unknown field type "${type}"`);
+    if (!Object.prototype.hasOwnProperty.call(fo, "default")) throw new FormatError(`${fp}.default`, "missing");
+    return {
+      name: str(fo, "name", fp),
+      type,
+      default: readValue(fo["default"], `${fp}.default`),
+      ...(fo["enumValues"] !== undefined ? { enumValues: arr(fo, "enumValues", fp).map((v, j) => strValue(v, `${fp}.enumValues[${j}]`)) } : {}),
+    };
+  });
+  return {
+    id: str(t, "id", path),
+    name: str(t, "name", path),
+    color: str(t, "color", path),
+    ...(t["icon"] !== undefined ? { icon: str(t, "icon", path) } : {}),
+    fields,
+  };
+}
+
+function readEntity(item: unknown, path: string, doc: MapDocument): Entity {
+  const e = obj(item, path);
+  const fields: Record<string, EntityFieldValue> = {};
+  arr(e, "fields", path).forEach((f, i) => {
+    const fp = `${path}.fields[${i}]`;
+    const fo = obj(f, fp);
+    const name = str(fo, "name", fp);
+    if (Object.prototype.hasOwnProperty.call(fields, name)) throw new FormatError(`${fp}.name`, `duplicate field "${name}"`);
+    fields[name] = readValue(fo["value"], `${fp}.value`);
+  });
+  const entity: Entity = {
+    id: str(e, "id", path),
+    typeId: str(e, "typeId", path),
+    x: int(e, "x", path),
+    y: int(e, "y", path),
+    ...(e["width"] !== undefined ? { width: int(e, "width", path) } : {}),
+    ...(e["height"] !== undefined ? { height: int(e, "height", path) } : {}),
+    fields,
+  };
+  // Field values are checked for shape only: the type may have changed since.
+  const problem = entityProblem(entity, doc.map);
+  if (problem) throw new FormatError(path, problem);
+  return normalizeEntity(entity);
+}
+
+function strValue(value: unknown, path: string): string {
+  if (typeof value !== "string") throw new FormatError(path, `expected a string, got ${describe(value)}`);
+  return value;
 }
 
 function assertUniqueTerrains(tilesets: readonly Tileset[], path: string): void {

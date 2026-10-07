@@ -279,16 +279,20 @@ export class OverlayRenderer {
     const g = this.overlay;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
-    for (const e of edges) {
-      if (e.horizontal) {
-        const a = cam.cellBox({ x: e.from, y: e.line, width: e.to - e.from, height: 0 });
-        const y = e.inside === "after" ? a.y0 : a.y0 - k;
-        g.rect(a.x0 * px, y * px, (a.x1 - a.x0) * px, k * px);
-      } else {
-        const a = cam.cellBox({ x: e.line, y: e.from, width: 0, height: e.to - e.from });
-        const x = e.inside === "after" ? a.x0 : a.x0 - k;
-        g.rect(x * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
+    // Pass 0: dark halo on the passable side (readable over any tile); pass 1: the line on the solid side.
+    for (const pass of [0, 1] as const) {
+      for (const e of edges) {
+        const solidAfter = e.inside === "after";
+        const offset = solidAfter === (pass === 1) ? 0 : -k;
+        if (e.horizontal) {
+          const a = cam.cellBox({ x: e.from, y: e.line, width: e.to - e.from, height: 0 });
+          g.rect(a.x0 * px, (a.y0 + offset) * px, (a.x1 - a.x0) * px, k * px);
+        } else {
+          const a = cam.cellBox({ x: e.line, y: e.from, width: 0, height: e.to - e.from });
+          g.rect((a.x0 + offset) * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
+        }
       }
+      if (pass === 0) g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.5 });
     }
     g.fill({ color: host.colors.collisionSolid, alpha: CANVAS_COLORS.collisionLineAlpha });
   }

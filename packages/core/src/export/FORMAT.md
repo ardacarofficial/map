@@ -55,11 +55,38 @@ appear.
   ],
   "collision": {
     "solid": [12, 3, 1185]  // run lengths, see below
-  }
+  },
+  "entities": [             // v0.6: entity layers, bottom to top (may be [])
+    {
+      "id": "things",        // stable editor layer id
+      "name": "Things",
+      "visible": true,
+      "items": [
+        {
+          "id": "c1",          // stable entity id, unique in the level
+          "type": "Chest",     // type name (the type id if the type was deleted)
+          "typeId": "chest",   // stable type id; "spawn" and "portal" are built in
+          "x": 96, "y": 0,     // pixels, top-left corner of the entity box, y down
+          "cellX": 3, "cellY": 0, // cell under (x, y): floor(x / tileWidth), floor(y / tileHeight)
+          "width": 16, "height": 16, // pixels; one map cell unless set in the editor
+          "fields": [          // the type's fields in definition order
+            { "name": "count", "type": "int", "value": 3 },
+            { "name": "kind", "type": "enum", "value": "gold" }
+          ]
+        }
+      ]
+    }
+  ],
+  "spawn": { "x": 32, "y": 64, "cellX": 1, "cellY": 2 }  // v0.6: or null
 }
 ```
 
-Key order is fixed and always as shown. All fields are always present.
+Key order is fixed and always as shown. All fields are always present
+(`entities` may be empty and `spawn` may be `null`).
+
+`entities` and `spawn` were added in v0.6 without bumping `smapExport`:
+readers that do not know them ignore them (Unity's `JsonUtility` skips
+unknown fields, so the v0.4 importer keeps working).
 
 ### Cells
 
@@ -106,6 +133,39 @@ cells  1 1           →  [0, 2]
 
 Later collision kinds become sibling keys of `solid`.
 
+### Entities
+
+Entity positions are **pixels** in the map's own space, `yUp: false`:
+origin at the top-left corner of the map, y down, `(x, y)` = top-left
+corner of the entity's `width × height` box. The editor snaps entities to
+cell corners, so normally `x = cellX * tileWidth`. An engine with y up
+converts at import, e.g. the box's bottom edge:
+`engineY = height * tileHeight - (y + boxHeight)`.
+
+Field `value`s by `type`:
+
+| `type`     | `value` |
+|------------|---------|
+| `string`   | string |
+| `int`      | integer |
+| `float`    | number |
+| `bool`     | `true` / `false` |
+| `enum`     | one of the type's enum strings |
+| `levelRef` | target level **id** (stable, from the project's level list) or `null` |
+| `point`    | `{ "x", "y" }` in pixels (same convention as `x`, `y`) or `null` |
+
+An entity whose stored value no longer fits its type (the type was edited)
+exports the field's default. Fields the type no longer has are not exported.
+
+Built-in types:
+
+- `spawn` — the player's start. At most one per level; also written as the
+  top-level `spawn` (`null` when the level has none).
+- `portal` (v1.1) — fields `targetLevel` (`levelRef`) and `targetPoint`
+  (`point`, pixels in the target level). An editor marker only; the game
+  decides what entering it does. A portal whose level was deleted keeps the
+  dangling id.
+
 ### Coordinates
 
 The file uses the editor's convention (`yUp: false`). An engine with y up
@@ -138,3 +198,14 @@ at 1 and grows by each tileset's `tilecount`. Solid tiles get the bool tile
 property `solid: true`. Collision exception layers cannot be expressed
 without objects, so they are not exported, and `warnings` says so. Godot 4
 (via a Tiled importer) and Phaser read this file.
+
+Entity layers become object layers (`"type": "objectgroup"`,
+`draworder: "topdown"`) in their place in the layer order; layer `id`s
+count tile and object layers together. Each entity is a rectangle object:
+`x`, `y` its top-left pixel, `width` / `height` its box, `name` its entity
+id, `type` its type name (Tiled 1.9+ calls it "class" in the editor and
+still writes `type` in JSON). Custom `properties`, sorted by name: the
+string `typeId`, plus one per type field: `int` → `int`, `float` →
+`float`, `bool` → `bool`, `string` / `enum` / `levelRef` → `string`
+(`""` when unset), `point` → `string` `"x,y"` (`""` when unset). Object
+ids are 1, 2, … in layer then entity order; `nextobjectid` follows them.

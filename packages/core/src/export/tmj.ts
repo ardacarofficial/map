@@ -9,10 +9,20 @@
  *   exceptions painted on collision grid layers have no Tiled equivalent
  *   without objects; they are not exported and a warning says so.
  * - Grid layers are skipped (their derived tile layers carry the visuals).
+ * - Entity layers (v0.6) become object layers (`objectgroup`), in layer
+ *   order between the tile layers. Each entity is a rectangle object:
+ *   `x`, `y` = its top-left pixel, `width` / `height` its size, `name` =
+ *   its id, `type` (Tiled 1.10 writes the class as `type`) = its type name,
+ *   and one custom property per field of its type. Field mapping: string /
+ *   enum / levelRef → `string` (levelRef = level id, `""` when unset),
+ *   int → `int`, float → `float`, bool → `bool`, point → `string` `"x,y"`
+ *   (pixels, `""` when unset). Every entity also gets the string property
+ *   `typeId`. Object ids are 1, 2, … in layer and entity order.
  */
 import { cellPaletteIndex, CELL_INDEX_MASK } from "../cell";
 import type { MapDocument } from "../document";
-import { isGridLayer } from "../layer";
+import { entitySize, resolveEntityFields, type ResolvedEntityField } from "../entity";
+import { isEntityLayer, isGridLayer, isTileLayer } from "../layer";
 import { tileCount, type Tileset } from "../tileset";
 import { exportBaseName, exportedLayers, exportedTilesets, layerCells, tilesetImageSize, type ExportImage } from "./common";
 import type { ExportResult } from "./game";
@@ -36,6 +46,23 @@ export interface TmjResult extends ExportResult {
   readonly warnings: readonly string[];
 }
 
+/** A resolved entity field as a Tiled custom property. */
+function tmjProperty(field: ResolvedEntityField): { name: string; type: string; value: string | number | boolean } {
+  const v = field.value;
+  switch (field.type) {
+    case "int":
+      return { name: field.name, type: "int", value: typeof v === "number" ? v : 0 };
+    case "float":
+      return { name: field.name, type: "float", value: typeof v === "number" ? v : 0 };
+    case "bool":
+      return { name: field.name, type: "bool", value: v === true };
+    case "point":
+      return { name: field.name, type: "string", value: typeof v === "object" && v !== null ? `${v.x},${v.y}` : "" };
+    default:
+      return { name: field.name, type: "string", value: typeof v === "string" ? v : "" };
+  }
+}
+
 /** `firstgid` of each tileset: 1, then the previous `firstgid` + its tile count. */
 export function tmjFirstGids(tilesets: readonly Tileset[]): number[] {
   let next = 1;
@@ -53,7 +80,40 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
   const firstGids = tmjFirstGids(images.map((image) => image.tileset));
   const layers = exportedLayers(doc);
 
-  const tmjLayers = layers.map((layer, i) => {
+  const written = doc.layers.filter((layer) => isTileLayer(layer) || isEntityLayer(layer));
+  let nextObjectId = 1;
+  const tmjLayers = written.map((layer, i) => {
+    if (isEntityLayer(layer)) {
+      return {
+        draworder: "topdown",
+        id: i + 1,
+        name: layer.name,
+        objects: layer.entities.map((entity) => {
+          const type = doc.getEntityType(entity.typeId);
+          const size = entitySize(entity, doc.map);
+          return {
+            height: size.height,
+            id: nextObjectId++,
+            name: entity.id,
+            properties: [
+              { name: "typeId", type: "string", value: entity.typeId },
+              ...resolveEntityFields(entity, type).map(tmjProperty),
+            ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+            rotation: 0,
+            type: type ? type.name : entity.typeId,
+            visible: true,
+            width: size.width,
+            x: entity.x,
+            y: entity.y,
+          };
+        }),
+        opacity: layer.opacity,
+        type: "objectgroup",
+        visible: layer.visible,
+        x: 0,
+        y: 0,
+      };
+    }
     const data = new Array<number>(width * height).fill(0);
     for (const c of layerCells(doc, layer, images)) {
       data[c.y * width + c.x] = (((firstGids[c.tilesetIndex]! + c.tileId) & CELL_INDEX_MASK) | c.cellFlags) >>> 0;
@@ -118,8 +178,8 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
     height,
     infinite: false,
     layers: tmjLayers,
-    nextlayerid: layers.length + 1,
-    nextobjectid: 1,
+    nextlayerid: written.length + 1,
+    nextobjectid: nextObjectId,
     orientation: "orthogonal",
     renderorder: "right-down",
     tiledversion: TMJ_TILED_VERSION,

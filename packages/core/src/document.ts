@@ -1,4 +1,5 @@
-import { isGridLayer, type GridLayer, type TileLayer } from "./layer";
+import { builtinEntityType, BUILTIN_ENTITY_TYPES, entityTypesProblem, normalizeEntityType, SPAWN_TYPE_ID, type Entity, type EntityType } from "./entity";
+import { isEntityLayer, isGridLayer, type EntityLayer, type GridLayer, type TileLayer } from "./layer";
 import { Palette } from "./palette";
 import type { Terrain } from "./terrain";
 import { normalizeTileset, type Tileset } from "./tileset";
@@ -29,6 +30,8 @@ export interface CreateDocumentOptions {
   tilesets?: readonly Tileset[];
   /** Variant seed (see {@link MapDocument.seed}). Defaults to 0. */
   seed?: number;
+  /** User-defined entity types of the project (v0.6). Built-in types are always present. */
+  entityTypes?: readonly EntityType[];
 }
 
 /** True when `seed` is an integer in `[0, 2^32)`. */
@@ -47,6 +50,7 @@ export class MapDocument {
   readonly palette = new Palette();
   readonly #tilesets: Tileset[] = [];
   readonly #layers: TileLayer[] = [];
+  #entityTypes: readonly EntityType[] = Object.freeze([]);
   readonly #seed: number;
   /** terrain id → terrain (rebuilt lazily after tileset changes). */
   #terrains: Map<number, Terrain> | null = null;
@@ -75,6 +79,53 @@ export class MapDocument {
   /** Tilesets in project order. */
   get tilesets(): readonly Tileset[] {
     return this.#tilesets;
+  }
+
+  /**
+   * User-defined entity types (project-level data, like `tilesets`), in
+   * project order. Built-in types (`spawn`, `portal`) are not listed here;
+   * see {@link allEntityTypes}.
+   */
+  get entityTypes(): readonly EntityType[] {
+    return this.#entityTypes;
+  }
+
+  /** Built-in types followed by the user-defined ones (what a type picker shows). */
+  allEntityTypes(): readonly EntityType[] {
+    return [...BUILTIN_ENTITY_TYPES, ...this.#entityTypes];
+  }
+
+  /** Entity type by id (built-in or user-defined), or `undefined`. */
+  getEntityType(id: string): EntityType | undefined {
+    return builtinEntityType(id) ?? this.#entityTypes.find((t) => t.id === id);
+  }
+
+  /** Entity layers, bottom to top. */
+  entityLayers(): EntityLayer[] {
+    return this.#layers.filter(isEntityLayer);
+  }
+
+  /** Entity by id with the layer that holds it, or `undefined`. */
+  findEntity(id: string): { layer: EntityLayer; entity: Entity; index: number } | undefined {
+    for (const layer of this.#layers) {
+      if (!isEntityLayer(layer)) continue;
+      const index = layer.entities.findIndex((e) => e.id === id);
+      if (index >= 0) return { layer, entity: layer.entities[index]!, index };
+    }
+    return undefined;
+  }
+
+  /**
+   * The level's spawn point: the (only) entity of the built-in `spawn` type,
+   * or `null`. The game starts the player there.
+   */
+  spawn(): Entity | null {
+    for (const layer of this.#layers) {
+      if (!isEntityLayer(layer)) continue;
+      const found = layer.entities.find((e) => e.typeId === SPAWN_TYPE_ID);
+      if (found) return found;
+    }
+    return null;
   }
 
   /** Layers from bottom to top. */
@@ -137,6 +188,11 @@ export class MapDocument {
     this.#terrains = null;
   }
 
+  /** @internal Replaces the user-defined entity types (validated by the caller). */
+  _setEntityTypes(types: readonly EntityType[]): void {
+    this.#entityTypes = Object.freeze(types.map((t) => (Object.isFrozen(t) ? t : normalizeEntityType(t))));
+  }
+
   /** Position of layer `id` from the bottom, or `-1`. */
   indexOfLayer(id: string): number {
     return this.#layers.findIndex((layer) => layer.id === id);
@@ -172,6 +228,11 @@ export function createDocument(options: CreateDocumentOptions): MapDocument {
     options.seed ?? 0,
   );
   for (const tileset of options.tilesets ?? []) doc._addTileset(tileset);
+  if (options.entityTypes) {
+    const problem = entityTypesProblem(options.entityTypes);
+    if (problem) throw new Error(`createDocument: ${problem}`);
+    doc._setEntityTypes(options.entityTypes);
+  }
   return doc;
 }
 

@@ -3,9 +3,24 @@ import { isValidCell, cellPaletteIndex, makeCell, type Cell } from "./cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, CHUNK_SIZE, chunkKey, localIndex, parseChunkKey, type ChunkKey } from "./chunk";
 import { mapInfoProblem, type MapDocument, type MapInfo } from "./document";
 import {
+  defaultEntityFields,
+  entityProblem,
+  entityTypeProblem,
+  isBuiltinEntityTypeId,
+  normalizeEntity,
+  normalizeEntityType,
+  SPAWN_TYPE_ID,
+  type Entity,
+  type EntityFieldValue,
+  type EntityType,
+} from "./entity";
+import {
+  EntityLayer,
   GridLayer,
   TileLayer,
+  isEntityLayer,
   isGridLayer,
+  isTileLayer,
   isGridRole,
   layerPropsProblem,
   type ChunkSnapshot,
@@ -13,6 +28,12 @@ import {
   type LayerPropValues,
 } from "./layer";
 import type {
+  AddEntityOp,
+  DefineEntityTypeOp,
+  MoveEntityOp,
+  RemoveEntityOp,
+  RemoveEntityTypeOp,
+  UpdateEntityOp,
   DefineTerrainOp,
   PaintTerrainOp,
   RemoveTerrainOp,
@@ -45,11 +66,15 @@ import { isValidTileId, tilesetProblem, type Tileset } from "./tileset";
  * - `"tilesets"`: a tileset was appended, or a tileset's metadata (solid
  *   flags, terrains) changed. Re-read `document.tilesets`.
  * - `"palette"`: an entry was appended.
+ * - `"entities"` (v0.6): entities of some entity layer were added, removed,
+ *   moved or edited. Re-read `entities` of the entity layers.
+ * - `"entityTypes"` (v0.6): a user-defined entity type was defined, changed
+ *   or removed. Re-read `document.entityTypes`.
  *
  * Grid layer (terrain / collision) cell changes are reported in `cells` like
  * tile layer changes; renderers may draw grid layers as a coloured overlay.
  */
-export type StructureChange = "layers" | "tilesets" | "palette" | "map";
+export type StructureChange = "layers" | "tilesets" | "palette" | "map" | "entities" | "entityTypes";
 
 /** Chunks of one layer whose cells changed. A key whose chunk no longer exists was emptied. */
 export interface DirtyChunks {
@@ -120,6 +145,21 @@ export interface TilesetHistoryChange {
   readonly after: Tileset;
 }
 
+/** Entity list of one entity layer before and after (entities are immutable, so these are cheap). */
+export interface EntitiesHistoryChange {
+  readonly kind: "entities";
+  readonly layerId: string;
+  readonly before: readonly Entity[];
+  readonly after: readonly Entity[];
+}
+
+/** User-defined entity type list before and after. */
+export interface EntityTypesHistoryChange {
+  readonly kind: "entityTypes";
+  readonly before: readonly EntityType[];
+  readonly after: readonly EntityType[];
+}
+
 /**
  * One reversible change. Every change stores both sides; undo applies the
  * `before` sides (in reverse order), redo the `after` sides. No inverse ops.
@@ -129,7 +169,9 @@ export type HistoryChange =
   | LayerHistoryChange
   | LayerPropsHistoryChange
   | MapHistoryChange
-  | TilesetHistoryChange;
+  | TilesetHistoryChange
+  | EntitiesHistoryChange
+  | EntityTypesHistoryChange;
 
 /** One undo step: all changes of one transaction, in the order they happened. */
 export interface HistoryEntry {
@@ -272,6 +314,15 @@ class ChangeRecorder {
 
   recordStructural(change: HistoryChange): void {
     this.#flush();
+    // Consecutive edits of one entity layer (a drag) merge into one change.
+    const last = this.#changes[this.#changes.length - 1];
+    if (change.kind === "entities" && last?.kind === "entities" && last.layerId === change.layerId) {
+      this.#changes.pop();
+      if (!sameEntities(last.before, change.after)) {
+        this.#changes.push(Object.freeze({ kind: "entities", layerId: change.layerId, before: last.before, after: change.after }));
+      }
+      return;
+    }
     this.#changes.push(change);
   }
 
@@ -296,6 +347,15 @@ function makeEntry(changes: readonly HistoryChange[]): HistoryEntry {
     .filter((c): c is CellsHistoryChange => c.kind === "cells")
     .map((c): LayerPatch => Object.freeze({ layerId: c.layerId, cells: c.cells }));
   return Object.freeze({ changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Same entities in the same order (entities are normalized, so their JSON is canonical). */
+function sameEntities(a: readonly Entity[], b: readonly Entity[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i] || JSON.stringify(v) === JSON.stringify(b[i]));
 }
 
 function samePropValues(a: LayerPropValues, b: LayerPropValues): boolean {
@@ -348,7 +408,7 @@ class ApplyResult {
   readonly structure = new Set<StructureChange>();
 }
 
-const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map"];
+const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map", "entities", "entityTypes"];
 
 /**
  * State of one op that may produce several changes (grid + derived tiles,
@@ -462,6 +522,18 @@ export class MapStore {
         return this.#defineTerrain(op);
       case "removeTerrain":
         return this.#removeTerrain(op);
+      case "addEntity":
+        return this.#addEntity(op);
+      case "removeEntity":
+        return this.#removeEntity(op);
+      case "moveEntity":
+        return this.#moveEntity(op);
+      case "updateEntity":
+        return this.#updateEntity(op);
+      case "defineEntityType":
+        return this.#defineEntityType(op);
+      case "removeEntityType":
+        return this.#removeEntityType(op);
       default: {
         const unknown: never = op;
         throw new TypeError(`Unknown op type: ${String((unknown as { type: unknown }).type)}`);
@@ -549,6 +621,7 @@ export class MapStore {
     const layer = this.#doc.getLayer(op.layerId);
     if (!layer) throw new Error(`paintCells: unknown layer "${op.layerId}"`);
     if (isGridLayer(layer)) throw new TypeError(`paintCells: "${op.layerId}" is a grid layer; use paintTerrain`);
+    if (isEntityLayer(layer)) throw new TypeError(`paintCells: "${op.layerId}" is an entity layer`);
     const palette = this.#doc.palette;
     for (const { x, y, cell } of op.cells) {
       if (!Number.isInteger(x) || !Number.isInteger(y)) {
@@ -619,17 +692,17 @@ export class MapStore {
       if (target !== undefined) {
         if (role !== "terrain") throw new Error("addLayer: only terrain grid layers have a targetLayerId");
         const targetLayer = this.#doc.getLayer(target);
-        if (!targetLayer || isGridLayer(targetLayer)) throw new Error(`addLayer: target "${target}" is not a tile layer`);
+        if (!isTileLayer(targetLayer)) throw new Error(`addLayer: target "${target}" is not a tile layer`);
         if (this.#doc.layers.some((l) => isGridLayer(l) && l.targetLayerId === target)) {
           throw new Error(`addLayer: tile layer "${target}" is already derived from another terrain layer`);
         }
       }
       layer = new GridLayer(props, role, target ?? null);
-    } else if (type === "tile") {
+    } else if (type === "tile" || type === "entity") {
       if (op.layer.role !== undefined || op.layer.targetLayerId !== undefined) {
         throw new Error("addLayer: role and targetLayerId are only for grid layers");
       }
-      layer = new TileLayer(props);
+      layer = type === "tile" ? new TileLayer(props) : new EntityLayer(props);
     } else {
       throw new Error(`addLayer: unknown layer type ${JSON.stringify(type)}`);
     }
@@ -705,6 +778,21 @@ export class MapStore {
       Object.freeze({ kind: "map", before, after: this.#doc.map, layers: Object.freeze(layers) }),
     );
     ctx.structure.add("map");
+    // Entities move with the content (offset in cells → pixels); those that
+    // end up outside the new bounds are dropped (undo brings them back).
+    const pw = after.width * after.tileWidth;
+    const ph = after.height * after.tileHeight;
+    for (const layer of this.#doc.entityLayers()) {
+      if (layer.entities.length === 0) continue;
+      const next: Entity[] = [];
+      for (const e of layer.entities) {
+        const x = e.x + dx * after.tileWidth;
+        const y = e.y + dy * after.tileHeight;
+        if (x < 0 || y < 0 || x >= pw || y >= ph) continue;
+        next.push(x === e.x && y === e.y ? e : normalizeEntity({ ...e, x, y }));
+      }
+      this.#setEntities(ctx, layer, next);
+    }
     // New edges change blob masks / corner spill: re-derive every terrain layer.
     this.#deriveAllTerrain(ctx);
     // "map" already means "rebuild every chunk"; no per-chunk report.
@@ -823,6 +911,144 @@ export class MapStore {
     return index;
   }
 
+  #entityLayer(what: string, layerId: string): EntityLayer {
+    const layer = this.#doc.getLayer(layerId);
+    if (!layer) throw new Error(`${what}: unknown layer "${layerId}"`);
+    if (!isEntityLayer(layer)) throw new TypeError(`${what}: "${layerId}" is not an entity layer`);
+    return layer;
+  }
+
+  #findEntity(what: string, entityId: string): { layer: EntityLayer; entity: Entity; index: number } {
+    const found = this.#doc.findEntity(entityId);
+    if (!found) throw new Error(`${what}: unknown entity "${String(entityId)}"`);
+    return found;
+  }
+
+  #addEntity(op: AddEntityOp): string | null {
+    const layer = this.#entityLayer("addEntity", op.layerId);
+    const input = op.entity;
+    const type = this.#doc.getEntityType(input?.typeId);
+    if (!type) throw new Error(`addEntity: unknown entity type "${String(input?.typeId)}"`);
+    const id = input.id ?? this.#generateEntityId();
+    if (this.#doc.findEntity(id)) throw new Error(`addEntity: duplicate entity id "${id}"`);
+    const entity = normalizeEntity({
+      id,
+      typeId: type.id,
+      x: input.x,
+      y: input.y,
+      ...(input.width !== undefined ? { width: input.width } : {}),
+      ...(input.height !== undefined ? { height: input.height } : {}),
+      fields: { ...defaultEntityFields(type), ...(input.fields ?? {}) },
+    });
+    const problem = entityProblem(entity, this.#doc.map, type);
+    if (problem) throw new Error(`addEntity: ${problem}`);
+    if (type.id === SPAWN_TYPE_ID && this.#doc.spawn()) throw new Error("addEntity: the level already has a spawn point");
+    const list = layer.entities;
+    const index = op.index ?? list.length;
+    if (!Number.isInteger(index) || index < 0 || index > list.length) {
+      throw new RangeError(`addEntity: index must be an integer in [0, ${list.length}], got ${index}`);
+    }
+    if (layer.locked) return null;
+    const next = [...list];
+    next.splice(index, 0, entity);
+    this.#entityOp(layer, next);
+    return id;
+  }
+
+  #removeEntity(op: RemoveEntityOp): void {
+    const { layer, index } = this.#findEntity("removeEntity", op.entityId);
+    if (layer.locked) return;
+    this.#entityOp(layer, layer.entities.filter((_, i) => i !== index));
+  }
+
+  #moveEntity(op: MoveEntityOp): void {
+    const { layer, entity, index } = this.#findEntity("moveEntity", op.entityId);
+    const moved = normalizeEntity({ ...entity, x: op.x, y: op.y });
+    const problem = entityProblem(moved, this.#doc.map);
+    if (problem) throw new Error(`moveEntity: ${problem}`);
+    if (layer.locked || (entity.x === op.x && entity.y === op.y)) return;
+    this.#entityOp(layer, layer.entities.map((e, i) => (i === index ? moved : e)));
+  }
+
+  #updateEntity(op: UpdateEntityOp): void {
+    const { layer, entity, index } = this.#findEntity("updateEntity", op.entityId);
+    const type = this.#doc.getEntityType(entity.typeId);
+    if (!type) throw new Error(`updateEntity: entity type "${entity.typeId}" is not defined`);
+    const changed: Record<string, EntityFieldValue> = { ...(op.fields ?? {}) };
+    for (const [name, value] of Object.entries(changed)) {
+      const def = type.fields.find((f) => f.name === name);
+      if (!def) throw new Error(`updateEntity: type "${type.id}" has no field "${name}"`);
+      const problem = entityProblem({ ...entity, fields: { [name]: value } }, this.#doc.map, type);
+      if (problem) throw new Error(`updateEntity: ${problem}`);
+    }
+    const width = op.width === undefined ? entity.width : (op.width ?? undefined);
+    const height = op.height === undefined ? entity.height : (op.height ?? undefined);
+    const next = normalizeEntity({
+      id: entity.id,
+      typeId: entity.typeId,
+      x: entity.x,
+      y: entity.y,
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
+      fields: { ...entity.fields, ...changed },
+    });
+    const problem = entityProblem({ ...next, fields: {} }, this.#doc.map);
+    if (problem) throw new Error(`updateEntity: ${problem}`);
+    if (layer.locked || JSON.stringify(next) === JSON.stringify(entity)) return;
+    this.#entityOp(layer, layer.entities.map((e, i) => (i === index ? next : e)));
+  }
+
+  #defineEntityType(op: DefineEntityTypeOp): void {
+    const type = op.entityType;
+    const problem = entityTypeProblem(type);
+    if (problem) throw new Error(`defineEntityType: ${problem}`);
+    if (isBuiltinEntityTypeId(type.id)) throw new Error(`defineEntityType: "${type.id}" is a built-in type`);
+    const normalized = normalizeEntityType(type);
+    const before = this.#doc.entityTypes;
+    const index = before.findIndex((t) => t.id === type.id);
+    if (index >= 0 && JSON.stringify(before[index]) === JSON.stringify(normalized)) return;
+    const after = index >= 0 ? before.map((t, i) => (i === index ? normalized : t)) : [...before, normalized];
+    this.#setEntityTypes(after);
+  }
+
+  #removeEntityType(op: RemoveEntityTypeOp): void {
+    if (isBuiltinEntityTypeId(op.typeId)) throw new Error(`removeEntityType: "${op.typeId}" is a built-in type`);
+    const before = this.#doc.entityTypes;
+    if (!before.some((t) => t.id === op.typeId)) throw new Error(`removeEntityType: unknown entity type "${op.typeId}"`);
+    this.#setEntityTypes(before.filter((t) => t.id !== op.typeId));
+  }
+
+  #setEntityTypes(after: readonly EntityType[]): void {
+    const before = this.#doc.entityTypes;
+    this.#doc._setEntityTypes(after);
+    this.#recordStructural({ kind: "entityTypes", before, after: this.#doc.entityTypes }, ["entityTypes"]);
+  }
+
+  /** Replaces an entity layer's list as its own op (one undo step outside a transaction). */
+  #entityOp(layer: EntityLayer, next: readonly Entity[]): void {
+    const ctx = this.#openOp();
+    this.#setEntities(ctx, layer, next);
+    this.#closeOp(ctx);
+  }
+
+  /** Replaces an entity layer's list inside an op and records it (no-op when equal). */
+  #setEntities(ctx: OpContext, layer: EntityLayer, next: readonly Entity[]): void {
+    const before = layer.entities;
+    if (sameList(before, next)) return;
+    layer._setEntities(Object.freeze([...next]));
+    ctx.rec.recordStructural(Object.freeze({ kind: "entities", layerId: layer.id, before, after: layer.entities }));
+    ctx.structure.add("entities");
+  }
+
+  #generateEntityId(): string {
+    let count = 0;
+    for (const layer of this.#doc.entityLayers()) count += layer.entities.length;
+    for (let n = count + 1; ; n++) {
+      const id = `e${n}`;
+      if (!this.#doc.findEntity(id)) return id;
+    }
+  }
+
   // ---------------------------------------------------------------- helpers
 
   #openOp(): OpContext {
@@ -867,7 +1093,7 @@ export class MapStore {
     for (const layer of this.#doc.layers) {
       if (!isGridLayer(layer) || layer.role !== "terrain") continue;
       const target = layer.targetLayerId === null ? undefined : this.#doc.getLayer(layer.targetLayerId);
-      if (!target || isGridLayer(target)) continue;
+      if (!isTileLayer(target)) continue;
       // Chunks that can hold derived tiles: grid chunks and their neighbours,
       // plus chunks the target already has (stale tiles get cleared).
       const keys = new Set<ChunkKey>();
@@ -892,7 +1118,7 @@ export class MapStore {
   #deriveTerrain(ctx: OpContext, grid: GridLayer, cells: Iterable<number>): void {
     if (grid.targetLayerId === null) return;
     const target = this.#doc.getLayer(grid.targetLayerId);
-    if (!target || isGridLayer(target)) return;
+    if (!isTileLayer(target)) return;
     const doc = this.#doc;
     const map = doc.map;
     const width = map.width;
@@ -994,6 +1220,18 @@ export class MapStore {
       case "tileset": {
         doc._replaceTileset(change[side]);
         result.structure.add("tilesets");
+        return;
+      }
+      case "entities": {
+        const layer = doc.getLayer(change.layerId);
+        if (!isEntityLayer(layer)) throw new Error(`history: entity layer "${change.layerId}" is missing`);
+        layer._setEntities(change[side]);
+        result.structure.add("entities");
+        return;
+      }
+      case "entityTypes": {
+        doc._setEntityTypes(change[side]);
+        result.structure.add("entityTypes");
         return;
       }
       case "map": {

@@ -7,6 +7,7 @@
  */
 import type { MapDocument } from "../document";
 import { deriveCollision } from "../collision";
+import { entityCell, entitySize, resolveEntityFields, type EntityFieldValue } from "../entity";
 import { exportBaseName, exportedLayers, exportedTilesets, layerCells, type ExportImage } from "./common";
 import { Rows, writeJson } from "./json";
 import { encodeRle } from "./rle";
@@ -73,5 +74,39 @@ function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string
       };
     }),
     collision: { solid: new Rows(encodeRle(collision.data), 16) },
+    entities: doc.entityLayers().map((layer) => ({
+      id: layer.id,
+      name: layer.name,
+      visible: layer.visible,
+      items: layer.entities.map((entity) => {
+        const type = doc.getEntityType(entity.typeId);
+        const size = entitySize(entity, doc.map);
+        const cell = entityCell(entity, doc.map);
+        return {
+          id: entity.id,
+          type: type ? type.name : entity.typeId,
+          typeId: entity.typeId,
+          x: entity.x,
+          y: entity.y,
+          cellX: cell.x,
+          cellY: cell.y,
+          width: size.width,
+          height: size.height,
+          fields: resolveEntityFields(entity, type).map((f) => ({ name: f.name, type: f.type, value: exportValue(f.value) })),
+        };
+      }),
+    })),
+    spawn: spawnJson(doc),
   });
+}
+
+function spawnJson(doc: MapDocument): Record<string, number> | null {
+  const spawn = doc.spawn();
+  if (!spawn) return null;
+  const cell = entityCell(spawn, doc.map);
+  return { x: spawn.x, y: spawn.y, cellX: cell.x, cellY: cell.y };
+}
+
+function exportValue(value: EntityFieldValue): unknown {
+  return typeof value === "object" && value !== null ? { x: value.x, y: value.y } : value;
 }

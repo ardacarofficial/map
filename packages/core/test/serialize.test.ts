@@ -5,6 +5,7 @@ import {
   FormatError,
   encodeBase64,
   makeCell,
+  normalizeProject,
   parseLevel,
   parseProject,
   serializeLevel,
@@ -38,7 +39,7 @@ describe("project serialization", () => {
 
   it("roundtrips byte-identically", () => {
     const text = serializeProject(PROJECT);
-    expect(parseProject(text)).toEqual(PROJECT);
+    expect(parseProject(text)).toEqual(normalizeProject(PROJECT));
     expect(serializeProject(parseProject(text))).toBe(text);
     expect(text.includes("\r")).toBe(false);
   });
@@ -128,7 +129,7 @@ describe("parse validation", () => {
     expectError((l) => (l.map.tileWidth = "32"), /map\.tileWidth: expected a number/);
     expectError((l) => (l.palette[1]!.index = 7), /palette\[1\]\.index: expected 2/);
     expectError((l) => (l.palette[1]!.tileId = 0), /duplicate palette entry/);
-    expectError((l) => (l.layers[0]!.type = "entity"), /unsupported layer type/);
+    expectError((l) => (l.layers[0]!.type = "object"), /unsupported layer type/);
     expectError((l) => (l.layers[1]!.id = "ground"), /duplicate layer id/);
     expectError((l) => (l.layers[0]!.opacity = 1.5), /opacity/);
     expectError((l) => delete l.layers[0]!.visible, /layers\[0\]\.visible: expected a boolean, got nothing/);
