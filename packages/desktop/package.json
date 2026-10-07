@@ -1,0 +1,10 @@
+{
+  "name": "@smap/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tauri shell, v0.5",
+  "dependencies": {
+    "@smap/editor": "workspace:*"
+  }
+}

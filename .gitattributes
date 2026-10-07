@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.json text eol=lf
+*.smap text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+packages/desktop/src-tauri/target/
