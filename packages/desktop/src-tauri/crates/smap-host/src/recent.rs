@@ -12,10 +12,19 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 pub const MAX_RECENTS: usize = 10;
+
+/// `recent.json` geçici olarak okunamazsa (antivirüs/yedekleme kilidi)
+/// denemeler arasındaki beklemeler. Hepsi başarısızsa dosyaya dokunulmaz.
+pub const READ_RETRY_DELAYS: [Duration; 3] =
+    [Duration::from_millis(50), Duration::from_millis(100), Duration::from_millis(200)];
+
+type ReadFn = Box<dyn Fn(&Path) -> io::Result<Vec<u8>> + Send + Sync>;
+type SleepFn = Box<dyn Fn(Duration) + Send + Sync>;
 const FORMAT_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,21 +59,56 @@ pub struct RecentStore {
     /// Oku → değiştir → yaz adımlarını sıraya koyar: komutlar eşzamanlı
     /// çalışır (async), aynı anda iki ekleme birbirinin girdisini silmesin.
     edit: Mutex<()>,
+    read: ReadFn,
+    sleep: SleepFn,
 }
 
 impl RecentStore {
     pub fn new(file: PathBuf) -> Self {
-        Self { file, edit: Mutex::new(()) }
+        Self::with_io(file, Box::new(|p| std::fs::read(p)), Box::new(std::thread::sleep))
     }
 
-    /// En yeni önce. Bozuk ya da eksik dosya boş liste demektir.
+    /// Test edilebilir kurucu: okuma ve bekleme dışarıdan verilir.
+    pub fn with_io(file: PathBuf, read: ReadFn, sleep: SleepFn) -> Self {
+        Self { file, edit: Mutex::new(()), read, sleep }
+    }
+
+    /// En yeni önce. Bozuk, eksik ya da okunamayan dosya boş liste demektir
+    /// (yalnız gösterim için; değiştirmeden önce `load_for_edit` kullanılır).
     pub fn load(&self) -> Vec<RecentEntry> {
-        let Ok(text) = std::fs::read_to_string(&self.file) else { return Vec::new() };
-        match serde_json::from_str::<RecentFile>(&text) {
-            Ok(f) => f.projects,
+        self.load_for_edit().unwrap_or_else(|e| {
+            log::warn!("cannot read {}: {e}", self.file.display());
+            Vec::new()
+        })
+    }
+
+    /// Değiştirmeden önceki okuma. Dosya yoksa ya da bozuksa (JSON değil,
+    /// UTF-8 değil) boş liste: üstüne yazmak doğru. Okuma başka bir nedenle
+    /// başarısızsa (kilit, izin) bekleyip tekrar dener; yine olmazsa hata
+    /// döner ve çağıran dosyaya yazmaz — yoksa tek girdilik listeyle bütün
+    /// geçmişi silerdik.
+    fn load_for_edit(&self) -> io::Result<Vec<RecentEntry>> {
+        let mut attempt = 0;
+        let bytes = loop {
+            match (self.read)(&self.file) {
+                Ok(bytes) => break bytes,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+                Err(e) if attempt < READ_RETRY_DELAYS.len() => {
+                    log::warn!("reading {} failed ({e}); retry {}", self.file.display(), attempt + 1);
+                    (self.sleep)(READ_RETRY_DELAYS[attempt]);
+                    attempt += 1;
+                }
+                Err(e) => return Err(e),
+            }
+        };
+        let parsed = std::str::from_utf8(&bytes)
+            .map_err(|e| e.to_string())
+            .and_then(|text| serde_json::from_str::<RecentFile>(text).map_err(|e| e.to_string()));
+        match parsed {
+            Ok(f) => Ok(f.projects),
             Err(e) => {
                 log::warn!("ignoring unreadable {}: {e}", self.file.display());
-                Vec::new()
+                Ok(Vec::new())
             }
         }
     }
@@ -85,7 +129,7 @@ impl RecentStore {
 
     pub fn add(&self, path: &str, name: &str, now_ms: u64) -> io::Result<Vec<RecentEntry>> {
         let _edit = self.edit.lock().unwrap_or_else(|e| e.into_inner());
-        let mut list = self.load();
+        let mut list = self.load_for_edit()?;
         list.retain(|e| !same_path(&e.path, path));
         list.insert(0, RecentEntry { path: path.to_owned(), name: name.to_owned(), opened_at: now_ms });
         list.truncate(MAX_RECENTS);
@@ -95,7 +139,7 @@ impl RecentStore {
 
     pub fn remove(&self, path: &str) -> io::Result<Vec<RecentEntry>> {
         let _edit = self.edit.lock().unwrap_or_else(|e| e.into_inner());
-        let mut list = self.load();
+        let mut list = self.load_for_edit()?;
         list.retain(|e| !same_path(&e.path, path));
         self.save(&list)?;
         Ok(list)
@@ -157,6 +201,59 @@ mod tests {
             text,
             "{\n  \"version\": 1,\n  \"projects\": [\n    {\n      \"path\": \"/a/project.smap\",\n      \"name\": \"Dünyam\",\n      \"openedAt\": 1\n    }\n  ]\n}\n"
         );
+    }
+
+    /// A store whose reads fail with a sharing violation `fails` times, then hit the disk.
+    fn flaky_store(file: PathBuf, fails: usize) -> (RecentStore, std::sync::Arc<std::sync::Mutex<Vec<Duration>>>) {
+        let left = std::sync::atomic::AtomicUsize::new(fails);
+        let slept = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = slept.clone();
+        let store = RecentStore::with_io(
+            file,
+            Box::new(move |p| {
+                if left.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                    left.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                    return Err(io::Error::new(io::ErrorKind::PermissionDenied, "locked by antivirus"));
+                }
+                std::fs::read(p)
+            }),
+            Box::new(move |d| log.lock().unwrap().push(d)),
+        );
+        (store, slept)
+    }
+
+    #[test]
+    fn locked_file_is_retried_then_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("recent.json");
+        let disk = RecentStore::new(file.clone());
+        disk.add("/a/project.smap", "A", 1).unwrap();
+        disk.add("/b/project.smap", "B", 2).unwrap();
+        let before = std::fs::read(&file).unwrap();
+
+        // Locked for a moment: retried, nothing lost.
+        let (store, slept) = flaky_store(file.clone(), 2);
+        assert_eq!(store.add("/c/project.smap", "C", 3).unwrap().len(), 3);
+        assert_eq!(*slept.lock().unwrap(), READ_RETRY_DELAYS[..2].to_vec());
+
+        // Locked for good: error, file untouched.
+        std::fs::write(&file, &before).unwrap();
+        let (store, slept) = flaky_store(file.clone(), usize::MAX);
+        assert_eq!(store.add("/d/project.smap", "D", 4).unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(store.remove("/a/project.smap").unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(slept.lock().unwrap().len(), 2 * READ_RETRY_DELAYS.len());
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+        assert!(store.load().is_empty(), "display falls back to an empty list");
+    }
+
+    #[test]
+    fn corrupt_file_is_replaced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("recent.json");
+        std::fs::write(&file, b"\xff\xfe not json").unwrap();
+        let store = RecentStore::new(file);
+        assert_eq!(store.add("/a/project.smap", "A", 1).unwrap().len(), 1);
+        assert_eq!(store.load().len(), 1);
     }
 
     #[test]

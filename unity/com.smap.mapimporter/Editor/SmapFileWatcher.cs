@@ -13,14 +13,16 @@ namespace Smap.MapImporter
     /// next to them) under Assets/ and queues <see cref="AssetDatabase.ImportAsset(string)"/>
     /// on the main thread, debounced, so the prefab updates without focusing Unity.
     /// Disposed before every domain reload; the static constructor recreates it.
+    /// If the watcher's buffer overflows (many files written at once), events are
+    /// lost, so every <c>.smapmap</c> under Assets/ is reimported instead.
     /// </summary>
     [InitializeOnLoad]
     static class SmapFileWatcher
     {
         const double DebounceSeconds = 0.4;
-        static readonly object Gate = new object();
-        static readonly HashSet<string> Pending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        static long lastEventTimestamp;
+        /// <summary>64 KB, the largest size that works on network shares (default 8 KB overflows on a big export).</summary>
+        const int BufferBytes = 64 * 1024;
+        static readonly SmapWatchQueue Queue = new SmapWatchQueue(DebounceSeconds);
         static FileSystemWatcher watcher;
         static readonly string DataPath = Path.GetFullPath(Application.dataPath);
 
@@ -33,10 +35,13 @@ namespace Smap.MapImporter
                 {
                     IncludeSubdirectories = true,
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    InternalBufferSize = BufferBytes,
                 };
-                watcher.Changed += (_, e) => Enqueue(e.FullPath);
-                watcher.Created += (_, e) => Enqueue(e.FullPath);
-                watcher.Renamed += (_, e) => Enqueue(e.FullPath); // safe-save: temp file renamed onto the target
+                // Called on thread-pool threads: only record (no Unity API here).
+                watcher.Changed += (_, e) => Queue.Add(e.FullPath, Now());
+                watcher.Created += (_, e) => Queue.Add(e.FullPath, Now());
+                watcher.Renamed += (_, e) => Queue.Add(e.FullPath, Now()); // safe-save: temp file renamed onto the target
+                watcher.Error += (_, e) => Queue.Overflow(Now()); // InternalBufferOverflowException or a lost watch: rescan
                 watcher.EnableRaisingEvents = true;
             }
             catch (Exception e)
@@ -50,31 +55,26 @@ namespace Smap.MapImporter
             EditorApplication.quitting += Dispose;
         }
 
-        /// <summary>Called on a thread-pool thread: only record the path.</summary>
-        static void Enqueue(string fullPath)
+        static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+
+        static IEnumerable<string> AllMaps()
         {
-            string ext = Path.GetExtension(fullPath);
-            if (!ext.Equals(".smapmap", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".png", StringComparison.OrdinalIgnoreCase)) return;
-            lock (Gate)
+            try
             {
-                Pending.Add(fullPath);
-                lastEventTimestamp = Stopwatch.GetTimestamp();
+                return Directory.GetFiles(DataPath, "*.smapmap", SearchOption.AllDirectories);
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"Smap: cannot list maps after a watcher overflow ({e.Message}).");
+                return Array.Empty<string>();
             }
         }
 
         static void Drain()
         {
-            string[] paths;
-            lock (Gate)
-            {
-                if (Pending.Count == 0) return;
-                double quiet = (Stopwatch.GetTimestamp() - lastEventTimestamp) / (double)Stopwatch.Frequency;
-                if (quiet < DebounceSeconds) return; // the editor may still be writing
-                if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
-                paths = new string[Pending.Count];
-                Pending.CopyTo(paths);
-                Pending.Clear();
-            }
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            string[] paths = Queue.Take(Now(), AllMaps);
+            if (paths == null) return;
 
             var assetPaths = new List<string>();
             foreach (string full in paths)
