@@ -50,6 +50,14 @@ export interface EditorState {
    * `selection`. Type is core's `TileClip`.
    */
   stamp: TileClip | null;
+  /**
+   * Value painted when the active layer is a grid layer (brush/rect/fill write
+   * it, eraser writes 0). Terrain layers: the terrain's grid value. Collision
+   * layers: 1 = force solid, 2 = force passable.
+   */
+  gridValue: number;
+  /** Show derived collision as an overlay on the canvas. */
+  collisionOverlay: boolean;
 
   setProject(project: OpenProject | null): void;
   setTool(tool: ToolId): void;
@@ -61,6 +69,8 @@ export interface EditorState {
   setDirty(dirty: boolean): void;
   setRegion(region: CellRegion | null): void;
   setStamp(stamp: TileClip | null): void;
+  setGridValue(value: number): void;
+  toggleCollisionOverlay(): void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -74,6 +84,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   dirty: false,
   region: null,
   stamp: null,
+  gridValue: 1,
+  collisionOverlay: false,
 
   setProject: (project) =>
     set({
@@ -93,4 +105,6 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setDirty: (dirty) => set({ dirty }),
   setRegion: (region) => set({ region }),
   setStamp: (stamp) => set({ stamp }),
+  setGridValue: (gridValue) => set({ gridValue }),
+  toggleCollisionOverlay: () => set((s) => ({ collisionOverlay: !s.collisionOverlay })),
 }));

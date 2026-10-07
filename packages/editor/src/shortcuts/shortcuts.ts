@@ -27,6 +27,7 @@ export type CommandId =
   | "layer.add"
   | "layer.remove"
   | "map.resize"
+  | "view.toggleCollision"
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.zoomIn"
@@ -86,6 +87,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.add", keys: ["Ctrl+Shift+N"] },
   { command: "layer.remove", keys: [] },
   { command: "map.resize", keys: [] },
+  { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
 ];
 
 export function keysFor(command: CommandId): string[] {
