@@ -49,10 +49,12 @@ impl SettingsFile {
         if text.len() as u64 > MAX_SETTINGS_BYTES {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "settings file is too large"));
         }
-        if let Some(dir) = self.path.parent() {
+        // A settings.json linked from a dotfiles repo stays a link: write the target.
+        let target = atomic::follow_symlink(&self.path);
+        if let Some(dir) = target.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        atomic::write_file_atomic(&self.path, text.as_bytes())
+        atomic::write_file_atomic(&target, text.as_bytes())
     }
 }
 
@@ -77,6 +79,22 @@ mod tests {
         let path = dir.path().join("settings.json");
         std::fs::write(&path, "\u{feff}{\"locale\":\"tr\"}").unwrap();
         assert_eq!(SettingsFile::new(path).read().unwrap().as_deref(), Some("{\"locale\":\"tr\"}"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_file_stays_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("dotfiles").join("settings.json");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, "{}").unwrap();
+        let link = dir.path().join("settings.json");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let file = SettingsFile::new(link.clone());
+        file.write("{\"locale\":\"en\"}").unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "{\"locale\":\"en\"}");
+        assert_eq!(file.read().unwrap().as_deref(), Some("{\"locale\":\"en\"}"));
     }
 
     #[test]

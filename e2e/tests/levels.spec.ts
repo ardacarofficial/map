@@ -32,7 +32,6 @@ function chunksOf(text: string | null): number {
 test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => console.log("BROWSER", m.text()));
 
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));

@@ -273,8 +273,13 @@ impl Host {
         Ok(root.to_string_lossy().into_owned())
     }
 
+    /// İzleyiciyi durdurur ve eski proje klasörünü kapsamdan çıkarır.
     pub fn close_project(&self) {
         *self.watcher.lock().unwrap() = None;
+        if let Some(root) = self.scope.lock().unwrap().close_project_root() {
+            log::info!("closed project {}", root.display());
+        }
+        self.known.lock().unwrap().clear();
     }
 
     fn restart_watcher(&self, root: PathBuf) {
@@ -445,6 +450,34 @@ mod tests {
         assert!(!h.dir_has_entries(&allowed).unwrap());
         fs::create_dir_all(picked.join("art")).unwrap();
         assert!(h.dir_has_entries(&allowed).unwrap());
+    }
+
+    #[test]
+    fn closing_a_project_revokes_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let (h, _rx) = host(dir.path());
+        // Opened by double click: the file grant + root.
+        let file = project(dir.path()).join("project.smap");
+        fs::write(file.parent().unwrap().join("levels").join("main.json"), b"{}").unwrap();
+        let opened = h.open_project(&h.allow_user_file(&file).unwrap(), "", 1).unwrap();
+        let level = Path::new(&opened.root).join("levels").join("main.json");
+        assert!(h.read_text(&s(&level)).is_ok());
+        h.close_project();
+        assert_eq!(h.read_text(&s(&level)).unwrap_err().kind, ErrorKind::OutOfScope);
+        assert_eq!(h.exists(&opened.file).unwrap_err().kind, ErrorKind::OutOfScope);
+        // Recents still allow reopening it.
+        assert!(h.open_project(&opened.file, "", 2).is_ok());
+        h.close_project();
+
+        // New project saved into a picked parent folder: the parent grant goes too.
+        let parent = dir.path().join("maps");
+        fs::create_dir_all(parent.join("new")).unwrap();
+        let parent_s = h.allow_user_dir(&parent).unwrap();
+        let root = h.set_project_root(&s(&Path::new(&parent_s).join("new"))).unwrap();
+        h.write_file_atomic(&s(&Path::new(&root).join("project.smap")), b"{}").unwrap();
+        h.close_project();
+        assert_eq!(h.list_dir(&parent_s).unwrap_err().kind, ErrorKind::OutOfScope);
+        assert_eq!(h.list_dir(&root).unwrap_err().kind, ErrorKind::OutOfScope);
     }
 
     #[test]

@@ -24,17 +24,19 @@ export function PointPickOverlay() {
     if (!pick) return;
     const host = document.querySelector<HTMLElement>(`[${CANVAS_HOST_ATTR}]`);
     const onPointerDown = (event: PointerEvent) => {
-      console.log("PICKDOWN", event.button, String(event.target), JSON.stringify(useEditorStore.getState().hoverCell));
       if (event.button !== 0) return;
       // Capture phase on the host: the canvas never starts a tool gesture.
       event.preventDefault();
       event.stopPropagation();
-      const cell = useEditorStore.getState().hoverCell;
-      if (!cell) {
-        toast.warning(t("levels.pickOutside"));
-        return;
-      }
-      void finishPointPick(cell);
+      // The hovered cell is updated on the canvas's next frame; a click right
+      // after entering the canvas waits for it.
+      const take = (retries: number) => {
+        const cell = useEditorStore.getState().hoverCell;
+        if (cell) void finishPointPick(cell);
+        else if (retries > 0) requestAnimationFrame(() => take(retries - 1));
+        else toast.warning(t("levels.pickOutside"));
+      };
+      take(3);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;

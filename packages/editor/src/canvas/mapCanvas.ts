@@ -8,6 +8,8 @@
  * - `overlayRenderer.ts` — grid, border, region, previews, cursors
  * - `mapScene.ts` / `gridOverlays.ts` — tile layer meshes / grid-layer overlays
  * - `entityRenderer.ts` — entities of the entity layers (screen space)
+ * - `worldView.ts` — the world map view (v1.2): all levels as thumbnails,
+ *   drag to move, click to open, portal links (`setView("world")`)
  * - `mapThumbnail.ts` / `minimap.ts` — one low-res picture of the map: the
  *   minimap shows it, and when a cell is narrower than ~4 device px the map
  *   is drawn from that same picture instead of the chunk meshes (LOD, with
@@ -28,13 +30,14 @@ import {
   portalTargetPoint,
   type EntityPoint,
   type MapInfo,
+  type ProjectLevel,
 } from "@smap/core";
 import { Application, CanvasSource, Container, Sprite, Texture, Ticker } from "pixi.js";
 
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
-import { snappedOffset, type Point } from "./camera";
+import { MAX_ZOOM, MIN_ZOOM, snappedOffset, type Camera, type Point } from "./camera";
 import { CameraController } from "./cameraController";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
 import type { EntityColors } from "./entityLogic";
@@ -49,6 +52,13 @@ import { OverlayRenderer, type OverlayHost } from "./overlayRenderer";
 import { PointerInput } from "./pointerInput";
 import { ToolController, type Gesture } from "./toolController";
 import { isPaintable } from "./tools";
+import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
+
+export type { CanvasView, LevelMovedEvent, WorldDataSource, WorldSourceChange } from "./worldView";
+
+/** Zoom limits of the world view: far enough out for big worlds, no closer than 2× (thumbnails). */
+const WORLD_MIN_ZOOM = 0.002;
+const WORLD_MAX_ZOOM = 2;
 
 /** A portal was double-clicked: open level `levelId` and show `point` (map px of that level; null = not set). */
 export interface NavigateRequest {
@@ -76,6 +86,36 @@ export interface CanvasHandle {
   /** Shows / hides the minimap (bottom-right of the canvas). Visible by default. */
   setMinimapVisible(visible: boolean): void;
   isMinimapVisible(): boolean;
+
+  // ---------------------------------------------------------------- v1.2 world map
+
+  /**
+   * Switches between the level view (default) and the world map view. The
+   * world view shows every level of the {@link setWorldSource} source and
+   * frames them all on entering; returning restores the level camera (or
+   * frames the map when another level was opened meanwhile).
+   * {@link frameMap} frames all levels while the world view is shown.
+   */
+  setView(view: CanvasView): void;
+  getView(): CanvasView;
+  /** `cb` runs after every view change (also from {@link setView}). Returns an unsubscribe. */
+  onViewChange(cb: (view: CanvasView) => void): () => void;
+  /**
+   * Where the world view gets levels and their documents from. Without one
+   * it shows the project library's level list with only the active level's
+   * picture. Set it again after every mount (the canvas is re-created per
+   * project). `null` removes it.
+   */
+  setWorldSource(source: WorldDataSource | null): void;
+  /**
+   * A level was dragged to a new world position (already snapped to the
+   * tile grid, or whole px with Alt). The UI applies it
+   * (`setLevelWorldPosition(project, levelId, { x, y })`, no `snap` option)
+   * and reports the new list; the canvas shows the drop position meanwhile.
+   */
+  onLevelMoved(cb: (event: LevelMovedEvent) => void): () => void;
+  /** A level was clicked (not dragged) on the world map: the UI opens it and calls `setView("level")`. */
+  onOpenLevel(cb: (levelId: string) => void): () => void;
 }
 
 function gridOverlayColors(c: CanvasColors): GridOverlayColors {
@@ -126,6 +166,20 @@ export class MapCanvas {
   #minimap: Minimap | null = null;
   #minimapVisible = true;
   readonly #navigateListeners = new Set<(request: NavigateRequest) => void>();
+  readonly #viewListeners = new Set<(view: CanvasView) => void>();
+  readonly #movedListeners = new Set<(event: LevelMovedEvent) => void>();
+  readonly #openListeners = new Set<(levelId: string) => void>();
+  #view: CanvasView = "level";
+  readonly #worldView: WorldView;
+  /** Level-view camera saved when the world view opens. */
+  #levelCamera: { camera: Camera; zoomLevel: number } | null = null;
+  /** Another level was opened while the world view was shown: frame it on return. */
+  #frameOnLevelView = false;
+  /** Level id the current scene was loaded for. */
+  #loadedLevelId: string | null = null;
+  /** Camera right after the world view framed itself (re-framed once loads finish if unchanged). */
+  #worldFramedCamera: Camera | null = null;
+  #worldFramedLoads = -1;
 
   readonly #camera = new CameraController(
     () => this.#map(),
@@ -185,7 +239,26 @@ export class MapCanvas {
       release: (id) => this.#input.release(id),
       requestRender: () => this.#requestRender(),
     });
+    this.#worldView = new WorldView({
+      camera: this.#camera,
+      get colors() {
+        return self.#colors;
+      },
+      activeStore: () => this.#scene?.store ?? null,
+      activeLevelId: () => this.#activeLevelId(),
+      activeTexture: () => (this.#thumb ? this.#thumbTexture : null),
+      fallbackLevels: () => useProjectLibrary.getState().levels,
+      images: (id) => getTilesetImage(id)?.bitmap,
+      pointer: () => this.#input.pointer,
+      panning: () => this.#input.panning,
+      capture: (id) => this.#input.capture(id),
+      release: (id) => this.#input.release(id),
+      levelMoved: (event) => this.#emit(this.#movedListeners, event, "level moved"),
+      openLevel: (levelId) => void this.#emit(this.#openListeners, levelId, "open level"),
+      requestRender: () => this.#requestRender(),
+    });
     this.#input = new PointerInput(canvas, {
+      world: () => (this.#view === "world" ? this.#worldView : null),
       camera: this.#camera,
       tools: this.#tools,
       map: () => this.#map(),
@@ -265,7 +338,7 @@ export class MapCanvas {
     Ticker.system.stop();
     this.#app.stage.eventMode = "none";
     this.#overlays.setColors(this.#colors);
-    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay);
+    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay, this.#worldView.root);
     this.#minimap = new Minimap(
       this.#container,
       {
@@ -289,7 +362,13 @@ export class MapCanvas {
       onTilesetImage((id) => {
         this.#scene?.imageChanged(id);
         this.#thumb?.imageChanged(id);
+        this.#worldView.imageChanged(id);
         this.#requestRender();
+      }),
+    );
+    this.#unsubs.push(
+      useProjectLibrary.subscribe((s, prev) => {
+        if (s.levels !== prev.levels) this.#worldView.listChanged();
       }),
     );
     this.#loadProject(useEditorStore.getState().project);
@@ -334,6 +413,20 @@ export class MapCanvas {
         this.#requestRender();
       },
       handle: this.handle,
+      /** World view: level boxes as last drawn, in client (page) px. */
+      worldBoxes: () => {
+        const r = this.#input.rect();
+        const c = this.#camera.camera;
+        const off = snappedOffset(c, this.#camera.resolution);
+        return this.#worldView.boxes.map((b) => ({
+          id: b.id,
+          x: r.left + off.x + b.x * c.zoom,
+          y: r.top + off.y + b.y * c.zoom,
+          width: b.width * c.zoom,
+          height: b.height * c.zoom,
+          world: { x: b.x, y: b.y },
+        }));
+      },
     };
     // StrictMode mounts two canvases whose async inits may resolve in either order; the
     // hook always points at the newest canvas still alive.
@@ -369,7 +462,100 @@ export class MapCanvas {
       this.#minimap?.setVisible(visible);
     },
     isMinimapVisible: () => this.#minimapVisible,
+    setView: (view) => this.#setView(view),
+    getView: () => this.#view,
+    onViewChange: (cb) => {
+      this.#viewListeners.add(cb);
+      return () => this.#viewListeners.delete(cb);
+    },
+    setWorldSource: (source) => this.#worldView.setSource(source),
+    onLevelMoved: (cb) => {
+      this.#movedListeners.add(cb);
+      return () => this.#movedListeners.delete(cb);
+    },
+    onOpenLevel: (cb) => {
+      this.#openListeners.add(cb);
+      return () => this.#openListeners.delete(cb);
+    },
   };
+
+  /** Calls every listener (errors are logged, not thrown). Returns true when there was one. */
+  #emit<T>(listeners: Set<(value: T) => void>, value: T, what: string): boolean {
+    for (const cb of [...listeners]) {
+      try {
+        cb(value);
+      } catch (error) {
+        console.error(`[canvas] ${what} listener failed`, error);
+      }
+    }
+    return listeners.size > 0;
+  }
+
+  #activeLevelId(): string | null {
+    const project = useEditorStore.getState().project;
+    if (!project) return null;
+    if (project.levelId) return project.levelId;
+    const levels: readonly ProjectLevel[] = useProjectLibrary.getState().levels;
+    return levels.find((l) => l.path === project.levelPath)?.id ?? levels[0]?.id ?? "";
+  }
+
+  // ------------------------------------------------------------------ views (v1.2)
+
+  #setView(view: CanvasView): void {
+    if (view === this.#view || this.#destroyed) return;
+    const cam = this.#camera;
+    this.#tools.end();
+    this.#view = view;
+    const world = view === "world";
+    this.#world.visible = !world;
+    this.#entities.root.visible = !world;
+    this.#overlays.grid.visible = !world;
+    this.#overlays.overlay.visible = !world;
+    this.#minimap?.setVisible(this.#minimapVisible && !world);
+    this.#hoverEntity = null;
+    if (world) {
+      this.#levelCamera = { camera: cam.camera, zoomLevel: cam.zoomLevel };
+      this.#frameOnLevelView = false;
+      cam.setZoomLimits(WORLD_MIN_ZOOM, WORLD_MAX_ZOOM);
+      cam.frameBounds = () => this.#worldView.bounds();
+      this.#worldView.enter();
+      this.#worldView.update(); // starts the loads
+      cam.frameMap();
+      this.#worldFramedCamera = cam.camera;
+      this.#worldFramedLoads = -1;
+    } else {
+      this.#worldView.exit();
+      cam.frameBounds = null;
+      cam.setZoomLimits(MIN_ZOOM, MAX_ZOOM);
+      const saved = this.#levelCamera;
+      this.#levelCamera = null;
+      if (this.#frameOnLevelView || !saved) cam.requestFrameMap();
+      else {
+        cam.stopAnimation();
+        cam.zoomLevel = saved.zoomLevel;
+        cam.camera = saved.camera;
+      }
+      this.#frameOnLevelView = false;
+    }
+    this.#input.updateHover();
+    this.#input.updateCursor();
+    this.#requestRender();
+    this.#emit(this.#viewListeners, view, "view change");
+  }
+
+  /** World view: frame all again once the first loads settle, unless the user moved the camera. */
+  #reframeWorldAfterLoads(): void {
+    const wv = this.#worldView;
+    if (this.#worldFramedCamera === null || wv.loading) return;
+    if (this.#camera.camera !== this.#worldFramedCamera) {
+      this.#worldFramedCamera = null;
+      return;
+    }
+    if (wv.loadVersion === this.#worldFramedLoads) return;
+    this.#worldFramedLoads = wv.loadVersion;
+    this.#camera.frameMap();
+    this.#worldFramedCamera = this.#camera.camera;
+  }
 
   destroy(): void {
     if (this.#destroyed) return;
@@ -386,6 +572,10 @@ export class MapCanvas {
     this.#entities.destroy();
     this.#lodSprite.destroy();
     this.#navigateListeners.clear();
+    this.#viewListeners.clear();
+    this.#movedListeners.clear();
+    this.#openListeners.clear();
+    this.#worldView.destroy();
     const s = useEditorStore.getState();
     if (s.hoverCell) s.setHoverCell(null);
     if (this.#initialized) this.#teardownApp();
@@ -428,7 +618,14 @@ export class MapCanvas {
   #loadProject(project: OpenProject | null): void {
     this.#tools.end();
     this.#overlays.reset();
+    // Keep the outgoing level's picture for the world view (no reload needed there).
+    const outgoing = this.#scene?.store;
+    const outgoingId = this.#loadedLevelId;
+    if (outgoing && this.#thumb && outgoingId !== null && outgoingId !== (project?.levelId ?? null) && this.#thumbTexture) {
+      this.#worldView.snapshotActive(outgoingId, outgoing, this.#thumb.canvas, !this.#thumb.pending);
+    }
     this.#destroySceneObjects();
+    this.#loadedLevelId = project ? this.#activeLevelId() : null;
     if (project) {
       this.#scene = new MapScene(
         project.store,
@@ -443,7 +640,10 @@ export class MapCanvas {
     this.#hoverEntity = null;
     // Previews above the layers.
     this.#world.addChild(this.#overlays.previews);
-    this.#camera.requestFrameMap();
+    this.#worldView.activeChanged();
+    // The world view keeps its camera; the new level is framed when the level view returns.
+    if (this.#view === "world") this.#frameOnLevelView = true;
+    else this.#camera.requestFrameMap();
     this.#requestRender();
   }
 
@@ -527,6 +727,11 @@ export class MapCanvas {
     const cam = this.#camera;
     const animating = cam.step(dt);
 
+    if (this.#view === "world") {
+      this.#worldFrame(time, animating);
+      return;
+    }
+
     this.#scene?.flush();
     const off = snappedOffset(cam.camera, cam.resolution);
     this.#world.position.set(off.x, off.y);
@@ -550,6 +755,25 @@ export class MapCanvas {
     this.#reportZoom();
 
     if (animating) this.#requestRender();
+    else this.#lastFrameTime = 0;
+  }
+
+  /** One frame of the world view: level pictures, links, labels. */
+  #worldFrame(time: number, animating: boolean): void {
+    // The live picture of the active level (edits by shortcut, e.g. undo, still show).
+    let more = false;
+    if (this.#thumb?.pending && this.#thumbTimer === null) {
+      this.#pumpThumbnail(THUMB_LOD_BUDGET_MS);
+      more = this.#thumb.pending;
+    }
+    more = this.#worldView.update() || more;
+    this.#reframeWorldAfterLoads();
+    this.#worldView.draw();
+    this.#input.updateCursor();
+    this.#app.renderer.render(this.#app.stage);
+    Ticker.system.update(time);
+    this.#reportZoom();
+    if (animating || more) this.#requestRender();
     else this.#lastFrameTime = 0;
   }
 

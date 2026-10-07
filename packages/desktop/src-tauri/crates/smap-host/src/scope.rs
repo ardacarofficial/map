@@ -53,6 +53,16 @@ impl Scope {
         self.project_root.as_deref()
     }
 
+    /// Proje kapandı: kökü ve o klasöre erişim veren her izni (kökün
+    /// kendisi, üst ya da alt klasörleri, içindeki dosyalar) düşürür. Son
+    /// projeler listesi yeniden açmaya yine izin verir. Eski kökü döner.
+    pub fn close_project_root(&mut self) -> Option<PathBuf> {
+        let root = self.project_root.take()?;
+        self.dirs.retain(|d| !root.starts_with(d) && !d.starts_with(&root));
+        self.files.retain(|f| !f.starts_with(&root));
+        Some(root)
+    }
+
     /// Kullanıcının seçtiği bir klasör (altındaki her şey dahil).
     pub fn allow_dir(&mut self, dir: &Path) -> Result<PathBuf, ScopeError> {
         let dir = normalize(dir)?;

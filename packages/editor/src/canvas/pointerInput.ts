@@ -21,7 +21,23 @@ interface Pan {
   lastY: number;
 }
 
+/** Pointer routing of the world map view (v1.2), see `worldView.ts`. */
+export interface WorldInput {
+  /** True while a level is pressed / dragged. */
+  readonly busy: boolean;
+  /** Left press; false when no level is under the pointer (the input pans instead). */
+  pointerDown(e: PointerEvent, p: Point): boolean;
+  pointerMove(e: PointerEvent, p: Point): void;
+  pointerUp(e: PointerEvent, p: Point): void;
+  altChanged(alt: boolean): void;
+  cancel(): void;
+  /** CSS cursor, or null for the default one. */
+  cursor(): string | null;
+}
+
 export interface InputHost {
+  /** The world view's input while it is shown, else null (level view: tools). */
+  world(): WorldInput | null;
   readonly camera: CameraController;
   readonly tools: ToolController;
   map(): MapInfo | undefined;
@@ -99,14 +115,14 @@ export class PointerInput {
     c.addEventListener("lostpointercapture", (e) => this.#onPointerEnd(e), opts);
     c.addEventListener("pointerenter", (e) => this.#setPointer(e), opts);
     c.addEventListener("pointerleave", () => {
-      if (this.#host.tools.gesture || this.#pan) return;
+      if (this.#host.tools.gesture || this.#pan || this.#host.world()?.busy) return;
       this.pointer = null;
       this.#host.requestRender();
     }, opts);
     c.addEventListener("wheel", (e) => this.#onWheel(e), { signal, passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
     c.addEventListener("dblclick", (e) => {
-      if (e.button !== 0 || this.#pan || this.#spaceDown) return;
+      if (e.button !== 0 || this.#pan || this.#spaceDown || this.#host.world()) return;
       this.#host.doubleClick(this.toLocal(e));
     }, opts);
     // Middle-button autoscroll (Windows) and text selection.
@@ -132,7 +148,7 @@ export class PointerInput {
   updateHover(): void {
     const map = this.#host.map();
     let cell: CellPoint | null = null;
-    if (map && this.pointer) {
+    if (map && this.pointer && !this.#host.world()) {
       const c = this.#host.camera.cellAt(this.pointer);
       if (c && c.x >= 0 && c.y >= 0 && c.x < map.width && c.y < map.height) cell = c;
     }
@@ -143,6 +159,12 @@ export class PointerInput {
   }
 
   updateCursor(): void {
+    const world = this.#host.world();
+    if (world) {
+      const c = this.#pan ? "grabbing" : this.#spaceDown ? "grab" : (world.cursor() ?? "default");
+      if (this.#canvas.style.cursor !== c) this.#canvas.style.cursor = c;
+      return;
+    }
     const cursor = cursorFor({
       tool: useEditorStore.getState().tool,
       panning: this.#pan !== null,
@@ -179,6 +201,16 @@ export class PointerInput {
   }
 
   #onKey(e: KeyboardEvent, down: boolean): void {
+    if (e.key === "Alt") {
+      const world = this.#host.world();
+      if (world?.busy) {
+        // Keep the browser / OS from taking Alt (menu bar focus) during a drag.
+        e.preventDefault();
+        world.altChanged(down);
+        this.updateCursor();
+      }
+      return;
+    }
     if (e.code !== "Space") return;
     if (down) {
       if (isEditableTarget(e.target)) return;
@@ -197,7 +229,15 @@ export class PointerInput {
 
   /** Esc cancels the gesture in progress (and is then not a "deselect"). */
   #onEscape(e: KeyboardEvent): void {
-    if (e.key !== "Escape" || !this.#host.tools.gesture) return;
+    if (e.key !== "Escape") return;
+    const world = this.#host.world();
+    if (world?.busy) {
+      e.preventDefault();
+      world.cancel();
+      this.updateCursor();
+      return;
+    }
+    if (!this.#host.tools.gesture) return;
     e.preventDefault();
     this.#host.tools.cancel();
   }
@@ -207,23 +247,41 @@ export class PointerInput {
     this.#canvasRect = null;
     this.pointer = this.toLocal(e);
     if (document.activeElement !== this.#canvas) this.#canvas.focus({ preventScroll: true });
+    const world = this.#host.world();
+    if (world) {
+      if (e.button === 2 && world.busy) {
+        world.cancel();
+        this.updateCursor();
+        return;
+      }
+      if (this.#pan || world.busy) return;
+      // Left drag on empty space pans, like the middle button.
+      const pan = e.button === 1 || (e.button === 0 && (this.#spaceDown || !world.pointerDown(e, this.pointer)));
+      if (pan) this.#startPan(e);
+      this.updateCursor();
+      return;
+    }
     if (e.button === 2 && tools.isCancelable()) {
       tools.cancel();
       return;
     }
     if (this.#pan || tools.gesture) return;
     if (e.button === 1 || (e.button === 0 && this.#spaceDown)) {
-      e.preventDefault();
-      this.#pan = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
-      this.capture(e.pointerId);
-      this.#host.camera.stopAnimation();
-      this.updateCursor();
-      this.#host.requestRender();
+      this.#startPan(e);
       return;
     }
     const cell = this.pointerCell();
     if (!cell) return;
     tools.pointerDown(e, cell);
+  }
+
+  #startPan(e: PointerEvent): void {
+    e.preventDefault();
+    this.#pan = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+    this.capture(e.pointerId);
+    this.#host.camera.stopAnimation();
+    this.updateCursor();
+    this.#host.requestRender();
   }
 
   #onPointerMove(e: PointerEvent): void {
@@ -235,20 +293,29 @@ export class PointerInput {
       this.#pan.lastY = e.clientY;
       this.#host.camera.panBy(dx, dy);
     } else {
-      this.#host.tools.pointerMove(e);
+      const world = this.#host.world();
+      if (world) {
+        world.pointerMove(e, this.pointer);
+        this.updateCursor();
+      } else this.#host.tools.pointerMove(e);
     }
     this.#host.requestRender();
   }
 
   #onPointerUp(e: PointerEvent): void {
+    const world = this.#host.world();
     if (this.#pan && e.pointerId === this.#pan.pointerId) this.#endPan();
-    else this.#host.tools.pointerUp(e);
+    else if (world) {
+      world.pointerUp(e, this.toLocal(e));
+      this.updateCursor();
+    } else this.#host.tools.pointerUp(e);
     this.release(e.pointerId);
     this.#host.requestRender();
   }
 
   #onPointerEnd(e: PointerEvent): void {
     if (this.#pan && e.pointerId === this.#pan.pointerId) this.#endPan();
+    if (this.#host.world()?.busy) this.#host.world()?.cancel();
     const g = this.#host.tools.gesture;
     if (g && e.pointerId === g.pointerId) this.#host.tools.end();
     this.#host.requestRender();
