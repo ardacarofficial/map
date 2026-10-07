@@ -37,6 +37,12 @@ export const CANVAS_COLORS = {
   /** Cells a collision layer forces passable — token `--color-collision-pass`. */
   collisionPassable: 0x3ddc84,
   collisionPassableAlpha: 0.45,
+  /** Built-in spawn point — token `--color-entity-spawn` (fallback: core's built-in type colour). */
+  entitySpawn: 0x22c55e,
+  /** Built-in portal — token `--color-entity-portal`. */
+  entityPortal: 0xa855f7,
+  /** Portal whose target level was removed, entity of an unknown type — token `--color-danger`. */
+  danger: 0xf0707a,
 };
 
 /** The canvas colour set (fallbacks merged with theme tokens). */
@@ -59,5 +65,8 @@ export function readThemeColors(el: Element): CanvasColors {
     collisionSolid: token("--color-collision-solid", CANVAS_COLORS.collisionSolid),
     collisionPassable: token("--color-collision-pass", CANVAS_COLORS.collisionPassable),
     terrainTint: token("--color-terrain-tint", token("--color-accent", CANVAS_COLORS.terrainTint)),
+    entitySpawn: token("--color-entity-spawn", CANVAS_COLORS.entitySpawn),
+    entityPortal: token("--color-entity-portal", CANVAS_COLORS.entityPortal),
+    danger: token("--color-danger", CANVAS_COLORS.danger),
   };
 }

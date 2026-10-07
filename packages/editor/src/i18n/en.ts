@@ -133,6 +133,8 @@ export const en: Messages = {
     eraserHint: "The eraser removes the exception; collision comes from the tiles again.",
   },
   properties: {
+    noEntity: "No entity selected",
+    noEntityHint: "Pick a type and click the map; select an entity to edit it",
     noSpawn: "No spawn point",
     noSpawnHint: "The game starts the player here.",
     addSpawn: "Place",
@@ -368,6 +370,7 @@ export const en: Messages = {
     hint: "Each cell gets one of them by weight. Click a tile normally to go back to one tile.",
   },
   entities: {
+    inLayer: "On this layer",
     palette: "Entity types",
     editTypes: "Edit types…",
     paletteHint: "Pick a type, then click on the map to place it.",

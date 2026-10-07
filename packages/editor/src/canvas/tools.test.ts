@@ -274,3 +274,15 @@ describe("buildCellQuads", () => {
     expect(Array.from(flipped.indices)).toEqual([0, 1, 2, 0, 2, 3]);
   });
 });
+
+describe("cursorFor (entities)", () => {
+  const base = { tool: "entity" as const, panning: false, spaceDown: false, hasMap: true, overMap: true, editable: false };
+  it("shows move / grabbing over and while dragging an entity, not-allowed when the entity tool cannot place", () => {
+    expect(cursorFor({ ...base, entity: "over" })).toBe("move");
+    expect(cursorFor({ ...base, entity: "drag" })).toBe("grabbing");
+    expect(cursorFor({ ...base, entity: "blocked" })).toBe("not-allowed");
+    expect(cursorFor({ ...base, entity: "blocked", overMap: false })).toBe("crosshair");
+    expect(cursorFor({ ...base, entity: null })).toBe("crosshair");
+    expect(cursorFor({ ...base, entity: "over", panning: true })).toBe("grabbing");
+  });
+});

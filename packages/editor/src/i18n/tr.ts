@@ -136,6 +136,8 @@ export const tr = {
     eraserHint: "Silgi istisnayı kaldırır; collision yeniden tile'lardan gelir.",
   },
   properties: {
+    noEntity: "Seçili entity yok",
+    noEntityHint: "Bir tür seç ve haritaya tıkla; düzenlemek için bir entity seç",
     noSpawn: "Başlangıç noktası yok",
     noSpawnHint: "Oyun oyuncuyu buradan başlatır.",
     addSpawn: "Yerleştir",
@@ -371,6 +373,7 @@ export const tr = {
     hint: "Her hücreye ağırlığa göre biri gelir. Normal tıkla tek tile'a dön.",
   },
   entities: {
+    inLayer: "Bu katmanda",
     palette: "Entity türleri",
     editTypes: "Türleri düzenle…",
     paletteHint: "Bir tür seç, haritaya tıklayarak yerleştir.",

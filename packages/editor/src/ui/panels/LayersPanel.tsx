@@ -1,9 +1,10 @@
 import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
-import { isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
+import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { addLayer, opacityDrag, moveLayer, removeLayer, renameLayer, setLayerProps } from "../../commands/layerActions";
 import { addCollisionLayer } from "../../commands/terrainActions";
+import { addEntityLayer } from "../../commands/entityActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
@@ -152,7 +153,7 @@ export function LayersPanel() {
               <Icon
                 name={layerIcon(layer)}
                 size={14}
-                className={`shrink-0 ${isActive ? (isGridLayer(layer) ? roleTint(layer) : "text-accent") : "text-faint"}`}
+                className={`shrink-0 ${isActive ? (isGridLayer(layer) ? roleTint(layer) : isEntityLayer(layer) ? "text-warning" : "text-accent") : "text-faint"}`}
               />
               {editingId === layer.id ? (
                 <RenameInput
@@ -199,6 +200,7 @@ export function LayersPanel() {
 }
 
 function layerIcon(layer: TileLayer): IconName {
+  if (isEntityLayer(layer)) return "pin";
   if (!isGridLayer(layer)) return "layers";
   return layer.role === "terrain" ? "terrain" : "shield";
 }
@@ -265,6 +267,13 @@ function AddLayerMenu() {
               <span className="flex min-w-0 flex-1 flex-col">
                 <span>{t("layers.addCollision")}</span>
                 <span className="text-xs text-faint">{t("layers.addCollisionHint")}</span>
+              </span>
+            </Menu.Item>
+            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addEntityLayer()}>
+              <Icon name="pin" size={15} className="mt-0.5 shrink-0 text-warning" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span>{t("layers.addEntity")}</span>
+                <span className="text-xs text-faint">{t("layers.addEntityHint")}</span>
               </span>
             </Menu.Item>
           </Menu.Popup>

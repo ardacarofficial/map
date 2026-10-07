@@ -99,6 +99,14 @@ export class MapScene {
     return this.#groupTextures.get(group);
   }
 
+  /**
+   * Shows / hides the tile layer meshes (the background stays). The canvas
+   * hides them while it draws the map from the thumbnail (far-zoom LOD).
+   */
+  setTilesVisible(visible: boolean): void {
+    this.#layers.visible = visible;
+  }
+
   /** True when there are chunks waiting to be rebuilt. */
   get hasDirty(): boolean {
     return this.#dirty.size > 0;

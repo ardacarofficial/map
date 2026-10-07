@@ -27,6 +27,10 @@ export interface InputHost {
   map(): MapInfo | undefined;
   /** The active layer can be painted (cursor shows "not-allowed" otherwise). */
   paintable(): boolean;
+  /** Entity cursor state (see `CursorInput.entity`). */
+  entityCursor(): "over" | "drag" | "blocked" | null;
+  /** Double click at a canvas point (CSS px): portals open their target. */
+  doubleClick(p: Point): void;
   requestRender(): void;
 }
 
@@ -101,6 +105,10 @@ export class PointerInput {
     }, opts);
     c.addEventListener("wheel", (e) => this.#onWheel(e), { signal, passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
+    c.addEventListener("dblclick", (e) => {
+      if (e.button !== 0 || this.#pan || this.#spaceDown) return;
+      this.#host.doubleClick(this.toLocal(e));
+    }, opts);
     // Middle-button autoscroll (Windows) and text selection.
     c.addEventListener("mousedown", (e) => {
       if (e.button === 1) e.preventDefault();
@@ -142,6 +150,7 @@ export class PointerInput {
       hasMap: this.#host.map() !== undefined,
       overMap: this.#hover !== null,
       editable: this.#host.paintable(),
+      entity: this.#pan || this.#spaceDown ? null : this.#host.entityCursor(),
     });
     if (this.#canvas.style.cursor !== cursor) this.#canvas.style.cursor = cursor;
   }

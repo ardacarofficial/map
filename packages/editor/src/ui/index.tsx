@@ -15,6 +15,8 @@ import { BackupsDialog } from "./dialogs/BackupsDialog";
 import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
 import { ResizeMapDialog } from "./dialogs/ResizeMapDialog";
 import { ExportDialog } from "../export/ExportDialog";
+import { EntityTypesDialog } from "./entities/EntityTypesDialog";
+import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -47,6 +49,8 @@ export function App() {
       <BackupsDialog />
       <DiskChangedDialog />
       <ExportDialog />
+      <SaveStampDialog />
+      <EntityTypesDialog />
       <Toaster />
     </TooltipProvider>
   );

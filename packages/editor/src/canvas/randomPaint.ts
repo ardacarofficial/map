@@ -29,7 +29,12 @@ export function randomCellPicker(
     if (index > 0) usable.push({ tile, cell: makeCell(index) });
   }
   if (usable.length === 0) return null;
-  const candidates = usable.map((u) => ({ tilesetId: u.tile.tilesetId, tileId: u.tile.tileId, weight: u.tile.weight, cell: u.cell }));
+  const candidates = usable.map((u) => ({
+    tilesetId: u.tile.tilesetId,
+    tileId: u.tile.tileId,
+    ...(u.tile.weight !== undefined ? { weight: u.tile.weight } : {}),
+    cell: u.cell,
+  }));
   return (x, y) => pickRandomTile(candidates, seed, x, y).cell;
 }
 

@@ -5,11 +5,14 @@
  * lines are whole device pixels; previews live in world space.
  */
 import {
+  COLLISION_PASSABLE,
   EMPTY_CELL,
   cellFlags,
   cellPaletteIndex,
   floodFill,
+  isEntityLayer,
   isGridLayer,
+  isTileLayer,
   makeCell,
   type CellPoint,
   type TileClip,
@@ -26,9 +29,10 @@ import { gridLayout } from "./grid";
 import { gridPaintValue } from "./gridPaint";
 import { isSolidCode, solidEdges } from "./gridRaster";
 import type { GridOverlays } from "./gridOverlays";
-import { activeInfo, activeLayer, clipId, mappingFor } from "./layerAccess";
+import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
+import { isRandomBrush, randomTileAt } from "./randomPaint";
 import type { Gesture } from "./toolController";
 import {
   dragRegion,
@@ -75,6 +79,8 @@ export interface OverlayHost {
   cursorCell(): CellPoint | null;
   /** Cell under the pointer, also outside the map. */
   pointerCell(): CellPoint | null;
+  /** Entity under the pointer that the current tool would select / drag, or null. */
+  hoverEntityId(): string | null;
   requestRender(): void;
 }
 
@@ -89,6 +95,9 @@ export class OverlayRenderer {
   readonly #preview = new Sprite();
   readonly #tilePreview = new TilePreview(CANVAS_COLORS.previewAlpha);
   readonly #fillPreview = new MaskPreview(CANVAS_COLORS.accent, CANVAS_COLORS.fillPreviewAlpha);
+  /** Grid (terrain / collision) layers of a saved stamp, drawn faintly as their overlays. */
+  readonly #stampGridPreview = new Graphics();
+  #stampGridKey: string | null = null;
   #fillCache: FillCache | null = null;
   #lastFillAt = -Infinity;
   #fillTimer: ReturnType<typeof setTimeout> | null = null;
@@ -99,7 +108,8 @@ export class OverlayRenderer {
     this.#preview.alpha = CANVAS_COLORS.previewAlpha;
     this.#preview.visible = false;
     this.grid.filters = [this.#gridFilter];
-    this.previews.addChild(this.#fillPreview.sprite, this.#tilePreview.root, this.#preview);
+    this.#stampGridPreview.visible = false;
+    this.previews.addChild(this.#fillPreview.sprite, this.#tilePreview.root, this.#stampGridPreview, this.#preview);
   }
 
   /** Applies theme colours read at mount. */
@@ -113,6 +123,8 @@ export class OverlayRenderer {
     this.#fillPreview.set(null, 1, 1);
     this.#tilePreview.invalidate();
     this.#preview.texture = Texture.EMPTY;
+    this.#stampGridPreview.clear();
+    this.#stampGridKey = null;
   }
 
   destroy(): void {
@@ -132,6 +144,7 @@ export class OverlayRenderer {
     this.#preview.visible = false;
     this.#tilePreview.root.visible = false;
     this.#fillPreview.sprite.visible = false;
+    this.#stampGridPreview.visible = false;
     if (!map) return;
     const cam = host.camera;
     const res = cam.resolution;
@@ -187,9 +200,12 @@ export class OverlayRenderer {
       }
       case "stamp": {
         const at = host.pointerCell() ?? gesture.last ?? gesture.start;
-        this.#showStampPreview(gesture.clip, gesture.mapping, snapToStampGrid(gesture.start, at, gesture.clip.width, gesture.clip.height));
+        const mapping = gesture.saved ? savedStampPreviewMapping(host.scene?.store, gesture.clip) : gesture.mapping;
+        this.#showStampPreview(gesture.clip, mapping, snapToStampGrid(gesture.start, at, gesture.clip.width, gesture.clip.height));
         return;
       }
+      case "entity":
+        return;
       default:
         break;
     }
@@ -197,6 +213,20 @@ export class OverlayRenderer {
     const cell = host.cursorCell();
     if (!cell) return;
     const one = { x: cell.x, y: cell.y, width: 1, height: 1 };
+    // A saved stamp maps its own layers: it previews (and places) on any active layer.
+    const saved = state.tool === "brush" ? savedStamp(state.stamp) : null;
+    if (saved) {
+      const mapping = savedStampPreviewMapping(host.scene?.store, saved);
+      if (Object.keys(mapping).length > 0) this.#showStampPreview(saved, mapping, cell);
+      else this.#drawCellCursor(one);
+      return;
+    }
+    const active = activeLayer(host.scene?.store);
+    if (isEntityLayer(active) && (state.tool === "entity" || state.tool === "select")) {
+      // Hovering an entity: its own highlight is the cursor.
+      if (host.hoverEntityId() === null) this.#drawCellCursor(one);
+      return;
+    }
     if (gridActive) return this.#drawGridCursor(state.tool, cell, one);
     const editable = isEditable(activeInfo(host.scene?.store));
     switch (state.tool) {
@@ -208,8 +238,14 @@ export class OverlayRenderer {
           return;
         }
         if (!editable) return this.#drawCellCursor(one);
-        const sel = state.selection;
+        let sel: { tilesetId: string; tileId: number } | null = state.selection;
+        const random = isRandomBrush(state.randomSet) && isTileLayer(active);
+        if (random) {
+          const doc = host.scene!.store.document;
+          sel = randomTileAt(state.randomSet, doc.seed, cell.x, cell.y, (t) => !!doc.getTileset(t.tilesetId));
+        }
         const tex = sel ? host.scene?.atlas(sel.tilesetId)?.tileTexture(sel.tileId) : undefined;
+        if (random) this.#drawDice(one);
         if (tex) {
           this.#preview.texture = tex;
           this.#preview.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
@@ -382,8 +418,77 @@ export class OverlayRenderer {
     if (this.#tilePreview.key?.startsWith(`${key}|`) !== true) this.#setTilePreview(key, stampPreviewCells(clip, mapping));
     else this.#tilePreview.root.visible = true;
     this.#tilePreview.root.position.set(origin.x * map.tileWidth, origin.y * map.tileHeight);
+    this.#showStampGridPreview(key, clip, mapping, origin);
     // Bounds, so empty / same-looking parts of the stamp are still visible.
     this.#drawCellCursor({ x: origin.x, y: origin.y, width: clip.width, height: clip.height });
+  }
+
+  /** Grid layers of a stamp as faint terrain / collision overlay cells. */
+  #showStampGridPreview(key: string, clip: TileClip, mapping: Record<string, string>, origin: CellPoint): void {
+    const layers = clip.layers.filter((l) => l.grid && mapping[l.layerId] !== undefined);
+    if (layers.length === 0) return;
+    const map = this.#host.scene!.store.document.map;
+    const g = this.#stampGridPreview;
+    const colors = this.#host.colors;
+    const fullKey = `${key}|${colors.collisionSolid},${colors.collisionPassable},${colors.terrainTint}`;
+    if (this.#stampGridKey !== fullKey) {
+      this.#stampGridKey = fullKey;
+      g.clear();
+      const tw = map.tileWidth;
+      const th = map.tileHeight;
+      for (const layer of layers) {
+        const collision = layer.role === "collision";
+        // One fill per colour; runs of equal cells in a row are one rect.
+        const groups = collision
+          ? [
+              { color: colors.collisionSolid, match: (v: number) => v !== 0 && v !== COLLISION_PASSABLE },
+              { color: colors.collisionPassable, match: (v: number) => v === COLLISION_PASSABLE },
+            ]
+          : [{ color: colors.terrainTint, match: (v: number) => v !== 0 }];
+        for (const { color, match } of groups) {
+          let any = false;
+          for (let y = 0; y < clip.height; y++) {
+            let x = 0;
+            while (x < clip.width) {
+              if (!match(layer.cells[y * clip.width + x] ?? 0)) {
+                x++;
+                continue;
+              }
+              const x0 = x;
+              while (x < clip.width && match(layer.cells[y * clip.width + x] ?? 0)) x++;
+              g.rect(x0 * tw, y * th, (x - x0) * tw, th);
+              any = true;
+            }
+          }
+          if (any) g.fill({ color, alpha: 0.28 });
+        }
+      }
+    }
+    g.position.set(origin.x * map.tileWidth, origin.y * map.tileHeight);
+    g.visible = true;
+  }
+
+  /** Small die in the top-right corner of a cell: the brush picks a random tile of the set. */
+  #drawDice(r: CellRegion): void {
+    const cam = this.#host.camera;
+    const box = cam.cellBox(r);
+    const k = cam.lineWidth();
+    const size = 9 * k;
+    if (box.x1 - box.x0 < 2 * size) return;
+    const g = this.overlay;
+    const px = 1 / cam.resolution;
+    const x0 = box.x1 - size - 2 * k;
+    const y0 = box.y0 + 2 * k;
+    g.roundRect((x0 - k) * px, (y0 - k) * px, (size + 2 * k) * px, (size + 2 * k) * px, 2.5 * k * px).fill({
+      color: CANVAS_COLORS.cursorShadow,
+      alpha: 0.6,
+    });
+    g.roundRect(x0 * px, y0 * px, size * px, size * px, 2 * k * px).fill(CANVAS_COLORS.cursor);
+    const d = Math.max(1, Math.round(1.5 * k));
+    for (const [fx, fy] of [[0.25, 0.25], [0.5, 0.5], [0.75, 0.75]] as const) {
+      g.rect((x0 + Math.round(size * fx) - d / 2) * px, (y0 + Math.round(size * fy) - d / 2) * px, d * px, d * px);
+    }
+    g.fill(CANVAS_COLORS.cursorShadow);
   }
 
   /** Rectangle (or single-cell) preview with the current pattern tiled from `anchor`. */
@@ -422,6 +527,19 @@ export class OverlayRenderer {
         },
       };
     }
+    const doc = this.#host.scene?.store.document;
+    if (doc && isRandomBrush(s.randomSet) && isTileLayer(activeLayer(this.#host.scene?.store))) {
+      const set = s.randomSet;
+      const seed = doc.seed;
+      const ok = (t: { tilesetId: string }) => !!doc.getTileset(t.tilesetId);
+      return {
+        key: `r${seed}:${set.map((t) => `${t.tilesetId}/${t.tileId}*${t.weight ?? 1}`).join(",")}`,
+        at: (x, y) => {
+          const t = randomTileAt(set, seed, x, y, ok);
+          return t ? { entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: 0 } : null;
+        },
+      };
+    }
     const sel = s.selection;
     if (!sel) return null;
     const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
@@ -445,7 +563,7 @@ export class OverlayRenderer {
     // Filling cells that already hold the value changes nothing.
     if (gridValue !== undefined) {
       if (layer.getCell(cell.x, cell.y) === gridValue) return;
-    } else if (!s.stamp && s.selection) {
+    } else if (!s.stamp && s.selection && !isRandomBrush(s.randomSet)) {
       const index = scene.store.document.palette.indexOf(s.selection.tilesetId, s.selection.tileId);
       if (index > 0 && layer.getCell(cell.x, cell.y) === makeCell(index)) return;
     }

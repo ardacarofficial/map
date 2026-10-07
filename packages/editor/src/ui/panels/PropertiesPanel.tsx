@@ -2,7 +2,9 @@ import { Switch } from "@base-ui/react/switch";
 import {
   COLLISION_PASSABLE,
   COLLISION_SOLID,
+  isEntityLayer,
   isGridLayer,
+  SPAWN_TYPE_ID,
   isTileSolid,
   tilePosition,
   type GridLayer,
@@ -20,7 +22,10 @@ import { Button } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { terrainSwatchTile } from "../terrain/TerrainList";
+import { chooseEntityType } from "../../commands/entityActions";
+import { EntityProperties } from "../entities/EntityProperties";
 import { PanelSection } from "./PanelSection";
+import { RandomBrushChip } from "./RandomBrushChip";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -45,12 +50,25 @@ export function PropertiesPanel() {
   const map = store?.document.map;
   const activeLayer = activeLayerId ? store?.document.getLayer(activeLayerId) : undefined;
   const grid = isGridLayer(activeLayer) ? activeLayer : null;
+  const selectedEntityId = useEditorStore((s) => s.selectedEntityId);
+  const randomCount = useEditorStore((s) => s.randomSet.length);
+  const found = selectedEntityId ? store?.document.findEntity(selectedEntityId) : undefined;
+
+  if (found && store) {
+    return (
+      <PanelSection title={t("panels.properties")} className="max-h-[50%] shrink-0 overflow-y-auto">
+        <EntityProperties doc={store.document} entity={found.entity} />
+      </PanelSection>
+    );
+  }
+  const entityLayer = isEntityLayer(activeLayer);
 
   return (
     <PanelSection title={t("panels.properties")} className="shrink-0">
       {grid && store && <GridBrush doc={store.document} layer={grid} />}
+      {randomCount >= 2 && store && !entityLayer && <RandomBrushChip doc={store.document} />}
       <div className="px-3 pb-3">
-        {selection && tileset ? (
+        {selection && tileset && randomCount < 2 && !entityLayer ? (
           <div className="flex gap-3">
             <TileSwatch tileset={tileset} tileId={selection.tileId} size={56} className="rounded-md border border-line" />
             <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start items-center gap-x-3 gap-y-1 text-sm">
@@ -71,10 +89,12 @@ export function PropertiesPanel() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-col">
-              <span className="text-sm text-muted">{t("properties.noSelection")}</span>
-              <span className="text-xs text-faint">{t("properties.noSelectionHint")}</span>
-            </div>
+            {randomCount < 2 && (
+              <div className="flex flex-col">
+                <span className="text-sm text-muted">{entityLayer ? t("properties.noEntity") : t("properties.noSelection")}</span>
+                <span className="text-xs text-faint">{entityLayer ? t("properties.noEntityHint") : t("properties.noSelectionHint")}</span>
+              </div>
+            )}
             {map && (
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                 <Row label={t("properties.mapSize")}>
@@ -85,6 +105,7 @@ export function PropertiesPanel() {
                 </Row>
               </dl>
             )}
+            {store && !store.document.spawn() && <SpawnHint />}
             {map && (
               <Button className="h-7 self-start px-2.5 text-sm" onClick={() => runCommand("map.resize")}>
                 <Icon name="resize" size={14} />
@@ -95,6 +116,22 @@ export function PropertiesPanel() {
         )}
       </div>
     </PanelSection>
+  );
+}
+
+/** "Başlangıç noktası yok" with a shortcut to place one (spawn type + entity tool). */
+function SpawnHint() {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-line bg-raised py-1.5 pr-1.5 pl-2.5" data-spawn-hint>
+      <Icon name="flag" size={14} className="shrink-0 text-warning" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm text-text">{t("properties.noSpawn")}</span>
+        <span className="text-2xs leading-[14px] text-faint">{t("properties.noSpawnHint")}</span>
+      </div>
+      <Button className="h-6 shrink-0 px-2 text-sm" onClick={() => chooseEntityType(SPAWN_TYPE_ID)}>
+        {t("properties.addSpawn")}
+      </Button>
+    </div>
   );
 }
 

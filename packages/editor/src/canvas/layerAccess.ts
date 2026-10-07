@@ -2,7 +2,16 @@
  * Small adapters between core layers / clips and the pure tool logic in
  * `tools.ts`, shared by the tool controller and the overlay renderer.
  */
-import { isEntityLayer, isGridLayer, type GridLayer, type MapStore, type TileClip, type TileLayer } from "@smap/core";
+import {
+  isEntityLayer,
+  isGridLayer,
+  stampLayerMapping,
+  type GridLayer,
+  type MapStore,
+  type Stamp,
+  type TileClip,
+  type TileLayer,
+} from "@smap/core";
 
 import { useEditorStore } from "../state/editorStore";
 import { stampMapping, type LayerInfo } from "./tools";
@@ -43,6 +52,39 @@ export function mappingFor(store: MapStore | undefined, clip: TileClip): Record<
     const l = doc.getLayer(id);
     return l ? layerInfo(l) : undefined;
   });
+}
+
+/**
+ * The clip as a saved library stamp (it has an `id` and a `name`), else
+ * null. Saved stamps are placed with core `placeStamp` (layers matched by
+ * name / role, missing layers created in the same undo step).
+ */
+export function savedStamp(clip: TileClip | null | undefined): Stamp | null {
+  const s = clip as Partial<Stamp> | null | undefined;
+  return s && typeof s.id === "string" && typeof s.name === "string" ? (clip as Stamp) : null;
+}
+
+/** Placeholder target in {@link savedStampPreviewMapping} for a layer `placeStamp` will create. */
+export const NEW_LAYER_TARGET = "\u0000new";
+
+/**
+ * Clip layer id → target layer id (or {@link NEW_LAYER_TARGET}) of the stamp
+ * layers a saved stamp visibly places: `placeStamp` skips locked layers and
+ * hidden ones would not show, so both are left out of the preview.
+ */
+export function savedStampPreviewMapping(store: MapStore | undefined, stamp: TileClip): Record<string, string> {
+  const doc = store?.document;
+  if (!doc) return {};
+  const out: Record<string, string> = {};
+  for (const t of stampLayerMapping(doc, stamp)) {
+    if (t.targetLayerId === null) {
+      out[t.clipLayerId] = NEW_LAYER_TARGET;
+      continue;
+    }
+    const l = doc.getLayer(t.targetLayerId);
+    if (l && l.visible && !l.locked) out[t.clipLayerId] = t.targetLayerId;
+  }
+  return out;
 }
 
 const clipIds = new WeakMap<TileClip, number>();

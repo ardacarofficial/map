@@ -14,6 +14,7 @@ const TOOLS: { id: ToolId; icon: IconName; command: CommandId }[] = [
   { id: "rect", icon: "rect", command: "tool.rect" },
   { id: "select", icon: "select", command: "tool.select" },
   { id: "eyedropper", icon: "eyedropper", command: "tool.eyedropper" },
+  { id: "entity", icon: "pin", command: "tool.entity" },
 ];
 
 /** Drawing tools and picking tools are separated by a divider after this index. */
@@ -30,7 +31,7 @@ export function ToolRail() {
     >
       {TOOLS.map(({ id, icon, command }, index) => (
         <Fragment key={id}>
-          {index === GROUP_BREAK + 1 && <div aria-hidden className="my-1 h-px w-5 bg-line" />}
+          {(index === GROUP_BREAK + 1 || id === "entity") && <div aria-hidden className="my-1 h-px w-5 bg-line" />}
           <Tooltip label={t(`tools.${id}`)} command={command} side="right">
           <IconButton
             aria-label={t(`tools.${id}`)}

@@ -20,6 +20,7 @@ import {
   type Camera,
   type Point,
 } from "./camera";
+import { cameraCenteredOn } from "./minimapMath";
 
 /** Time constant of the wheel-zoom easing. */
 const ZOOM_TAU_MS = 55;
@@ -93,6 +94,14 @@ export class CameraController {
 
   panBy(dx: number, dy: number): void {
     this.camera = { ...this.camera, x: this.camera.x + dx, y: this.camera.y + dy };
+    this.#requestRender();
+  }
+
+  /** Moves the camera (zoom unchanged) so map px (`wx`, `wy`) is at the view centre. */
+  centerOnWorld(wx: number, wy: number): void {
+    this.#anim = null;
+    this.#pendingFrameMap = false;
+    this.camera = cameraCenteredOn(wx, wy, this.camera.zoom, this.viewW, this.viewH);
     this.#requestRender();
   }
 

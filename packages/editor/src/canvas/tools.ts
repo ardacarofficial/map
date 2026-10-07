@@ -269,6 +269,12 @@ export interface CursorInput {
   readonly overMap: boolean;
   /** Active layer can be painted with the current tool (see {@link isPaintable}). */
   readonly editable: boolean;
+  /**
+   * Entity tools on an entity layer: pointer over an entity (`"over"`),
+   * dragging one (`"drag"`), or the entity tool cannot place here
+   * (`"blocked"`: no entity layer active, layer locked, no type chosen).
+   */
+  readonly entity?: "over" | "drag" | "blocked" | null;
 }
 
 /** Tools that write to the active layer. */
@@ -281,6 +287,9 @@ export function cursorFor(s: CursorInput): string {
   if (s.panning) return "grabbing";
   if (s.spaceDown) return "grab";
   if (!s.hasMap) return "default";
+  if (s.entity === "drag") return "grabbing";
+  if (s.entity === "over") return "move";
+  if (s.overMap && s.entity === "blocked") return "not-allowed";
   if (s.overMap && isEditTool(s.tool) && !s.editable) return "not-allowed";
   if (s.tool === "eyedropper") return EYEDROPPER_CURSOR;
   if (s.tool === "fill") return "cell";

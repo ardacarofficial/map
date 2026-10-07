@@ -7,16 +7,27 @@
  * write grid values with `paintTerrain` (which re-derives terrain tiles in
  * the same undo step); stamps do not apply there, and a single-cell pick
  * takes the grid value.
+ *
+ * v0.6: a saved library stamp (it has an `id`) is placed with core
+ * `placeStamp` (layers matched by name / role, missing ones created in the
+ * same undo step) on any active layer; a random brush set (2+ tiles) makes
+ * brush / rectangle / fill pick a tile per cell (`pickRandomTile` with the
+ * document seed); on an entity layer the entity tool (and the select tool)
+ * adds, selects and drags entities (a drag = one undo step).
  */
 import {
   EMPTY_CELL,
+  SPAWN_TYPE_ID,
   cellFlags,
   cellPaletteIndex,
   copyRegion,
   floodFill,
+  isEntityLayer,
   isGridLayer,
+  isTileLayer,
   makeCell,
   pasteClip,
+  placeStamp,
   type CellPoint,
   type CellWrite,
   type GridLayer,
@@ -30,9 +41,12 @@ import { useEditorStore } from "../state/editorStore";
 import { cellWrites, strokeCells } from "./brush";
 import type { Point } from "./camera";
 import type { CameraController } from "./cameraController";
+import { dragPosition, snapToCell, type WorldPoint } from "./entityLogic";
+import type { EntityRenderer } from "./entityRenderer";
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
-import { activeLayer, layerInfo, mappingFor } from "./layerAccess";
+import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
+import { isRandomBrush, randomCellPicker } from "./randomPaint";
 import { decidePick, dragRegion, isEditable, isGridEditable, isPaintable, patternCell, patternLayerIndex, regionContains, stampOrigins } from "./tools";
 
 /** A pointer interaction in progress (left or right button). */
@@ -45,6 +59,8 @@ export type Gesture =
       /** Cell (tile layer) or grid value (grid layer) the stroke writes. */
       readonly value: number;
       readonly grid: boolean;
+      /** Random brush: cell per position (overrides `value`), or null. */
+      readonly pick: ((x: number, y: number) => number) | null;
       last: CellPoint | null;
     }
   | {
@@ -53,17 +69,32 @@ export type Gesture =
       readonly store: MapStore;
       readonly clip: TileClip;
       readonly mapping: Record<string, string>;
+      /** Saved library stamp: placed with `placeStamp` (`mapping` unused). */
+      readonly saved: boolean;
       readonly start: CellPoint;
       readonly placed: Set<string>;
       last: CellPoint | null;
     }
   | { readonly kind: "rect"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint }
   | { readonly kind: "select"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint; moved: boolean }
-  | { readonly kind: "pick"; readonly pointerId: number; readonly button: number; readonly start: CellPoint; end: CellPoint };
+  | { readonly kind: "pick"; readonly pointerId: number; readonly button: number; readonly start: CellPoint; end: CellPoint }
+  | {
+      readonly kind: "entity";
+      readonly pointerId: number;
+      readonly store: MapStore;
+      readonly entityId: string;
+      /** Entity position when the drag started (map px). */
+      readonly start: WorldPoint;
+      /** Cell under the pointer when the drag started. */
+      readonly grab: CellPoint;
+      /** False on a locked layer: the click selects, the drag does nothing. */
+      readonly movable: boolean;
+    };
 
 /** What the controller needs from the canvas. */
 export interface ToolHost {
   readonly scene: MapScene | null;
+  readonly entities: EntityRenderer;
   readonly camera: CameraController;
   toLocal(e: { clientX: number; clientY: number }): Point;
   /** Cell under the pointer, also outside the map. */
@@ -105,10 +136,17 @@ export class ToolController {
     if (e.button !== 0) return;
     e.preventDefault();
     const s = useEditorStore.getState();
-    const grid = isGridLayer(this.#activeLayer());
+    const active = this.#activeLayer();
+    const grid = isGridLayer(active);
+    if ((s.tool === "entity" || s.tool === "select") && isEntityLayer(active)) {
+      if (this.#entityDown(e, cell) || s.tool === "entity") {
+        this.#host.requestRender();
+        return;
+      }
+    }
     switch (s.tool) {
       case "brush":
-        if (s.stamp && !grid) this.#beginStamp(e, s.stamp, cell);
+        if (s.stamp && (savedStamp(s.stamp) || !grid)) this.#beginStamp(e, s.stamp, cell);
         else this.#beginPaint(e);
         break;
       case "eraser":
@@ -146,6 +184,8 @@ export class ToolController {
     } else if (g.kind === "paint" || g.kind === "stamp") {
       const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
       this.#paint(events.length > 0 ? events : [e]);
+    } else if (g.kind === "entity") {
+      this.#dragEntity(g);
     } else {
       const cell = this.#host.pointerCell();
       if (cell) {
@@ -162,6 +202,7 @@ export class ToolController {
     const button = g.kind === "pick" ? g.button : 0;
     if (!released(e, button)) return;
     if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
+    else if (g.kind === "entity") this.#dragEntity(g);
     else {
       const cell = this.#host.pointerCell();
       if (cell) g.end = cell;
@@ -172,7 +213,7 @@ export class ToolController {
   /** Rectangle, marquee and pick drags can be cancelled (Esc, right click); strokes only by Esc. */
   isCancelable(): boolean {
     const g = this.#gesture;
-    return !!g && (g.kind === "rect" || g.kind === "select" || (g.kind === "pick" && g.button === 0));
+    return !!g && (g.kind === "rect" || g.kind === "select" || g.kind === "entity" || (g.kind === "pick" && g.button === 0));
   }
 
   /** Ends without applying drags; keeps what a stroke already painted (lost capture, project change). */
@@ -180,7 +221,7 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp") && g.store.inTransaction) g.store.commit();
+    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) g.store.commit();
     this.#host.release(g.pointerId);
     this.#host.requestRender();
   }
@@ -190,7 +231,7 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp") && g.store.inTransaction) g.store.rollback();
+    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) g.store.rollback();
     this.#host.release(g.pointerId);
     this.#host.requestRender();
   }
@@ -211,6 +252,7 @@ export class ToolController {
     switch (g.kind) {
       case "paint":
       case "stamp":
+      case "entity":
         if (g.store.inTransaction) g.store.commit();
         break;
       case "rect":
@@ -304,10 +346,25 @@ export class ToolController {
         return makeCell(index, cellFlags(cell));
       };
     }
+    const random = this.#randomPicker(store);
+    if (random) return random;
     const sel = s.selection;
     if (!sel || !store.document.getTileset(sel.tilesetId)) return null;
     const value = makeCell(store.getOrAddPaletteIndex(sel.tilesetId, sel.tileId));
     return () => value;
+  }
+
+  /**
+   * Random brush cell writer when a set of 2+ tiles is picked and the active
+   * layer is a tile layer; adds palette entries (call inside the transaction).
+   */
+  #randomPicker(store: MapStore): ((x: number, y: number) => number) | null {
+    const s = useEditorStore.getState();
+    if (!isRandomBrush(s.randomSet) || !isTileLayer(this.#activeLayer())) return null;
+    const doc = store.document;
+    return randomCellPicker(s.randomSet, doc.seed, (tilesetId, tileId) =>
+      doc.getTileset(tilesetId) ? store.getOrAddPaletteIndex(tilesetId, tileId) : 0,
+    );
   }
 
   // ------------------------------------------------------------------ one-shot edits
@@ -426,13 +483,23 @@ export class ToolController {
     if (!t) return;
     const { store, layer } = t;
     let value: number;
+    let pick: ((x: number, y: number) => number) | null = null;
     const grid = isGridLayer(layer);
     if (grid) {
       const v = this.#gridValue(layer);
       if (v === null) return;
       value = v;
     } else if (state.tool === "eraser") value = EMPTY_CELL;
-    else {
+    else if (isRandomBrush(state.randomSet)) {
+      try {
+        pick = this.#randomPicker(store);
+      } catch (error) {
+        console.error("[canvas] cannot paint random set", error);
+        return;
+      }
+      if (!pick) return;
+      value = EMPTY_CELL;
+    } else {
       const sel = state.selection;
       if (!sel || !store.document.getTileset(sel.tilesetId)) return;
       try {
@@ -443,17 +510,18 @@ export class ToolController {
       }
     }
     store.beginTransaction();
-    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, last: null });
+    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, pick, last: null });
     this.#paint([e]);
   }
 
   #beginStamp(e: PointerEvent, clip: TileClip, start: CellPoint): void {
     const store = this.#host.scene?.store;
     if (!store) return;
-    const mapping = mappingFor(store, clip);
-    if (Object.keys(mapping).length === 0) return;
+    const saved = savedStamp(clip) !== null;
+    const mapping = saved ? {} : mappingFor(store, clip);
+    if (!saved && Object.keys(mapping).length === 0) return;
     store.beginTransaction();
-    this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, start, placed: new Set(), last: null });
+    this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, saved, start, placed: new Set(), last: null });
     this.#paint([e]);
   }
 
@@ -473,7 +541,10 @@ export class ToolController {
       let changed = false;
       try {
         for (const o of stampOrigins(g.start, cells, g.clip.width, g.clip.height, g.placed)) {
-          if (pasteClip(g.store, g.clip, g.mapping, o.x, o.y).length > 0) changed = true;
+          if (g.saved) {
+            const r = placeStamp(g.store, g.clip, o.x, o.y);
+            if (r.patches.length > 0 || r.createdLayerIds.length > 0) changed = true;
+          } else if (pasteClip(g.store, g.clip, g.mapping, o.x, o.y).length > 0) changed = true;
         }
       } catch (error) {
         console.error("[canvas] stamp failed", error);
@@ -490,7 +561,15 @@ export class ToolController {
     let changed: boolean;
     try {
       if (g.grid) changed = this.#paintGrid(g.store, g.layerId, gridWrites(cells, g.value, doc.map, getCell));
-      else {
+      else if (g.pick) {
+        const writes: CellWrite[] = [];
+        for (const { x, y } of cells) {
+          if (!doc.inBounds(x, y)) continue;
+          const v = g.pick(x, y);
+          if (getCell(x, y) !== v) writes.push({ x, y, cell: v });
+        }
+        changed = writes.length > 0 && g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes }).cells.length > 0;
+      } else {
         const writes = cellWrites(cells, g.value, doc.map.width, doc.map.height, getCell);
         changed = writes.length > 0 && g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes }).cells.length > 0;
       }
@@ -500,5 +579,76 @@ export class ToolController {
       return;
     }
     if (changed) this.#markDirty();
+  }
+
+  // ------------------------------------------------------------------ entities
+
+  /**
+   * Entity tool / select tool on an entity layer. A click on an entity of the
+   * active layer selects it and starts a drag; with the entity tool a click
+   * on empty space adds an entity of the chosen type at that cell (the spawn
+   * point, of which a level has one, moves there instead). Returns false when
+   * the select tool should run its marquee (click on empty space).
+   */
+  #entityDown(e: PointerEvent, cell: CellPoint): boolean {
+    const store = this.#host.scene?.store;
+    const layer = this.#activeLayer();
+    if (!store || !isEntityLayer(layer) || !layer.visible) return false;
+    const s = useEditorStore.getState();
+    const hit = this.#host.entities.hitTest(layer, this.#host.toLocal(e));
+    if (hit) {
+      if (s.selectedEntityId !== hit.id) s.setSelectedEntity(hit.id);
+      this.#start({
+        kind: "entity",
+        pointerId: e.pointerId,
+        store,
+        entityId: hit.id,
+        start: { x: hit.x, y: hit.y },
+        grab: cell,
+        movable: !layer.locked,
+      });
+      return true;
+    }
+    if (s.tool !== "entity") {
+      if (s.selectedEntityId) s.setSelectedEntity(null);
+      return false;
+    }
+    const doc = store.document;
+    const typeId = s.entityTypeId;
+    if (layer.locked || !typeId || !doc.getEntityType(typeId) || !doc.inBounds(cell.x, cell.y)) return true;
+    const pos = snapToCell(cell, doc.map);
+    let id: string | null = null;
+    this.#transact(store, () => {
+      const spawn = typeId === SPAWN_TYPE_ID ? doc.spawn() : null;
+      if (spawn) {
+        store.dispatch({ type: "moveEntity", entityId: spawn.id, x: pos.x, y: pos.y });
+        id = spawn.id;
+        return true;
+      }
+      id = store.dispatch({ type: "addEntity", layerId: layer.id, entity: { typeId, x: pos.x, y: pos.y } });
+      return id !== null;
+    });
+    if (id !== null) s.setSelectedEntity(id);
+    return true;
+  }
+
+  /** Moves the dragged entity to the cell under the pointer (one transaction per drag). */
+  #dragEntity(g: Extract<Gesture, { kind: "entity" }>): void {
+    if (!g.movable) return;
+    const cell = this.#host.pointerCell();
+    const doc = g.store.document;
+    const found = doc.findEntity(g.entityId);
+    if (!cell || !found) return;
+    const to = dragPosition(g.start, g.grab, cell, doc.map);
+    if (to.x === found.entity.x && to.y === found.entity.y) return;
+    try {
+      if (!g.store.inTransaction) g.store.beginTransaction();
+      g.store.dispatch({ type: "moveEntity", entityId: g.entityId, x: to.x, y: to.y });
+    } catch (error) {
+      console.error("[canvas] move entity failed", error);
+      this.cancel();
+      return;
+    }
+    this.#markDirty();
   }
 }
