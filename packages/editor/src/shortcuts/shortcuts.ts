@@ -10,6 +10,23 @@
 export type CommandId =
   | "tool.brush"
   | "tool.eraser"
+  | "tool.fill"
+  | "tool.rect"
+  | "tool.select"
+  | "tool.eyedropper"
+  | "edit.undo"
+  | "edit.redo"
+  | "edit.cut"
+  | "edit.copy"
+  | "edit.paste"
+  | "edit.delete"
+  | "edit.selectAll"
+  | "edit.deselect"
+  | "edit.flipX"
+  | "edit.flipY"
+  | "layer.add"
+  | "layer.remove"
+  | "map.resize"
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.zoomIn"
@@ -33,6 +50,21 @@ export interface ShortcutDef {
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "tool.brush", keys: ["B"] },
   { command: "tool.eraser", keys: ["E"] },
+  { command: "tool.fill", keys: ["F"] },
+  { command: "tool.rect", keys: ["R"] },
+  { command: "tool.select", keys: ["S"] },
+  { command: "tool.eyedropper", keys: ["I"] },
+  { command: "edit.undo", keys: ["Ctrl+Z"] },
+  { command: "edit.redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"] },
+  { command: "edit.cut", keys: ["Ctrl+X"] },
+  { command: "edit.copy", keys: ["Ctrl+C"] },
+  { command: "edit.paste", keys: ["Ctrl+V"] },
+  { command: "edit.delete", keys: ["Delete", "Backspace"] },
+  { command: "edit.selectAll", keys: ["Ctrl+A"] },
+  { command: "edit.deselect", keys: ["Escape"] },
+  /** Flip the selected tile / stamp (Tiled habit). */
+  { command: "edit.flipX", keys: ["X"] },
+  { command: "edit.flipY", keys: ["Y"] },
   { command: "view.toggleGrid", keys: ["Ctrl+G"] },
   { command: "view.togglePanels", keys: ["Tab"] },
   { command: "view.zoomIn", keys: ["Ctrl+Equal"] },
@@ -49,6 +81,9 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   /** Commands without a default key (reachable from the command palette). */
   { command: "file.close", keys: [] },
   { command: "tileset.add", keys: [] },
+  { command: "layer.add", keys: ["Ctrl+Shift+N"] },
+  { command: "layer.remove", keys: [] },
+  { command: "map.resize", keys: [] },
 ];
 
 export function keysFor(command: CommandId): string[] {
