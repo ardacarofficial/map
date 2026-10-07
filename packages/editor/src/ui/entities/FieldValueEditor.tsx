@@ -134,7 +134,13 @@ export function FieldValueEditor({
     case "point":
       return (
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="flex min-w-0 items-center gap-1.5"
+            // x and y are one value: commit (or revert) only when focus leaves both.
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onBlur();
+            }}
+          >
             {(["x", "y"] as const).map((axis) => (
               <label key={axis} className={`flex min-w-0 flex-1 items-center rounded-md border bg-panel pl-2 transition-colors focus-within:border-accent ${error ? inputBad : inputOk}`}>
                 <span className="font-mono text-2xs text-faint">{axis}</span>
@@ -145,7 +151,6 @@ export function FieldValueEditor({
                   placeholder={t("entities.pointUnset")}
                   onChange={(e) => change({ [axis]: e.target.value })}
                   onKeyDown={onKeyDown}
-                  onBlur={onBlur}
                   spellCheck={false}
                   autoComplete="off"
                   className="h-[26px] w-full min-w-0 bg-transparent px-1.5 font-mono text-md text-text tabular placeholder:font-sans placeholder:text-faint focus-visible:outline-none"

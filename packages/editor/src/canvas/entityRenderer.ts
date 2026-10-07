@@ -283,9 +283,12 @@ function drawEntity(g: Graphics, look: EntityLook, x0: number, y0: number, x1: n
   const bw = (w - 2 * inset) * px;
   const bh = (h - 2 * inset) * px;
   const radius = Math.min(4 * k, w / 5, h / 5) * px;
-  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.22 : 0.32 });
-  if (look.broken) dashed(g, x0 + inset, y0 + inset, x1 - inset, y1 - inset, k, px, look.color);
-  else g.roundRect(bx, by, bw, bh, radius).stroke({ color: look.color, width: k * px, alignment: 1 });
+  const line = w >= 20 * k && h >= 20 * k ? 2 * k : k;
+  // Dark halo outside keeps the box readable on any tile.
+  g.roundRect(bx, by, bw, bh, radius).stroke({ color: CANVAS_COLORS.cursorShadow, width: k * px, alpha: 0.45, alignment: 0 });
+  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.4 : 0.42 });
+  if (look.broken) dashed(g, x0 + inset, y0 + inset, x1 - inset, y1 - inset, line, px, look.color);
+  else g.roundRect(bx, by, bw, bh, radius).stroke({ color: look.color, width: line * px, alignment: 1 });
 
   const cx = (x0 + x1) / 2;
   const cy = (y0 + y1) / 2;

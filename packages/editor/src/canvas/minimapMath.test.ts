@@ -82,15 +82,17 @@ describe("LOD hysteresis", () => {
   it("enters below the enter threshold and leaves only above the exit threshold", () => {
     expect(nextLod(false, LOD_ENTER_CELL_DEVICE_PX)).toBe(false);
     expect(nextLod(false, LOD_ENTER_CELL_DEVICE_PX - 0.01)).toBe(true);
-    expect(nextLod(true, LOD_ENTER_CELL_DEVICE_PX + 0.2)).toBe(true);
+    expect(nextLod(true, (LOD_ENTER_CELL_DEVICE_PX + LOD_EXIT_CELL_DEVICE_PX) / 2)).toBe(true);
     expect(nextLod(true, LOD_EXIT_CELL_DEVICE_PX - 0.01)).toBe(true);
     expect(nextLod(true, LOD_EXIT_CELL_DEVICE_PX)).toBe(false);
   });
 
   it("never flickers while the size wiggles inside the band", () => {
-    let lod = nextLod(false, 1.5);
+    const mid = (LOD_ENTER_CELL_DEVICE_PX + LOD_EXIT_CELL_DEVICE_PX) / 2;
+    const band = (LOD_EXIT_CELL_DEVICE_PX - LOD_ENTER_CELL_DEVICE_PX) / 2;
+    let lod = nextLod(false, LOD_ENTER_CELL_DEVICE_PX / 2);
     for (let i = 0; i < 50; i++) {
-      lod = nextLod(lod, 2.2 + Math.sin(i) * 0.25);
+      lod = nextLod(lod, mid + Math.sin(i) * band * 0.9);
       expect(lod).toBe(true);
     }
   });

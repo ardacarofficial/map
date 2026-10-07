@@ -9,7 +9,7 @@
  * - `mapScene.ts` / `gridOverlays.ts` — tile layer meshes / grid-layer overlays
  * - `entityRenderer.ts` — entities of the entity layers (screen space)
  * - `mapThumbnail.ts` / `minimap.ts` — one low-res picture of the map: the
- *   minimap shows it, and when a cell is narrower than ~2 device px the map
+ *   minimap shows it, and when a cell is narrower than ~4 device px the map
  *   is drawn from that same picture instead of the chunk meshes (LOD, with
  *   hysteresis, see `minimapMath.ts`)
  *

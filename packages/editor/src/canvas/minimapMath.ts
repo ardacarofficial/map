@@ -7,7 +7,7 @@ import type { Camera } from "./camera";
 
 /** Largest thumbnail side in px (one texture; an atlas page limit). */
 export const THUMB_MAX_PX = 4096;
-/** Most thumbnail px per map cell (more is not visible: LOD starts below 2 device px per cell). */
+/** Most thumbnail px per map cell (more is not visible: LOD starts below 4 device px per cell). */
 export const THUMB_MAX_CELL_PX = 4;
 
 /**
@@ -76,10 +76,16 @@ export function cameraCenteredOn(wx: number, wy: number, zoom: number, viewW: nu
   return { x: viewW / 2 - wx * zoom, y: viewH / 2 - wy * zoom, zoom };
 }
 
-/** Far-zoom LOD turns on when a cell is narrower than this many device px... */
-export const LOD_ENTER_CELL_DEVICE_PX = 2;
+/**
+ * Far-zoom LOD turns on when a cell is narrower than this many device px.
+ * 4 = {@link THUMB_MAX_CELL_PX}: for maps up to 1024 cells the thumbnail has
+ * as many px per cell as the screen at the switch, so it is seamless. (Lower
+ * would never trigger for 32 px tiles at 100 % scaling: the zoom stops at
+ * 0.1 = 3.2 px per cell.)
+ */
+export const LOD_ENTER_CELL_DEVICE_PX = 4;
 /** ...and off again only once it is at least this wide (no flicker at the threshold). */
-export const LOD_EXIT_CELL_DEVICE_PX = 2.5;
+export const LOD_EXIT_CELL_DEVICE_PX = 5;
 
 /** Next LOD state given the current one and the cell size in device px. */
 export function nextLod(active: boolean, cellDevicePx: number): boolean {
