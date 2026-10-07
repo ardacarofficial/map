@@ -22,7 +22,7 @@ const CORE_FORBIDDEN_GLOBALS = [
 ].map((name) => ({ name, message: "core DOM/Node globallerini kullanamaz." }));
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "packages/desktop/src-tauri/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "packages/desktop/src-tauri/**", "e2e/test-results/**", "e2e/playwright-report/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
