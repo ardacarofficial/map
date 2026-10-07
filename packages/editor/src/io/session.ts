@@ -265,11 +265,27 @@ class FolderTakenError extends Error {
   }
 }
 
+/** A finished save (manual or autosave). */
+export interface ProjectSavedEvent {
+  project: OpenProject;
+  fs: ProjectFileSystem;
+  /** True for Ctrl+S / the save button, false for autosave. */
+  manual: boolean;
+}
+
+const savedListeners = new Set<(event: ProjectSavedEvent) => void>();
+
+/** Runs `listener` after every successful save (e.g. auto export to Unity). Returns an unsubscribe. */
+export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): () => void {
+  savedListeners.add(listener);
+  return () => savedListeners.delete(listener);
+}
+
 /**
  * Writes the project into `target` (queued behind other writes), then a
  * backup of the level. Updates the remembered disk text and the save status.
  */
-async function writeProjectFiles(target: ProjectFolder, project: OpenProject): Promise<void> {
+async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
   const run = async () => {
     writesInFlight++;
     useSaveStatus.setState({ saving: true });
@@ -284,6 +300,13 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject): P
       if (folder !== target) setFolder(target, levelText);
       knownLevelText = levelText;
       useSaveStatus.setState({ lastSavedAt: Date.now(), failed: false });
+      for (const listener of savedListeners) {
+        try {
+          listener({ project, fs: target.fs, manual });
+        } catch (error) {
+          console.error(error);
+        }
+      }
       if (levelText !== lastBackupText) {
         try {
           await writeBackup(target.fs, levelName(project.levelPath), levelText, new Date());
@@ -320,7 +343,7 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
         target = { fs: new DirectoryHandleFileSystem(handle), handle };
       }
       const revision = project.store.revision;
-      await writeProjectFiles(target, project);
+      await writeProjectFiles(target, project, true);
       // The user may still be drawing while files are written.
       if (useEditorStore.getState().project !== project) return true;
       if (project.store.revision === revision) useEditorStore.getState().setDirty(false);

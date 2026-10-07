@@ -1,6 +1,7 @@
 import { useSaveStatus } from "../io/saveStatus";
 import { useUiStore } from "../ui/uiStore";
 import { useConfirmStore } from "../ui/dialogs/confirmStore";
+import { useExportStore } from "../export/exportStore";
 
 /** True while any modal dialog (palette, new project, resize, backups, confirm, disk changed) is open. */
 export function modalOpen(): boolean {
@@ -10,6 +11,7 @@ export function modalOpen(): boolean {
     ui.newProjectOpen ||
     ui.resizeOpen ||
     ui.backupsOpen ||
+    useExportStore.getState().open ||
     useConfirmStore.getState().request !== null ||
     useSaveStatus.getState().diskConflict !== null
   );
