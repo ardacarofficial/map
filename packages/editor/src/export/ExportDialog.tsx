@@ -3,7 +3,7 @@
  * scale, folders and "export to Unity on save" are remembered per project.
  */
 import { Dialog } from "@base-ui/react/dialog";
-import { exportBaseName, layerDrawList } from "@smap/core";
+import { exportBaseName, layerDrawList, type ExportWarning } from "@smap/core";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 
 import { t, type MessageKey } from "../i18n";
@@ -97,7 +97,7 @@ function ExportForm({
   const pngScale = scale ?? current.pngScale;
   const imageSize = useMemo(() => {
     const list = layerDrawList(project.store.document);
-    return { width: list.width, height: list.height };
+    return { width: list.width, height: list.height, warnings: list.warnings ?? [] };
   }, [project]);
   const pngOk = pngFits(imageSize.width, imageSize.height, pngScale);
 
@@ -183,7 +183,7 @@ function ExportForm({
             />
           )}
           {chosen === "png" && (
-            <PngPanel width={imageSize.width} height={imageSize.height} scale={pngScale} onScale={setScale} />
+            <PngPanel width={imageSize.width} height={imageSize.height} warnings={imageSize.warnings} scale={pngScale} onScale={setScale} />
           )}
           {chosen === "json" && <JsonPanel project={project} />}
           {chosen === "zip" && <ZipPanel project={project} />}
@@ -296,6 +296,7 @@ function UnityPanel({
       <Section label={t("export.files")}>
         <FileList paths={displayOrder(set.files.map((f) => f.path), set.mapFile)} />
       </Section>
+      <WarningsNotice warnings={set.warnings} />
     </>
   );
 }
@@ -303,11 +304,13 @@ function UnityPanel({
 function PngPanel({
   width,
   height,
+  warnings,
   scale,
   onScale,
 }: {
   width: number;
   height: number;
+  warnings: readonly ExportWarning[];
   scale: PngScale;
   onScale(scale: PngScale): void;
 }) {
@@ -362,6 +365,7 @@ function PngPanel({
         </Notice>
       )}
       <span className="text-xs text-faint">{t("export.pngHint")}</span>
+      <WarningsNotice warnings={warnings} />
     </>
   );
 }
@@ -401,18 +405,35 @@ function TmjPanel({ project, settings, onPick }: { project: OpenProject; setting
       <Section label={t("export.files")}>
         <FileList paths={displayOrder(set.files.map((f) => f.path), set.mapFile)} />
       </Section>
-      {set.warnings.length > 0 && (
-        <Notice tone="warning">
-          <span className="font-medium">{t("export.warnings")}</span>
-          <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
-            {set.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </Notice>
-      )}
+      <WarningsNotice warnings={set.warnings} />
     </>
   );
+}
+
+/** The exporter's warnings, translated; nothing when the export lost nothing. */
+function WarningsNotice({ warnings }: { warnings: readonly ExportWarning[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <Notice tone="warning">
+      <span className="font-medium">{t("export.warnings")}</span>
+      <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
+        {warnings.map((warning) => (
+          <li key={warning.message}>{warningText(warning)}</li>
+        ))}
+      </ul>
+    </Notice>
+  );
+}
+
+function warningText(warning: ExportWarning): string {
+  switch (warning.code) {
+    case "missingTilesets":
+      return t("export.warnMissingTilesets", { ids: warning.tilesets.join(", ") });
+    case "tileIdsOutOfRange":
+      return t("export.warnTileOutOfRange", { tileset: warning.tileset, ids: warning.tileIds.join(", ") });
+    case "collisionExceptions":
+      return t("export.warnCollisionExceptions", { layers: warning.layers.join(", ") });
+  }
 }
 
 function Toggle({

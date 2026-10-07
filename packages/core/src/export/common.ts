@@ -43,6 +43,20 @@ export interface ExportCell {
   readonly cellFlags: number;
 }
 
+/**
+ * A problem an export left out of its output. `code` and the params let the UI
+ * translate it; `message` is the English text (logs, tests, other tools).
+ */
+export type ExportWarning =
+  | { readonly code: "missingTilesets"; readonly tilesets: readonly string[]; readonly message: string }
+  | {
+      readonly code: "tileIdsOutOfRange";
+      readonly tileset: string;
+      readonly tileIds: readonly number[];
+      readonly message: string;
+    }
+  | { readonly code: "collisionExceptions"; readonly layers: readonly string[]; readonly message: string };
+
 /** Tile layers (grid and entity layers excluded), bottom to top. */
 export function exportedLayers(doc: MapDocument): TileLayer[] {
   return doc.layers.filter((layer) => isTileLayer(layer));
@@ -117,7 +131,7 @@ export function layerCells(doc: MapDocument, layer: TileLayer, images: readonly 
  * out of every export — writing them would show a tile of the next tileset
  * (TMJ GID overflow) or read outside the image.
  */
-export function exportWarnings(doc: MapDocument): string[] {
+export function exportWarnings(doc: MapDocument): ExportWarning[] {
   const missing = new Set<string>();
   const outOfRange = new Map<string, Set<number>>();
   const palette = doc.palette;
@@ -142,11 +156,19 @@ export function exportWarnings(doc: MapDocument): string[] {
       }
     }
   }
-  const warnings: string[] = [];
-  if (missing.size > 0) warnings.push(`Cells of missing tilesets were skipped: ${[...missing].sort().join(", ")}.`);
+  const warnings: ExportWarning[] = [];
+  if (missing.size > 0) {
+    const tilesets = [...missing].sort();
+    warnings.push({ code: "missingTilesets", tilesets, message: `Cells of missing tilesets were skipped: ${tilesets.join(", ")}.` });
+  }
   for (const id of [...outOfRange.keys()].sort()) {
-    const ids = [...outOfRange.get(id)!].sort((a, b) => a - b);
-    warnings.push(`Cells with tile ids outside tileset "${id}" were skipped: ${ids.join(", ")}.`);
+    const tileIds = [...outOfRange.get(id)!].sort((a, b) => a - b);
+    warnings.push({
+      code: "tileIdsOutOfRange",
+      tileset: id,
+      tileIds,
+      message: `Cells with tile ids outside tileset "${id}" were skipped: ${tileIds.join(", ")}.`,
+    });
   }
   return warnings;
 }

@@ -24,7 +24,7 @@ import type { MapDocument } from "../document";
 import { entitySize, resolveEntityFields, type ResolvedEntityField } from "../entity";
 import { isEntityLayer, isGridLayer, isTileLayer } from "../layer";
 import { tileCount, type Tileset } from "../tileset";
-import { exportBaseName, exportedTilesets, exportWarnings, layerCells, tilesetImageSize, type ExportImage } from "./common";
+import { exportBaseName, type ExportWarning, exportedTilesets, exportWarnings, layerCells, tilesetImageSize, type ExportImage } from "./common";
 import type { ExportResult } from "./game";
 import { Rows, writeJson } from "./json";
 
@@ -43,7 +43,7 @@ export interface TmjOptions {
 
 export interface TmjResult extends ExportResult {
   /** Things the TMJ cannot carry (e.g. collision exceptions). */
-  readonly warnings: readonly string[];
+  readonly warnings: readonly ExportWarning[];
 }
 
 /** A resolved entity field as a Tiled custom property. */
@@ -153,12 +153,15 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
     };
   });
 
-  const warnings: string[] = [];
+  const warnings: ExportWarning[] = [];
   const exceptionLayers = doc.layers.filter((l) => isGridLayer(l) && l.role === "collision" && l.chunkCount > 0);
   if (exceptionLayers.length > 0) {
-    warnings.push(
-      `Collision exceptions (${exceptionLayers.map((l) => l.name).join(", ")}) are not exported to TMJ; only the "solid" tile property is.`,
-    );
+    const layers = exceptionLayers.map((l) => l.name);
+    warnings.push({
+      code: "collisionExceptions",
+      layers,
+      message: `Collision exceptions (${layers.join(", ")}) are not exported to TMJ; only the "solid" tile property is.`,
+    });
   }
   // Cells of missing tilesets / out-of-range tile ids are skipped by layerCells; report them.
   warnings.push(...exportWarnings(doc));

@@ -8,7 +8,7 @@
 import type { MapDocument } from "../document";
 import { deriveCollision } from "../collision";
 import { entityCell, entitySize, resolveEntityFields, type EntityFieldValue } from "../entity";
-import { exportBaseName, exportedLayers, exportedTilesets, exportWarnings, layerCells, type ExportImage } from "./common";
+import { exportBaseName, exportedLayers, exportedTilesets, exportWarnings, layerCells, type ExportImage, type ExportWarning } from "./common";
 import { Rows, writeJson } from "./json";
 import { encodeRle } from "./rle";
 
@@ -32,7 +32,7 @@ export interface ExportResult {
    * Optional in the type only for objects built before it existed; every
    * exporter fills it.
    */
-  readonly warnings?: readonly string[];
+  readonly warnings?: readonly ExportWarning[];
 }
 
 /**
@@ -108,6 +108,7 @@ function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string
           cellY: cell.y,
           width: size.width,
           height: size.height,
+          color: type ? type.color : "",
           fields: resolveEntityFields(entity, type).map((f) => ({ name: f.name, type: f.type, value: exportValue(f.value) })),
         };
       }),

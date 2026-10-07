@@ -5,6 +5,7 @@ export {
   EXPORT_FLIP_D,
   type ExportImage,
   type ExportCell,
+  type ExportWarning,
   exportedLayers,
   exportedTilesets,
   layerCells,

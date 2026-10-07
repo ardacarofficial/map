@@ -13,63 +13,94 @@ Editörü (`packages/editor`) Windows uygulaması olarak paketler. Bağımlılı
 
 | Komut | İş |
 |---|---|
-| `pnpm desktop:dev` | Editörün Vite sunucusunu (5173) açar, Tauri penceresini ona bağlar |
-| `pnpm desktop:build` | Editörü derler, sürüm exe'sini ve NSIS kurulumunu üretir: `packages/desktop/src-tauri/target/release/bundle/nsis/Harita Tasarlayıcı_0.5.0_x64-setup.exe` |
+| `pnpm desktop:dev` | Masaüstü Vite uygulamasını (5173) açar, Tauri penceresini ona bağlar |
+| `pnpm desktop:build` | Masaüstü ön yüzünü (`packages/desktop/dist`) derler, sürüm exe'sini ve kurulumu üretir. Windows: NSIS (`src-tauri/target/release/bundle/nsis/Harita Tasarlayıcı_0.5.0_x64-setup.exe`); Linux: `.deb` + AppImage (`tauri.linux.conf.json`, yalnız hattı denemek için) |
+| `pnpm --filter @smap/desktop build` | Yalnız ön yüz (`dist/`) |
 | `pnpm --filter @smap/desktop test:rust` | Rust çekirdeğinin testleri (`crates/smap-host`, ekransız) |
-| `pnpm --filter @smap/desktop test` | TS köprüsünün testleri |
-| `pnpm --filter @smap/desktop typecheck` | TS köprüsünün tip denetimi |
+| `pnpm --filter @smap/desktop test` | TS platformunun testleri |
+| `pnpm --filter @smap/desktop typecheck` | TS tip denetimi (editörün kaynaklarıyla birlikte) |
 
 Kurulum kullanıcı başına (`currentUser`): yönetici izni istemez. `.smap`
 dosyaları programa bağlanır; çift tıklayınca proje açılır, program açıksa
-mevcut pencere öne gelir (tek örnek).
+mevcut pencere öne gelir (tek örnek) ve proje orada açılır (kaydedilmemiş
+değişiklik varsa önce sorar).
+
+## Windows'ta derleme (adım adım)
+
+1. Visual Studio 2022 Build Tools → "Desktop development with C++" (MSVC + Windows SDK).
+2. Rust: `rustup default stable-x86_64-pc-windows-msvc`.
+3. WebView2 Runtime: Windows 10/11'de hazır (yoksa Evergreen Bootstrapper).
+4. Node 22 ve pnpm (`corepack enable`), depo kökünde `pnpm install`.
+5. `pnpm desktop:build`. NSIS'i Tauri ilk derlemede kendisi indirir
+   (`%LOCALAPPDATA%\tauri\NSIS`); ağ yoksa NSIS 3'ü elle kurup PATH'e ekleyin.
+6. Kurulum: `packages\desktop\src-tauri\target\release\bundle\nsis\Harita Tasarlayıcı_0.5.0_x64-setup.exe`.
+7. Açılış süresini ölçmek: programı açıp kapatın, log'da
+   `startup ms: script …, ready …` satırı ve `window shown (frontend ready)`
+   zaman damgası. Bitti ölçütü: süreç başlangıcından pencere görünene < 1 sn.
+
+İmzasız exe ilk açılışta SmartScreen uyarısı verebilir (kod imzalama
+kapsam dışı, CLAUDE.md › Yapılmayacaklar).
 
 ## Yapı
 
 ```text
-src/                       editörün içe aktaracağı TS köprüsü
-  isTauri.ts               bağımlılıksız algılama (statik içe aktarılabilir)
-  desktopBridge.ts         diyaloglar, proje açma, olaylar, son projeler, log, appReady
+index.html, src/main.ts    masaüstü ön yüzü: editörün startEditor'ı + desktopPlatform
+vite.config.ts             editörün Vite eklentileriyle (editor/vite.plugins.ts) derler
+src/
+  desktopPlatform.ts       editörün Platform arayüzü (diyalog, proje, izleyici, son projeler, ayar, log)
+  desktopBridge.ts         Tauri komutlarının ince sarmalayıcıları
   tauriFileSystem.ts       editörün ProjectFileSystem arayüzü
+  isTauri.ts               bağımlılıksız algılama
 src-tauri/
   tauri.conf.json          pencere, NSIS, .smap ilişkilendirmesi
+  tauri.linux.conf.json    Linux paket türleri (deb, AppImage)
   capabilities/            yalnız core:default (fs/dialog eklenti izni yok)
   src/lib.rs               ince Tauri komutları, eklentiler, pencere
-  crates/smap-host/        Tauri'siz çekirdek: güvenli kayıt, kapsam, izleyici, son projeler, log
+  crates/smap-host/        Tauri'siz çekirdek: güvenli kayıt, kapsam, izleyici, son projeler, ayar dosyası, log
 ```
+
+Vite bu pakete ayrıca kurulmaz: betikler editörün Vite'ını
+`--config ../desktop/vite.config.ts` ile çalıştırır.
 
 ## Güvenlik modeli
 
 Webview'e fs eklentisi verilmez. Dosya komutları mutlak yol alır ve Rust
 tarafında doğrulanır: yol `..` içeremez, var olan atası kanonikleştirilir,
 sonuç açık projenin klasöründe ya da kullanıcının seçtiği bir yolda olmalı.
-Diyaloglar Rust'tan açılır; seçilen yol kapsama orada eklenir. Son projeler
-(`recent.json`, uygulama ayar klasöründe) kalıcı izin yerine geçer: listedeki
-bir `project.smap` yeniden başlattıktan sonra diyalogsuz açılabilir, açarken
+Diyaloglar Rust'tan açılır; seçilen yol kapsama orada eklenir. Proje
+kapanınca o klasöre erişim veren izinler düşer. Son projeler (`recent.json`,
+uygulama ayar klasöründe) kalıcı izin yerine geçer: listedeki bir
+`project.smap` yeniden başlattıktan sonra diyalogsuz açılabilir, açarken
 varlığı yeniden doğrulanır.
 
 ## Dosyalar
 
 - Log: `%LOCALAPPDATA%\com.smap.haritatasarlayici\logs\harita.log` (5 × 1 MB, dönen)
 - Son projeler: `%APPDATA%\com.smap.haritatasarlayici\recent.json`
+- Ayarlar: `%APPDATA%\com.smap.haritatasarlayici\settings.json` — ilk açılışta
+  tüm komutların mevcut tuşlarıyla yazılır. Biçim:
+  `{ "locale": "tr" | "en", "shortcuts": { "tool.brush": ["B"], … } }`.
+  Listelenen komut tam olarak verilen tuşları alır (`[]` kısayolu kaldırır),
+  listelenmeyen varsayılanını korur. Geçersiz kayıt log'a yazılır, bildirimle
+  gösterilir ve yok sayılır. Dosya pencere odağa dönünce yeniden okunur;
+  komut paletindeki "Kısayol ayarlarını aç…" aynı dosyayı düzenler.
 
 ## Editörle bağlantı
 
-```ts
-import { isTauri } from "../../desktop/src/isTauri";
+Editör masaüstünü tanımaz (`desktop → editor → core`, lint ile zorlanır).
+`src/main.ts`:
 
-if (isTauri()) {
-  const desktop = await import("../../desktop/src/desktopBridge");
-  desktop.installErrorLogging();
-  await desktop.onOpenFile(async (path) => {
-    const { project, fs } = await desktop.openProject(path);
-    // fs: ProjectFileSystem — mevcut loadProject(fs) akışına verilir
-  });
-  await desktop.onFileChanged(({ path, kind }) => {
-    // desktop.toProjectPath(fs.root, path) → "tilesets/grass.png"
-  });
-  await desktop.appReady(); // ilk kare çizildikten sonra
-}
+```ts
+import { startEditor } from "@smap/editor";
+import { createDesktopPlatform } from "./desktopPlatform";
+
+void startEditor(document.getElementById("root")!, { platform: createDesktopPlatform() });
 ```
+
+`startEditor` ayarları (dil) yükler, arayüzü çizer, açılış argümanındaki
+`.smap`'i açar, sonra `appReady()` ile gizli pencereyi gösterir. İzleyici
+olayları editörün "diskte değişti" denetimini besler; `tilesets/*.png`
+değişince tileset yeniden okunur (Aseprite'tan kaydetmek yeter).
 
 Not: pencerenin `dragDropEnabled: false` ayarı, editörün HTML5 sürükle-bırak
 (PNG tileset) akışının Windows'ta da çalışması içindir.

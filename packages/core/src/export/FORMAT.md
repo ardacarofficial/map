@@ -69,6 +69,7 @@ appear.
           "x": 96, "y": 0,     // pixels, top-left corner of the entity box, y down
           "cellX": 3, "cellY": 0, // cell under (x, y): floor(x / tileWidth), floor(y / tileHeight)
           "width": 16, "height": 16, // pixels; one map cell unless set in the editor
+          "color": "#a855f7", // the type's colour "#rrggbb" ("" if the type was deleted)
           "fields": [          // the type's fields in definition order
             { "name": "count", "type": "int", "value": 3 },
             { "name": "kind", "type": "enum", "value": "gold" }

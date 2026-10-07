@@ -73,6 +73,8 @@ function BackupList({ onDone }: { onDone(): void }) {
           <button
             type="button"
             disabled={opening !== null}
+            // The list arrives after the dialog opened (focus went to "Kapat"); the newest backup takes it.
+            autoFocus={index === 0}
             onClick={() => {
               setOpening(entry.path);
               void openBackup(entry).then((ok) => (ok ? onDone() : setOpening(null)));

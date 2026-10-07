@@ -45,7 +45,7 @@ describe("tmjExportFiles", () => {
     store.dispatch({ type: "paintTerrain", layerId: collision, cells: [{ x: 0, y: 0, value: 1 }] });
     const set = tmjExportFiles(store.document, "main", bytes);
     expect(set.warnings.length).toBe(1);
-    expect(set.warnings[0]).toContain("Walls");
+    expect(set.warnings[0]).toMatchObject({ code: "collisionExceptions", layers: ["Walls"] });
   });
 });
 

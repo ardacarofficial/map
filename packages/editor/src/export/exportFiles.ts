@@ -4,7 +4,7 @@
  * `ProjectFileSystem` for the target folder (browser directory handle today,
  * Tauri in v0.5, an in-memory folder in tests).
  */
-import { exportTmj, exportUnityMap, type ExportImage, type MapDocument } from "@smap/core";
+import { exportTmj, exportUnityMap, type ExportImage, type ExportWarning, type MapDocument } from "@smap/core";
 
 import { FileNotFoundError, type ProjectFileSystem } from "../io/fs";
 
@@ -21,8 +21,8 @@ export interface ExportFileSet {
   readonly files: readonly ExportFile[];
   /** Tileset image paths with no bytes in the registry (not written). */
   readonly missingImages: readonly string[];
-  /** Exporter warnings (TMJ only). */
-  readonly warnings: readonly string[];
+  /** Exporter warnings (structured; the dialog translates them). */
+  readonly warnings: readonly ExportWarning[];
 }
 
 /** Original PNG bytes of a tileset, `undefined` when the image is missing. */
@@ -33,7 +33,7 @@ function withImages(
   text: string,
   images: readonly ExportImage[],
   bytes: TilesetBytes,
-  warnings: readonly string[],
+  warnings: readonly ExportWarning[],
 ): ExportFileSet {
   const files: ExportFile[] = [];
   const missingImages: string[] = [];
@@ -49,7 +49,7 @@ function withImages(
 /** `<level>.smapmap` + the tileset PNGs it references (Unity importer). */
 export function unityExportFiles(doc: MapDocument, levelName: string, bytes: TilesetBytes): ExportFileSet {
   const result = exportUnityMap(doc, levelName);
-  return withImages(result.fileName, result.text, result.images, bytes, []);
+  return withImages(result.fileName, result.text, result.images, bytes, result.warnings ?? []);
 }
 
 /** `<level>.tmj` + the tileset PNGs next to it (Tiled, Godot, Phaser). */

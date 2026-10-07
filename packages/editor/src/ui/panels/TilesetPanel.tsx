@@ -317,6 +317,21 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     return inside(c) ? c : null;
   };
 
+  // The pointer stays over the canvas across a mode switch (shortcut, layout shift under it), so no
+  // pointermove arrives: re-derive the hovered tile from the last known pointer position.
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const p = pointerRef.current;
+    const el = gridRef.current;
+    if (!p || !el) return;
+    const rect = el.getBoundingClientRect();
+    const c = { col: Math.floor((p.x - rect.left) / cellW), row: Math.floor((p.y - rect.top) / cellH) };
+    const next = inside(c) ? c : null;
+    setHover((h) => (h?.col === next?.col && h?.row === next?.row ? h : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `inside` only reads the tileset grid
+  }, [mode, template, cellW, cellH, cssW, tileset.columns, tileset.rows]);
+
   const select = (col: number, row: number) => {
     // A normal pick is a single tile: it ends a random brush and a stamp on the brush.
     useEditorStore.getState().setRandomSet([]);
@@ -431,6 +446,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
       >
         {image ? (
           <div
+            ref={gridRef}
             className={`checker relative touch-none ${cursor}`}
             // Whole-pixel centering keeps tile edges crisp.
             style={{ width: cssW, height: cssH, marginLeft: Math.max(0, Math.floor((availWidth - cssW) / 2)) }}
@@ -439,10 +455,14 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
                 const c = rawCellAt(e);
                 strokeRef.current.moveTo(c.col, c.row);
               }
+              pointerRef.current = { x: e.clientX, y: e.clientY };
               const cell = cellAt(e);
               setHover((h) => (h?.col === cell?.col && h?.row === cell?.row ? h : cell));
             }}
-            onPointerLeave={() => setHover(null)}
+            onPointerLeave={() => {
+              pointerRef.current = null;
+              setHover(null);
+            }}
             onPointerDown={onPointerDown}
             onPointerUp={endStroke}
             onPointerCancel={endStroke}

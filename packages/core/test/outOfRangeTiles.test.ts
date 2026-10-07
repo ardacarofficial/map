@@ -64,8 +64,11 @@ describe("out-of-range tile ids", () => {
     const tmj = JSON.parse(result.text);
     expect(tmj.layers[0].data).toEqual([0, 0]);
     expect(tmj.layers[1].data[0]).toBe(tmj.tilesets[tmj.tilesets.length - 1].firstgid);
-    expect(result.warnings).toContain('Cells with tile ids outside tileset "a" were skipped: 5.');
-    expect(result.warnings).toContain("Cells of missing tilesets were skipped: gone.");
+    expect(result.warnings.map(({ message: _m, ...rest }) => rest)).toEqual([
+      { code: "missingTilesets", tilesets: ["gone"] },
+      { code: "tileIdsOutOfRange", tileset: "a", tileIds: [5] },
+    ]);
+    expect(result.warnings.map((w) => w.message)).toContain('Cells with tile ids outside tileset "a" were skipped: 5.');
   });
 
   it("game JSON, Unity map and the PNG draw list skip it too; Unity map and draw list carry warnings", () => {

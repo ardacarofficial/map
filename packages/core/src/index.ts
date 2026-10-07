@@ -317,6 +317,7 @@ export {
   EXPORT_FLIP_V,
   EXPORT_FLIP_D,
   type ExportImage,
+  type ExportWarning,
   type ExportCell,
   type ExportResult,
   exportedLayers,

@@ -354,6 +354,7 @@ describe("TMJ export", () => {
     store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 0, y: 0, value: COLLISION_SOLID }] });
     const result = exportTmj(store.document, "main", { imagePath: (image) => `../tilesets/${image.fileName}` });
     expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({ code: "collisionExceptions", layers: expect.any(Array) });
     const tmj = JSON.parse(result.text) as { tilesets: { image: string }[] };
     expect(tmj.tilesets.map((t) => t.image)).toEqual(["../tilesets/grass.png", "../tilesets/items.png"]);
   });

@@ -190,7 +190,7 @@ namespace Smap.MapImporter
         /// <summary>Box size in pixels.</summary>
         public float width;
         public float height;
-        /// <summary>Type colour "#rrggbb". Not written by the editor yet; empty means a default colour.</summary>
+        /// <summary>Type colour "#rrggbb"; empty (type deleted) means a default colour.</summary>
         public string color;
         /// <summary>Values are filled by <see cref="SmapMap.Parse"/>, not by JsonUtility.</summary>
         public SmapEntityField[] fields;
