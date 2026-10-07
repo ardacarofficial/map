@@ -7,7 +7,21 @@
  * zoom animation is running. An idle editor therefore costs ~0 CPU/GPU, and
  * a brush change is drawn on the very next frame.
  */
-import type { CellPoint, MapStore } from "@smap/core";
+import {
+  EMPTY_CELL,
+  cellFlags,
+  cellPaletteIndex,
+  copyRegion,
+  floodFill,
+  isGridLayer,
+  makeCell,
+  pasteClip,
+  type CellPoint,
+  type CellWrite,
+  type MapStore,
+  type TileClip,
+  type TileLayer,
+} from "@smap/core";
 import { AlphaFilter, Application, Container, Graphics, Sprite, Texture, Ticker } from "pixi.js";
 
 import { useEditorStore, type EditorState, type OpenProject } from "../state/editorStore";
@@ -30,8 +44,28 @@ import {
   type Point,
 } from "./camera";
 import { CANVAS_COLORS, readThemeColors } from "./colors";
+import { cellMaskImage, membershipMask, type CellMaskImage } from "./cellMask";
+import type { CellQuad } from "./chunkGeometry";
 import { gridLayout } from "./grid";
 import { MapScene } from "./mapScene";
+import { MaskPreview, TilePreview } from "./preview";
+import {
+  cursorFor,
+  decidePick,
+  dragRegion,
+  isEditable,
+  patternCell,
+  patternLayerIndex,
+  rectPreviewCells,
+  regionContains,
+  snapToStampGrid,
+  stampMapping,
+  stampOrigins,
+  stampPreviewCells,
+  type LayerInfo,
+  type PreviewCell,
+} from "./tools";
+import type { CellRegion } from "../state/editorStore";
 
 export interface CanvasHandle {
   destroy(): void;
@@ -48,12 +82,70 @@ const ZOOM_TAU_MS = 55;
 const PAN_GESTURE_MS = 250;
 const FRAME_PADDING = 48;
 
-interface Stroke {
-  readonly store: MapStore;
-  readonly layerId: string;
-  readonly value: number;
-  readonly pointerId: number;
-  last: CellPoint | null;
+/** Most cells a rectangle preview draws as tiles (beyond that: outline only). */
+const RECT_PREVIEW_LIMIT = 20_000;
+/** Fill hover preview: minimum time between two flood fills, and the largest map it runs on. */
+const FILL_PREVIEW_THROTTLE_MS = 40;
+const FILL_PREVIEW_MAX_AREA = 4_000_000;
+
+/** A pointer interaction in progress (left or right button). */
+type Gesture =
+  | {
+      readonly kind: "paint";
+      readonly pointerId: number;
+      readonly store: MapStore;
+      readonly layerId: string;
+      readonly value: number;
+      last: CellPoint | null;
+    }
+  | {
+      readonly kind: "stamp";
+      readonly pointerId: number;
+      readonly store: MapStore;
+      readonly clip: TileClip;
+      readonly mapping: Record<string, string>;
+      readonly start: CellPoint;
+      readonly placed: Set<string>;
+      last: CellPoint | null;
+    }
+  | { readonly kind: "rect"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint }
+  | { readonly kind: "select"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint; moved: boolean }
+  | { readonly kind: "pick"; readonly pointerId: number; readonly button: number; readonly start: CellPoint; end: CellPoint };
+
+interface FillCache {
+  readonly layer: TileLayer;
+  readonly revision: number;
+  readonly width: number;
+  readonly mask: Uint8Array;
+  readonly image: CellMaskImage | null;
+}
+
+/** `PointerEvent.buttons` bit of a `PointerEvent.button`. */
+function buttonBit(button: number): number {
+  return button === 1 ? 4 : button === 2 ? 2 : 1 << button;
+}
+
+/** True when `e` reports that `button` was just released. */
+function released(e: PointerEvent, button: number): boolean {
+  return e.button === button && (e.buttons & buttonBit(button)) === 0;
+}
+
+function layerInfo(layer: TileLayer): LayerInfo {
+  return {
+    id: layer.id,
+    visible: layer.visible,
+    locked: layer.locked,
+    grid: isGridLayer(layer),
+    getCell: (x, y) => layer.getCell(x, y),
+  };
+}
+
+const clipIds = new WeakMap<TileClip, number>();
+let nextClipId = 1;
+function clipId(clip: TileClip): number {
+  let id = clipIds.get(clip);
+  if (id === undefined) clipIds.set(clip, (id = nextClipId++));
+  return id;
 }
 
 interface Pan {
@@ -91,7 +183,14 @@ export class MapCanvas {
   readonly #gridFilter = new AlphaFilter({ alpha: 1, resolution: "inherit" });
   readonly #overlay = new Graphics();
   readonly #preview = new Sprite();
+  readonly #tilePreview = new TilePreview(CANVAS_COLORS.previewAlpha);
+  readonly #fillPreview = new MaskPreview(CANVAS_COLORS.accent, CANVAS_COLORS.fillPreviewAlpha);
   #scene: MapScene | null = null;
+  /** Cells currently on screen (set every frame). */
+  #visible: CellRegion = { x: 0, y: 0, width: 0, height: 0 };
+  #fillCache: FillCache | null = null;
+  #lastFillAt = -Infinity;
+  #fillTimer: ReturnType<typeof setTimeout> | null = null;
 
   // view
   #viewW = 0;
@@ -111,7 +210,7 @@ export class MapCanvas {
   #canvasRect: DOMRect | null = null;
   #spaceDown = false;
   #pan: Pan | null = null;
-  #stroke: Stroke | null = null;
+  #gesture: Gesture | null = null;
   #lastPanWheel = -Infinity;
   #reportedZoom = NaN;
   #reportedHover: CellPoint | null = null;
@@ -175,6 +274,7 @@ export class MapCanvas {
     Ticker.system.stop();
     this.#app.stage.eventMode = "none";
     this.#preview.alpha = CANVAS_COLORS.previewAlpha;
+    this.#fillPreview.sprite.tint = this.#colors.accent;
     this.#preview.visible = false;
     this.#grid.filters = [this.#gridFilter];
     this.#app.stage.addChild(this.#world, this.#grid, this.#overlay);
@@ -189,6 +289,34 @@ export class MapCanvas {
       }),
     );
     this.#loadProject(useEditorStore.getState().project);
+    if (import.meta.env.DEV) this.#installDebugHook();
+  }
+
+  /** Dev-only `window.__smap` for e2e scripts and the console. */
+  #installDebugHook(): void {
+    const hook = {
+      editor: useEditorStore,
+      get store() {
+        return useEditorStore.getState().project?.store ?? null;
+      },
+      /** Client (page) coordinates of the centre of cell (x, y). */
+      cellCenter: (x: number, y: number) => {
+        const map = this.#scene?.store.document.map;
+        if (!map) return null;
+        const r = this.#rect();
+        const z = this.#camera.zoom;
+        return {
+          x: r.left + this.#camera.x + (x + 0.5) * map.tileWidth * z,
+          y: r.top + this.#camera.y + (y + 0.5) * map.tileHeight * z,
+        };
+      },
+      handle: this.handle,
+    };
+    (window as unknown as { __smap?: unknown }).__smap = hook;
+    this.#unsubs.push(() => {
+      const w = window as unknown as { __smap?: unknown };
+      if (w.__smap === hook) delete w.__smap;
+    });
   }
 
   readonly handle: CanvasHandle = {
@@ -202,7 +330,8 @@ export class MapCanvas {
   destroy(): void {
     if (this.#destroyed) return;
     this.#destroyed = true;
-    this.#endStroke();
+    this.#endGesture();
+    if (this.#fillTimer !== null) clearTimeout(this.#fillTimer);
     this.#abort.abort();
     this.#ro?.disconnect();
     this.#ro = null;
@@ -211,6 +340,8 @@ export class MapCanvas {
     this.#unsubs = [];
     this.#scene?.destroy();
     this.#scene = null;
+    this.#tilePreview.destroy();
+    this.#fillPreview.destroy();
     const s = useEditorStore.getState();
     if (s.hoverCell) s.setHoverCell(null);
     if (this.#initialized) this.#teardownApp();
@@ -230,7 +361,10 @@ export class MapCanvas {
   // ------------------------------------------------------------------ project
 
   #loadProject(project: OpenProject | null): void {
-    this.#endStroke();
+    this.#endGesture();
+    this.#fillCache = null;
+    this.#fillPreview.set(null, 1, 1);
+    this.#tilePreview.invalidate();
     this.#scene?.destroy();
     this.#scene = null;
     if (project) {
@@ -241,7 +375,8 @@ export class MapCanvas {
       );
       this.#world.addChild(this.#scene.root);
     }
-    this.#world.addChild(this.#preview); // keep the preview above the layers
+    // Previews above the layers.
+    this.#world.addChild(this.#fillPreview.sprite, this.#tilePreview.root, this.#preview);
     this.#preview.texture = Texture.EMPTY;
     this.#pendingFrameMap = true;
     if (this.#viewW > 1 && this.#viewH > 1) this.#frameMap();
@@ -257,7 +392,9 @@ export class MapCanvas {
       s.gridVisible !== prev.gridVisible ||
       s.tool !== prev.tool ||
       s.selection !== prev.selection ||
-      s.activeLayerId !== prev.activeLayerId
+      s.activeLayerId !== prev.activeLayerId ||
+      s.region !== prev.region ||
+      s.stamp !== prev.stamp
     ) {
       this.#updateCursor();
       this.#requestRender();
@@ -412,8 +549,10 @@ export class MapCanvas {
     if (map && this.#scene) {
       const r = visibleCells(this.#camera, this.#viewW, this.#viewH, tw, th, map.width, map.height, res);
       this.#scene.updateVisibility(r.x0, r.y0, r.x1, r.y1);
+      this.#visible = { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 };
     }
     this.#updateHover();
+    this.#updateCursor(); // layer lock/visibility may have changed
     this.#drawOverlay();
     this.#app.renderer.render(this.#app.stage);
     Ticker.system.update(time);

@@ -14,9 +14,11 @@ import {
   pasteClip,
   rectCells,
   serializeLevel,
+  serializeProject,
+  isGridLayer,
   type StoreChangeEvent,
 } from "../src";
-import { TILESET, makeStore } from "./helpers";
+import { BLOB_ID, CORNER_ID, TERRAIN_TILESET, TILESET, makeStore, terrainArb } from "./helpers";
 
 describe("undo grouping", () => {
   it("one transaction mixing every kind of change is one undo step", () => {
@@ -136,6 +138,7 @@ const cellArb = fc.oneof(
 );
 const pick = fc.nat({ max: 7 });
 
+
 const actionArb = fc.oneof(
   {
     weight: 4,
@@ -193,6 +196,30 @@ const actionArb = fc.oneof(
       offsetY: fc.oneof(fc.constant(0), fc.integer({ min: -6, max: 6 })),
     }),
   },
+  // v0.3 ops
+  {
+    weight: 3,
+    arbitrary: fc.record({
+      kind: fc.constant("terrain" as const),
+      layer: pick,
+      dabs: fc.array(
+        fc.array(fc.record({ x: coord, y: coord, value: fc.constantFrom(0, BLOB_ID, CORNER_ID, 3, 2) }), { minLength: 1, maxLength: 6 }),
+        { minLength: 1, maxLength: 4 },
+      ),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("solid" as const),
+      tileset: fc.constantFrom("grass", "terrain"),
+      tileIds: fc.array(fc.nat({ max: 63 }), { maxLength: 4 }),
+      solid: fc.boolean(),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("defineTerrain" as const), terrain: terrainArb() }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeTerrain" as const), id: fc.constantFrom(1, 2, 3) }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("addGrid" as const), index: pick, target: pick }) },
   { weight: 2, arbitrary: fc.constant({ kind: "undo" as const }) },
   { weight: 2, arbitrary: fc.constant({ kind: "redo" as const }) },
 );
@@ -207,6 +234,16 @@ const stepArb = fc.oneof(
 
 function setup(): MapStore {
   const { store } = makeStore(W0, H0, PALETTE);
+  // v0.3: a terrain tileset, a terrain grid deriving into "top", a collision grid.
+  // Every terrain tile is in the palette up front: palette entries are
+  // append-only (not undoable), so derivation never grows it during the test.
+  store.dispatch({ type: "addTileset", tileset: TERRAIN_TILESET });
+  for (let t = 0; t < 120; t++) store.getOrAddPaletteIndex("terrain", t);
+  store.dispatch({ type: "defineTerrain", terrain: { id: BLOB_ID, name: "G", tilesetId: "terrain", template: "blob47", origin: { col: 0, row: 0 } } });
+  store.dispatch({ type: "defineTerrain", terrain: { id: CORNER_ID, name: "S", tilesetId: "terrain", template: "corner16", origin: { col: 8, row: 0 } } });
+  store.dispatch({ type: "addLayer", layer: { id: "terr", name: "Terrain", type: "grid", role: "terrain", targetLayerId: "top" } });
+  store.dispatch({ type: "addLayer", layer: { id: "col", name: "Collision", type: "grid", role: "collision" } });
+  store.dispatch({ type: "paintTerrain", layerId: "terr", cells: [{ x: 8, y: 8, value: BLOB_ID }, { x: 9, y: 8, value: CORNER_ID }] });
   store.dispatch({ type: "setLayerProps", layerId: "top", props: { opacity: 0.5 } });
   store.dispatch({ type: "paintCells", layerId: "ground", cells: rectCells(2, 2, 6, 5).map((p) => ({ ...p, cell: makeCell(1) })) });
   store.dispatch({ type: "paintCells", layerId: "top", cells: [{ x: 13, y: 11, cell: makeCell(3, FLIP_H) }] });
@@ -219,6 +256,21 @@ function layerAt(store: MapStore, n: number): string | undefined {
   return layers.length === 0 ? undefined : layers[n % layers.length]!.id;
 }
 
+function tileLayerAt(store: MapStore, n: number): string | undefined {
+  const layers = store.document.layers.filter((l) => !isGridLayer(l));
+  return layers.length === 0 ? undefined : layers[n % layers.length]!.id;
+}
+
+function gridLayerAt(store: MapStore, n: number): string | undefined {
+  const layers = store.document.layers.filter((l) => isGridLayer(l));
+  return layers.length === 0 ? undefined : layers[n % layers.length]!.id;
+}
+
+/** Level and project bytes (tileset metadata lives in the project file). */
+function snap(store: MapStore): string {
+  return serializeLevel(store.document) + serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets });
+}
+
 function layerSet(store: MapStore, picks: readonly number[]): string[] {
   return [...new Set(picks.map((p) => layerAt(store, p)).filter((id): id is string => id !== undefined))];
 }
@@ -227,7 +279,7 @@ function applyEdit(store: MapStore, a: EditAction): void {
   const doc = store.document;
   switch (a.kind) {
     case "stroke": {
-      const layerId = layerAt(store, a.layer);
+      const layerId = tileLayerAt(store, a.layer);
       if (!layerId) return;
       store.beginTransaction();
       for (const cells of a.dabs) store.dispatch({ type: "paintCells", layerId, cells });
@@ -235,14 +287,14 @@ function applyEdit(store: MapStore, a: EditAction): void {
       return;
     }
     case "fill": {
-      const layerId = layerAt(store, a.layer);
+      const layerId = tileLayerAt(store, a.layer);
       if (!layerId) return;
       const points = floodFill(doc.getLayer(layerId)!, a.x, a.y, a.cell, doc.map);
       store.dispatch({ type: "paintCells", layerId, cells: points.map((p) => ({ ...p, cell: a.cell })) });
       return;
     }
     case "rect": {
-      const layerId = layerAt(store, a.layer);
+      const layerId = tileLayerAt(store, a.layer);
       if (!layerId) return;
       const cells = rectCells(a.x0, a.y0, a.x1, a.y1, doc.map).map((p) => ({ ...p, cell: a.cell }));
       store.dispatch({ type: "paintCells", layerId, cells });
@@ -283,15 +335,43 @@ function applyEdit(store: MapStore, a: EditAction): void {
     case "resize":
       store.dispatch({ type: "resizeMap", width: a.width, height: a.height, offsetX: a.offsetX, offsetY: a.offsetY });
       return;
+    case "terrain": {
+      const layerId = gridLayerAt(store, a.layer);
+      if (!layerId) return;
+      const grid = doc.getGridLayer(layerId)!;
+      store.beginTransaction();
+      for (const cells of a.dabs) {
+        store.dispatch({ type: "paintTerrain", layerId, cells: cells.map((c) => ({ ...c, value: Math.min(c.value, grid.maxValue) })) });
+      }
+      store.commit();
+      return;
+    }
+    case "solid":
+      store.dispatch({ type: "setTileSolid", tilesetId: a.tileset, tileIds: a.tileIds, solid: a.solid });
+      return;
+    case "defineTerrain":
+      store.dispatch({ type: "defineTerrain", terrain: a.terrain });
+      return;
+    case "removeTerrain":
+      if (doc.getTerrain(a.id)) store.dispatch({ type: "removeTerrain", terrainId: a.id });
+      return;
+    case "addGrid": {
+      const target = tileLayerAt(store, a.target);
+      const free = target !== undefined && !doc.layers.some((l) => isGridLayer(l) && l.targetLayerId === target);
+      const index = a.index % (doc.layers.length + 1);
+      if (free) store.dispatch({ type: "addLayer", layer: { name: "T", type: "grid", role: "terrain", targetLayerId: target }, index });
+      else store.dispatch({ type: "addLayer", layer: { name: "C", type: "grid", role: "collision" }, index });
+      return;
+    }
   }
 }
 
-describe("v0.2 Bitti: random op sequences are fully reversible", () => {
+describe("v0.2/v0.3 Bitti: random op sequences (incl. terrain, solid, terrain definitions) are fully reversible", () => {
   it("undo all → initial bytes, redo all → final bytes; every state roundtrips; matches a snapshot model", () => {
     fc.assert(
       fc.property(fc.array(stepArb, { maxLength: 60 }).map((steps) => steps.flat().slice(0, 60)), (actions) => {
         const store = setup();
-        const initial = serializeLevel(store.document);
+        const initial = snap(store);
         const states = [initial];
         let at = 0;
         let i = 0;
@@ -308,10 +388,10 @@ describe("v0.2 Bitti: random op sequences are fully reversible", () => {
           } else {
             const depth = store.undoDepth;
             const redo = store.redoDepth;
-            const before = serializeLevel(store.document);
+            const before = snap(store);
             applyEdit(store, a);
             i++;
-            const now = serializeLevel(store.document);
+            const now = snap(store);
             if (store.undoDepth === depth + 1) {
               expect(store.redoDepth).toBe(0);
               states.splice(at + 1, Infinity, now);
@@ -323,46 +403,46 @@ describe("v0.2 Bitti: random op sequences are fully reversible", () => {
               expect(now).toBe(before);
             }
           }
+          expect(snap(store)).toBe(states[at]);
           const text = serializeLevel(store.document);
-          expect(text).toBe(states[at]);
           expect(serializeLevel(parseLevel(text, store.document.tilesets))).toBe(text);
         }
 
-        const final = serializeLevel(store.document);
+        const final = snap(store);
         while (store.undo());
-        expect(serializeLevel(store.document)).toBe(initial);
+        expect(snap(store)).toBe(initial);
         while (store.redo());
-        expect(serializeLevel(store.document)).toBe(states[states.length - 1]);
-        if (at === states.length - 1) expect(serializeLevel(store.document)).toBe(final);
+        expect(snap(store)).toBe(states[states.length - 1]);
+        if (at === states.length - 1) expect(snap(store)).toBe(final);
       }),
       { numRuns: 300 },
     );
-  });
+  }, 60_000);
 
   it("grouped transactions are single steps in the same model", () => {
     fc.assert(
       fc.property(fc.array(fc.array(editArb, { minLength: 1, maxLength: 5 }), { minLength: 1, maxLength: 12 }), (groups) => {
         const store = setup();
-        const states = [serializeLevel(store.document)];
+        const states = [snap(store)];
         for (const group of groups) {
           const depth = store.undoDepth;
           store.beginTransaction();
           for (const a of group) applyEdit(store, a);
           store.commit();
           expect(store.undoDepth - depth).toBeLessThanOrEqual(1);
-          if (store.undoDepth > depth) states.push(serializeLevel(store.document));
+          if (store.undoDepth > depth) states.push(snap(store));
         }
         for (let s = states.length - 2; s >= 0; s--) {
           expect(store.undo()).toBe(true);
-          expect(serializeLevel(store.document)).toBe(states[s]);
+          expect(snap(store)).toBe(states[s]);
         }
         expect(store.undo()).toBe(false);
         for (let s = 1; s < states.length; s++) {
           expect(store.redo()).toBe(true);
-          expect(serializeLevel(store.document)).toBe(states[s]);
+          expect(snap(store)).toBe(states[s]);
         }
       }),
       { numRuns: 150 },
     );
-  });
+  }, 60_000);
 });

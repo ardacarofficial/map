@@ -40,6 +40,7 @@ export type CommandId =
   | "file.save"
   | "file.saveAs"
   | "file.close"
+  | "file.openBackup"
   | "tileset.add";
 
 export interface ShortcutDef {
@@ -80,6 +81,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "file.saveAs", keys: ["Ctrl+Shift+S"] },
   /** Commands without a default key (reachable from the command palette). */
   { command: "file.close", keys: [] },
+  { command: "file.openBackup", keys: [] },
   { command: "tileset.add", keys: [] },
   { command: "layer.add", keys: ["Ctrl+Shift+N"] },
   { command: "layer.remove", keys: [] },

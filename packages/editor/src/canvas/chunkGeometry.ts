@@ -107,3 +107,47 @@ export function buildChunkQuads(
     indices: b.indices,
   }));
 }
+
+/** A free-standing tile for {@link buildCellQuads}: cell position, flip bits, and its source. */
+export interface CellQuad {
+  readonly x: number;
+  readonly y: number;
+  readonly flags: number;
+  readonly src: QuadSource;
+}
+
+/**
+ * Quads for arbitrary cells (previews: stamps, rectangles). Positions are
+ * `x * tileW`, `y * tileH` relative to the caller's origin. Later cells are
+ * drawn over earlier ones within a batch. Batches are ordered by `group`.
+ */
+export function buildCellQuads(cells: readonly CellQuad[], tileW: number, tileH: number): QuadBatch[] {
+  const counts = new Map<number, number>();
+  for (const c of cells) counts.set(c.src.group, (counts.get(c.src.group) ?? 0) + 1);
+  const out: QuadBatch[] = [];
+  for (const group of [...counts.keys()].sort((a, b) => a - b)) {
+    const quads = counts.get(group)!;
+    const positions = new Float32Array(quads * 8);
+    const uvs = new Float32Array(quads * 8);
+    const indices = new Uint32Array(quads * 6);
+    let q = 0;
+    for (const c of cells) {
+      if (c.src.group !== group) continue;
+      let { u0, u1, v0, v1 } = c.src;
+      if ((c.flags & FLIP_H) !== 0) [u0, u1] = [u1, u0];
+      if ((c.flags & FLIP_V) !== 0) [v0, v1] = [v1, v0];
+      const x0 = c.x * tileW;
+      const y0 = c.y * tileH;
+      const x1 = x0 + tileW;
+      const y1 = y0 + tileH;
+      const p = q * 8;
+      positions.set([x0, y0, x1, y0, x1, y1, x0, y1], p);
+      uvs.set([u0, v0, u1, v0, u1, v1, u0, v1], p);
+      const v = q * 4;
+      indices.set([v, v + 1, v + 2, v, v + 2, v + 3], q * 6);
+      q++;
+    }
+    out.push({ group, quads, positions, uvs, indices });
+  }
+  return out;
+}

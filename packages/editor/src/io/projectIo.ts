@@ -35,8 +35,9 @@ export interface SaveProjectInput {
  * Writes the whole project. Tileset images go first, then the level, and
  * `project.smap` last, so a project file on disk only ever points at files
  * that were already written. Unchanged tileset PNGs are not rewritten.
+ * Returns the level text that was written (for backups and change detection).
  */
-export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput): Promise<void> {
+export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput): Promise<string> {
   for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
 
   const doc = input.document;
@@ -47,7 +48,8 @@ export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput
     await fs.writeBytes(tileset.imagePath, bytes);
   }
 
-  await fs.writeText(input.levelPath, serializeLevel(doc));
+  const levelText = serializeLevel(doc);
+  await fs.writeText(input.levelPath, levelText);
   await fs.writeText(
     PROJECT_FILE_NAME,
     serializeProject({
@@ -56,6 +58,7 @@ export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput
       tilesets: doc.tilesets,
     }),
   );
+  return levelText;
 }
 
 async function sameFile(fs: ProjectFileSystem, path: string, bytes: Uint8Array): Promise<boolean> {
@@ -94,6 +97,8 @@ export interface LoadedProject {
   name: string;
   document: MapDocument;
   levelPath: string;
+  /** The level file exactly as read (for external change detection). */
+  levelText: string;
   /** Decoded tileset images, ready for `setTilesetImage`. */
   images: TilesetImage[];
   /** Image paths that could not be found or decoded (the project still opens). */
@@ -117,7 +122,8 @@ export async function loadProject(fs: ProjectFileSystem, decode: ImageDecoder): 
   const project = parseProject(projectText);
   const level = project.levels[0];
   if (!level) throw new ProjectOpenError("noLevel");
-  const document = parseLevel(await fs.readText(level.path), project.tilesets);
+  const levelText = await fs.readText(level.path);
+  const document = parseLevel(levelText, project.tilesets);
 
   const images: TilesetImage[] = [];
   const missingImages: string[] = [];
@@ -136,7 +142,7 @@ export async function loadProject(fs: ProjectFileSystem, decode: ImageDecoder): 
   images.sort((a, b) => (order.get(a.tilesetId) ?? 0) - (order.get(b.tilesetId) ?? 0));
   missingImages.sort();
 
-  return { name: project.name, document, levelPath: level.path, images, missingImages };
+  return { name: project.name, document, levelPath: level.path, levelText, images, missingImages };
 }
 
 /** Decodes PNG bytes in the browser. */

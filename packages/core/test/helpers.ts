@@ -1,4 +1,5 @@
-import { createDocument, makeCell, MapStore, type Tileset } from "../src";
+import fc from "fast-check";
+import { createDocument, makeCell, MapStore, type Terrain, type Tileset } from "../src";
 
 export const TILESET: Tileset = {
   id: "grass",
@@ -64,4 +65,29 @@ export function makeTerrainStore(width = 16, height = 16, seed = 0) {
   store.dispatch({ type: "addLayer", layer: { id: "terrain", name: "Terrain", type: "grid", role: "terrain", targetLayerId: "tiles" } });
   store.clearHistory();
   return store;
+}
+
+/** Random valid terrain on TERRAIN_TILESET (12×10) with id 1..3. */
+export function terrainArb(): fc.Arbitrary<Terrain> {
+  return fc
+    .record({
+      id: fc.constantFrom(1, 2, 3),
+      template: fc.constantFrom("blob47" as const, "corner16" as const),
+      col: fc.nat({ max: 8 }),
+      row: fc.nat({ max: 6 }),
+      variants: fc.array(fc.record({ slot: fc.nat({ max: 15 }), tileIds: fc.array(fc.nat({ max: 119 }), { minLength: 1, maxLength: 3 }) }), { maxLength: 2 }),
+    })
+    .map(({ id, template, col, row, variants }) => {
+      const maxCol = template === "blob47" ? 4 : 8;
+      const maxRow = template === "blob47" ? 4 : 6;
+      const unique = [...new Map(variants.map((v) => [v.slot, v])).values()];
+      return {
+        id,
+        name: `t${id}`,
+        tilesetId: "terrain",
+        template,
+        origin: { col: Math.min(col, maxCol), row: Math.min(row, maxRow) },
+        ...(unique.length > 0 ? { variants: unique } : {}),
+      };
+    });
 }

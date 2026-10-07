@@ -30,6 +30,10 @@ export class MemoryFileSystem implements ProjectFileSystem {
     this.files.set(path, bytes.slice());
   }
 
+  async remove(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
   async list(dir: string): Promise<string[]> {
     const prefix = dir === "" ? "" : `${dir}/`;
     const names: string[] = [];

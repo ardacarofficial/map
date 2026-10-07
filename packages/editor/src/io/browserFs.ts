@@ -43,6 +43,15 @@ export class DirectoryHandleFileSystem implements ProjectFileSystem {
     return names.sort();
   }
 
+  async remove(path: string): Promise<void> {
+    const { dirs, file } = splitPath(path);
+    try {
+      await (await this.#dir(dirs, false)).removeEntry(file);
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+  }
+
   async mkdir(dir: string): Promise<void> {
     await this.#dir(dir.split("/").filter(Boolean), true);
   }

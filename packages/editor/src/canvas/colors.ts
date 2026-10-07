@@ -18,6 +18,12 @@ export const CANVAS_COLORS = {
   /** Eraser cell highlight. */
   cursor: 0xffffff,
   cursorShadow: 0x000000,
+  /** Selection region, rectangle outline, fill highlight — token `--color-accent`. */
+  accent: 0x6d8cff,
+  /** Fill of the selection region / select drag. */
+  regionFillAlpha: 0.1,
+  /** Fill-tool hover highlight. */
+  fillPreviewAlpha: 0.35,
 };
 
 function parseHex(value: string): number | null {
@@ -33,5 +39,6 @@ export function readThemeColors(el: Element): typeof CANVAS_COLORS {
     ...CANVAS_COLORS,
     outside: token("--color-canvas", CANVAS_COLORS.outside),
     mapBorder: token("--color-line", CANVAS_COLORS.mapBorder),
+    accent: token("--color-accent", CANVAS_COLORS.accent),
   };
 }

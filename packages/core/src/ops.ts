@@ -64,6 +64,8 @@ export interface NewLayer {
    * Terrain grid layers only: id of an existing tile layer whose tiles are
    * derived from this grid. It must not already be the target of another
    * terrain layer. Omit for a terrain grid without derived tiles.
+   * If that tile layer is removed later the link dangles (derivation is
+   * skipped until a tile layer with that id exists again).
    */
   readonly targetLayerId?: string;
   readonly name: string;

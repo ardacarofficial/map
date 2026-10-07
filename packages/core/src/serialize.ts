@@ -272,10 +272,10 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = []): Map
     doc._insertLayer(layer, doc.layers.length);
   });
 
+  // A target may dangle (its tile layer was removed; derivation is then
+  // skipped), but two terrain layers never share one.
   const seenTargets = new Set<string>();
   for (const { path, target } of targets) {
-    const layer = doc.getLayer(target);
-    if (!layer || isGridLayer(layer)) throw new FormatError(path, `"${target}" is not a tile layer of this level`);
     if (seenTargets.has(target)) throw new FormatError(path, `tile layer "${target}" is the target of two terrain layers`);
     seenTargets.add(target);
   }

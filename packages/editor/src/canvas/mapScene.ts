@@ -80,6 +80,23 @@ export class MapScene {
     return this.#atlases.get(tilesetId)?.atlas;
   }
 
+  /** Increases whenever an atlas is (re)built; previews built from atlas textures compare it. */
+  get atlasVersion(): number {
+    return this.#nextGroup;
+  }
+
+  /** Where a tile is drawn from, if its tileset image is loaded. */
+  quadSource(tilesetId: string, tileId: number): QuadSource | undefined {
+    const a = this.#atlases.get(tilesetId);
+    const uv = a?.atlas.uv(tileId);
+    return a && uv ? { group: a.groupBase + uv.page, u0: uv.u0, v0: uv.v0, u1: uv.u1, v1: uv.v1 } : undefined;
+  }
+
+  /** Texture of a quad group (atlas page) from {@link quadSource}. */
+  groupTexture(group: number): Texture | undefined {
+    return this.#groupTextures.get(group);
+  }
+
   /** True when there are chunks waiting to be rebuilt. */
   get hasDirty(): boolean {
     return this.#dirty.size > 0;

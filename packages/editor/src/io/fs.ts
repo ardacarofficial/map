@@ -14,6 +14,8 @@ export interface ProjectFileSystem {
   writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   /** Names of files (not folders) directly inside `dir` ("" = root). Missing folder → []. */
   list(dir: string): Promise<string[]>;
+  /** Deletes a file. A missing file is not an error. */
+  remove(path: string): Promise<void>;
   /** Creates a folder (and parents) if missing. */
   mkdir(dir: string): Promise<void>;
 }
