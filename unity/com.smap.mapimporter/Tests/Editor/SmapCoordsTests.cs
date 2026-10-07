@@ -62,6 +62,26 @@ namespace Smap.MapImporter.Tests
         }
 
         [Test]
+        public void FlipMatrixMirrorsOffSizeTilesInPlace()
+        {
+            // Same size as the cell: the plain flip.
+            Assert.AreEqual(SmapCoords.FlipMatrix(SmapCoords.FlipH | SmapCoords.FlipV), SmapCoords.FlipMatrix(SmapCoords.FlipH | SmapCoords.FlipV, Grass, 32, 32));
+            Assert.AreEqual(Matrix4x4.identity, SmapCoords.FlipMatrix(0, Items, 32, 32));
+            // 16 px tile on a 32 px cell sits in the cell's bottom-left quarter: x, y in [-0.5, 0] around the
+            // cell centre. Flipped, it must stay there (mirrored), not jump to another quarter.
+            var v = SmapCoords.FlipMatrix(SmapCoords.FlipV, Items, 32, 32);
+            Assert.AreEqual(new Vector3(-0.5f, 0f, 0f), v.MultiplyPoint3x4(new Vector3(-0.5f, -0.5f, 0f)));
+            Assert.AreEqual(new Vector3(0f, -0.5f, 0f), v.MultiplyPoint3x4(new Vector3(0f, 0f, 0f)));
+            var h = SmapCoords.FlipMatrix(SmapCoords.FlipH, Items, 32, 32);
+            Assert.AreEqual(new Vector3(0f, -0.5f, 0f), h.MultiplyPoint3x4(new Vector3(-0.5f, -0.5f, 0f)));
+            // 64x64 tile on a 32x16 cell (1 x 0.5 units): spans x [-0.5, 1.5], y [-0.25, 1.75].
+            var big = new SmapTileset { name = "Big", image = "big.png", tileWidth = 64, tileHeight = 64, columns = 1, rows = 1 };
+            var hv = SmapCoords.FlipMatrix(SmapCoords.FlipH | SmapCoords.FlipV, big, 32, 16);
+            Assert.AreEqual(new Vector3(1.5f, 1.75f, 0f), hv.MultiplyPoint3x4(new Vector3(-0.5f, -0.25f, 0f)));
+            Assert.AreEqual(new Vector3(-0.5f, -0.25f, 0f), hv.MultiplyPoint3x4(new Vector3(1.5f, 1.75f, 0f)));
+        }
+
+        [Test]
         public void DecodeRleAlternatesStartingPassable()
         {
             CollectionAssert.AreEqual(new[] { false, false, true, true, true, false }, SmapCoords.DecodeRle(new[] { 2, 3, 1 }, 6));

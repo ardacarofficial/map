@@ -56,11 +56,33 @@ namespace Smap.MapImporter
             return new Vector3(1f, (float)tileHeight / tileWidth, 0f);
         }
 
-        /// <summary>Per-cell transform for the flip flags (scale -1 on the flipped axis).</summary>
+        /// <summary>Per-cell transform for the flip flags (scale -1 on the flipped axis), for tiles as large as the cell.</summary>
         public static Matrix4x4 FlipMatrix(int flags)
         {
             if ((flags & (FlipH | FlipV)) == 0) return Matrix4x4.identity;
             return Matrix4x4.Scale(new Vector3((flags & FlipH) != 0 ? -1f : 1f, (flags & FlipV) != 0 ? -1f : 1f, 1f));
+        }
+
+        /// <summary>
+        /// Per-cell transform for the flip flags that mirrors the sprite in place,
+        /// like the editor and Tiled do. The Tilemap applies the matrix around the
+        /// cell centre (the tile anchor); a tile smaller or larger than the cell is
+        /// anchored bottom-left (<see cref="Pivot"/>), so its centre is off the cell
+        /// centre and the mirror must be shifted back onto it. Equal sizes give
+        /// <see cref="FlipMatrix(int)"/>. Units: pixels-per-unit = map tile width.
+        /// </summary>
+        public static Matrix4x4 FlipMatrix(int flags, SmapTileset ts, int mapTileWidth, int mapTileHeight)
+        {
+            bool h = (flags & FlipH) != 0, v = (flags & FlipV) != 0;
+            if (!h && !v) return Matrix4x4.identity;
+            // Sprite centre relative to the cell centre, in units.
+            float cx = (ts.tileWidth - mapTileWidth) * 0.5f / mapTileWidth;
+            float cy = (ts.tileHeight - mapTileHeight) * 0.5f / mapTileWidth;
+            // Mirror about the sprite centre: x' = 2cx - x.
+            var m = Matrix4x4.Scale(new Vector3(h ? -1f : 1f, v ? -1f : 1f, 1f));
+            m.m03 = h ? 2f * cx : 0f;
+            m.m13 = v ? 2f * cy : 0f;
+            return m;
         }
 
         /// <summary>

@@ -73,7 +73,7 @@ namespace Smap.MapImporter
                         position = SmapCoords.ToCell(x, y, map.height, map.yUp),
                         tile = tile,
                         color = Color.white,
-                        transform = SmapCoords.FlipMatrix(flags),
+                        transform = SmapCoords.FlipMatrix(flags, map.tilesets[ts], map.tileWidth, map.tileHeight),
                     });
                 }
                 if (changes.Count > 0) tilemap.SetTiles(changes.ToArray(), true);
@@ -103,9 +103,11 @@ namespace Smap.MapImporter
                     continue;
                 }
                 // Decode the file ourselves: works whatever the PNG's import settings are
-                // (no Read/Write needed) and leaves those settings untouched.
+                // (no Read/Write needed) and leaves those settings untouched. Keep the CPU
+                // copy (markNonReadable: false): the sub-asset is serialized from it, and a
+                // texture released with markNonReadable may be saved without pixels.
                 var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false) { name = Path.GetFileNameWithoutExtension(ts.image) };
-                if (!texture.LoadImage(File.ReadAllBytes(path), true))
+                if (!texture.LoadImage(File.ReadAllBytes(path), false))
                 {
                     ctx.LogImportError($"{ctx.assetPath}: cannot decode {path}.");
                     UnityEngine.Object.DestroyImmediate(texture);
@@ -180,7 +182,7 @@ namespace Smap.MapImporter
             // A 1x1 white sprite keeps the collider tile well-formed; it is never drawn (no renderer).
             var pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false) { name = "CollisionPixel", filterMode = FilterMode.Point };
             pixel.SetPixel(0, 0, Color.white);
-            pixel.Apply(false, true);
+            pixel.Apply(false, false); // keep the CPU copy; see LoadTextures
             ctx.AddObjectToAsset("collision/texture", pixel);
             var sprite = Sprite.Create(pixel, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f), 1f, 0, SpriteMeshType.FullRect);
             sprite.name = "CollisionSolid";

@@ -90,5 +90,6 @@ Then open Window › General › Test Runner › EditMode.
 
 - Diagonal flips are not produced by the editor yet. The importer ignores
   them with a warning.
-- A tile larger than the map cell is anchored at the bottom-left of its cell,
-  as in Tiled. Flipping it mirrors it around the cell centre.
+- A tile larger or smaller than the map cell is anchored at the bottom-left
+  of its cell, as in Tiled. Flipping it mirrors it in place (around its own
+  centre), as in the editor and Tiled.

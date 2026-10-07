@@ -115,7 +115,10 @@ flips **at import**:
 - sprite rectangle in a bottom-left-origin texture: `texY = imageHeight - (srcY + tileHeight)`
 
 Flip flags are visual and need no conversion. A vertical flip stays a
-vertical flip.
+vertical flip. A tile mirrors in place, within its own rectangle; a tile
+larger or smaller than the map cell stays anchored bottom-left of its cell
+(Tiled's rule), so an engine that flips around the cell centre must shift it
+back (the Unity importer does, `SmapCoords.FlipMatrix`).
 
 ## Determinism
 
