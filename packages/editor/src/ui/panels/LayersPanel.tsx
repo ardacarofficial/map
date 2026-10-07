@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
-import { isGridLayer, type MapDocument, type TileLayer } from "@smap/core";
+import { isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { addLayer, opacityDrag, moveLayer, removeLayer, renameLayer, setLayerProps } from "../../commands/layerActions";
 import { addCollisionLayer } from "../../commands/terrainActions";
@@ -226,6 +226,7 @@ function LayerLink({ doc, layer }: { doc: MapDocument; layer: TileLayer }) {
       </span>
     );
   }
+  if (!isTileLayer(layer)) return null;
   const source = doc.layers.find((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layer.id);
   if (!source) return null;
   return (

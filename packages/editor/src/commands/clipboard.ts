@@ -14,6 +14,7 @@ import {
   cutRegion,
   flipClip,
   isGridLayer,
+  isTileLayer,
   isValidTileId,
   makeCell,
   parseClip,
@@ -69,6 +70,7 @@ export function deleteSelection(): boolean {
   for (let y = rect.y; y < rect.y + rect.height; y++) {
     for (let x = rect.x; x < rect.x + rect.width; x++) cells.push({ x, y });
   }
+  if (!isGridLayer(layer) && !isTileLayer(layer)) return false; // entity layers hold no cells
   if (isGridLayer(layer)) {
     c.store.dispatch({ type: "paintTerrain", layerId: layer.id, cells: cells.map((p) => ({ ...p, value: 0 })) });
   } else {

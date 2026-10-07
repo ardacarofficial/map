@@ -9,6 +9,7 @@
  */
 import {
   isGridLayer,
+  isTileLayer,
   terrainProblem,
   terrainTemplateInfo,
   COLLISION_PASSABLE,
@@ -56,7 +57,7 @@ export function allTerrains(doc: MapDocument): Terrain[] {
 function isLinkedTerrainLayer(doc: MapDocument, layer: TileLayer | undefined): boolean {
   if (!isGridLayer(layer) || layer.role !== "terrain" || layer.targetLayerId === null) return false;
   const target = doc.getLayer(layer.targetLayerId);
-  return target !== undefined && !isGridLayer(target);
+  return isTileLayer(target);
 }
 
 /** What picking a terrain does to the layers. */
@@ -97,17 +98,18 @@ function derivedLayerIds(doc: MapDocument): Set<string> {
  * active means "paint this tile": returns the tile layer to switch to — the
  * nearest hand-painted tile layer below the active one, else the topmost.
  * `null` when the active layer already takes tiles or no such layer exists.
+ * (Entity layers never take tiles either.)
  */
 export function tileLayerForPick(doc: MapDocument, activeLayerId: string | null): string | null {
   const active = activeLayerId ? doc.getLayer(activeLayerId) : undefined;
-  if (active && !isGridLayer(active)) return null;
+  if (isTileLayer(active)) return null;
   const derived = derivedLayerIds(doc);
   const layers = doc.layers;
   const plain = (i: number) => {
     const l = layers[i]!;
-    return !isGridLayer(l) && !derived.has(l.id);
+    return isTileLayer(l) && !derived.has(l.id);
   };
-  const from = active ? doc.indexOfLayer(active.id) : layers.length;
+  const from = activeLayerId && active ? doc.indexOfLayer(activeLayerId) : layers.length;
   for (let i = from - 1; i >= 0; i--) if (plain(i)) return layers[i]!.id;
   for (let i = layers.length - 1; i > from; i--) if (plain(i)) return layers[i]!.id;
   return null;
