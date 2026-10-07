@@ -50,6 +50,9 @@ function gridOverlayColors(c: CanvasColors): GridOverlayColors {
   };
 }
 
+/** Dev-only `window.__smap` hooks of the live canvases, oldest first. */
+const debugHooks: unknown[] = [];
+
 export class MapCanvas {
   readonly #container: HTMLElement;
   readonly #canvas: HTMLCanvasElement;
@@ -220,10 +223,17 @@ export class MapCanvas {
       },
       handle: this.handle,
     };
-    (window as unknown as { __smap?: unknown }).__smap = hook;
+    // StrictMode mounts two canvases whose async inits may resolve in either order; the
+    // hook always points at the newest canvas still alive.
+    const w = window as unknown as { __smap?: unknown };
+    debugHooks.push(hook);
+    w.__smap = hook;
     this.#unsubs.push(() => {
-      const w = window as unknown as { __smap?: unknown };
-      if (w.__smap === hook) delete w.__smap;
+      const i = debugHooks.indexOf(hook);
+      if (i >= 0) debugHooks.splice(i, 1);
+      if (w.__smap !== hook) return;
+      if (debugHooks.length > 0) w.__smap = debugHooks[debugHooks.length - 1];
+      else delete w.__smap;
     });
   }
 

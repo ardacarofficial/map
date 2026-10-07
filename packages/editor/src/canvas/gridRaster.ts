@@ -12,6 +12,7 @@ import {
   COLLISION_SOLID,
   cellPaletteIndex,
   isGridLayer,
+  isTileLayer,
   type ChunkKey,
   type MapDocument,
   type StoreChangeEvent,
@@ -50,7 +51,7 @@ export function collisionChunkRaster(
   out.fill(COLL_NONE);
   const layers = doc.layers;
   for (const layer of layers) {
-    if (isGridLayer(layer)) continue;
+    if (!isTileLayer(layer)) continue;
     const chunk = layer.getChunk(cx, cy);
     if (!chunk) continue;
     const data = chunk.data;

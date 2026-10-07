@@ -2,6 +2,7 @@
   "name": "Smap.MapImporter.Editor.Tests",
   "rootNamespace": "Smap.MapImporter.Tests",
   "references": [
+    "Smap.MapImporter",
     "Smap.MapImporter.Editor",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"

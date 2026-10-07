@@ -86,6 +86,26 @@ namespace Smap.MapImporter
         }
 
         /// <summary>
+        /// Local position (under the Grid root) of the centre of an entity box
+        /// whose top-left corner is pixel (x, y) and size w × h pixels. Units:
+        /// pixels-per-unit = map tile width, like the tiles. A one-cell entity
+        /// lands on its cell's centre, where the Tilemap anchors a tile.
+        /// With yUp false the map's top edge is at y = mapHeight × tileHeight pixels.
+        /// </summary>
+        public static Vector3 EntityCenter(float x, float y, float w, float h, int mapHeight, int tileWidth, int tileHeight, bool yUp)
+        {
+            float ux = (x + w * 0.5f) / tileWidth;
+            float uy = yUp ? (y + h * 0.5f) / tileWidth : ((float)mapHeight * tileHeight - y - h * 0.5f) / tileWidth;
+            return new Vector3(ux, uy, 0f);
+        }
+
+        /// <summary>Entity box size in units (pixels-per-unit = map tile width).</summary>
+        public static Vector2 EntitySize(float w, float h, int tileWidth)
+        {
+            return new Vector2(w / tileWidth, h / tileWidth);
+        }
+
+        /// <summary>
         /// Expands collision runs (alternating passable/solid, starting with
         /// passable) to <paramref name="length"/> flags.
         /// </summary>

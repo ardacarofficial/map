@@ -1,8 +1,8 @@
 {
   "name": "com.smap.mapimporter",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "displayName": "Smap Map Importer",
-  "description": "Imports .smapmap files written by the Harita Tasarlayıcı editor as prefabs: a Grid with one Tilemap per layer plus a collision Tilemap. File based; no live connection.",
+  "description": "Imports .smapmap files written by the Harita Tasarlayıcı editor as prefabs: a Grid with one Tilemap per layer plus a collision Tilemap, entities (SmapEntity) and the spawn point (SmapSpawn). File based; no live connection.",
   "unity": "6000.3",
   "dependencies": {
     "com.unity.2d.tilemap": "1.0.0",

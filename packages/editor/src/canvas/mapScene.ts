@@ -7,11 +7,11 @@
  *   when a tileset image it uses (re)arrives. A dirty key whose chunk no
  *   longer exists destroys the view.
  * - Chunks outside the view are hidden (cheap manual culling).
- * - Grid (terrain / collision) layers get an empty view: they are not tiles.
+ * - Grid and entity layers get an empty view: they are not tiles.
  */
 import {
   CHUNK_SIZE,
-  isGridLayer,
+  isTileLayer,
   parseChunkKey,
   type ChunkKey,
   type MapStore,
@@ -259,9 +259,9 @@ export class MapScene {
       destroyChunkView(old);
       view.chunks.delete(key);
     }
-    // Grid layers hold values, not tiles: their look comes from the derived
-    // tile layer and the grid overlays (gridOverlays.ts).
-    const chunk = isGridLayer(layer) ? undefined : layer.getChunkByKey(key);
+    // Only plain tile layers are drawn here. Grid layers hold values (their look comes from
+    // the derived tile layer and gridOverlays.ts); entity layers hold no cells.
+    const chunk = isTileLayer(layer) ? layer.getChunkByKey(key) : undefined;
     if (!chunk) return;
     const { tileWidth, tileHeight } = this.store.document.map;
     const used = new Set<string>();

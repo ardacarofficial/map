@@ -11,14 +11,15 @@ namespace Smap.MapImporter
     /// Turns a <c>.smapmap</c> file (the editor's game JSON) into a prefab:
     /// a <see cref="Grid"/> root, one <see cref="Tilemap"/> per tile layer
     /// (bottom to top) and a "Collision (solid)" Tilemap with a merged
-    /// <see cref="CompositeCollider2D"/>.
+    /// <see cref="CompositeCollider2D"/>, plus "Entities" (one child with a
+    /// <see cref="SmapEntity"/> per editor entity) and "Spawn" (<see cref="SmapSpawn"/>).
     ///
     /// Tileset PNGs next to the map are read as files. The importer builds its
     /// own Point-filtered, uncompressed copies as sub-assets and never touches
     /// the PNG's own import settings. Sprites, Tiles and textures are all
     /// sub-assets of this file.
     /// </summary>
-    [ScriptedImporter(1, "smapmap")]
+    [ScriptedImporter(2, "smapmap")]
     public sealed class SmapImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -82,6 +83,7 @@ namespace Smap.MapImporter
             }
 
             AddCollision(ctx, map, root);
+            AddEntities(map, root);
 
             ctx.AddObjectToAsset("root", root);
             ctx.SetMainObject(root);
@@ -197,6 +199,61 @@ namespace Smap.MapImporter
             for (int i = 0; i < tileArray.Length; i++) tileArray[i] = tile;
             tilemap.SetTiles(positions.ToArray(), tileArray);
             tilemap.CompressBounds();
+        }
+    
+        /// <summary>
+        /// "Entities": one child per entity, named "type#id", at the centre of
+        /// its box, holding the data in a <see cref="SmapEntity"/>. Entities on
+        /// hidden layers are inactive, like hidden tile layers. "Spawn": the
+        /// player's start with a <see cref="SmapSpawn"/> marker.
+        /// </summary>
+        static void AddEntities(SmapMap map, GameObject root)
+        {
+            var group = new GameObject("Entities");
+            group.transform.SetParent(root.transform, false);
+            foreach (var layer in map.entities)
+            {
+                foreach (var item in layer.items)
+                {
+                    var go = new GameObject($"{(string.IsNullOrEmpty(item.type) ? item.typeId : item.type)}#{item.id}");
+                    go.transform.SetParent(group.transform, false);
+                    go.transform.localPosition = SmapCoords.EntityCenter(item.x, item.y, item.width, item.height, map.height, map.tileWidth, map.tileHeight, map.yUp);
+                    var entity = go.AddComponent<SmapEntity>();
+                    entity.id = item.id;
+                    entity.typeName = item.type;
+                    entity.typeId = item.typeId;
+                    entity.layerId = layer.id;
+                    entity.layerName = layer.name;
+                    entity.pixelPosition = new Vector2(item.x, item.y);
+                    entity.cell = new Vector2Int(item.cellX, item.cellY);
+                    entity.size = SmapCoords.EntitySize(item.width, item.height, map.tileWidth);
+                    entity.color = EntityColor(item);
+                    entity.fields = new List<SmapEntityField>(item.fields);
+                    if (!layer.visible) go.SetActive(false);
+                }
+            }
+
+            if (map.spawn == null) return;
+            // The top-level spawn has no size; take it from the spawn entity (one cell if absent).
+            var spawnItem = map.FindSpawnItem();
+            float w = spawnItem?.width ?? map.tileWidth, h = spawnItem?.height ?? map.tileHeight;
+            var spawnGo = new GameObject("Spawn");
+            spawnGo.transform.SetParent(root.transform, false);
+            spawnGo.transform.localPosition = SmapCoords.EntityCenter(map.spawn.x, map.spawn.y, w, h, map.height, map.tileWidth, map.tileHeight, map.yUp);
+            var spawn = spawnGo.AddComponent<SmapSpawn>();
+            spawn.pixelPosition = new Vector2(map.spawn.x, map.spawn.y);
+            spawn.cell = new Vector2Int(map.spawn.cellX, map.spawn.cellY);
+        }
+
+        /// <summary>The exported type colour, else the built-in types' editor colours, else a stable hue per type id.</summary>
+        static Color EntityColor(SmapEntityItem item)
+        {
+            if (!string.IsNullOrEmpty(item.color) && ColorUtility.TryParseHtmlString(item.color, out var c)) return c;
+            if (item.typeId == SmapEntityTypes.Spawn) return new Color32(0x22, 0xc5, 0x5e, 0xff);
+            if (item.typeId == SmapEntityTypes.Portal) return new Color32(0xa8, 0x55, 0xf7, 0xff);
+            uint hash = 2166136261;
+            foreach (char ch in item.typeId ?? "") hash = (hash ^ ch) * 16777619;
+            return Color.HSVToRGB((hash % 360) / 360f, 0.65f, 0.95f);
         }
     }
 }

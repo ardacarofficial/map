@@ -26,6 +26,10 @@ namespace Smap.MapImporter
         public SmapTileset[] tilesets;
         public SmapLayer[] layers;
         public SmapCollision collision;
+        /// <summary>Entity layers, bottom to top (v0.6; empty in older files).</summary>
+        public SmapEntityLayer[] entities;
+        /// <summary>The player's start, or null when the level has none.</summary>
+        public SmapSpawnPoint spawn;
 
         /// <summary>Parses the JSON text. Throws <see cref="ArgumentException"/> on malformed JSON.</summary>
         public static SmapMap Parse(string json)
@@ -37,7 +41,45 @@ namespace Smap.MapImporter
             map.collision ??= new SmapCollision();
             map.collision.solid ??= Array.Empty<int>();
             foreach (var layer in map.layers) layer.cells ??= Array.Empty<int>();
+            map.entities ??= Array.Empty<SmapEntityLayer>();
+            foreach (var layer in map.entities)
+            {
+                layer.items ??= Array.Empty<SmapEntityItem>();
+                foreach (var item in layer.items) item.fields ??= Array.Empty<SmapEntityField>();
+            }
+            ReadRawValues(map, json);
             return map;
+        }
+
+        /// <summary>
+        /// Fills entity field values and the spawn's presence, which JsonUtility
+        /// cannot read (see <see cref="SmapJsonValues"/>).
+        /// </summary>
+        static void ReadRawValues(SmapMap map, string json)
+        {
+            var raw = SmapJsonValues.Read(json);
+            if (!raw.hasSpawn) map.spawn = null;
+            for (int l = 0; l < map.entities.Length && l < raw.fieldValues.Count; l++)
+            {
+                var items = map.entities[l].items;
+                for (int i = 0; i < items.Length && i < raw.fieldValues[l].Count; i++)
+                {
+                    var fields = items[i].fields;
+                    var values = raw.fieldValues[l][i];
+                    for (int f = 0; f < fields.Length && f < values.Count; f++)
+                        fields[f] = SmapEntityField.FromValue(fields[f]?.name, fields[f]?.type, values[f]);
+                }
+            }
+        }
+
+        /// <summary>The entity that is the spawn point (type "spawn" at <see cref="spawn"/>), or null.</summary>
+        public SmapEntityItem FindSpawnItem()
+        {
+            if (spawn == null) return null;
+            foreach (var layer in entities)
+                foreach (var item in layer.items)
+                    if (item.typeId == SmapEntityTypes.Spawn && item.x == spawn.x && item.y == spawn.y) return item;
+            return null;
         }
 
         /// <summary>Problems that make the file unusable; empty when valid.</summary>
@@ -77,6 +119,14 @@ namespace Smap.MapImporter
                 if (run < 0) { errors.Add("collision.solid has a negative run"); break; }
                 sum += run;
             }
+            for (int l = 0; entities != null && l < entities.Length; l++)
+            {
+                foreach (var item in entities[l].items)
+                {
+                    if (item == null || string.IsNullOrEmpty(item.id)) { errors.Add($"entities[{l}] has an entity without an id"); break; }
+                    if (item.width <= 0 || item.height <= 0) errors.Add($"entity {item.id} has a non-positive size {item.width}x{item.height}");
+                }
+            }
             if (sum != (long)width * height) errors.Add($"collision.solid covers {sum} cells, expected {(long)width * height}");
             return errors;
         }
@@ -112,5 +162,45 @@ namespace Smap.MapImporter
     {
         /// <summary>Run lengths over the map, row-major from the first row, starting with a passable run.</summary>
         public int[] solid;
+    }
+
+    [Serializable]
+    public sealed class SmapEntityLayer
+    {
+        public string id;
+        public string name;
+        public bool visible = true;
+        public SmapEntityItem[] items;
+    }
+
+    [Serializable]
+    public sealed class SmapEntityItem
+    {
+        public string id;
+        /// <summary>Type name (the type id if the type was deleted).</summary>
+        public string type;
+        public string typeId;
+        /// <summary>Top-left corner of the box in pixels (y down when yUp is false).</summary>
+        public float x;
+        public float y;
+        public int cellX;
+        public int cellY;
+        /// <summary>Box size in pixels.</summary>
+        public float width;
+        public float height;
+        /// <summary>Type colour "#rrggbb". Not written by the editor yet; empty means a default colour.</summary>
+        public string color;
+        /// <summary>Values are filled by <see cref="SmapMap.Parse"/>, not by JsonUtility.</summary>
+        public SmapEntityField[] fields;
+    }
+
+    [Serializable]
+    public sealed class SmapSpawnPoint
+    {
+        /// <summary>Top-left corner of the spawn box in pixels (y down when yUp is false).</summary>
+        public float x;
+        public float y;
+        public int cellX;
+        public int cellY;
     }
 }

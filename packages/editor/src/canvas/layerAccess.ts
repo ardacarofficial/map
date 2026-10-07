@@ -2,7 +2,7 @@
  * Small adapters between core layers / clips and the pure tool logic in
  * `tools.ts`, shared by the tool controller and the overlay renderer.
  */
-import { isGridLayer, type GridLayer, type MapStore, type TileClip, type TileLayer } from "@smap/core";
+import { isEntityLayer, isGridLayer, type GridLayer, type MapStore, type TileClip, type TileLayer } from "@smap/core";
 
 import { useEditorStore } from "../state/editorStore";
 import { stampMapping, type LayerInfo } from "./tools";
@@ -11,7 +11,8 @@ export function layerInfo(layer: TileLayer): LayerInfo {
   return {
     id: layer.id,
     visible: layer.visible,
-    locked: layer.locked,
+    // Entity layers hold no cells: no tile or grid tool may write to them (entity tools come later).
+    locked: layer.locked || isEntityLayer(layer),
     grid: isGridLayer(layer),
     getCell: (x, y) => layer.getCell(x, y),
   };
