@@ -132,7 +132,8 @@ describe("ops that touch derived layers", () => {
   });
 });
 
-type A = { k: string; [key: string]: number | string };
+type A = { k: string; [key: string]: number | string | boolean };
+const num = (v: number | string | boolean | undefined): number => Number(v);
 const coord = fc.integer({ min: -3, max: 14 });
 const opArb: fc.Arbitrary<A> = fc.oneof(
   fc.record({ k: fc.constant("paint"), layer: fc.constantFrom("tiles", "t2"), x: coord, y: coord, v: fc.nat({ max: 4 }) }),
@@ -174,41 +175,41 @@ describe("property: derived terrain tiles always equal deriveTerrainTiles", () =
           switch (op.k) {
             case "paint":
               if (!has(String(op.layer))) break;
-              store.dispatch({ type: "paintCells", layerId: String(op.layer), cells: [{ x: +op.x, y: +op.y, cell: op.v === 0 ? 0 : makeCell(doc.palette.size - +op.v + 1) }] });
+              store.dispatch({ type: "paintCells", layerId: String(op.layer), cells: [{ x: num(op.x), y: num(op.y), cell: op.v === 0 ? 0 : makeCell(doc.palette.size - num(op.v) + 1) }] });
               break;
             case "terrain": {
               const cells = [];
-              for (let i = 0; i <= +op.w; i++) cells.push({ x: +op.x + i, y: +op.y, value: +op.v });
+              for (let i = 0; i <= num(op.w); i++) cells.push({ x: num(op.x) + i, y: num(op.y), value: num(op.v) });
               store.dispatch({ type: "paintTerrain", layerId: "terrain", cells });
               break;
             }
             case "resize":
-              store.dispatch({ type: "resizeMap", width: +op.w, height: +op.h, offsetX: +op.dx, offsetY: +op.dy });
+              store.dispatch({ type: "resizeMap", width: num(op.w), height: num(op.h), offsetX: num(op.dx), offsetY: num(op.dy) });
               break;
             case "paste": {
-              const ids = LAYER_SETS[+op.which]!.filter(has);
+              const ids = LAYER_SETS[num(op.which)]!.filter(has);
               if (ids.length === 0) break;
-              const clip = copyRegion(doc, ids, { x: +op.x, y: +op.y, width: +op.w, height: +op.h });
-              pasteClip(store, clip, null, +op.tx, +op.ty, { emptyCells: op.erase ? "erase" : "skip" });
+              const clip = copyRegion(doc, ids, { x: num(op.x), y: num(op.y), width: num(op.w), height: num(op.h) });
+              pasteClip(store, clip, null, num(op.tx), num(op.ty), { emptyCells: op.erase ? "erase" : "skip" });
               break;
             }
             case "stamp": {
               const ids = ["tiles", "terrain"].filter(has);
               if (ids.length === 0) break;
-              const stamp = createStamp(doc, ids, { x: +op.x, y: +op.y, width: +op.w, height: +op.h }, { id: "s", name: "S" });
-              placeStamp(store, stamp, +op.tx, +op.ty, op.flip ? { flip: { x: true } } : {});
+              const stamp = createStamp(doc, ids, { x: num(op.x), y: num(op.y), width: num(op.w), height: num(op.h) }, { id: "s", name: "S" });
+              placeStamp(store, stamp, num(op.tx), num(op.ty), op.flip ? { flip: { x: true } } : {});
               break;
             }
             case "cut": {
-              const ids = LAYER_SETS[+op.which]!.filter(has);
-              if (ids.length > 0) cutRegion(store, ids, { x: +op.x, y: +op.y, width: +op.w, height: +op.h });
+              const ids = LAYER_SETS[num(op.which)]!.filter(has);
+              if (ids.length > 0) cutRegion(store, ids, { x: num(op.x), y: num(op.y), width: num(op.w), height: num(op.h) });
               break;
             }
             case "defineTerrain":
-              store.dispatch({ type: "defineTerrain", terrain: { id: BLOB_ID, name: "G", tilesetId: "terrain", template: op.template as "corner16", origin: { col: 0, row: 0 } } });
+              store.dispatch({ type: "defineTerrain", terrain: { id: BLOB_ID, name: "G", tilesetId: "terrain", template: String(op.template) as "corner16", origin: { col: 0, row: 0 } } });
               break;
             case "removeTerrain":
-              if (doc.getTerrain(+op.id)) store.dispatch({ type: "removeTerrain", terrainId: +op.id });
+              if (doc.getTerrain(num(op.id))) store.dispatch({ type: "removeTerrain", terrainId: num(op.id) });
               break;
             case "removeTiles":
               if (has("tiles")) store.dispatch({ type: "removeLayer", layerId: "tiles" });
@@ -220,7 +221,7 @@ describe("property: derived terrain tiles always equal deriveTerrainTiles", () =
               if (!has("t2")) store.dispatch({ type: "addLayer", layer: { id: "t2", name: "T2" } });
               break;
             case "move":
-              if (+op.i < doc.layers.length) store.dispatch({ type: "moveLayer", layerId: "terrain", index: +op.i });
+              if (num(op.i) < doc.layers.length) store.dispatch({ type: "moveLayer", layerId: "terrain", index: num(op.i) });
               break;
             case "begin":
               store.beginTransaction();
