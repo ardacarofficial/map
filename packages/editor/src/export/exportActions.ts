@@ -8,7 +8,7 @@ import { exportBaseName, exportGameJson } from "@smap/core";
 
 import { getLocale, t } from "../i18n";
 import { DirectoryHandleFileSystem, ensureReadWrite, UnsupportedError } from "../io/browserFs";
-import { levelName } from "../io/projectIo";
+import { levelName, projectFiles } from "../io/projectIo";
 import { describeError, onProjectSaved } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
 import { getTilesetImage } from "../state/tilesetImages";
@@ -19,6 +19,7 @@ import { loadExportSettings, updateExportSettings, type ExportSettings } from ".
 import { useExportStore } from "./exportStore";
 import { type PngScale } from "./pngComposite";
 import { PngTooLargeError, renderMapPng } from "./pngRender";
+import { projectZipEntries, zipCompressed } from "./zip";
 
 export type FolderKind = "unity" | "tmj";
 
@@ -201,6 +202,39 @@ export async function exportJson(): Promise<boolean> {
     toast.error(t("export.toastFailed", { detail: describeError(error) }));
     return false;
   }
+}
+
+/** Files of the whole project as a save would write them (project.smap, levels/, tilesets/). */
+export function previewZipFiles(project: OpenProject) {
+  return projectFiles({
+    name: project.name,
+    document: project.store.document,
+    levelPath: project.levelPath,
+    tilesetBytes,
+  });
+}
+
+/** Downloads the whole project folder as `<project>.zip` (no backups/). */
+export async function exportZip(): Promise<boolean> {
+  const project = useEditorStore.getState().project;
+  if (!project) return false;
+  const result = await withExportBusy(async () => {
+    try {
+      const fileName = `${project.name}.zip`;
+      const bytes = await zipCompressed(projectZipEntries(previewZipFiles(project)));
+      downloadBlob(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }), fileName);
+      await updateExportSettings(project.name, { target: "zip" });
+      toast.success(t("export.toastZip", { file: fileName }));
+      const missing = project.store.document.tilesets.filter((ts) => !tilesetBytes(ts.id)).map((ts) => ts.imagePath);
+      if (missing.length > 0) toast.warning(t("export.toastMissingImages", { paths: missing.join(", ") }));
+      return true;
+    } catch (error) {
+      console.error(error);
+      toast.error(t("export.toastFailed", { detail: describeError(error) }));
+      return false;
+    }
+  });
+  return result ?? false;
 }
 
 // ------------------------------------------------------------------ export on save

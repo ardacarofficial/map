@@ -31,33 +31,54 @@ export interface SaveProjectInput {
   tilesetBytes(tilesetId: string): Uint8Array | undefined;
 }
 
-/**
- * Writes the whole project. Tileset images go first, then the level, and
- * `project.smap` last, so a project file on disk only ever points at files
- * that were already written. Unchanged tileset PNGs are not rewritten.
- * Returns the level text that was written (for backups and change detection).
- */
-export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput): Promise<string> {
-  for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
+/** One file of a project folder, relative to it. Text is UTF-8. */
+export interface ProjectFile {
+  readonly path: string;
+  readonly data: string | Uint8Array;
+}
 
+/**
+ * The files a save writes, in write order: tileset images first, then the
+ * level, and `project.smap` last, so a project file only ever points at files
+ * that exist. Tilesets without bytes are left out. Shared by the save
+ * pipeline and the zip export.
+ */
+export function projectFiles(input: SaveProjectInput): ProjectFile[] {
   const doc = input.document;
+  const files: ProjectFile[] = [];
   for (const tileset of doc.tilesets) {
     const bytes = input.tilesetBytes(tileset.id);
-    if (!bytes) continue;
-    if (await sameFile(fs, tileset.imagePath, bytes)) continue;
-    await fs.writeBytes(tileset.imagePath, bytes);
+    if (bytes) files.push({ path: tileset.imagePath, data: bytes });
   }
-
-  const levelText = serializeLevel(doc);
-  await fs.writeText(input.levelPath, levelText);
-  await fs.writeText(
-    PROJECT_FILE_NAME,
-    serializeProject({
+  files.push({ path: input.levelPath, data: serializeLevel(doc) });
+  files.push({
+    path: PROJECT_FILE_NAME,
+    data: serializeProject({
       name: input.name,
       levels: [{ name: levelName(input.levelPath), path: input.levelPath }],
       tilesets: doc.tilesets,
     }),
-  );
+  });
+  return files;
+}
+
+/**
+ * Writes the whole project (see `projectFiles` for the order). Unchanged
+ * tileset PNGs are not rewritten. Returns the level text that was written
+ * (for backups and change detection).
+ */
+export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput): Promise<string> {
+  for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
+
+  let levelText = "";
+  for (const file of projectFiles(input)) {
+    if (typeof file.data === "string") {
+      await fs.writeText(file.path, file.data);
+      if (file.path === input.levelPath) levelText = file.data;
+    } else if (!(await sameFile(fs, file.path, file.data))) {
+      await fs.writeBytes(file.path, file.data);
+    }
+  }
   return levelText;
 }
 

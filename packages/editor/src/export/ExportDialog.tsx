@@ -19,6 +19,8 @@ import {
   exportPng,
   exportToTiled,
   exportToUnity,
+  exportZip,
+  previewZipFiles,
   formatClock,
   previewFiles,
   projectLevelName,
@@ -51,6 +53,7 @@ const TARGETS: { id: ExportTarget; title: MessageKey; hint: MessageKey; glyph: R
   { id: "png", title: "export.targetPng", hint: "export.targetPngHint", glyph: <Icon name="image" size={16} /> },
   { id: "json", title: "export.targetJson", hint: "export.targetJsonHint", glyph: <BracesGlyph /> },
   { id: "tmj", title: "export.targetTmj", hint: "export.targetTmjHint", glyph: <Icon name="grid" size={16} /> },
+  { id: "zip", title: "export.targetZip", hint: "export.targetZipHint", glyph: <Icon name="folder" size={16} /> },
 ];
 
 const ACTION: Record<ExportTarget, MessageKey> = {
@@ -58,6 +61,7 @@ const ACTION: Record<ExportTarget, MessageKey> = {
   png: "export.exportPng",
   json: "export.exportJson",
   tmj: "export.exportTmj",
+  zip: "export.exportZip",
 };
 
 function ExportForm({
@@ -124,6 +128,8 @@ function ExportForm({
           return pngOk && (await exportPng(pngScale));
         case "json":
           return exportJson();
+        case "zip":
+          return exportZip();
       }
     };
     void run().then((ok) => ok && onDone());
@@ -180,6 +186,7 @@ function ExportForm({
             <PngPanel width={imageSize.width} height={imageSize.height} scale={pngScale} onScale={setScale} />
           )}
           {chosen === "json" && <JsonPanel project={project} />}
+          {chosen === "zip" && <ZipPanel project={project} />}
           {chosen === "tmj" && <TmjPanel project={project} settings={current} onPick={() => void pickFolder("tmj")} />}
         </div>
       </div>
@@ -367,6 +374,18 @@ function JsonPanel({ project }: { project: OpenProject }) {
         <FileList paths={[fileName]} />
       </Section>
       <span className="text-xs text-faint">{t("export.jsonHint")}</span>
+    </>
+  );
+}
+
+function ZipPanel({ project }: { project: OpenProject }) {
+  const paths = useMemo(() => previewZipFiles(project).map((f) => f.path), [project]);
+  return (
+    <>
+      <Section label={t("export.files")}>
+        <FileList paths={[...paths, "stamps/"]} />
+      </Section>
+      <span className="text-xs text-faint">{t("export.zipHint", { file: `${project.name}.zip` })}</span>
     </>
   );
 }

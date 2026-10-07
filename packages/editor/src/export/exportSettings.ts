@@ -7,7 +7,7 @@
  */
 import type { PngScale } from "./pngComposite";
 
-export type ExportTarget = "unity" | "png" | "json" | "tmj";
+export type ExportTarget = "unity" | "png" | "json" | "tmj" | "zip";
 
 export interface ExportSettings {
   /** Project name (the key). */
