@@ -5,7 +5,10 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { registerAppCommands } from "./commands/appCommands";
 import { App } from "./ui";
+
+registerAppCommands();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("#root element not found");

@@ -1,0 +1,98 @@
+/*
+ * Design tokens — the single place for colors, radii, type and spacing.
+ * Every component uses these (via Tailwind utilities such as `bg-surface`,
+ * `text-muted`, `border-line`, `rounded-md`, `text-sm`) and never hard-codes
+ * a value. Redesigning the app means editing this file.
+ *
+ * The default Tailwind palette and type scale are cleared on purpose so that
+ * only tokens defined here can be used.
+ */
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+
+  /* ---- Surfaces (darkest → lightest) */
+  --color-bg: #141416; /* app background, canvas surround */
+  --color-canvas: #101012; /* behind the map */
+  --color-panel: #19191c; /* toolbar, rails, side panels */
+  --color-raised: #1f1f23; /* inputs, cards, popups */
+  --color-hover: #26262b; /* hovered rows and buttons */
+  --color-active: #2d2d33; /* pressed / selected rows */
+  --color-overlay: rgb(8 8 10 / 0.6); /* modal backdrop */
+
+  /* ---- Lines */
+  --color-line-subtle: #212125;
+  --color-line: #2a2a30;
+  --color-line-strong: #3a3a42;
+
+  /* ---- Text */
+  --color-text: #e8e8ea;
+  --color-muted: #a1a1aa;
+  --color-faint: #6c6c76;
+  --color-inverse: #101012;
+
+  /* ---- The single accent color */
+  --color-accent: #6d8cff;
+  --color-accent-hover: #8aa3ff;
+  --color-accent-soft: rgb(109 140 255 / 0.14);
+  --color-accent-line: rgb(109 140 255 / 0.45);
+  --color-on-accent: #0c0f1d;
+
+  /* ---- Status (toasts, validation) */
+  --color-danger: #f0707a;
+  --color-danger-soft: rgb(240 112 122 / 0.12);
+  --color-warning: #e7b75f;
+  --color-warning-soft: rgb(231 183 95 / 0.12);
+  --color-success: #5fcf98;
+  --color-success-soft: rgb(95 207 152 / 0.12);
+
+  /* ---- Tile hover / checkerboard in the tileset panel */
+  --color-hover-tile: rgb(255 255 255 / 0.16);
+  --color-tile-grid: rgb(255 255 255 / 0.07);
+  --color-checker-a: #1c1c20;
+  --color-checker-b: #232328;
+
+  /* ---- Type */
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 11px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12px;
+  --text-sm--line-height: 16px;
+  --text-md: 13px;
+  --text-md--line-height: 20px;
+  --text-lg: 15px;
+  --text-lg--line-height: 22px;
+  --text-xl: 22px;
+  --text-xl--line-height: 28px;
+
+  /* ---- Radii */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* ---- Elevation */
+  --shadow-popup: 0 0 0 1px rgb(0 0 0 / 0.4), 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  --shadow-toast: 0 0 0 1px rgb(0 0 0 / 0.35), 0 8px 24px -6px rgb(0 0 0 / 0.55);
+
+  /* ---- Spacing unit (Tailwind `p-1` = 4px) */
+  --spacing: 4px;
+
+  /* ---- Layout */
+  --spacing-toolbar: 40px;
+  --spacing-statusbar: 24px;
+  --spacing-rail: 44px;
+  --spacing-sidebar: 280px;
+
+  /* ---- Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}

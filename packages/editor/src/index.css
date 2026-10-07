@@ -1,15 +1,69 @@
 @import "tailwindcss";
+@import "./theme/tokens.css";
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+    line-height: var(--text-md--line-height);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    color-scheme: dark;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  /* One focus ring for the whole app: accent, only for keyboard focus. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+  }
+
+  /* Thin, calm scrollbars inside panels (the root never scrolls). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
 }
 
-body {
-  background: #141416;
-  color: #e6e6e8;
-  font-family: "Inter Variable", system-ui, sans-serif;
-  font-size: 13px;
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility pixelated {
+  image-rendering: pixelated;
+}
+
+/* Transparent-pixel checkerboard behind tileset images. */
+@utility checker {
+  background-color: var(--color-checker-a);
+  background-image: conic-gradient(
+    var(--color-checker-b) 25%,
+    transparent 0 50%,
+    var(--color-checker-b) 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
 }
