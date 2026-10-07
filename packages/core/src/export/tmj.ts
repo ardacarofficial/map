@@ -19,12 +19,12 @@
  *   (pixels, `""` when unset). Every entity also gets the string property
  *   `typeId`. Object ids are 1, 2, … in layer and entity order.
  */
-import { cellPaletteIndex, CELL_INDEX_MASK } from "../cell";
+import { CELL_INDEX_MASK } from "../cell";
 import type { MapDocument } from "../document";
 import { entitySize, resolveEntityFields, type ResolvedEntityField } from "../entity";
 import { isEntityLayer, isGridLayer, isTileLayer } from "../layer";
 import { tileCount, type Tileset } from "../tileset";
-import { exportBaseName, exportedLayers, exportedTilesets, layerCells, tilesetImageSize, type ExportImage } from "./common";
+import { exportBaseName, exportedTilesets, exportWarnings, layerCells, tilesetImageSize, type ExportImage } from "./common";
 import type { ExportResult } from "./game";
 import { Rows, writeJson } from "./json";
 
@@ -78,7 +78,6 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
   const { width, height, tileWidth, tileHeight } = doc.map;
   const images = exportedTilesets(doc);
   const firstGids = tmjFirstGids(images.map((image) => image.tileset));
-  const layers = exportedLayers(doc);
 
   const written = doc.layers.filter((layer) => isTileLayer(layer) || isEntityLayer(layer));
   let nextObjectId = 1;
@@ -161,17 +160,8 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
       `Collision exceptions (${exceptionLayers.map((l) => l.name).join(", ")}) are not exported to TMJ; only the "solid" tile property is.`,
     );
   }
-  // Palette entries pointing at tilesets that no longer exist are dropped silently by layerCells; report them.
-  const missing = new Set<string>();
-  for (const layer of layers) {
-    for (const chunk of layer.chunks()) {
-      for (const cell of chunk.data) {
-        const entry = cell === 0 ? undefined : doc.palette.get(cellPaletteIndex(cell));
-        if (entry && !doc.getTileset(entry.tilesetId)) missing.add(entry.tilesetId);
-      }
-    }
-  }
-  if (missing.size > 0) warnings.push(`Cells of missing tilesets were skipped: ${[...missing].sort().join(", ")}.`);
+  // Cells of missing tilesets / out-of-range tile ids are skipped by layerCells; report them.
+  warnings.push(...exportWarnings(doc));
 
   const text = writeJson({
     compressionlevel: -1,

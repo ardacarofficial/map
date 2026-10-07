@@ -25,6 +25,8 @@
  * - project `entityTypes` (written only when non-empty);
  * - project level `id` and `world` (always written; old files get a
  *   path-derived id when read, see `normalizeProject`);
+ * - project `retiredLevelIds` (ids of removed levels, never reused; written
+ *   only when non-empty);
  * - clip / stamp grid layer `role`;
  * - stamp files `stamps/<id>.json` (`format: "smap-stamp"`).
  *
@@ -105,6 +107,7 @@ export function serializeProject(project: ProjectData): string {
     levels: p.levels.map((level) => ({ id: level.id, name: level.name, path: level.path, world: { x: level.world.x, y: level.world.y } })),
     tilesets: p.tilesets.map(tilesetJson),
     ...(p.entityTypes.length > 0 ? { entityTypes: p.entityTypes.map(entityTypeJson) } : {}),
+    ...(p.retiredLevelIds.length > 0 ? { retiredLevelIds: [...p.retiredLevelIds] } : {}),
   });
 }
 
@@ -284,8 +287,16 @@ export function parseProject(text: string): Project {
     const problem = entityTypesProblem(entityTypes);
     if (problem) throw new FormatError("", problem);
   }
+  let retiredLevelIds: string[] = [];
+  if (root["retiredLevelIds"] !== undefined) {
+    retiredLevelIds = arr(root, "retiredLevelIds", "").map((v, i) => {
+      const id = strValue(v, `retiredLevelIds[${i}]`);
+      if (id.length === 0) throw new FormatError(`retiredLevelIds[${i}]`, "must not be empty");
+      return id;
+    });
+  }
   try {
-    return normalizeProject({ name, levels, tilesets, entityTypes });
+    return normalizeProject({ name, levels, tilesets, entityTypes, retiredLevelIds });
   } catch (error) {
     throw new FormatError("levels", (error as Error).message);
   }

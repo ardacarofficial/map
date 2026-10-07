@@ -317,6 +317,7 @@ export {
   layerCells,
   tilesetImageSize,
   exportBaseName,
+  exportWarnings,
   GAME_EXPORT_VERSION,
   UNITY_MAP_EXTENSION,
   GAME_CELL_STRIDE,

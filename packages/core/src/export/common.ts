@@ -12,7 +12,8 @@ import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V } from "../cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT } from "../chunk";
 import type { MapDocument } from "../document";
 import { isTileLayer, type TileLayer } from "../layer";
-import type { Tileset } from "../tileset";
+import { safeFileName } from "../fileName";
+import { isValidTileId, type Tileset } from "../tileset";
 
 /** Export flip flags (small bits, so they fit any int parser). */
 export const EXPORT_FLIP_H = 1;
@@ -61,7 +62,9 @@ export function exportedTilesets(doc: MapDocument): ExportImage[] {
         const cell = chunk.data[i]!;
         if (cell === 0) continue;
         const entry = palette.get(cellPaletteIndex(cell));
-        if (entry) used.add(entry.tilesetId);
+        if (!entry || used.has(entry.tilesetId)) continue;
+        const tileset = doc.getTileset(entry.tilesetId);
+        if (tileset && isValidTileId(tileset, entry.tileId)) used.add(entry.tilesetId);
       }
     }
   }
@@ -77,7 +80,8 @@ export function exportedTilesets(doc: MapDocument): ExportImage[] {
 /**
  * Non-empty in-bounds cells of `layer`, row-major (y, then x; y down),
  * resolved to `(tilesetIndex, tileId)`. Cells whose palette entry or
- * tileset is missing from `images` are skipped.
+ * tileset is missing from `images`, or whose tile id is outside the tileset
+ * (the image shrank), are skipped — {@link exportWarnings} reports them.
  */
 export function layerCells(doc: MapDocument, layer: TileLayer, images: readonly ExportImage[]): ExportCell[] {
   const { width, height } = doc.map;
@@ -95,6 +99,7 @@ export function layerCells(doc: MapDocument, layer: TileLayer, images: readonly 
       const entry = doc.palette.get(cellPaletteIndex(cell));
       const index = entry && tilesetIndex.get(entry.tilesetId);
       if (!entry || index === undefined) continue;
+      if (!isValidTileId(images[index]!.tileset, entry.tileId)) continue;
       const raw = cellFlags(cell);
       const flags =
         (raw & FLIP_H ? EXPORT_FLIP_H : 0) | (raw & FLIP_V ? EXPORT_FLIP_V : 0) | (raw & FLIP_D ? EXPORT_FLIP_D : 0);
@@ -102,6 +107,48 @@ export function layerCells(doc: MapDocument, layer: TileLayer, images: readonly 
     }
   }
   return cells.sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/**
+ * Problems an export skips silently in the data, as readable messages (sorted,
+ * deterministic): cells whose tileset is not in the project, and cells whose
+ * tile id is outside its tileset (e.g. the PNG lost rows; CLAUDE.md: tiles
+ * are only appended, so this means the image shrank). Such cells are left
+ * out of every export — writing them would show a tile of the next tileset
+ * (TMJ GID overflow) or read outside the image.
+ */
+export function exportWarnings(doc: MapDocument): string[] {
+  const missing = new Set<string>();
+  const outOfRange = new Map<string, Set<number>>();
+  const palette = doc.palette;
+  const seen = new Set<number>();
+  for (const layer of exportedLayers(doc)) {
+    for (const chunk of layer.chunks()) {
+      for (let i = 0; i < CHUNK_AREA; i++) {
+        const cell = chunk.data[i]!;
+        if (cell === 0) continue;
+        const index = cellPaletteIndex(cell);
+        if (seen.has(index)) continue;
+        seen.add(index);
+        const entry = palette.get(index);
+        if (!entry) continue;
+        const tileset = doc.getTileset(entry.tilesetId);
+        if (!tileset) missing.add(entry.tilesetId);
+        else if (!isValidTileId(tileset, entry.tileId)) {
+          let ids = outOfRange.get(tileset.id);
+          if (!ids) outOfRange.set(tileset.id, (ids = new Set()));
+          ids.add(entry.tileId);
+        }
+      }
+    }
+  }
+  const warnings: string[] = [];
+  if (missing.size > 0) warnings.push(`Cells of missing tilesets were skipped: ${[...missing].sort().join(", ")}.`);
+  for (const id of [...outOfRange.keys()].sort()) {
+    const ids = [...outOfRange.get(id)!].sort((a, b) => a - b);
+    warnings.push(`Cells with tile ids outside tileset "${id}" were skipped: ${ids.join(", ")}.`);
+  }
+  return warnings;
 }
 
 /** Pixel size of a tileset image as implied by its grid (margins and spacing included). */
@@ -115,12 +162,11 @@ export function tilesetImageSize(tileset: Tileset): { width: number; height: num
 /**
  * A file-system-safe base name for an exported level: characters Windows
  * forbids (and control characters) become `_`; trailing dots/spaces are
- * dropped; an empty result becomes `"map"`.
+ * dropped; a Windows device name (`CON`, `NUL`, `COM1`…, also `con.v2`)
+ * gets a `_` after its stem; an empty result becomes `"map"`.
  */
 export function exportBaseName(levelName: string): string {
-  // eslint-disable-next-line no-control-regex
-  const cleaned = levelName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/, "").trim();
-  return cleaned.length > 0 ? cleaned : "map";
+  return safeFileName(levelName, "map");
 }
 
 function basename(path: string): string {

@@ -19,6 +19,7 @@
  */
 import { copyRegion, flipClip, pasteClip, type ClipLayer, type PasteOptions, type TileClip } from "./clip";
 import type { MapDocument } from "./document";
+import { isReservedFileName } from "./fileName";
 import type { CellRect } from "./geometry";
 import { isEntityLayer, isGridLayer, type GridRole, type TileLayer } from "./layer";
 import type { LayerPatch } from "./ops";
@@ -37,16 +38,27 @@ export const STAMPS_DIR = "stamps";
 
 const STAMP_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-/** Why `id` cannot be a stamp id (lowercase `a-z0-9_-`, starts with a letter or digit, ≤ 64 chars), or `null`. */
+/**
+ * Why `id` cannot be a stamp id (lowercase `a-z0-9_-`, starts with a letter
+ * or digit, ≤ 64 chars, not a Windows device name such as `con` or `com1`:
+ * `stamps/con.json` cannot be created on Windows), or `null`.
+ */
 export function stampIdProblem(id: unknown): string | null {
   if (typeof id !== "string" || !STAMP_ID_RE.test(id)) {
     return `stamp id must be 1–64 characters of a-z, 0-9, "_" or "-" starting with a letter or digit, got ${JSON.stringify(id)}`;
   }
+  if (isReservedFileName(id)) return `stamp id ${JSON.stringify(id)} is a reserved file name on Windows`;
   return null;
 }
 
-/** Project-relative path of a stamp file: `stamps/<id>.json`. */
+/**
+ * Project-relative path of a stamp file: `stamps/<id>.json`.
+ * @throws Error when `id` is not a valid stamp id ({@link stampIdProblem}),
+ * so no unsafe file name is ever built.
+ */
 export function stampPath(id: string): string {
+  const problem = stampIdProblem(id);
+  if (problem) throw new Error(`stampPath: ${problem}`);
   return `${STAMPS_DIR}/${id}.json`;
 }
 
@@ -55,6 +67,8 @@ const TRANSLIT: Readonly<Record<string, string>> = { ç: "c", ğ: "g", ı: "i", 
 /**
  * A stamp id derived from a display name ("Büyük Ev" → `"buyuk-ev"`),
  * made unique against `taken` with `-2`, `-3`…; `"stamp"` when nothing usable is left.
+ * Windows device names are never returned (`"Con"` → `"con-2"`), so the id
+ * always passes {@link stampIdProblem}.
  */
 export function makeStampId(name: string, taken: Iterable<string> = []): string {
   const used = new Set(taken);
@@ -68,7 +82,7 @@ export function makeStampId(name: string, taken: Iterable<string> = []): string 
       .replace(/^-+|-+$/g, "")
       .slice(0, 56)
       .replace(/-+$/, "") || "stamp";
-  if (!used.has(slug)) return slug;
+  if (!used.has(slug) && !isReservedFileName(slug)) return slug;
   for (let n = 2; ; n++) {
     const id = `${slug}-${n}`;
     if (!used.has(id)) return id;

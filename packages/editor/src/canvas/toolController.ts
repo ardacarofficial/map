@@ -17,7 +17,6 @@
  */
 import {
   EMPTY_CELL,
-  SPAWN_TYPE_ID,
   cellFlags,
   cellPaletteIndex,
   copyRegion,
@@ -37,11 +36,12 @@ import {
   type TileLayer,
 } from "@smap/core";
 
+import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore } from "../state/editorStore";
 import { cellWrites, strokeCells } from "./brush";
 import type { Point } from "./camera";
 import type { CameraController } from "./cameraController";
-import { dragPosition, snapToCell, type WorldPoint } from "./entityLogic";
+import { dragPosition, type WorldPoint } from "./entityLogic";
 import type { EntityRenderer } from "./entityRenderer";
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
 import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
@@ -615,20 +615,9 @@ export class ToolController {
     }
     const doc = store.document;
     const typeId = s.entityTypeId;
-    if (layer.locked || !typeId || !doc.getEntityType(typeId) || !doc.inBounds(cell.x, cell.y)) return true;
-    const pos = snapToCell(cell, doc.map);
-    let id: string | null = null;
-    this.#transact(store, () => {
-      const spawn = typeId === SPAWN_TYPE_ID ? doc.spawn() : null;
-      if (spawn) {
-        store.dispatch({ type: "moveEntity", entityId: spawn.id, x: pos.x, y: pos.y });
-        id = spawn.id;
-        return true;
-      }
-      id = store.dispatch({ type: "addEntity", layerId: layer.id, entity: { typeId, x: pos.x, y: pos.y } });
-      return id !== null;
-    });
-    if (id !== null) s.setSelectedEntity(id);
+    if (!typeId || !doc.getEntityType(typeId) || !doc.inBounds(cell.x, cell.y)) return true;
+    // The UI's action owns the rules (one spawn per level, locked layer) and their toasts; it selects the new entity.
+    if (placeEntity(layer.id, typeId, cell.x, cell.y) !== null) this.#markDirty();
     return true;
   }
 
@@ -641,11 +630,9 @@ export class ToolController {
     if (!cell || !found) return;
     const to = dragPosition(g.start, g.grab, cell, doc.map);
     if (to.x === found.entity.x && to.y === found.entity.y) return;
-    try {
-      if (!g.store.inTransaction) g.store.beginTransaction();
-      g.store.dispatch({ type: "moveEntity", entityId: g.entityId, x: to.x, y: to.y });
-    } catch (error) {
-      console.error("[canvas] move entity failed", error);
+    // Consecutive moves share one transaction: the whole drag is one undo step.
+    if (!g.store.inTransaction) g.store.beginTransaction();
+    if (!moveEntityToCell(g.entityId, Math.floor(to.x / doc.map.tileWidth), Math.floor(to.y / doc.map.tileHeight))) {
       this.cancel();
       return;
     }

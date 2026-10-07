@@ -4,7 +4,7 @@
  */
 import type { MapDocument } from "../document";
 import { tileRect, type TileRect, type Tileset } from "../tileset";
-import { EXPORT_FLIP_H, EXPORT_FLIP_V, exportedLayers, exportedTilesets, layerCells } from "./common";
+import { EXPORT_FLIP_H, EXPORT_FLIP_V, exportedLayers, exportedTilesets, exportWarnings, layerCells } from "./common";
 
 /** One tile to draw. Coordinates in pixels, y down, origin top-left of the map. */
 export interface DrawItem {
@@ -33,6 +33,8 @@ export interface DrawList {
   readonly height: number;
   /** Visible tile layers with opacity > 0, bottom to top. */
   readonly layers: readonly DrawLayer[];
+  /** Cells left out (missing tileset, tile id outside the image); see `exportWarnings`. */
+  readonly warnings?: readonly string[];
 }
 
 /** Draw list of `doc` (hidden layers, grid layers and empty cells left out). */
@@ -59,5 +61,5 @@ export function layerDrawList(doc: MapDocument): DrawList {
     });
     layers.push({ layerId: layer.id, opacity: layer.opacity, items });
   }
-  return { width: width * tileWidth, height: height * tileHeight, layers };
+  return { width: width * tileWidth, height: height * tileHeight, layers, warnings: exportWarnings(doc) };
 }

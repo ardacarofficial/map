@@ -11,10 +11,17 @@
  * `parseProject`) derives one from the path ({@link levelIdFromPath}) and
  * the next save writes it, after which it is fixed even if the file is
  * renamed. Portals refer to levels by this id, never by name.
+ *
+ * **Retired ids**: {@link removeLevel} remembers the removed level's id in
+ * `retiredLevelIds` (saved in the project file), and {@link addLevel} never
+ * generates a taken or retired id. So a new level at the same path as a
+ * removed one gets a fresh id (`lvl-…-2`) and the removed level's portals
+ * stay `"missingLevel"` (CLAUDE.md v1.1: "Otomatik onarım yok").
  */
 import type { MapDocument } from "./document";
 import { PORTAL_TARGET_LEVEL, PORTAL_TARGET_POINT, PORTAL_TYPE_ID, isEntityPoint, type Entity, type EntityPoint, type EntityType } from "./entity";
 import { isEntityLayer } from "./layer";
+import { portablePathProblem } from "./fileName";
 import { relativePathProblem, type Tileset } from "./tileset";
 
 /** Position of a level's top-left corner on the world map, in pixels (y down). */
@@ -48,12 +55,18 @@ export interface ProjectData {
   readonly tilesets: readonly Tileset[];
   /** User-defined entity types (v0.6). Defaults to none. */
   readonly entityTypes?: readonly EntityType[];
+  /**
+   * Ids of removed levels, never handed out again (see module doc).
+   * Defaults to none. Old files have none.
+   */
+  readonly retiredLevelIds?: readonly string[];
 }
 
 /** A project with every optional field filled in (what `parseProject` and the level functions return). */
 export interface Project extends ProjectData {
   readonly levels: readonly ProjectLevel[];
   readonly entityTypes: readonly EntityType[];
+  readonly retiredLevelIds: readonly string[];
 }
 
 /** Deterministic level id for a path: `"lvl-"` + 8 hex digits (FNV-1a of the path). */
@@ -67,12 +80,20 @@ export function levelIdFromPath(path: string): string {
 }
 
 /**
- * Fills in missing level ids (derived from the path; a clash gets `-2`,
- * `-3`…) and world positions, and `entityTypes`. Idempotent.
- * @throws Error on duplicate level ids or paths, an invalid path or world position.
+ * Fills in missing level ids (derived from the path; a clash with a taken
+ * or retired id gets `-2`, `-3`…), world positions, `entityTypes` and
+ * `retiredLevelIds` (de-duplicated, order kept; ids of listed levels are
+ * dropped from it). Idempotent.
+ * @throws Error on duplicate level ids or paths, an invalid path or world
+ * position, or a retired id that is not a non-empty string.
  */
 export function normalizeProject(data: ProjectData): Project {
   const taken = new Set<string>();
+  const retiredInput = data.retiredLevelIds ?? [];
+  if (!Array.isArray(retiredInput)) throw new Error("retiredLevelIds must be an array");
+  for (const id of retiredInput) {
+    if (typeof id !== "string" || id.length === 0) throw new Error("retired level ids must be non-empty strings");
+  }
   const paths = new Set<string>();
   for (const level of data.levels) {
     const problem = relativePathProblem(level.path);
@@ -84,11 +105,14 @@ export function normalizeProject(data: ProjectData): Project {
     if (taken.has(level.id)) throw new Error(`duplicate level id "${level.id}"`);
     taken.add(level.id);
   }
+  const explicit = new Set(taken);
+  const retired = [...new Set(retiredInput)].filter((id) => !explicit.has(id));
+  const avoid = new Set([...taken, ...retired]);
   const levels = data.levels.map((level): ProjectLevel => {
     let id = level.id;
     if (id === undefined) {
-      id = uniqueId(levelIdFromPath(level.path), taken);
-      taken.add(id);
+      id = uniqueId(levelIdFromPath(level.path), avoid);
+      avoid.add(id);
     }
     const world = level.world ?? { x: 0, y: 0 };
     if (!Number.isInteger(world.x) || !Number.isInteger(world.y)) {
@@ -101,6 +125,7 @@ export function normalizeProject(data: ProjectData): Project {
     levels: Object.freeze(levels),
     tilesets: data.tilesets,
     entityTypes: data.entityTypes ?? Object.freeze([]),
+    retiredLevelIds: Object.freeze(retired),
   });
 }
 
@@ -111,8 +136,13 @@ export function projectLevel(project: ProjectData, id: string): ProjectLevel | u
 
 /**
  * Appends a level (or inserts it at `index`). Without an `id` one is
- * derived from the path and made unique.
- * @throws Error on an invalid or duplicate path / id.
+ * derived from the path and made unique against current **and retired**
+ * ids, so re-adding a removed level's path never relinks its old portals.
+ * An explicit `id` is used as given (a deliberate restore) and leaves the
+ * retired list.
+ * @throws Error on an invalid or duplicate path / id, or a path segment
+ * that is not a portable file name (Windows device names such as
+ * `levels/con.json`, forbidden characters, trailing dots/spaces).
  */
 export function addLevel(project: ProjectData, level: LevelRef, index?: number): Project {
   const current = normalizeProject(project);
@@ -120,8 +150,12 @@ export function addLevel(project: ProjectData, level: LevelRef, index?: number):
   if (!Number.isInteger(at) || at < 0 || at > current.levels.length) {
     throw new RangeError(`addLevel: index must be an integer in [0, ${current.levels.length}], got ${at}`);
   }
+  const pathProblem = relativePathProblem(level.path) ?? portablePathProblem(level.path);
+  if (pathProblem) throw new Error(`addLevel: path ${pathProblem}`);
   let id = level.id;
-  if (id === undefined) id = uniqueId(levelIdFromPath(level.path), new Set(current.levels.map((l) => l.id)));
+  if (id === undefined) {
+    id = uniqueId(levelIdFromPath(level.path), new Set([...current.levels.map((l) => l.id), ...current.retiredLevelIds]));
+  }
   const levels: LevelRef[] = [...current.levels];
   levels.splice(at, 0, { ...level, id });
   return normalizeProject({ ...current, levels });
@@ -135,12 +169,17 @@ export function renameLevel(project: ProjectData, id: string, name: string): Pro
 /**
  * Removes a level from the list (the level file itself is the caller's
  * business). Portals pointing at it become `"missingLevel"`; nothing is
- * repaired automatically. @throws Error on an unknown id.
+ * repaired automatically. Its id is added to `retiredLevelIds`, so no
+ * later generated id reuses it. @throws Error on an unknown id.
  */
 export function removeLevel(project: ProjectData, id: string): Project {
   const current = normalizeProject(project);
   if (!current.levels.some((l) => l.id === id)) throw new Error(`removeLevel: unknown level "${id}"`);
-  return normalizeProject({ ...current, levels: current.levels.filter((l) => l.id !== id) });
+  return normalizeProject({
+    ...current,
+    levels: current.levels.filter((l) => l.id !== id),
+    retiredLevelIds: [...current.retiredLevelIds, id],
+  });
 }
 
 /** Moves a level to `index` in the list. @throws on an unknown id or a bad index. */

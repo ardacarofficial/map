@@ -10,6 +10,7 @@ export {
   layerCells,
   tilesetImageSize,
   exportBaseName,
+  exportWarnings,
 } from "./common";
 export {
   GAME_EXPORT_VERSION,

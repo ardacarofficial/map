@@ -8,7 +8,7 @@
 import type { MapDocument } from "../document";
 import { deriveCollision } from "../collision";
 import { entityCell, entitySize, resolveEntityFields, type EntityFieldValue } from "../entity";
-import { exportBaseName, exportedLayers, exportedTilesets, layerCells, type ExportImage } from "./common";
+import { exportBaseName, exportedLayers, exportedTilesets, exportWarnings, layerCells, type ExportImage } from "./common";
 import { Rows, writeJson } from "./json";
 import { encodeRle } from "./rle";
 
@@ -26,9 +26,20 @@ export interface ExportResult {
   readonly text: string;
   /** Tileset images referenced by the map; copy `sourcePath` → `fileName` into the same folder. */
   readonly images: readonly ExportImage[];
+  /**
+   * Things the export left out (cells of missing tilesets, out-of-range
+   * tile ids; TMJ also collision exceptions). Empty when nothing was lost.
+   * Optional in the type only for objects built before it existed; every
+   * exporter fills it.
+   */
+  readonly warnings?: readonly string[];
 }
 
-/** Game JSON text of `doc` (deterministic: same document, same bytes). */
+/**
+ * Game JSON text of `doc` (deterministic: same document, same bytes).
+ * Cells it cannot export are skipped; `exportWarnings(doc)` lists them
+ * (`exportUnityMap` returns them in `warnings`).
+ */
 export function exportGameJson(doc: MapDocument): string {
   return buildGameJson(doc, exportedTilesets(doc));
 }
@@ -39,7 +50,12 @@ export function exportGameJson(doc: MapDocument): string {
  */
 export function exportUnityMap(doc: MapDocument, levelName: string): ExportResult {
   const images = exportedTilesets(doc);
-  return { fileName: exportBaseName(levelName) + UNITY_MAP_EXTENSION, text: buildGameJson(doc, images), images };
+  return {
+    fileName: exportBaseName(levelName) + UNITY_MAP_EXTENSION,
+    text: buildGameJson(doc, images),
+    images,
+    warnings: exportWarnings(doc),
+  };
 }
 
 function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string {
