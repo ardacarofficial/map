@@ -48,6 +48,15 @@ export interface SaveProjectInput {
   stamps?: readonly Stamp[];
   /** Stamp files that could not be read when the project was opened; never deleted. */
   keepStampFiles?: Iterable<string>;
+  /**
+   * v1.0: further levels to write with this save (dirty levels other than
+   * `document`). Written after `levelPath`, before `project.smap`.
+   */
+  otherLevels?: readonly { readonly path: string; readonly document: MapDocument }[];
+  /** v1.0: ids of removed levels (kept in project.smap so they are never reused). */
+  retiredLevelIds?: readonly string[];
+  /** v1.0: level files to delete after `project.smap` is written (removed levels). */
+  removeFiles?: readonly string[];
 }
 
 /** `levels` with the saved level in it (a level path is listed once). */
@@ -83,6 +92,9 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
   }
   for (const stamp of input.stamps ?? []) files.push({ path: stampPath(stamp.id), data: serializeStamp(stamp) });
   files.push({ path: input.levelPath, data: serializeLevel(doc) });
+  for (const level of input.otherLevels ?? []) {
+    if (level.path !== input.levelPath) files.push({ path: level.path, data: serializeLevel(level.document) });
+  }
   files.push({
     path: PROJECT_FILE_NAME,
     data: serializeProject({
@@ -90,6 +102,7 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
       levels: levelsForSave(input.levels, input.levelPath),
       tilesets: doc.tilesets,
       entityTypes: doc.entityTypes,
+      ...(input.retiredLevelIds && input.retiredLevelIds.length > 0 ? { retiredLevelIds: input.retiredLevelIds } : {}),
     }),
   });
   return files;
@@ -101,23 +114,37 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
  * (for backups and change detection).
  */
 export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput): Promise<string> {
+  return (await saveProjectLevels(fs, input)).get(input.levelPath) ?? "";
+}
+
+/**
+ * Like {@link saveProject}, returning the text written for every level
+ * (`levelPath` and `otherLevels`), keyed by path. Removed level files
+ * (`removeFiles`) are deleted after `project.smap` no longer lists them.
+ */
+export async function saveProjectLevels(fs: ProjectFileSystem, input: SaveProjectInput): Promise<Map<string, string>> {
   for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
 
-  let levelText = "";
+  const levelTexts = new Map<string, string>();
+  const levelPaths = new Set([input.levelPath, ...(input.otherLevels ?? []).map((l) => l.path)]);
   const stampFiles = new Set((input.stamps ?? []).map((s) => stampPath(s.id)));
   for (const file of projectFiles(input)) {
     if (typeof file.data === "string") {
       // Unchanged stamp files are not rewritten (a library can hold many).
       if (stampFiles.has(file.path) && (await sameText(fs, file.path, file.data))) continue;
       await fs.writeText(file.path, file.data);
-      if (file.path === input.levelPath) levelText = file.data;
+      if (levelPaths.has(file.path)) levelTexts.set(file.path, file.data);
     } else if (!(await sameFile(fs, file.path, file.data))) {
       await fs.writeBytes(file.path, file.data);
     }
   }
+  // Removed levels lose their file only now: project.smap no longer lists them.
+  for (const path of input.removeFiles ?? []) {
+    if (!levelPaths.has(path)) await fs.remove(path);
+  }
   // Deleted stamps lose their file (after project.smap, which never refers to stamps).
   if (input.stamps) await removeStaleStamps(fs, input.stamps, input.keepStampFiles);
-  return levelText;
+  return levelTexts;
 }
 
 async function sameText(fs: ProjectFileSystem, path: string, text: string): Promise<boolean> {
@@ -173,6 +200,10 @@ export interface LoadedProject {
   missingImages: string[];
   /** The project's level list (ids, names, world positions). */
   levels: ProjectLevel[];
+  /** Id of the opened level (`levels` entry whose path is `levelPath`). */
+  levelId: string;
+  /** Ids of removed levels (never handed out again). */
+  retiredLevelIds: string[];
   /** Saved stamps (`stamps/*.json`), sorted by name. */
   stamps: Stamp[];
   /** Stamp files that could not be read (the project still opens). */
@@ -185,7 +216,11 @@ export type ImageDecoder = (bytes: Uint8Array) => Promise<ImageBitmap>;
  * Reads a project folder.
  * @throws ProjectOpenError, FormatError (malformed files), FileNotFoundError (level missing).
  */
-export async function loadProject(fs: ProjectFileSystem, decode: ImageDecoder): Promise<LoadedProject> {
+export async function loadProject(
+  fs: ProjectFileSystem,
+  decode: ImageDecoder,
+  options: { readonly levelId?: string } = {},
+): Promise<LoadedProject> {
   let projectText: string;
   try {
     projectText = await fs.readText(PROJECT_FILE_NAME);
@@ -194,7 +229,8 @@ export async function loadProject(fs: ProjectFileSystem, decode: ImageDecoder): 
     throw error;
   }
   const project = parseProject(projectText);
-  const level = project.levels[0];
+  // The requested level (reload keeps the open one), else the first.
+  const level = project.levels.find((l) => l.id === options.levelId) ?? project.levels[0];
   if (!level) throw new ProjectOpenError("noLevel");
   const levelText = await fs.readText(level.path);
   const document = parseLevel(levelText, project.tilesets, project.entityTypes);
@@ -225,6 +261,8 @@ export async function loadProject(fs: ProjectFileSystem, decode: ImageDecoder): 
     images,
     missingImages,
     levels: [...project.levels],
+    levelId: level.id,
+    retiredLevelIds: [...project.retiredLevelIds],
     stamps,
     brokenStamps: broken,
   };

@@ -22,7 +22,7 @@ import {
   type EntityType,
   type StoreChangeEvent,
 } from "../src";
-import { BLOB_ID, CORNER_ID, TERRAIN_TILESET, TILESET, makeStore, terrainArb } from "./helpers";
+import { BLOB_ID, CORNER_ID, TERRAIN_TILESET, TILESET, derivedMismatches, makeStore, terrainArb } from "./helpers";
 
 describe("undo grouping", () => {
   it("one transaction mixing every kind of change is one undo step", () => {
@@ -543,6 +543,8 @@ describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terra
             }
           }
           expect(snap(store)).toBe(states[at]);
+          // Invariant: every derived tile layer equals the from-scratch derivation of its terrain grid.
+          expect(derivedMismatches(store.document)).toEqual([]);
           const text = serializeLevel(store.document);
           expect(serializeLevel(parseLevel(text, store.document.tilesets, store.document.entityTypes))).toBe(text);
         }
@@ -569,6 +571,7 @@ describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terra
           for (const a of group) applyEdit(store, a);
           store.commit();
           expect(store.undoDepth - depth).toBeLessThanOrEqual(1);
+          expect(derivedMismatches(store.document)).toEqual([]);
           if (store.undoDepth > depth) states.push(snap(store));
         }
         for (let s = states.length - 2; s >= 0; s--) {

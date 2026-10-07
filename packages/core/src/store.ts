@@ -35,6 +35,7 @@ import type {
   RemoveEntityTypeOp,
   UpdateEntityOp,
   DefineTerrainOp,
+  DeriveTerrainOp,
   PaintTerrainOp,
   RemoveTerrainOp,
   SetTileSolidOp,
@@ -187,75 +188,73 @@ export interface MapStoreOptions {
 
 type MutableChange = { x: number; y: number; before: Cell; after: Cell };
 
-/** Per-layer change list plus an index from cell to its slot in the list. */
+/**
+ * Per-layer change list plus an index from cell to its slot in the list.
+ * The index is one `Int32Array(CHUNK_AREA)` (4 KB) per touched 32×32 chunk,
+ * so memory grows with the touched area, never with the map size (a big
+ * fill costs the same per cell as a brush dab; no map-sized buffers).
+ */
 class LayerChanges {
   readonly changes: MutableChange[] = [];
-  /** Sparse index (`cell index → slot`) for small change sets. */
-  #sparse: Map<number, number> | null = new Map();
-  /** Dense index (`cell index → slot + 1`, 0 = none) once the set grows large. */
-  #dense: Int32Array | null = null;
-  readonly #area: number;
+  /** chunk index (`cy * chunkColumns + cx`) → `local index → slot + 1` (0 = none). */
+  readonly #index = new Map<number, Int32Array>();
+  readonly #chunkColumns: number;
+  #lastKey = -1;
+  #last: Int32Array | null = null;
 
-  constructor(area: number) {
-    this.#area = area;
+  constructor(width: number) {
+    this.#chunkColumns = (width + CHUNK_MASK) >> CHUNK_SHIFT;
   }
 
-  slot(index: number): number | undefined {
-    if (this.#dense) {
-      const s = this.#dense[index]!;
-      return s === 0 ? undefined : s - 1;
+  #chunk(x: number, y: number, create: boolean): Int32Array | null {
+    const key = (y >> CHUNK_SHIFT) * this.#chunkColumns + (x >> CHUNK_SHIFT);
+    if (key === this.#lastKey) return this.#last;
+    let chunk = this.#index.get(key) ?? null;
+    if (!chunk) {
+      if (!create) return null;
+      chunk = new Int32Array(CHUNK_AREA);
+      this.#index.set(key, chunk);
     }
-    return this.#sparse!.get(index);
+    this.#lastKey = key;
+    this.#last = chunk;
+    return chunk;
   }
 
-  add(index: number, change: MutableChange): void {
-    const slot = this.changes.length;
+  /** Slot of cell (`x`, `y`) in `changes`, or `undefined`. */
+  slot(x: number, y: number): number | undefined {
+    const chunk = this.#chunk(x, y, false);
+    const s = chunk ? chunk[localIndex(x & CHUNK_MASK, y & CHUNK_MASK)]! : 0;
+    return s === 0 ? undefined : s - 1;
+  }
+
+  add(x: number, y: number, change: MutableChange): void {
     this.changes.push(change);
-    if (this.#dense) {
-      this.#dense[index] = slot + 1;
-      return;
-    }
-    const sparse = this.#sparse!;
-    sparse.set(index, slot);
-    // A Map of millions of keys is slow; switch to a typed array once the
-    // change set is a sizeable part of the map (fill, big paste, cut).
-    if (sparse.size >= DENSE_THRESHOLD && this.#area <= DENSE_MAX_AREA && sparse.size * 64 >= this.#area) {
-      const dense = new Int32Array(this.#area);
-      for (const [i, sl] of sparse) dense[i] = sl + 1;
-      this.#dense = dense;
-      this.#sparse = null;
-    }
+    this.#chunk(x, y, true)![localIndex(x & CHUNK_MASK, y & CHUNK_MASK)] = this.changes.length;
   }
 }
-
-const DENSE_THRESHOLD = 4096;
-const DENSE_MAX_AREA = 1 << 26;
 
 /** Collects cell changes, keeping the first `before` and last `after` per cell. */
 class PatchBuilder {
   readonly #layers = new Map<string, LayerChanges>();
   readonly #width: number;
-  readonly #area: number;
   #lastId: string | null = null;
   #last: LayerChanges | null = null;
 
   constructor(map: MapInfo) {
     this.#width = map.width;
-    this.#area = map.width * map.height;
   }
 
   record(layerId: string, x: number, y: number, before: Cell, after: Cell): void {
     let layer = this.#lastId === layerId ? this.#last : this.#layers.get(layerId);
     if (!layer) {
-      layer = new LayerChanges(this.#area);
+      layer = new LayerChanges(this.#width);
       this.#layers.set(layerId, layer);
     }
     this.#lastId = layerId;
     this.#last = layer;
-    const index = y * this.#width + x;
-    const slot = layer.slot(index);
+    const slot = layer.slot(x, y);
     if (slot !== undefined) layer.changes[slot]!.after = after;
-    else layer.add(index, { x, y, before, after });
+    else layer.add(x, y, { x, y, before, after });
   }
 
   /** Patches with no-op cells (`before === after`) dropped; layers without changes omitted. */
@@ -534,6 +533,8 @@ export class MapStore {
         return this.#defineEntityType(op);
       case "removeEntityType":
         return this.#removeEntityType(op);
+      case "deriveTerrain":
+        return this.#deriveTerrainOp(op);
       default: {
         const unknown: never = op;
         throw new TypeError(`Unknown op type: ${String((unknown as { type: unknown }).type)}`);
@@ -632,7 +633,8 @@ export class MapStore {
         throw new RangeError(`paintCells: palette index ${cellPaletteIndex(cell)} does not exist (at (${x}, ${y}))`);
       }
     }
-    if (layer.locked) return Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
+    // Locked layers and derived tile layers (owned by their terrain grid) take no writes.
+    if (layer.locked || this.#isDerivedLayer(layer.id)) return Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
 
     const map = this.#doc.map;
     const opPatch = new PatchBuilder(map);
@@ -665,6 +667,12 @@ export class MapStore {
     }
     this.#doc._addTileset(op.tileset);
     this.#emit({ cause: "dispatch", cells: [], structure: ["tilesets"], historyChanged: false });
+    // New terrains may give existing grid values a look: keep derived tiles current.
+    if ((op.tileset.terrains ?? []).length > 0) {
+      const ctx = this.#openOp();
+      this.#deriveAllTerrain(ctx);
+      this.#closeOp(ctx);
+    }
   }
 
   #addLayer(op: AddLayerOp): string {
@@ -707,7 +715,25 @@ export class MapStore {
       throw new Error(`addLayer: unknown layer type ${JSON.stringify(type)}`);
     }
     this.#doc._insertLayer(layer, index);
-    this.#recordStructural({ kind: "layer", layer, before: null, after: index }, ["layers"]);
+    const change: LayerHistoryChange = Object.freeze({ kind: "layer", layer, before: null, after: index });
+    // A grid that takes over a tile layer, or a tile layer that fills a
+    // dangling target, is derived in the same undo step.
+    const deriving = isGridLayer(layer)
+      ? layer.role === "terrain" && layer.targetLayerId !== null
+      : isTileLayer(layer) && this.#isDerivedLayer(layer.id);
+    if (!deriving) {
+      this.#recordStructural(change, ["layers"]);
+      return props.id;
+    }
+    const ctx = this.#openOp();
+    ctx.rec.recordStructural(change);
+    ctx.structure.add("layers");
+    for (const grid of this.#doc.layers) {
+      if (isGridLayer(grid) && grid.role === "terrain" && grid.targetLayerId !== null && (grid === layer || grid.targetLayerId === layer.id)) {
+        this.#deriveTerrain(ctx, grid, this.#derivableCells(grid));
+      }
+    }
+    this.#closeOp(ctx);
     return props.id;
   }
 
@@ -911,6 +937,42 @@ export class MapStore {
     return index;
   }
 
+  #deriveTerrainOp(op: DeriveTerrainOp): LayerPatch {
+    const layer = this.#doc.getLayer(op.layerId);
+    if (!layer) throw new Error(`deriveTerrain: unknown layer "${op.layerId}"`);
+    if (!isGridLayer(layer)) throw new TypeError(`deriveTerrain: "${op.layerId}" is not a grid layer`);
+    const { width, height } = this.#doc.map;
+    let x0 = 0;
+    let y0 = 0;
+    let x1 = width;
+    let y1 = height;
+    if (op.rect !== undefined) {
+      const r = op.rect;
+      if (![r.x, r.y, r.width, r.height].every(Number.isInteger) || r.width < 0 || r.height < 0) {
+        throw new RangeError("deriveTerrain: rect must have integer position and non-negative integer size");
+      }
+      x0 = Math.max(0, r.x);
+      y0 = Math.max(0, r.y);
+      x1 = Math.min(width, r.x + r.width);
+      y1 = Math.min(height, r.y + r.height);
+    }
+    const target = layer.role === "terrain" && layer.targetLayerId !== null ? this.#doc.getLayer(layer.targetLayerId) : undefined;
+    const patchLayerId = isTileLayer(target) ? target.id : layer.id;
+    if (!isTileLayer(target) || x0 >= x1 || y0 >= y1) return Object.freeze({ layerId: patchLayerId, cells: Object.freeze([]) });
+    const cells: number[] = [];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) cells.push(y * width + x);
+    const ctx = this.#openOp();
+    const opPatch = new PatchBuilder(this.#doc.map);
+    this.#deriveTerrain(ctx, layer, cells, opPatch);
+    this.#closeOp(ctx);
+    return opPatch.build()[0] ?? Object.freeze({ layerId: patchLayerId, cells: Object.freeze([]) });
+  }
+
+  /** True when a terrain grid layer derives its tiles into tile layer `layerId`. */
+  #isDerivedLayer(layerId: string): boolean {
+    return this.#doc.layers.some((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layerId);
+  }
+
   #entityLayer(what: string, layerId: string): EntityLayer {
     const layer = this.#doc.getLayer(layerId);
     if (!layer) throw new Error(`${what}: unknown layer "${layerId}"`);
@@ -1089,33 +1151,40 @@ export class MapStore {
 
   /** Re-derives every cell of every terrain layer that can hold a tile. */
   #deriveAllTerrain(ctx: OpContext): void {
-    const { width, height } = this.#doc.map;
     for (const layer of this.#doc.layers) {
       if (!isGridLayer(layer) || layer.role !== "terrain") continue;
       const target = layer.targetLayerId === null ? undefined : this.#doc.getLayer(layer.targetLayerId);
       if (!isTileLayer(target)) continue;
-      // Chunks that can hold derived tiles: grid chunks and their neighbours,
-      // plus chunks the target already has (stale tiles get cleared).
-      const keys = new Set<ChunkKey>();
-      for (const chunk of layer.chunks()) {
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(chunkKey(chunk.cx + dx, chunk.cy + dy));
-      }
-      for (const chunk of target.chunks()) keys.add(chunk.key);
-      const cells: number[] = [];
-      for (const key of keys) {
-        const { cx, cy } = parseChunkKey(key);
-        const x0 = cx << CHUNK_SHIFT;
-        const y0 = cy << CHUNK_SHIFT;
-        for (let y = Math.max(0, y0); y < Math.min(height, y0 + CHUNK_SIZE); y++) {
-          for (let x = Math.max(0, x0); x < Math.min(width, x0 + CHUNK_SIZE); x++) cells.push(y * width + x);
-        }
-      }
-      this.#deriveTerrain(ctx, layer, cells);
+      this.#deriveTerrain(ctx, layer, this.#derivableCells(layer));
     }
   }
 
+  /**
+   * Cell indices (`y * width + x`) whose derived tile may be non-empty or
+   * stale: grid chunks and their neighbours, plus chunks the target already has.
+   */
+  #derivableCells(grid: GridLayer): number[] {
+    const { width, height } = this.#doc.map;
+    const target = grid.targetLayerId === null ? undefined : this.#doc.getLayer(grid.targetLayerId);
+    const keys = new Set<ChunkKey>();
+    for (const chunk of grid.chunks()) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(chunkKey(chunk.cx + dx, chunk.cy + dy));
+    }
+    if (target) for (const chunk of target.chunks()) keys.add(chunk.key);
+    const cells: number[] = [];
+    for (const key of keys) {
+      const { cx, cy } = parseChunkKey(key);
+      const x0 = cx << CHUNK_SHIFT;
+      const y0 = cy << CHUNK_SHIFT;
+      for (let y = Math.max(0, y0); y < Math.min(height, y0 + CHUNK_SIZE); y++) {
+        for (let x = Math.max(0, x0); x < Math.min(width, x0 + CHUNK_SIZE); x++) cells.push(y * width + x);
+      }
+    }
+    return cells;
+  }
+
   /** Recomputes the derived tiles of `grid` at the given cell indices (`y * width + x`). */
-  #deriveTerrain(ctx: OpContext, grid: GridLayer, cells: Iterable<number>): void {
+  #deriveTerrain(ctx: OpContext, grid: GridLayer, cells: Iterable<number>, opPatch?: PatchBuilder): void {
     if (grid.targetLayerId === null) return;
     const target = this.#doc.getLayer(grid.targetLayerId);
     if (!isTileLayer(target)) return;
@@ -1131,6 +1200,7 @@ export class MapStore {
       const before = target._setCell(x, y, cell);
       if (before === cell) continue;
       ctx.rec.recordCell(map, target.id, x, y, before, cell);
+      opPatch?.record(target.id, x, y, before, cell);
       ctx.dirty.add(target.id, x, y);
     }
   }

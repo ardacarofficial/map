@@ -119,3 +119,9 @@ describe("entityLook", () => {
     expect(parseHexColor(undefined, 5)).toBe(5);
   });
 });
+
+describe("entityLabel name resolver", () => {
+  it("uses the given display name for types", () => {
+    expect(entityLabel(ent("s", 0, 0, { typeId: SPAWN_TYPE_ID }), { id: "spawn", name: "Spawn", color: "#000000", fields: [] }, project, () => "Başlangıç")).toBe("Başlangıç");
+  });
+});

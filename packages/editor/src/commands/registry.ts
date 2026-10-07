@@ -4,7 +4,7 @@
  * commands by id, so one action has exactly one implementation.
  */
 import type { MessageKey } from "../i18n";
-import { SHORTCUTS, type CommandId } from "../shortcuts/shortcuts";
+import { effectiveShortcuts, shortcutsRevision, type CommandId } from "../shortcuts/shortcuts";
 import { matchesChord, parseChord, type KeyChord, type KeyEventLike } from "./keymap";
 
 export type CommandCategory = "file" | "edit" | "view" | "tool" | "layer" | "map" | "tileset" | "entity" | "general";
@@ -52,10 +52,14 @@ interface Binding {
 }
 
 let bindings: Binding[] | null = null;
+let bindingsRevision = -1;
 
-/** All key bindings, parsed once from `SHORTCUTS`. */
+/** All key bindings, parsed from `SHORTCUTS` + settings overrides (re-parsed when those change). */
 function allBindings(): Binding[] {
-  bindings ??= SHORTCUTS.flatMap((s) => s.keys.map((keys) => ({ command: s.command, chord: parseChord(keys) })));
+  if (bindings === null || bindingsRevision !== shortcutsRevision()) {
+    bindingsRevision = shortcutsRevision();
+    bindings = effectiveShortcuts().flatMap((s) => s.keys.map((keys) => ({ command: s.command, chord: parseChord(keys) })));
+  }
   return bindings;
 }
 

@@ -28,6 +28,11 @@ export interface OpenProject {
   store: MapStore;
   /** Relative path of the level file inside the project, e.g. "levels/main.json". */
   levelPath: string;
+  /**
+   * v1.0: stable id of the open (active) level. The project's level list is
+   * `useProjectLibrary.levels`; only this level's store is loaded.
+   */
+  levelId?: string;
 }
 
 export interface EditorState {
@@ -69,6 +74,13 @@ export interface EditorState {
   selectedEntityId: string | null;
 
   setProject(project: OpenProject | null): void;
+  /**
+   * v1.0: another level of the same project became active. Unlike
+   * `setProject` it keeps the tool, tile selection, random set, stamp and
+   * dirty flag; the marquee and the selected entity belong to the old level.
+   * `activeLayerId` defaults to the level's top layer.
+   */
+  switchLevel(project: OpenProject, activeLayerId?: string | null): void;
   setTool(tool: ToolId): void;
   setSelection(selection: TileSelection | null): void;
   setActiveLayer(id: string | null): void;
@@ -112,6 +124,17 @@ export const useEditorStore = create<EditorState>()((set) => ({
       stamp: null,
       randomSet: [],
       selectedEntityId: null,
+    }),
+  switchLevel: (project, activeLayerId) =>
+    set({
+      project,
+      activeLayerId:
+        activeLayerId && project.store.document.getLayer(activeLayerId)
+          ? activeLayerId
+          : (project.store.document.layers.at(-1)?.id ?? null),
+      region: null,
+      selectedEntityId: null,
+      hoverCell: null,
     }),
   setTool: (tool) => set({ tool }),
   setSelection: (selection) => set({ selection }),

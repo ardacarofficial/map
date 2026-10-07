@@ -25,8 +25,10 @@
  *   `candidates[hash(doc.seed, x, y) % n]` is used.
  */
 import type { MapDocument } from "./document";
+import { makeCell } from "./cell";
+import { CHUNK_SHIFT, CHUNK_SIZE, chunkKey, parseChunkKey } from "./chunk";
 import type { GridLayer } from "./layer";
-import { isGridLayer } from "./layer";
+import { isGridLayer, isTileLayer } from "./layer";
 import type { PaletteEntry } from "./palette";
 import {
   BLOB_E,
@@ -184,4 +186,50 @@ export function deriveTerrainTiles(doc: MapDocument, layerId: string): (PaletteE
     }
   }
   return out;
+}
+
+/**
+ * @internal Brings every derived tile layer of `doc` in line with its
+ * terrain grid, writing cells directly (no history; used when a level is
+ * loaded, before any store exists). Palette entries are added only for
+ * tiles a changed cell needs, so a level that is already consistent is left
+ * byte-for-byte unchanged. Returns the number of cells that changed.
+ */
+export function rederiveTerrainInPlace(doc: MapDocument): number {
+  const { width, height } = doc.map;
+  const terrains = doc.terrainMap();
+  const tiles = new TerrainTiles(doc);
+  let changed = 0;
+  for (const grid of doc.layers) {
+    if (!isGridLayer(grid) || grid.role !== "terrain" || grid.targetLayerId === null) continue;
+    const target = doc.getLayer(grid.targetLayerId);
+    if (!isTileLayer(target)) continue;
+    // Cells that can hold a derived tile or a stale one (same set as the store uses).
+    const keys = new Set<string>();
+    for (const chunk of grid.chunks()) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) keys.add(chunkKey(chunk.cx + dx, chunk.cy + dy));
+    }
+    for (const chunk of target.chunks()) keys.add(chunk.key);
+    for (const key of keys) {
+      const { cx, cy } = parseChunkKey(key);
+      const x0 = cx << CHUNK_SHIFT;
+      const y0 = cy << CHUNK_SHIFT;
+      for (let y = Math.max(0, y0); y < Math.min(height, y0 + CHUNK_SIZE); y++) {
+        for (let x = Math.max(0, x0); x < Math.min(width, x0 + CHUNK_SIZE); x++) {
+          const slot = terrainSlotAt(doc, grid, x, y, terrains);
+          const tileId = slot ? tiles.tileId(slot, x, y) : null;
+          let cell = 0;
+          if (slot && tileId !== null) {
+            const tilesetId = slot.terrain.tilesetId;
+            // A missing entry means the current cell cannot show this tile: it changes either way.
+            cell = makeCell(doc.palette.indexOf(tilesetId, tileId) || doc.palette._getOrAdd(tilesetId, tileId));
+          }
+          if (target.getCell(x, y) === cell) continue;
+          target._setCell(x, y, cell);
+          changed++;
+        }
+      }
+    }
+  }
+  return changed;
 }

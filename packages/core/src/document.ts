@@ -8,8 +8,16 @@ import { normalizeTileset, type Tileset } from "./tileset";
 export const DOCUMENT_FORMAT_VERSION = 1;
 /** Default tile size in pixels. */
 export const DEFAULT_TILE_SIZE = 32;
-/** Largest allowed map width/height in cells. */
-export const MAX_MAP_SIZE = 65536;
+/**
+ * Largest allowed map width/height in cells (4096 → 16.7 M cells; at 32 px
+ * tiles a 131 072 px side). CLAUDE.md targets ordinary 2D game maps split
+ * into separate levels ("ayrı bölgeler", v1.0 multi-level), not one giant
+ * open world, and whole-map operations (flood fill, resize, collision
+ * derivation, TMJ / game export, minimap) allocate per cell: at the old
+ * 65536 bound a single fill or export could need gigabytes. Larger worlds
+ * are several levels on the world map.
+ */
+export const MAX_MAP_SIZE = 4096;
 
 /** Map dimensions. Cells are addressed `0 ≤ x < width`, `0 ≤ y < height`, y pointing down. */
 export interface MapInfo {

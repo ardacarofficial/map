@@ -90,10 +90,13 @@ export function labelsVisible(cellCssPx: number, onScreen: number): boolean {
   return cellCssPx >= LABEL_MIN_CELL_CSS_PX && onScreen <= LABEL_MAX_ON_SCREEN;
 }
 
+/** Display name of a type (the UI translates the built-in ones). */
+export type TypeName = (type: EntityType) => string;
+
 /** Text drawn next to an entity: portals show their target ("→ Zindan"), others their type name. */
-export function entityLabel(entity: Entity, type: EntityType | undefined, project: ProjectData): string {
+export function entityLabel(entity: Entity, type: EntityType | undefined, project: ProjectData, nameOf: TypeName = (t) => t.name): string {
   if (entity.typeId === PORTAL_TYPE_ID) return portalLabel(project, entity);
-  return type?.name || entity.typeId;
+  return (type && nameOf(type)) || entity.typeId;
 }
 
 /** `#rrggbb` → number, or `fallback`. */
@@ -125,9 +128,15 @@ export interface EntityLook {
 }
 
 /** Resolves colour, shape, label and link status of an entity. */
-export function entityLook(entity: Entity, type: EntityType | undefined, project: ProjectData, colors: EntityColors): EntityLook {
+export function entityLook(
+  entity: Entity,
+  type: EntityType | undefined,
+  project: ProjectData,
+  colors: EntityColors,
+  nameOf?: TypeName,
+): EntityLook {
   const status = portalStatus(project, entity);
-  const label = entityLabel(entity, type, project);
+  const label = entityLabel(entity, type, project, nameOf);
   if (entity.typeId === SPAWN_TYPE_ID) return { color: colors.spawn, shape: "spawn", broken: false, label, status };
   if (entity.typeId === PORTAL_TYPE_ID) {
     const broken = status === "missingLevel";

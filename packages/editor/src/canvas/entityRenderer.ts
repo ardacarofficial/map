@@ -20,6 +20,7 @@ import {
 } from "@smap/core";
 import { Container, Graphics, Text, TextStyle } from "pixi.js";
 
+import { entityTypeName } from "../commands/entityActions";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
 import { screenToWorld, snappedOffset, type Point } from "./camera";
@@ -228,7 +229,7 @@ export class EntityRenderer {
           layer,
           items: layer.entities.map((entity) => ({
             entity,
-            look: entityLook(entity, doc.getEntityType(entity.typeId), project, this.#host.entityColors),
+            look: entityLook(entity, doc.getEntityType(entity.typeId), project, this.#host.entityColors, entityTypeName),
           })),
         });
       }
@@ -286,7 +287,7 @@ function drawEntity(g: Graphics, look: EntityLook, x0: number, y0: number, x1: n
   const line = w >= 20 * k && h >= 20 * k ? 2 * k : k;
   // Dark halo outside keeps the box readable on any tile.
   g.roundRect(bx, by, bw, bh, radius).stroke({ color: CANVAS_COLORS.cursorShadow, width: k * px, alpha: 0.45, alignment: 0 });
-  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.4 : 0.42 });
+  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.55 : 0.42 });
   if (look.broken) dashed(g, x0 + inset, y0 + inset, x1 - inset, y1 - inset, line, px, look.color);
   else g.roundRect(bx, by, bw, bh, radius).stroke({ color: look.color, width: line * px, alignment: 1 });
 

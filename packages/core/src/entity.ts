@@ -84,7 +84,11 @@ export interface Entity {
   /** Pixels; omitted = one cell. */
   readonly width?: number;
   readonly height?: number;
-  /** Field values by name. Keys are kept sorted (deterministic files). */
+  /**
+   * Field values by name. Keys are kept sorted (deterministic files).
+   * Normalized entities hold a prototype-less object (`Object.create(null)`),
+   * so any key read from a file — even `"__proto__"` — is a plain own key.
+   */
   readonly fields: Readonly<Record<string, EntityFieldValue>>;
 }
 
@@ -182,6 +186,18 @@ export function entityFieldValueProblem(field: EntityFieldDef, value: unknown): 
 
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * Field names an entity type may not use: they are special on JavaScript
+ * objects (`__proto__` would be swallowed or change an object's prototype in
+ * code that builds plain objects from field names, e.g. game-side importers).
+ */
+export const RESERVED_ENTITY_FIELD_NAMES: readonly string[] = Object.freeze(["__proto__", "constructor", "prototype"]);
+
+/** A fresh prototype-less record (safe for any key, including `"__proto__"`). */
+export function emptyFieldRecord<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
 /** Why `type` is not a valid user-defined entity type, or `null` (reserved ids are not checked here). */
 export function entityTypeProblem(type: EntityType): string | null {
   if (typeof type !== "object" || type === null) return "entity type must be an object";
@@ -194,6 +210,7 @@ export function entityTypeProblem(type: EntityType): string | null {
   for (const field of type.fields as readonly EntityFieldDef[]) {
     if (typeof field !== "object" || field === null) return "every field must be an object";
     if (typeof field.name !== "string" || field.name.length === 0) return "field names must be non-empty strings";
+    if (RESERVED_ENTITY_FIELD_NAMES.includes(field.name)) return `field name "${field.name}" is reserved`;
     if (names.has(field.name)) return `duplicate field name "${field.name}"`;
     names.add(field.name);
     if (!isEntityFieldType(field.type)) return `field "${field.name}" has unknown type ${describe(field.type)}`;
@@ -246,7 +263,7 @@ export function normalizeEntityType(type: EntityType): EntityType {
 
 /** Frozen copy with field keys sorted and points copied. */
 export function normalizeEntity(entity: Entity): Entity {
-  const fields: Record<string, EntityFieldValue> = {};
+  const fields = emptyFieldRecord<EntityFieldValue>();
   for (const name of Object.keys(entity.fields).sort()) fields[name] = copyValue(entity.fields[name]!);
   return Object.freeze({
     id: entity.id,
@@ -305,9 +322,9 @@ export function resolveEntityFields(entity: Entity, type: EntityType | undefined
   });
 }
 
-/** Default field values of `type`. */
+/** Default field values of `type` (a prototype-less record). */
 export function defaultEntityFields(type: EntityType): Record<string, EntityFieldValue> {
-  const out: Record<string, EntityFieldValue> = {};
+  const out = emptyFieldRecord<EntityFieldValue>();
   for (const f of type.fields) out[f.name] = copyValue(f.default);
   return out;
 }

@@ -127,9 +127,16 @@ export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: 
  * remapped through `getOrAddPaletteIndex`; flip flags are preserved. Cells
  * outside the map and cells on locked layers are skipped (as with `paintCells`).
  *
- * Grid clip layers (`grid: true`) paste into grid layers with `paintTerrain`
- * (terrain layers re-derive their tiles); tile clip layers into tile layers.
- * A kind mismatch throws for an explicit mapping and is skipped for `null`.
+ * Grid clip layers (`grid: true`) paste into grid layers with `paintTerrain`;
+ * tile clip layers into tile layers. A kind mismatch throws for an explicit
+ * mapping and is skipped for `null`.
+ *
+ * Derived tile layers (the target of a terrain grid layer) never receive the
+ * clip's raw tiles: they are owned by their grid. After the grid writes,
+ * every terrain layer whose grid or target was pasted into is re-derived over
+ * the pasted rectangle plus a one-cell border, in the same undo step, so the
+ * derived tiles always equal `deriveTerrainTiles` (the copied tiles were
+ * derived in the source's context — edges and neighbours differ here).
  *
  * @returns the patches of the layers that changed.
  * @throws Error before changing anything when a mapped target layer does not
@@ -176,8 +183,8 @@ export function pasteClip(
 
   // Validate every referenced tile before adding palette entries.
   const used = new Set<number>();
-  for (const { layer } of targets) {
-    if (layer.grid) continue;
+  for (const { layer, targetId } of targets) {
+    if (layer.grid || terrainLayersOf(doc, targetId).length > 0) continue;
     for (const cell of layer.cells) if (cell !== EMPTY_CELL) used.add(cellPaletteIndex(cell));
   }
   for (const index of used) {
@@ -196,9 +203,14 @@ export function pasteClip(
   }
 
   const patches: LayerPatch[] = [];
+  const rect: CellRect = { x, y, width: clip.width, height: clip.height };
+  const derive = new Set<string>();
   store.beginTransaction();
   try {
     for (const { layer, targetId } of targets) {
+      const owners = terrainLayersOf(doc, targetId);
+      for (const id of owners) derive.add(id);
+      if (!layer.grid && owners.length > 0) continue; // derived tile layer: re-derived below
       if (layer.grid) {
         const writes: GridWrite[] = [];
         for (let cy = 0; cy < clip.height; cy++) {
@@ -227,6 +239,7 @@ export function pasteClip(
       const patch = store.dispatch({ type: "paintCells", layerId: targetId, cells });
       if (patch.cells.length > 0) patches.push(patch);
     }
+    patches.push(...rederive(store, derive, rect));
   } finally {
     store.commit();
   }
@@ -234,8 +247,33 @@ export function pasteClip(
 }
 
 /**
+ * Terrain grid layers tied to layer `layerId`: the layer itself when it is a
+ * terrain grid, or the terrain grid deriving into it when it is a tile layer.
+ */
+function terrainLayersOf(doc: MapDocument, layerId: string): string[] {
+  const layer = doc.getLayer(layerId);
+  if (isGridLayer(layer)) return layer.role === "terrain" ? [layer.id] : [];
+  return doc.layers.filter((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layerId).map((l) => l.id);
+}
+
+/** Re-derives `rect` plus a one-cell border of each terrain layer; returns the non-empty patches. */
+function rederive(store: MapStore, gridIds: Iterable<string>, rect: CellRect): LayerPatch[] {
+  const out: LayerPatch[] = [];
+  const border = { x: rect.x - 1, y: rect.y - 1, width: rect.width + 2, height: rect.height + 2 };
+  for (const layerId of gridIds) {
+    if (!store.document.getLayer(layerId)) continue;
+    const patch = store.dispatch({ type: "deriveTerrain", layerId, rect: border });
+    if (patch.cells.length > 0) out.push(patch);
+  }
+  return out;
+}
+
+/**
  * Cut: copies `rect` of the layers, then clears it, as one undo step.
  * Locked layers are copied but not cleared; entity layers are skipped.
+ * Derived tile layers are copied but not cleared by hand: their terrain
+ * layers are re-derived over `rect` plus a one-cell border instead (so
+ * cutting the grid clears its tiles, and the tiles stay consistent).
  */
 export function cutRegion(store: MapStore, layerIds: readonly string[], rect: CellRect): TileClip {
   const clip = copyRegion(store.document, layerIds, rect);
@@ -244,13 +282,18 @@ export function cutRegion(store: MapStore, layerIds: readonly string[], rect: Ce
     for (let x = rect.x; x < rect.x + rect.width; x++) cells.push({ x, y, cell: EMPTY_CELL });
   }
   const values: GridWrite[] = cells.map((c) => ({ x: c.x, y: c.y, value: 0 }));
+  const derive = new Set<string>();
   store.beginTransaction();
   try {
     for (const layerId of layerIds) {
-      if (isEntityLayer(store.document.getLayer(layerId))) continue;
-      if (isGridLayer(store.document.getLayer(layerId))) store.dispatch({ type: "paintTerrain", layerId, cells: values });
-      else store.dispatch({ type: "paintCells", layerId, cells });
+      const doc = store.document;
+      if (isEntityLayer(doc.getLayer(layerId))) continue;
+      const owners = terrainLayersOf(doc, layerId);
+      for (const id of owners) derive.add(id);
+      if (isGridLayer(doc.getLayer(layerId))) store.dispatch({ type: "paintTerrain", layerId, cells: values });
+      else if (owners.length === 0) store.dispatch({ type: "paintCells", layerId, cells });
     }
+    rederive(store, derive, rect);
   } finally {
     store.commit();
   }

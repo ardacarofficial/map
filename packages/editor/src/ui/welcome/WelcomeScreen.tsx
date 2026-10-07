@@ -3,7 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { runCommand } from "../../commands/registry";
 import { getLocale, t } from "../../i18n";
 import { createProjectFromTilesets, DEFAULT_MAP_HEIGHT, DEFAULT_MAP_WIDTH, openRecentProject } from "../../io/session";
-import { forgetRecent, listRecents, supportsRecents, type RecentProject } from "../../io/recents";
+import { getPlatform, type RecentEntry } from "../../platform";
+import { LanguageSwitch } from "../../platform/LanguageSwitch";
 import type { CommandId } from "../../shortcuts/shortcuts";
 import { Icon, type IconName } from "../primitives/Icon";
 import { CommandKbd } from "../primitives/Kbd";
@@ -36,6 +37,8 @@ export function WelcomeScreen() {
         <footer className="flex items-center justify-center gap-2 text-xs text-faint">
           <CommandKbd command="palette.open" />
           <span>{t("commands.palette.open")}</span>
+          <span aria-hidden className="mx-1 h-3 w-px bg-line" />
+          <LanguageSwitch />
         </footer>
       </div>
     </div>
@@ -109,12 +112,16 @@ function formatDate(ms: number): string {
 }
 
 function Recents() {
-  const [recents, setRecents] = useState<RecentProject[] | null>(null);
-  const supported = supportsRecents();
+  const [recents, setRecents] = useState<RecentEntry[] | null>(null);
+  const platform = getPlatform();
+  const supported = platform.recents.supported;
 
   useEffect(() => {
     let alive = true;
-    void listRecents().then((list) => alive && setRecents(list));
+    void getPlatform()
+      .recents.list()
+      .then((list) => alive && setRecents(list))
+      .catch(() => alive && setRecents([]));
     return () => {
       alive = false;
     };
@@ -128,7 +135,7 @@ function Recents() {
     body = (
       <ul className="flex flex-col gap-px">
         {recents.map((recent) => (
-          <li key={recent.openedAt} className="group relative">
+          <li key={recent.key} className="group relative">
             <button
               type="button"
               onClick={() => void openRecentProject(recent)}
@@ -136,7 +143,9 @@ function Recents() {
             >
               <Icon name="folder" size={15} className="shrink-0 text-faint" />
               <span className="min-w-0 truncate text-md text-text">{recent.name}</span>
-              <span className="min-w-0 truncate text-sm text-faint">{recent.folder}</span>
+              <span className={`min-w-0 truncate text-sm text-faint ${recent.exists ? "" : "line-through"}`} title={recent.location}>
+                {recent.location}
+              </span>
               <span className="ml-auto shrink-0 font-mono text-xs text-faint tabular">{formatDate(recent.openedAt)}</span>
             </button>
             <button
@@ -144,8 +153,8 @@ function Recents() {
               aria-label={t("welcome.removeRecent")}
               title={t("welcome.removeRecent")}
               onClick={() => {
-                void forgetRecent(recent.openedAt);
-                setRecents((list) => list?.filter((r) => r.openedAt !== recent.openedAt) ?? null);
+                void platform.recents.remove(recent).catch(() => undefined);
+                setRecents((list) => list?.filter((r) => r.key !== recent.key) ?? null);
               }}
               className="absolute top-2 right-2 grid size-6 place-items-center rounded-sm text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-active hover:text-text focus-visible:opacity-100"
             >

@@ -160,6 +160,7 @@ export type {
   SetTileSolidOp,
   DefineTerrainOp,
   RemoveTerrainOp,
+  DeriveTerrainOp,
   AddEntityOp,
   RemoveEntityOp,
   MoveEntityOp,
@@ -202,6 +203,8 @@ export {
   type EntityPoint,
   type ResolvedEntityField,
   ENTITY_FIELD_TYPES,
+  RESERVED_ENTITY_FIELD_NAMES,
+  emptyFieldRecord,
   SPAWN_TYPE_ID,
   PORTAL_TYPE_ID,
   PORTAL_TARGET_LEVEL,
@@ -240,6 +243,8 @@ export {
 
 export { type RandomTile, pickRandomTile } from "./randomBrush";
 
+export { isReservedFileName, fileNameProblem, portablePathProblem, safeFileName } from "./fileName";
+
 export {
   type WorldPoint,
   type ProjectLevel,
@@ -266,6 +271,8 @@ export {
   serializeLevel,
   parseProject,
   parseLevel,
+  paletteWarnings,
+  type ParseLevelOptions,
   serializeClip,
   parseClip,
   serializeStamp,

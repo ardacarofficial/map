@@ -37,6 +37,7 @@ import { cellPaletteIndex, isValidCell } from "./cell";
 import type { ClipLayer, TileClip } from "./clip";
 import {
   entityProblem,
+  emptyFieldRecord,
   entityTypesProblem,
   isEntityFieldType,
   isEntityFieldValue,
@@ -50,7 +51,7 @@ import {
 import { normalizeProject, type Project, type ProjectData } from "./project";
 import { stampIdProblem, type Stamp } from "./stamp";
 import { CHUNK_AREA, CHUNK_SHIFT, CHUNK_SIZE } from "./chunk";
-import { DOCUMENT_FORMAT_VERSION, MapDocument, isValidSeed, mapInfoProblem, type MapInfo } from "./document";
+import { DOCUMENT_FORMAT_VERSION, MAX_MAP_SIZE, MapDocument, isValidSeed, mapInfoProblem, type MapInfo } from "./document";
 import {
   EntityLayer,
   GridLayer,
@@ -63,7 +64,8 @@ import {
   type LayerProps,
 } from "./layer";
 import { isTerrainTemplate, type Terrain, type TerrainVariant } from "./terrain";
-import { normalizeTileset, relativePathProblem, tilesetProblem, type Tileset } from "./tileset";
+import { isValidTileId, normalizeTileset, relativePathProblem, tileCount, tilesetProblem, type Tileset } from "./tileset";
+import { rederiveTerrainInPlace } from "./autotile";
 
 /** `format` field of a project file. */
 export const PROJECT_FORMAT = "smap-project";
@@ -302,16 +304,44 @@ export function parseProject(text: string): Project {
   }
 }
 
+/** Options of {@link parseLevel}. */
+export interface ParseLevelOptions {
+  /**
+   * Re-derive every terrain layer's tiles from its grid after loading.
+   * Terrains are project data and derived tiles are per level, so a level
+   * saved before a terrain was edited (while another level was open) holds
+   * stale tiles; this brings them in line. A level that is already
+   * consistent is left byte-for-byte unchanged. Default: `true` when
+   * `tilesets` is non-empty (without tilesets no terrain is known and
+   * deriving would clear every derived tile).
+   */
+  readonly deriveTerrain?: boolean;
+  /**
+   * Receives non-fatal findings (see {@link paletteWarnings}); the level
+   * still loads. Pushed in a fixed order.
+   */
+  readonly warnings?: string[];
+}
+
 /**
  * Parses and validates a level file into a new `MapDocument`.
  *
  * `tilesets` (from the project file) are attached to the document. Palette
- * entries pointing at a tileset that is not listed are kept, so a level still
- * opens when a tileset is missing; the renderer should show those tiles as missing.
+ * entries pointing at a tileset that is not listed, or at a tile id outside
+ * it (the image shrank), are kept, so a level still opens; they are
+ * reported through `options.warnings`, the renderer should show those tiles
+ * as missing and the exporters skip them.
+ *
+ * Derived terrain tiles are re-derived on load (see {@link ParseLevelOptions.deriveTerrain}).
  *
  * @throws FormatError with a descriptive message on any problem, including a newer `documentFormatVersion`.
  */
-export function parseLevel(text: string, tilesets: readonly Tileset[] = [], entityTypes: readonly EntityType[] = []): MapDocument {
+export function parseLevel(
+  text: string,
+  tilesets: readonly Tileset[] = [],
+  entityTypes: readonly EntityType[] = [],
+  options: ParseLevelOptions = {},
+): MapDocument {
   const root = readRoot(text, LEVEL_FORMAT, "level");
 
   const mapObj = obj(root["map"], "map");
@@ -415,7 +445,28 @@ export function parseLevel(text: string, tilesets: readonly Tileset[] = [], enti
     seenTargets.add(target);
   }
 
+  if (options.deriveTerrain ?? tilesets.length > 0) rederiveTerrainInPlace(doc);
+  if (options.warnings) options.warnings.push(...paletteWarnings(doc));
   return doc;
+}
+
+/**
+ * Palette entries of `doc` that cannot be drawn: their tileset is not in
+ * the document, or their tile id is outside the tileset (CLAUDE.md: tiles
+ * are only appended, so this means the image lost rows/columns). Readable
+ * messages in palette order. Such cells stay in the level (nothing is
+ * repaired) and are skipped by the exporters.
+ */
+export function paletteWarnings(doc: MapDocument): string[] {
+  const out: string[] = [];
+  doc.palette.entries().forEach((entry, i) => {
+    const tileset = doc.getTileset(entry.tilesetId);
+    if (!tileset) out.push(`palette index ${i + 1}: tileset "${entry.tilesetId}" is not in the project`);
+    else if (!isValidTileId(tileset, entry.tileId)) {
+      out.push(`palette index ${i + 1}: tile ${entry.tileId} is outside tileset "${entry.tilesetId}" (${tileCount(tileset)} tiles)`);
+    }
+  });
+  return out;
 }
 
 /**
@@ -443,7 +494,7 @@ export function parseStamp(text: string): Stamp {
 function readClipBody(root: Record<string, unknown>): TileClip {
   const width = int(root, "width", "");
   const height = int(root, "height", "");
-  if (width < 1 || height < 1 || width * height > 1 << 26) {
+  if (width < 1 || height < 1 || width > MAX_MAP_SIZE || height > MAX_MAP_SIZE) {
     throw new FormatError("", `clip size ${width}×${height} is invalid`);
   }
   const palette = arr(root, "palette", "").map((item, i) => {
@@ -666,7 +717,7 @@ function readEntityType(item: unknown, path: string): EntityType {
 
 function readEntity(item: unknown, path: string, doc: MapDocument): Entity {
   const e = obj(item, path);
-  const fields: Record<string, EntityFieldValue> = {};
+  const fields = emptyFieldRecord<EntityFieldValue>();
   arr(e, "fields", path).forEach((f, i) => {
     const fp = `${path}.fields[${i}]`;
     const fo = obj(f, fp);

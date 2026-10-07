@@ -16,6 +16,8 @@ export interface ProjectLibraryState {
   /** Stamp files that could not be read on open (left on disk). */
   brokenStampFiles: string[];
   levels: ProjectLevel[];
+  /** v1.0: ids of levels with unsaved changes (status only, set by the session; not an edit). */
+  dirtyLevelIds: readonly string[];
   /** Bumped on every user edit of the library (not on load); drives dirty tracking. */
   revision: number;
 
@@ -24,15 +26,24 @@ export interface ProjectLibraryState {
   addStamp(stamp: Stamp): void;
   renameStamp(id: string, name: string): void;
   removeStamp(id: string): Stamp | undefined;
+  /** v1.0: the level list changed (add, rename, remove, reorder): an edit, saved with the project. */
+  setLevels(levels: readonly ProjectLevel[]): void;
+  /** v1.0: which levels have unsaved changes (not an edit). */
+  setDirtyLevels(ids: readonly string[]): void;
 }
 
 export const useProjectLibrary = create<ProjectLibraryState>()((set, get) => ({
   stamps: [],
   brokenStampFiles: [],
   levels: [],
+  dirtyLevelIds: [],
   revision: 0,
 
-  load: ({ stamps, brokenStampFiles = [], levels }) => set({ stamps: sortStamps(stamps), brokenStampFiles, levels }),
+  load: ({ stamps, brokenStampFiles = [], levels }) =>
+    set({ stamps: sortStamps(stamps), brokenStampFiles, levels, dirtyLevelIds: [] }),
+  setLevels: (levels) => set((s) => ({ levels: [...levels], revision: s.revision + 1 })),
+  setDirtyLevels: (ids) =>
+    set((s) => (s.dirtyLevelIds.length === ids.length && s.dirtyLevelIds.every((id, i) => id === ids[i]) ? s : { dirtyLevelIds: [...ids] })),
   addStamp: (stamp) =>
     set((s) => ({ stamps: sortStamps([...s.stamps.filter((x) => x.id !== stamp.id), stamp]), revision: s.revision + 1 })),
   renameStamp: (id, name) =>

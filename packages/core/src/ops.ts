@@ -4,6 +4,7 @@
  */
 import type { Cell } from "./cell";
 import type { EntityFieldValue, EntityType } from "./entity";
+import type { CellRect } from "./geometry";
 import type { GridRole } from "./layer";
 import type { Terrain } from "./terrain";
 import type { Tileset } from "./tileset";
@@ -35,6 +36,10 @@ export interface LayerPatch {
  *
  * - Writes outside the map bounds are skipped (a brush may hang off the edge).
  * - Writes to a locked layer are skipped.
+ * - Writes to a derived tile layer (the target of a terrain grid layer) are
+ *   skipped: its tiles always equal the derivation of the grid (CLAUDE.md →
+ *   Autotile: the terrain grid is the real data), and a hand-painted tile
+ *   there would be lost the next time the level is derived (e.g. on load).
  * - If the same cell appears twice, the last write wins.
  * - Undoable. Outside a transaction it becomes its own undo step.
  *
@@ -47,7 +52,12 @@ export interface PaintCellsOp {
   readonly cells: readonly CellWrite[];
 }
 
-/** Adds a tileset to the document. Not undoable. Throws on duplicate id or invalid metadata. */
+/**
+ * Adds a tileset to the document. Not undoable itself. When it brings
+ * terrains that existing grid values already refer to, the derived tiles
+ * are re-derived (recorded like any cell change: own undo step outside a
+ * transaction). Throws on duplicate id or invalid metadata.
+ */
 export interface AddTilesetOp {
   readonly type: "addTileset";
   readonly tileset: Tileset;
@@ -81,6 +91,10 @@ export interface NewLayer {
 /**
  * Adds an empty tile layer (or grid layer, `layer.type: "grid"`). Undoable (since v0.2).
  * `index` is the position from the bottom; defaults to the top.
+ * A new terrain grid with a `targetLayerId` takes over that tile layer: it is
+ * re-derived (from the empty grid: hand-painted tiles there are cleared) in
+ * the same undo step. A new tile layer whose id a terrain grid already
+ * targets (dangling link) is derived in the same undo step too.
  */
 export interface AddLayerOp {
   readonly type: "addLayer";
@@ -221,6 +235,22 @@ export interface RemoveTerrainOp {
   readonly terrainId: number;
 }
 
+/**
+ * Recomputes the derived tiles of a terrain grid layer inside `rect`
+ * (clipped to the map; default: the whole map). Every other op already
+ * keeps derived tiles current, so this is only needed by multi-op edits
+ * that skip derived layers (`pasteClip`, `cutRegion`, `placeStamp` use it
+ * inside their transaction). A no-op for collision grids, terrain grids
+ * without a target, and when nothing differs. Undoable (outside a
+ * transaction its own step). Throws on an unknown / non-grid layer or an
+ * invalid rectangle. Returns the derived tile layer's changed cells.
+ */
+export interface DeriveTerrainOp {
+  readonly type: "deriveTerrain";
+  readonly layerId: string;
+  readonly rect?: CellRect;
+}
+
 /** Entity data for `addEntity`; omitted fields get defaults. */
 export interface NewEntity {
   /** Defaults to a generated id unique in the document (`"e1"`, `"e2"`, ...). */
@@ -322,7 +352,8 @@ export type Op =
   | RemoveLayerOp
   | MoveLayerOp
   | SetLayerPropsOp
-  | ResizeMapOp;
+  | ResizeMapOp
+  | DeriveTerrainOp;
 export type OpType = Op["type"];
 
 /** What `dispatch` returns for each op type. */
@@ -350,6 +381,8 @@ export interface OpResultMap {
   updateEntity: void;
   defineEntityType: void;
   removeEntityType: void;
+  /** Derived tile layer cells this op changed (`layerId` = the target tile layer, or the grid when it has none). */
+  deriveTerrain: LayerPatch;
 }
 
 export type OpResult<O extends Op> = OpResultMap[O["type"]];

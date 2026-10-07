@@ -1,6 +1,7 @@
 /**
  * The single list of keyboard shortcuts. Every key binding in the app comes
- * from here (v0.5 will let a settings file override `keys`).
+ * from here. A settings file can override `keys` per command
+ * (`platform/settings.ts` validates it; `setShortcutOverrides` applies it).
  *
  * Key syntax: modifiers joined with "+", then a `KeyboardEvent.code`-style key
  * name, e.g. "B", "Ctrl+G", "Ctrl+Shift+P", "Space". "Ctrl" means Ctrl on
@@ -50,7 +51,9 @@ export type CommandId =
   | "file.openBackup"
   | "tileset.add"
   | "tileset.markSolid"
-  | "tileset.defineTerrain";
+  | "tileset.defineTerrain"
+  | "settings.language"
+  | "settings.editShortcuts";
 
 export interface ShortcutDef {
   command: CommandId;
@@ -104,8 +107,35 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.addCollision", keys: [] },
   { command: "tileset.markSolid", keys: [] },
   { command: "tileset.defineTerrain", keys: [] },
+  { command: "settings.language", keys: [] },
+  { command: "settings.editShortcuts", keys: [] },
 ];
 
+/** Per-command keys from the settings file (replace the defaults of that command). */
+let overrides: ReadonlyMap<CommandId, readonly string[]> = new Map();
+let overridesRevision = 0;
+
+/** Replaces the user's key overrides (already validated). */
+export function setShortcutOverrides(next: ReadonlyMap<CommandId, readonly string[]>): void {
+  overrides = next;
+  overridesRevision++;
+}
+
+/** Bumped by every `setShortcutOverrides` (lets parsed-binding caches refresh). */
+export function shortcutsRevision(): number {
+  return overridesRevision;
+}
+
+/** `SHORTCUTS` with the user's overrides applied. */
+export function effectiveShortcuts(): ShortcutDef[] {
+  return SHORTCUTS.map((s) => {
+    const keys = overrides.get(s.command);
+    return keys ? { command: s.command, keys: [...keys] } : s;
+  });
+}
+
 export function keysFor(command: CommandId): string[] {
+  const keys = overrides.get(command);
+  if (keys) return [...keys];
   return SHORTCUTS.find((s) => s.command === command)?.keys ?? [];
 }

@@ -1,11 +1,17 @@
 import fc from "fast-check";
 import {
+  cellFlags,
+  cellPaletteIndex,
   createDocument,
+  deriveTerrainTiles,
+  isGridLayer,
+  isTileLayer,
   makeCell,
   MapStore,
   TERRAIN_TEMPLATES,
   terrainSlotForMask,
   terrainTemplateInfo,
+  type MapDocument,
   type Terrain,
   type TerrainTemplate,
   type Tileset,
@@ -113,4 +119,31 @@ export function terrainArb(): fc.Arbitrary<Terrain> {
         ...(unique.length > 0 ? { variants: unique } : {}),
       };
     });
+}
+
+/**
+ * Cells ("x,y") where a terrain grid's target tile layer differs from
+ * `deriveTerrainTiles` (wrong tile, extra tile, missing tile or flip flags),
+ * for every terrain grid layer whose target tile layer exists.
+ * Invariant: empty after any op.
+ */
+export function derivedMismatches(doc: MapDocument): string[] {
+  const out: string[] = [];
+  const { width, height } = doc.map;
+  for (const grid of doc.layers) {
+    if (!isGridLayer(grid) || grid.role !== "terrain" || grid.targetLayerId === null) continue;
+    const target = doc.getLayer(grid.targetLayerId);
+    if (!isTileLayer(target)) continue;
+    const expected = deriveTerrainTiles(doc, grid.id);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const e = expected[y * width + x] ?? null;
+        const cell = target.getCell(x, y);
+        const got = cell === 0 ? null : doc.palette.get(cellPaletteIndex(cell)) ?? null;
+        const same = e === null ? got === null : got !== null && cellFlags(cell) === 0 && got.tilesetId === e.tilesetId && got.tileId === e.tileId;
+        if (!same) out.push(`${grid.id}→${target.id} ${x},${y}`);
+      }
+    }
+  }
+  return out;
 }
