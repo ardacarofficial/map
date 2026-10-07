@@ -11,10 +11,39 @@ import { getCanvasHandle } from "../ui/canvas/canvasHandle";
 import { useUiStore } from "../ui/uiStore";
 import { pickFiles } from "../ui/pickFiles";
 import { registerCommands, type Command } from "./registry";
+import type { ToolId } from "../state/editorStore";
+import { copySelection, cutSelection, deleteSelection, flipStampOrTile, pasteFromSystem } from "./clipboard";
+import {
+  activeLayer,
+  canCopy,
+  canDeselect,
+  canErase,
+  canFlip,
+  canPaste,
+  canRedo,
+  canRemoveLayer,
+  canSelectAll,
+  canUndo,
+  contextOf,
+  type EditContext,
+} from "./enablement";
+import { addLayer, removeLayer } from "./layerActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
 const ui = () => useUiStore.getState();
+const ctx = (): EditContext => contextOf(editor());
+const when = (predicate: (c: EditContext) => boolean) => () => predicate(ctx());
+const tool = (id: ToolId): Command => ({
+  id: `tool.${id}`,
+  title: `commands.tool.${id}`,
+  category: "tool",
+  enabled: hasProject,
+  run: () => editor().setTool(id),
+});
+const markDirty = () => {
+  if (!editor().dirty) editor().setDirty(true);
+};
 
 /** Asks the canvas to act; no-op while it is still starting. */
 const canvas = (fn: (h: NonNullable<ReturnType<typeof getCanvasHandle>>) => void) => () => {
@@ -68,9 +97,76 @@ const COMMANDS: Command[] = [
     },
   },
 
+  {
+    id: "file.openBackup",
+    title: "commands.file.openBackup",
+    category: "file",
+    enabled: hasProject,
+    run: () => ui().setBackupsOpen(true),
+  },
+  // ---- Edit
+  {
+    id: "edit.undo",
+    title: "commands.edit.undo",
+    category: "edit",
+    enabled: when(canUndo),
+    run: () => {
+      if (editor().project?.store.undo()) markDirty();
+    },
+  },
+  {
+    id: "edit.redo",
+    title: "commands.edit.redo",
+    category: "edit",
+    enabled: when(canRedo),
+    run: () => {
+      if (editor().project?.store.redo()) markDirty();
+    },
+  },
+  { id: "edit.cut", title: "commands.edit.cut", category: "edit", enabled: when(canErase), run: () => void cutSelection() },
+  { id: "edit.copy", title: "commands.edit.copy", category: "edit", enabled: when(canCopy), run: () => void copySelection() },
+  { id: "edit.paste", title: "commands.edit.paste", category: "edit", enabled: when(canPaste), run: () => void pasteFromSystem() },
+  { id: "edit.delete", title: "commands.edit.delete", category: "edit", enabled: when(canErase), run: () => void deleteSelection() },
+  {
+    id: "edit.selectAll",
+    title: "commands.edit.selectAll",
+    category: "edit",
+    enabled: when(canSelectAll),
+    run: () => {
+      const map = editor().project?.store.document.map;
+      if (map) editor().setRegion({ x: 0, y: 0, width: map.width, height: map.height });
+    },
+  },
+  {
+    id: "edit.deselect",
+    title: "commands.edit.deselect",
+    category: "edit",
+    enabled: when(canDeselect),
+    // Esc peels one thing at a time: the marquee first, then the stamp.
+    run: () => (editor().region ? editor().setRegion(null) : editor().setStamp(null)),
+  },
+  { id: "edit.flipX", title: "commands.edit.flipX", category: "edit", enabled: when(canFlip), run: () => void flipStampOrTile("x") },
+  { id: "edit.flipY", title: "commands.edit.flipY", category: "edit", enabled: when(canFlip), run: () => void flipStampOrTile("y") },
+  // ---- Layers / map
+  { id: "layer.add", title: "commands.layer.add", category: "layer", enabled: hasProject, run: () => void addLayer() },
+  {
+    id: "layer.remove",
+    title: "commands.layer.remove",
+    category: "layer",
+    enabled: when(canRemoveLayer),
+    run: () => {
+      const layer = activeLayer(ctx());
+      if (layer) removeLayer(layer.id);
+    },
+  },
+  { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => ui().setResizeOpen(true) },
   // ---- Tools
-  { id: "tool.brush", title: "commands.tool.brush", category: "tool", enabled: hasProject, run: () => editor().setTool("brush") },
-  { id: "tool.eraser", title: "commands.tool.eraser", category: "tool", enabled: hasProject, run: () => editor().setTool("eraser") },
+  tool("brush"),
+  tool("eraser"),
+  tool("fill"),
+  tool("rect"),
+  tool("select"),
+  tool("eyedropper"),
 
   // ---- View
   { id: "view.toggleGrid", title: "commands.view.toggleGrid", category: "view", enabled: hasProject, run: () => editor().toggleGrid() },

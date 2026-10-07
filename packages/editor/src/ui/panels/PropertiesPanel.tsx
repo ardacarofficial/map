@@ -95,6 +95,7 @@ function TilePreview({ tileset, tileId }: { tileset: Tileset; tileId: number }) 
   return (
     <canvas
       ref={ref}
+      aria-hidden
       style={{ width: PREVIEW, height: PREVIEW }}
       className="checker shrink-0 rounded-md border border-line pixelated"
     />

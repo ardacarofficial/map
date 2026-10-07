@@ -8,6 +8,8 @@ export interface UiState {
   panelsHidden: boolean;
   paletteOpen: boolean;
   newProjectOpen: boolean;
+  resizeOpen: boolean;
+  backupsOpen: boolean;
   /** Tileset shown in the tileset panel. */
   activeTilesetId: string | null;
   /** True while a save/open is running (disables repeated triggers). */
@@ -18,6 +20,8 @@ export interface UiState {
   togglePanels(): void;
   setPaletteOpen(open: boolean): void;
   setNewProjectOpen(open: boolean): void;
+  setResizeOpen(open: boolean): void;
+  setBackupsOpen(open: boolean): void;
   setActiveTileset(id: string | null): void;
   setBusy(busy: boolean): void;
   setDraggingFiles(dragging: boolean): void;
@@ -27,6 +31,8 @@ export const useUiStore = create<UiState>()((set) => ({
   panelsHidden: false,
   paletteOpen: false,
   newProjectOpen: false,
+  resizeOpen: false,
+  backupsOpen: false,
   activeTilesetId: null,
   busy: false,
   draggingFiles: false,
@@ -34,6 +40,8 @@ export const useUiStore = create<UiState>()((set) => ({
   togglePanels: () => set((s) => ({ panelsHidden: !s.panelsHidden })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
+  setResizeOpen: (resizeOpen) => set({ resizeOpen }),
+  setBackupsOpen: (backupsOpen) => set({ backupsOpen }),
   setActiveTileset: (activeTilesetId) => set({ activeTilesetId }),
   setBusy: (busy) => set({ busy }),
   setDraggingFiles: (draggingFiles) => set({ draggingFiles }),

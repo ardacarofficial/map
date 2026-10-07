@@ -200,7 +200,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
               if (cell) select(cell.col, cell.row);
             }}
           >
-            <canvas ref={canvasRef} className="absolute inset-0 block size-full pixelated" />
+            <canvas ref={canvasRef} role="img" aria-label={t("tileset.preview")} className="absolute inset-0 block size-full pixelated" />
             {cellW >= 12 && (
               <div
                 aria-hidden

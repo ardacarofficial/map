@@ -60,6 +60,18 @@ function ToastItem({ toast }: { toast: Toast }) {
     >
       <Icon name={ICON[toast.kind]} size={16} className={`mt-0.5 shrink-0 ${ICON_COLOR[toast.kind]}`} />
       <p className="min-w-0 flex-1 py-px break-words select-text">{toast.message}</p>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={() => {
+            dismiss(toast.id);
+            toast.action?.run();
+          }}
+          className="-my-0.5 h-6 shrink-0 rounded-sm px-2 text-md font-medium text-accent hover:bg-accent-soft"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         type="button"
         aria-label={t("toast.dismiss")}

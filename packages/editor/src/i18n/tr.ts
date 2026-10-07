@@ -75,6 +75,7 @@ export const tr = {
     visible: "Görünür",
   },
   tileset: {
+    preview: "Tileset önizleme",
     add: "Tileset ekle",
     empty: "Henüz tileset yok",
     emptyHint: "PNG dosyasını sürükleyip bırak ya da + ile seç",

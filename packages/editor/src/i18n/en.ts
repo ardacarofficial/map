@@ -72,6 +72,7 @@ export const en: Messages = {
     visible: "Visible",
   },
   tileset: {
+    preview: "Tileset preview",
     add: "Add tileset",
     empty: "No tilesets yet",
     emptyHint: "Drag and drop a PNG file or pick one with +",

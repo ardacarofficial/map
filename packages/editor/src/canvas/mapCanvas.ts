@@ -568,7 +568,7 @@ export class MapCanvas {
     useEditorStore.getState().setZoom(this.#camera.zoom);
   }
 
-  /** Grid, map border and the eraser cursor, all in whole device pixels. */
+  /** Grid, map border, region, tool previews and cursors, all in whole device pixels. */
   #drawOverlay(): void {
     const g = this.#overlay;
     g.clear();
@@ -576,6 +576,8 @@ export class MapCanvas {
     this.#grid.visible = false;
     const map = this.#scene?.store.document.map;
     this.#preview.visible = false;
+    this.#tilePreview.root.visible = false;
+    this.#fillPreview.sprite.visible = false;
     if (!map) return;
     const res = this.#resolution;
     const px = 1 / res;
@@ -596,55 +598,282 @@ export class MapCanvas {
     }
 
     // Map border: 1 device px just outside the map.
-    const ox = Math.round(this.#camera.x * res);
-    const oy = Math.round(this.#camera.y * res);
-    const cw = map.tileWidth * this.#camera.zoom * res;
-    const ch = map.tileHeight * this.#camera.zoom * res;
-    const l = ox - 1;
-    const t = oy - 1;
-    const r = Math.round(ox + map.width * cw);
-    const b = Math.round(oy + map.height * ch);
-    g.rect(l * px, t * px, (r - l + 1) * px, px)
-      .rect(l * px, b * px, (r - l + 1) * px, px)
-      .rect(l * px, t * px, px, (b - t + 1) * px)
-      .rect(r * px, t * px, px, (b - t + 1) * px)
-      .fill(this.#colors.mapBorder);
+    const b = this.#cellBox({ x: 0, y: 0, width: map.width, height: map.height });
+    rectOutline(g, b.x0 - 1, b.y0 - 1, b.x1 + 1, b.y1 + 1, 1, px);
+    g.fill(this.#colors.mapBorder);
 
-    // Cursor.
+    const gesture = this.#gesture;
+    if (state.region && gesture?.kind !== "select") this.#drawRegion(state.region);
+
+    switch (gesture?.kind) {
+      case "select": {
+        const r = dragRegion(gesture.start, gesture.end, map);
+        if (r) this.#drawRegion(r);
+        return;
+      }
+      case "rect": {
+        const r = dragRegion(gesture.start, gesture.end, map);
+        if (r) {
+          this.#showPatternPreview(r, gesture.start);
+          const box = this.#cellBox(r);
+          rectOutline(g, box.x0, box.y0, box.x1, box.y1, this.#lineWidth(), px);
+          g.fill(this.#colors.accent);
+        }
+        return;
+      }
+      case "pick": {
+        const r = dragRegion(gesture.start, gesture.end, map);
+        if (r) this.#drawDashed(r);
+        return;
+      }
+      case "stamp": {
+        const at = this.#pointerCell() ?? gesture.last ?? gesture.start;
+        this.#showStampPreview(gesture.clip, gesture.mapping, snapToStampGrid(gesture.start, at, gesture.clip.width, gesture.clip.height));
+        return;
+      }
+      default:
+        break;
+    }
+
     const cell = this.#cursorCell();
     if (!cell) return;
-    if (state.tool === "brush") {
-      const sel = state.selection;
-      const tex = sel ? this.#scene?.atlas(sel.tilesetId)?.tileTexture(sel.tileId) : undefined;
-      if (tex) {
-        this.#preview.texture = tex;
-        this.#preview.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
-        this.#preview.width = map.tileWidth;
-        this.#preview.height = map.tileHeight;
-        this.#preview.visible = true;
+    const editable = isEditable(this.#activeInfo());
+    const one = { x: cell.x, y: cell.y, width: 1, height: 1 };
+    switch (state.tool) {
+      case "brush": {
+        if (state.stamp) {
+          const mapping = this.#mappingFor(state.stamp);
+          if (Object.keys(mapping).length > 0) this.#showStampPreview(state.stamp, mapping, cell);
+          else this.#drawCellCursor(one);
+          return;
+        }
+        if (!editable) return this.#drawCellCursor(one);
+        const sel = state.selection;
+        const tex = sel ? this.#scene?.atlas(sel.tilesetId)?.tileTexture(sel.tileId) : undefined;
+        if (tex) {
+          this.#preview.texture = tex;
+          this.#preview.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
+          this.#preview.width = map.tileWidth;
+          this.#preview.height = map.tileHeight;
+          this.#preview.visible = true;
+        } else this.#drawCellCursor(one);
+        return;
       }
-    } else {
-      const x0 = Math.round(ox + cell.x * cw);
-      const y0 = Math.round(oy + cell.y * ch);
-      const x1 = Math.round(ox + (cell.x + 1) * cw);
-      const y1 = Math.round(oy + (cell.y + 1) * ch);
-      const k = Math.max(1, Math.round(res));
-      outline(g, x0 - k, y0 - k, x1 + k, y1 + k, k, px);
-      g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
-      outline(g, x0, y0, x1, y1, k, px);
-      g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.9 });
+      case "fill":
+        if (editable) this.#showFillPreview(cell);
+        return this.#drawCellCursor(one);
+      case "rect":
+        if (editable) this.#showPatternPreview(one, cell);
+        return this.#drawCellCursor(one);
+      default:
+        return this.#drawCellCursor(one);
     }
   }
 
-  /** Cell for the brush/eraser cursor, or null when it should be hidden. */
+  /** Device-pixel box of a cell rectangle (x1/y1 exclusive), matching the snapped world transform. */
+  #cellBox(r: CellRegion): { x0: number; y0: number; x1: number; y1: number } {
+    const map = this.#scene!.store.document.map;
+    const res = this.#resolution;
+    const off = snappedOffset(this.#camera, res);
+    const ox = Math.round(off.x * res);
+    const oy = Math.round(off.y * res);
+    const cw = map.tileWidth * this.#camera.zoom * res;
+    const ch = map.tileHeight * this.#camera.zoom * res;
+    return {
+      x0: Math.round(ox + r.x * cw),
+      y0: Math.round(oy + r.y * ch),
+      x1: Math.round(ox + (r.x + r.width) * cw),
+      y1: Math.round(oy + (r.y + r.height) * ch),
+    };
+  }
+
+  /** Outline thickness in device pixels: one CSS pixel, at least one device pixel. */
+  #lineWidth(): number {
+    return Math.max(1, Math.round(this.#resolution));
+  }
+
+  /** Region / marquee: subtle accent fill plus a crisp accent outline. */
+  #drawRegion(r: CellRegion): void {
+    const g = this.#overlay;
+    const px = 1 / this.#resolution;
+    const b = this.#cellBox(r);
+    g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px).fill({
+      color: this.#colors.accent,
+      alpha: CANVAS_COLORS.regionFillAlpha,
+    });
+    rectOutline(g, b.x0, b.y0, b.x1, b.y1, this.#lineWidth(), px);
+    g.fill(this.#colors.accent);
+  }
+
+  /** Pick area: static black line with white dashes. */
+  #drawDashed(r: CellRegion): void {
+    const g = this.#overlay;
+    const px = 1 / this.#resolution;
+    const k = this.#lineWidth();
+    const b = this.#cellBox(r);
+    rectOutline(g, b.x0, b.y0, b.x1, b.y1, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.85 });
+    const dash = 4 * k;
+    const step = 7 * k;
+    for (let x = b.x0; x < b.x1; x += step) {
+      const w = Math.min(dash, b.x1 - x);
+      g.rect(x * px, b.y0 * px, w * px, k * px).rect(x * px, (b.y1 - k) * px, w * px, k * px);
+    }
+    for (let y = b.y0; y < b.y1; y += step) {
+      const h = Math.min(dash, b.y1 - y);
+      g.rect(b.x0 * px, y * px, k * px, h * px).rect((b.x1 - k) * px, y * px, k * px, h * px);
+    }
+    g.fill(CANVAS_COLORS.cursor);
+  }
+
+  /** White cell outline with a dark halo (eraser, fill, select, pick cursors). */
+  #drawCellCursor(r: CellRegion): void {
+    const g = this.#overlay;
+    const px = 1 / this.#resolution;
+    const k = this.#lineWidth();
+    const { x0, y0, x1, y1 } = this.#cellBox(r);
+    rectOutline(g, x0 - k, y0 - k, x1 + k, y1 + k, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
+    rectOutline(g, x0, y0, x1, y1, k, px);
+    g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.9 });
+  }
+
+  /** Builds `cells` into the tile preview unless its key is unchanged. */
+  #setTilePreview(key: string, cells: readonly PreviewCell[]): void {
+    const scene = this.#scene;
+    if (!scene) return;
+    const fullKey = `${key}|${scene.atlasVersion}`;
+    if (this.#tilePreview.key !== fullKey) {
+      const quads: CellQuad[] = [];
+      for (const c of cells) {
+        const src = scene.quadSource(c.entry.tilesetId, c.entry.tileId);
+        if (src) quads.push({ x: c.x, y: c.y, flags: c.flags, src });
+      }
+      const map = scene.store.document.map;
+      this.#tilePreview.set(fullKey, quads, map.tileWidth, map.tileHeight, (gr) => scene.groupTexture(gr));
+    }
+    this.#tilePreview.root.visible = true;
+  }
+
+  #showStampPreview(clip: TileClip, mapping: Record<string, string>, origin: CellPoint): void {
+    const map = this.#scene!.store.document.map;
+    const key = `stamp:${clipId(clip)}:${Object.entries(mapping).flat().join(",")}`;
+    if (this.#tilePreview.key?.startsWith(`${key}|`) !== true) this.#setTilePreview(key, stampPreviewCells(clip, mapping));
+    else this.#tilePreview.root.visible = true;
+    this.#tilePreview.root.position.set(origin.x * map.tileWidth, origin.y * map.tileHeight);
+  }
+
+  /** Rectangle (or single-cell) preview with the current pattern tiled from `anchor`. */
+  #showPatternPreview(r: CellRegion, anchor: CellPoint): void {
+    const pattern = this.#previewPattern(anchor);
+    if (!pattern) return;
+    const v = this.#visible;
+    const x0 = Math.max(r.x, v.x);
+    const y0 = Math.max(r.y, v.y);
+    const x1 = Math.min(r.x + r.width, v.x + v.width);
+    const y1 = Math.min(r.y + r.height, v.y + v.height);
+    const key = `rect:${pattern.key}:${anchor.x},${anchor.y}:${x0},${y0},${x1},${y1}`;
+    if (this.#tilePreview.key?.startsWith(`${key}|`) === true) {
+      this.#tilePreview.root.visible = true;
+    } else {
+      const cells = rectPreviewCells(r, v, RECT_PREVIEW_LIMIT, pattern.at);
+      if (!cells) return;
+      this.#setTilePreview(key, cells);
+    }
+    this.#tilePreview.root.position.set(0, 0);
+  }
+
+  /** What the fill/rectangle tools would draw at a cell, without touching the document. */
+  #previewPattern(anchor: CellPoint): { key: string; at: Parameters<typeof rectPreviewCells>[3] } | null {
+    const s = useEditorStore.getState();
+    if (s.stamp) {
+      const clip = s.stamp;
+      const li = patternLayerIndex(clip, this.#mappingFor(clip), s.activeLayerId);
+      if (li < 0) return null;
+      return {
+        key: `c${clipId(clip)}/${li}`,
+        at: (x, y) => {
+          const cell = patternCell(clip, li, x, y, anchor.x, anchor.y);
+          const entry = cell === EMPTY_CELL ? undefined : clip.palette[cellPaletteIndex(cell) - 1];
+          return entry ? { entry, flags: cellFlags(cell) } : null;
+        },
+      };
+    }
+    const sel = s.selection;
+    if (!sel) return null;
+    const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
+    return { key: `s${sel.tilesetId}/${sel.tileId}`, at: () => ({ entry, flags: 0 }) };
+  }
+
+  /** Highlights the region a click would fill (throttled, cached while inside the same region). */
+  #showFillPreview(cell: CellPoint): void {
+    const scene = this.#scene;
+    const s = useEditorStore.getState();
+    const layer = this.#activeLayer();
+    if (!scene || !layer || (!s.stamp && !s.selection)) return;
+    const map = scene.store.document.map;
+    if (map.width * map.height > FILL_PREVIEW_MAX_AREA) return;
+    // A single tile over cells that already hold it changes nothing.
+    if (!s.stamp && s.selection) {
+      const index = scene.store.document.palette.indexOf(s.selection.tilesetId, s.selection.tileId);
+      if (index > 0 && layer.getCell(cell.x, cell.y) === makeCell(index)) return;
+    }
+    let c = this.#fillCache;
+    const fresh = c && c.layer === layer && c.revision === scene.store.revision && c.width === map.width;
+    if (!fresh || c!.mask[cell.y * map.width + cell.x] !== 1) {
+      const now = performance.now();
+      const wait = this.#lastFillAt + FILL_PREVIEW_THROTTLE_MS - now;
+      if (wait > 0) {
+        this.#fillTimer ??= setTimeout(() => {
+          this.#fillTimer = null;
+          this.#requestRender();
+        }, wait);
+        return;
+      }
+      this.#lastFillAt = now;
+      const points = floodFill(layer, cell.x, cell.y, -1, map);
+      c = this.#fillCache = {
+        layer,
+        revision: scene.store.revision,
+        width: map.width,
+        mask: membershipMask(points, map.width, map.height),
+        image: cellMaskImage(points),
+      };
+    }
+    this.#fillPreview.set(c!.image, map.tileWidth, map.tileHeight);
+    this.#fillPreview.sprite.visible = c!.image !== null;
+  }
+
+  /** Hovered map cell for cursors and previews, or null while panning / off the map. */
   #cursorCell(): CellPoint | null {
     if (!this.#pointer || this.#pan || this.#spaceDown) return null;
-    const cell = this.#reportedHover;
-    if (!cell) return null;
-    const s = useEditorStore.getState();
-    const layer = s.activeLayerId ? this.#scene?.store.document.getLayer(s.activeLayerId) : undefined;
-    if (!layer || !layer.visible || layer.locked) return null;
-    return cell;
+    return this.#reportedHover;
+  }
+
+  /** Cell under the pointer, also outside the map (drags), or null without a pointer. */
+  #pointerCell(): CellPoint | null {
+    const map = this.#scene?.store.document.map;
+    if (!map || !this.#pointer) return null;
+    return screenToCell(this.#camera, this.#pointer.x, this.#pointer.y, map.tileWidth, map.tileHeight, this.#resolution);
+  }
+
+  #activeLayer(): TileLayer | undefined {
+    const id = useEditorStore.getState().activeLayerId;
+    return id ? this.#scene?.store.document.getLayer(id) : undefined;
+  }
+
+  #activeInfo(): LayerInfo | undefined {
+    const layer = this.#activeLayer();
+    return layer ? layerInfo(layer) : undefined;
+  }
+
+  #mappingFor(clip: TileClip): Record<string, string> {
+    const doc = this.#scene?.store.document;
+    if (!doc) return {};
+    return stampMapping(clip, useEditorStore.getState().activeLayerId, (id) => {
+      const l = doc.getLayer(id);
+      return l ? layerInfo(l) : undefined;
+    });
   }
 
   #updateHover(): void {
@@ -672,7 +901,7 @@ export class MapCanvas {
     c.addEventListener("lostpointercapture", (e) => this.#onPointerEnd(e), opts);
     c.addEventListener("pointerenter", (e) => this.#setPointer(e), opts);
     c.addEventListener("pointerleave", () => {
-      if (this.#stroke || this.#pan) return;
+      if (this.#gesture || this.#pan) return;
       this.#pointer = null;
       this.#requestRender();
     }, opts);
@@ -686,6 +915,8 @@ export class MapCanvas {
       if (e.button === 1) e.preventDefault();
     }, opts);
     window.addEventListener("keydown", (e) => this.#onKey(e, true), opts);
+    // Capture phase: runs before the global shortcut handler, which skips prevented events.
+    window.addEventListener("keydown", (e) => this.#onEscape(e), { signal: this.#abort.signal, capture: true });
     window.addEventListener("keyup", (e) => this.#onKey(e, false), opts);
     window.addEventListener("blur", () => {
       this.#spaceDown = false;
@@ -727,18 +958,33 @@ export class MapCanvas {
   }
 
   #updateCursor(): void {
-    let cursor = "default";
-    if (this.#pan) cursor = "grabbing";
-    else if (this.#spaceDown) cursor = "grab";
-    else if (this.#scene) cursor = "crosshair";
+    const cursor = cursorFor({
+      tool: useEditorStore.getState().tool,
+      panning: this.#pan !== null,
+      spaceDown: this.#spaceDown,
+      hasMap: this.#scene !== null,
+      overMap: this.#reportedHover !== null,
+      editable: isEditable(this.#activeInfo()),
+    });
     if (this.#canvas.style.cursor !== cursor) this.#canvas.style.cursor = cursor;
+  }
+
+  /** Esc cancels the gesture in progress (and is then not a "deselect"). */
+  #onEscape(e: KeyboardEvent): void {
+    if (e.key !== "Escape" || !this.#gesture) return;
+    e.preventDefault();
+    this.#cancelGesture();
   }
 
   #onPointerDown(e: PointerEvent): void {
     this.#canvasRect = null;
     this.#pointer = this.#toLocal(e);
     if (document.activeElement !== this.#canvas) this.#canvas.focus({ preventScroll: true });
-    if (this.#pan || this.#stroke) return;
+    if (e.button === 2 && this.#isCancelable()) {
+      this.#cancelGesture();
+      return;
+    }
+    if (this.#pan || this.#gesture) return;
     if (e.button === 1 || (e.button === 0 && this.#spaceDown)) {
       e.preventDefault();
       this.#pan = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
@@ -748,33 +994,85 @@ export class MapCanvas {
       this.#requestRender();
       return;
     }
-    if (e.button === 0) {
+    const cell = this.#pointerCell();
+    if (!cell) return;
+    if (e.button === 2) {
       e.preventDefault();
-      this.#beginStroke(e);
+      this.#startGesture({ kind: "pick", pointerId: e.pointerId, button: 2, start: cell, end: cell });
+      return;
     }
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const s = useEditorStore.getState();
+    switch (s.tool) {
+      case "brush":
+        if (s.stamp) this.#beginStamp(e, s.stamp, cell);
+        else this.#beginPaint(e);
+        break;
+      case "eraser":
+        this.#beginPaint(e);
+        break;
+      case "fill":
+        this.#fillAt(cell);
+        break;
+      case "rect":
+        if (isEditable(this.#activeInfo()) && (s.stamp || s.selection)) {
+          this.#startGesture({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell });
+        }
+        break;
+      case "select":
+        this.#startGesture({ kind: "select", pointerId: e.pointerId, start: cell, end: cell, moved: false });
+        break;
+      case "eyedropper":
+        this.#startGesture({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell });
+        break;
+    }
+    this.#requestRender();
   }
 
   #onPointerMove(e: PointerEvent): void {
     this.#pointer = this.#toLocal(e);
+    const g = this.#gesture;
     if (this.#pan && e.pointerId === this.#pan.pointerId) {
       const dx = e.clientX - this.#pan.lastX;
       const dy = e.clientY - this.#pan.lastY;
       this.#pan.lastX = e.clientX;
       this.#pan.lastY = e.clientY;
       this.#camera = { ...this.#camera, x: this.#camera.x + dx, y: this.#camera.y + dy };
-    } else if (this.#stroke && e.pointerId === this.#stroke.pointerId) {
-      const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
-      this.#paint(events.length > 0 ? events : [e]);
+    } else if (g && e.pointerId === g.pointerId) {
+      // A second button pressed or released mid-drag arrives as a move ("chorded" buttons).
+      if (e.button === 2 && (e.buttons & 2) !== 0 && this.#isCancelable()) {
+        this.#cancelGesture();
+      } else if (g.kind === "pick" && released(e, g.button)) {
+        this.#finishGesture();
+      } else if (g.kind === "paint" || g.kind === "stamp") {
+        const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
+        this.#paint(events.length > 0 ? events : [e]);
+      } else {
+        const cell = this.#pointerCell();
+        if (cell) {
+          if (g.kind === "select" && (cell.x !== g.start.x || cell.y !== g.start.y)) g.moved = true;
+          g.end = cell;
+        }
+      }
     }
     this.#requestRender();
   }
 
   #onPointerUp(e: PointerEvent): void {
+    const g = this.#gesture;
     if (this.#pan && e.pointerId === this.#pan.pointerId) {
       this.#endPan();
-    } else if (this.#stroke && e.pointerId === this.#stroke.pointerId && e.button === 0) {
-      this.#paint([e]);
-      this.#endStroke();
+    } else if (g && e.pointerId === g.pointerId) {
+      const button = g.kind === "pick" ? g.button : 0;
+      if (released(e, button)) {
+        if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
+        else {
+          const cell = this.#pointerCell();
+          if (cell) g.end = cell;
+        }
+        this.#finishGesture();
+      }
     }
     this.#release(e.pointerId);
     this.#requestRender();
@@ -782,7 +1080,7 @@ export class MapCanvas {
 
   #onPointerEnd(e: PointerEvent): void {
     if (this.#pan && e.pointerId === this.#pan.pointerId) this.#endPan();
-    if (this.#stroke && e.pointerId === this.#stroke.pointerId) this.#endStroke();
+    if (this.#gesture && e.pointerId === this.#gesture.pointerId) this.#endGesture();
     this.#requestRender();
   }
 
@@ -836,65 +1134,278 @@ export class MapCanvas {
     }
   }
 
+  // ------------------------------------------------------------------ gestures
+
+  #startGesture(g: Gesture): void {
+    this.#gesture = g;
+    this.#capture(g.pointerId);
+    this.#requestRender();
+  }
+
+  /** Rectangle, marquee and pick drags can be cancelled (Esc, right click); strokes only by Esc. */
+  #isCancelable(): boolean {
+    const g = this.#gesture;
+    return !!g && (g.kind === "rect" || g.kind === "select" || (g.kind === "pick" && g.button === 0));
+  }
+
+  /** Completes the gesture normally (pointer released). */
+  #finishGesture(): void {
+    const g = this.#gesture;
+    if (!g) return;
+    this.#gesture = null;
+    switch (g.kind) {
+      case "paint":
+      case "stamp":
+        if (g.store.inTransaction) g.store.commit();
+        break;
+      case "rect":
+        this.#commitRect(g.start, g.end);
+        break;
+      case "select":
+        this.#finishSelect(g.start, g.end, g.moved);
+        break;
+      case "pick":
+        this.#finishPick(g.start, g.end);
+        break;
+    }
+    this.#release(g.pointerId);
+    this.#requestRender();
+  }
+
+  /** Ends without applying drags; keeps what a stroke already painted (lost capture, project change). */
+  #endGesture(): void {
+    const g = this.#gesture;
+    if (!g) return;
+    this.#gesture = null;
+    if ((g.kind === "paint" || g.kind === "stamp") && g.store.inTransaction) g.store.commit();
+    this.#release(g.pointerId);
+    this.#requestRender();
+  }
+
+  /** Cancels the gesture; a stroke is rolled back. */
+  #cancelGesture(): void {
+    const g = this.#gesture;
+    if (!g) return;
+    this.#gesture = null;
+    if ((g.kind === "paint" || g.kind === "stamp") && g.store.inTransaction) g.store.rollback();
+    this.#release(g.pointerId);
+    this.#requestRender();
+  }
+
+  #markDirty(): void {
+    const st = useEditorStore.getState();
+    if (!st.dirty) st.setDirty(true);
+  }
+
+  /** Runs `fn` as one undo step; rolls back if it throws. */
+  #transact(store: MapStore, fn: () => boolean): void {
+    store.beginTransaction();
+    let changed: boolean;
+    try {
+      changed = fn();
+    } catch (error) {
+      store.rollback();
+      console.error("[canvas] edit failed", error);
+      return;
+    }
+    store.commit();
+    if (changed) this.#markDirty();
+  }
+
+  /** Active layer when tile tools may write to it. */
+  #editTarget(): { store: MapStore; layer: TileLayer } | null {
+    const store = this.#scene?.store;
+    const layer = this.#activeLayer();
+    if (!store || !layer || !isEditable(layerInfo(layer))) return null;
+    return { store, layer };
+  }
+
+  /**
+   * Document cell the fill/rectangle tools write at (x, y): the selected tile,
+   * or the stamp tiled from `anchor` (`EMPTY_CELL` = leave the cell alone).
+   * Adds palette entries as needed, so call it inside the transaction.
+   */
+  #writePattern(store: MapStore, anchor: CellPoint): ((x: number, y: number) => number) | null {
+    const s = useEditorStore.getState();
+    if (s.stamp) {
+      const clip = s.stamp;
+      const li = patternLayerIndex(clip, this.#mappingFor(clip), s.activeLayerId);
+      if (li < 0) return null;
+      const remap = new Map<number, number>();
+      return (x, y) => {
+        const cell = patternCell(clip, li, x, y, anchor.x, anchor.y);
+        if (cell === EMPTY_CELL) return EMPTY_CELL;
+        const local = cellPaletteIndex(cell);
+        let index = remap.get(local);
+        if (index === undefined) {
+          const entry = clip.palette[local - 1];
+          if (!entry) return EMPTY_CELL;
+          index = store.getOrAddPaletteIndex(entry.tilesetId, entry.tileId);
+          remap.set(local, index);
+        }
+        return makeCell(index, cellFlags(cell));
+      };
+    }
+    const sel = s.selection;
+    if (!sel || !store.document.getTileset(sel.tilesetId)) return null;
+    const value = makeCell(store.getOrAddPaletteIndex(sel.tilesetId, sel.tileId));
+    return () => value;
+  }
+
+  #fillAt(cell: CellPoint): void {
+    const t = this.#editTarget();
+    if (!t) return;
+    const { store, layer } = t;
+    const map = store.document.map;
+    if (!store.document.inBounds(cell.x, cell.y)) return;
+    // The sentinel never equals a cell, so this is the whole same-valued region.
+    const points = floodFill(layer, cell.x, cell.y, -1, map);
+    this.#transact(store, () => {
+      const at = this.#writePattern(store, { x: 0, y: 0 });
+      if (!at) return false;
+      const cells: CellWrite[] = [];
+      for (const p of points) {
+        const v = at(p.x, p.y);
+        if (v === EMPTY_CELL || layer.getCell(p.x, p.y) === v) continue;
+        cells.push({ x: p.x, y: p.y, cell: v });
+      }
+      if (cells.length === 0) return false;
+      return store.dispatch({ type: "paintCells", layerId: layer.id, cells }).cells.length > 0;
+    });
+  }
+
+  #commitRect(start: CellPoint, end: CellPoint): void {
+    const t = this.#editTarget();
+    if (!t) return;
+    const { store, layer } = t;
+    const r = dragRegion(start, end, store.document.map);
+    if (!r) return;
+    this.#transact(store, () => {
+      const at = this.#writePattern(store, start);
+      if (!at) return false;
+      const cells: CellWrite[] = [];
+      for (let y = r.y; y < r.y + r.height; y++) {
+        for (let x = r.x; x < r.x + r.width; x++) {
+          const v = at(x, y);
+          if (v === EMPTY_CELL || layer.getCell(x, y) === v) continue;
+          cells.push({ x, y, cell: v });
+        }
+      }
+      if (cells.length === 0) return false;
+      return store.dispatch({ type: "paintCells", layerId: layer.id, cells }).cells.length > 0;
+    });
+  }
+
+  #finishSelect(start: CellPoint, end: CellPoint, moved: boolean): void {
+    const map = this.#scene?.store.document.map;
+    if (!map) return;
+    const s = useEditorStore.getState();
+    if (!moved) {
+      // A click: keeps the region when inside it, clears it otherwise.
+      if (!regionContains(s.region, start)) s.setRegion(null);
+      return;
+    }
+    s.setRegion(dragRegion(start, end, map));
+  }
+
+  #finishPick(start: CellPoint, end: CellPoint): void {
+    const doc = this.#scene?.store.document;
+    if (!doc) return;
+    const r = dragRegion(start, end, doc.map);
+    if (!r) return;
+    const s = useEditorStore.getState();
+    const result = decidePick(doc.layers.map(layerInfo), s.activeLayerId, r, (i) => doc.palette.get(i));
+    if (result.kind === "none") return;
+    if (result.kind === "tile") {
+      s.setStamp(null);
+      s.setSelection(result.entry);
+    } else {
+      let clip: TileClip;
+      try {
+        clip = copyRegion(doc, [result.layerId], result.region);
+      } catch (error) {
+        console.error("[canvas] pick failed", error);
+        return;
+      }
+      s.setSelection(null);
+      s.setStamp(clip);
+    }
+    // Fill and rectangle use the picked tile too; tools that cannot place it switch to the brush.
+    if (s.tool === "eraser" || s.tool === "select" || s.tool === "eyedropper") s.setTool("brush");
+  }
+
   // ------------------------------------------------------------------ painting
 
-  #beginStroke(e: PointerEvent): void {
+  #beginPaint(e: PointerEvent): void {
     const state = useEditorStore.getState();
-    const store = this.#scene?.store;
-    if (!store || !state.activeLayerId) return;
-    const doc = store.document;
-    const layer = doc.getLayer(state.activeLayerId);
-    if (!layer || !layer.visible || layer.locked) return;
+    const t = this.#editTarget();
+    if (!t) return;
+    const { store, layer } = t;
     let value: number;
-    if (state.tool === "eraser") value = 0;
+    if (state.tool === "eraser") value = EMPTY_CELL;
     else {
       const sel = state.selection;
-      if (!sel || !doc.getTileset(sel.tilesetId)) return;
+      if (!sel || !store.document.getTileset(sel.tilesetId)) return;
       try {
-        value = store.getOrAddPaletteIndex(sel.tilesetId, sel.tileId);
+        value = makeCell(store.getOrAddPaletteIndex(sel.tilesetId, sel.tileId));
       } catch (error) {
         console.error("[canvas] cannot paint selection", error);
         return;
       }
     }
     store.beginTransaction();
-    this.#stroke = { store, layerId: layer.id, value, pointerId: e.pointerId, last: null };
-    this.#capture(e.pointerId);
+    this.#startGesture({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, last: null });
+    this.#paint([e]);
+  }
+
+  #beginStamp(e: PointerEvent, clip: TileClip, start: CellPoint): void {
+    const store = this.#scene?.store;
+    if (!store) return;
+    const mapping = this.#mappingFor(clip);
+    if (Object.keys(mapping).length === 0) return;
+    store.beginTransaction();
+    this.#startGesture({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, start, placed: new Set(), last: null });
     this.#paint([e]);
   }
 
   #paint(events: readonly PointerEvent[]): void {
-    const s = this.#stroke;
-    if (!s) return;
-    const doc = s.store.document;
-    const layer = doc.getLayer(s.layerId);
-    if (!layer) return;
+    const g = this.#gesture;
+    if (!g || (g.kind !== "paint" && g.kind !== "stamp")) return;
+    const doc = g.store.document;
     const { tileWidth, tileHeight, width, height } = doc.map;
     const samples = events.map((ev) => {
       const p = this.#toLocal(ev);
       return screenToCell(this.#camera, p.x, p.y, tileWidth, tileHeight, this.#resolution);
     });
-    const cells = strokeCells(s.last, samples);
-    s.last = samples[samples.length - 1] ?? s.last;
-    const writes = cellWrites(cells, s.value, width, height, (x, y) => layer.getCell(x, y));
-    if (writes.length === 0) return;
-    const patch = s.store.dispatch({ type: "paintCells", layerId: s.layerId, cells: writes });
-    if (patch.cells.length > 0) {
-      const st = useEditorStore.getState();
-      if (!st.dirty) st.setDirty(true);
-    }
-  }
+    const cells = strokeCells(g.last, samples);
+    g.last = samples[samples.length - 1] ?? g.last;
 
-  #endStroke(): void {
-    const s = this.#stroke;
-    if (!s) return;
-    this.#stroke = null;
-    if (s.store.inTransaction) s.store.commit();
+    if (g.kind === "stamp") {
+      let changed = false;
+      try {
+        for (const o of stampOrigins(g.start, cells, g.clip.width, g.clip.height, g.placed)) {
+          if (pasteClip(g.store, g.clip, g.mapping, o.x, o.y).length > 0) changed = true;
+        }
+      } catch (error) {
+        console.error("[canvas] stamp failed", error);
+        this.#cancelGesture();
+        return;
+      }
+      if (changed) this.#markDirty();
+      return;
+    }
+
+    const layer = doc.getLayer(g.layerId);
+    if (!layer) return;
+    const writes = cellWrites(cells, g.value, width, height, (x, y) => layer.getCell(x, y));
+    if (writes.length === 0) return;
+    const patch = g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes });
+    if (patch.cells.length > 0) this.#markDirty();
   }
 }
 
 /** Adds a `k`-device-px rectangle outline (inside x0..x1, y0..y1) to `g` as four rects. */
-function outline(g: Graphics, x0: number, y0: number, x1: number, y1: number, k: number, px: number): void {
+function rectOutline(g: Graphics, x0: number, y0: number, x1: number, y1: number, k: number, px: number): void {
   const w = x1 - x0;
   const h = y1 - y0;
   g.rect(x0 * px, y0 * px, w * px, k * px)

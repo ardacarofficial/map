@@ -7,6 +7,7 @@ import {
   createDocument,
   FormatError,
   MapStore,
+  parseLevel,
   PROJECT_FILE_NAME,
   type MapDocument,
 } from "@smap/core";
@@ -23,8 +24,12 @@ import { askUnsaved } from "../ui/dialogs/confirmStore";
 import { toast } from "../ui/toast/toastStore";
 import { useUiStore } from "../ui/uiStore";
 import { DirectoryHandleFileSystem, ensureReadWrite, pickDirectory, UnsupportedError } from "./browserFs";
+import { AutosaveScheduler } from "./autosave";
+import { listBackups, writeBackup, type BackupEntry } from "./backups";
+import { compareDisk } from "./externalChange";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
-import { DEFAULT_LEVEL_PATH, decodePng, loadProject, ProjectOpenError, saveProject } from "./projectIo";
+import { DEFAULT_LEVEL_PATH, decodePng, levelName, loadProject, ProjectOpenError, saveProject } from "./projectIo";
+import { useSaveStatus } from "./saveStatus";
 import { forgetRecent, rememberRecent, type RecentProject } from "./recents";
 import { hasPngSignature, inferTileSize, looksLikePng, planTileset, baseName } from "./tilesetImport";
 
@@ -32,8 +37,33 @@ import { hasPngSignature, inferTileSize, looksLikePng, planTileset, baseName } f
 export const DEFAULT_MAP_WIDTH = 64;
 export const DEFAULT_MAP_HEIGHT = 48;
 
+interface ProjectFolder {
+  fs: ProjectFileSystem;
+  handle: FileSystemDirectoryHandle | null;
+}
+
 /** Where the open project lives on disk; `null` until first saved. */
-let folder: { fs: ProjectFileSystem; handle: FileSystemDirectoryHandle | null } | null = null;
+let folder: ProjectFolder | null = null;
+/** The level file as we last read or wrote it (external change detection). */
+let knownLevelText: string | null = null;
+/** Text of the newest backup we wrote (no duplicate backups for unchanged saves). */
+let lastBackupText: string | null = null;
+/** Number of writes in flight (focus checks skip while we write). */
+let writesInFlight = 0;
+/** Writes run one after another (manual save and autosave never overlap). */
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+function setFolder(next: ProjectFolder | null, levelText: string | null): void {
+  folder = next;
+  knownLevelText = levelText;
+  lastBackupText = null;
+  useSaveStatus.setState({ hasFolder: next !== null, lastSavedAt: null, failed: false, diskConflict: null });
+}
+
+/** The project folder, or null for a project that was never saved. */
+export function getProjectFolder(): ProjectFolder | null {
+  return folder;
+}
 
 // ------------------------------------------------------------------ helpers
 
@@ -59,10 +89,15 @@ export function createProjectDocument(options: NewProjectOptions): OpenProject {
   return { name: options.name, store, levelPath: DEFAULT_LEVEL_PATH };
 }
 
-function activate(project: OpenProject, images: readonly TilesetImage[], fs: typeof folder): void {
+function activate(
+  project: OpenProject,
+  images: readonly TilesetImage[],
+  target: ProjectFolder | null,
+  levelText: string | null = null,
+): void {
   clearTilesetImages();
   for (const image of images) setTilesetImage(image);
-  folder = fs;
+  setFolder(target, levelText);
   useUiStore.getState().setActiveTileset(project.store.document.tilesets[0]?.id ?? null);
   useEditorStore.getState().setProject(project);
   useEditorStore.getState().setTool("brush");
@@ -111,7 +146,7 @@ export async function newProject(options: NewProjectOptions): Promise<void> {
 }
 
 export function closeProject(): void {
-  folder = null;
+  setFolder(null, null);
   useEditorStore.getState().setProject(null);
   clearTilesetImages();
   useUiStore.getState().setActiveTileset(null);
@@ -231,6 +266,44 @@ class FolderTakenError extends Error {
 }
 
 /**
+ * Writes the project into `target` (queued behind other writes), then a
+ * backup of the level. Updates the remembered disk text and the save status.
+ */
+async function writeProjectFiles(target: ProjectFolder, project: OpenProject): Promise<void> {
+  const run = async () => {
+    writesInFlight++;
+    useSaveStatus.setState({ saving: true });
+    try {
+      const levelText = await saveProject(target.fs, {
+        name: project.name,
+        document: project.store.document,
+        levelPath: project.levelPath,
+        tilesetBytes: (id) => getTilesetImage(id)?.bytes,
+      });
+      if (useEditorStore.getState().project !== project) return;
+      if (folder !== target) setFolder(target, levelText);
+      knownLevelText = levelText;
+      useSaveStatus.setState({ lastSavedAt: Date.now(), failed: false });
+      if (levelText !== lastBackupText) {
+        try {
+          await writeBackup(target.fs, levelName(project.levelPath), levelText, new Date());
+          lastBackupText = levelText;
+        } catch (error) {
+          // A failed backup must not fail the save itself.
+          console.warn("Backup failed", error);
+        }
+      }
+    } finally {
+      writesInFlight--;
+      if (writesInFlight === 0) useSaveStatus.setState({ saving: false });
+    }
+  };
+  const next = writeQueue.then(run, run);
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
+/**
  * Saves the open project. The first save (or `saveAs`) asks for a folder;
  * later saves reuse it without asking. Returns true on success.
  */
@@ -247,16 +320,11 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
         target = { fs: new DirectoryHandleFileSystem(handle), handle };
       }
       const revision = project.store.revision;
-      await saveProject(target.fs, {
-        name: project.name,
-        document: project.store.document,
-        levelPath: project.levelPath,
-        tilesetBytes: (id) => getTilesetImage(id)?.bytes,
-      });
+      await writeProjectFiles(target, project);
       // The user may still be drawing while files are written.
       if (useEditorStore.getState().project !== project) return true;
-      folder = target;
       if (project.store.revision === revision) useEditorStore.getState().setDirty(false);
+      useSaveStatus.setState({ diskConflict: null });
       toast.success(t("toast.saved", { name: target.fs.name }));
       if (target.handle) void rememberRecent(project.name, target.handle);
       return true;
@@ -273,16 +341,139 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
   return result ?? false;
 }
 
-async function openFromHandle(handle: FileSystemDirectoryHandle): Promise<boolean> {
-  const fs = new DirectoryHandleFileSystem(handle);
-  const loaded = await loadProject(fs, decodePng);
+async function readLevelText(fs: ProjectFileSystem, path: string): Promise<string | null> {
+  try {
+    return await fs.readText(path);
+  } catch (error) {
+    if (error instanceof FileNotFoundError) return null;
+    throw error;
+  }
+}
+
+/**
+ * Autosave: writes the project when it has a folder and unsaved changes.
+ * Never asks for a folder. Skips (and asks the user) when the file changed
+ * on disk since we last read or wrote it.
+ */
+export async function autosaveNow(): Promise<void> {
+  const { project, dirty } = useEditorStore.getState();
+  const target = folder;
+  if (!project || !target || !dirty || useSaveStatus.getState().diskConflict) return;
+  if (project.store.inTransaction) {
+    // Mid-stroke: try again once the stroke is done.
+    autosave?.notifyChange();
+    return;
+  }
+  const diskText = await readLevelText(target.fs, project.levelPath);
+  if (folder !== target || useEditorStore.getState().project !== project) return;
+  if (compareDisk(diskText, knownLevelText) === "changed" && diskText !== null) {
+    useSaveStatus.setState({ diskConflict: { path: project.levelPath, diskText } });
+    return;
+  }
+  const revision = project.store.revision;
+  await writeProjectFiles(target, project);
+  if (useEditorStore.getState().project === project && project.store.revision === revision) {
+    useEditorStore.getState().setDirty(false);
+  }
+}
+
+let autosave: AutosaveScheduler | null = null;
+
+// ------------------------------------------------------------------ external changes
+
+let diskCheckRunning = false;
+
+/** Compares the level file on disk with what we last read/wrote; opens the dialog when it differs. */
+export async function checkDiskForChanges(): Promise<void> {
+  const project = useEditorStore.getState().project;
+  const target = folder;
+  if (!project || !target || diskCheckRunning || writesInFlight > 0 || useSaveStatus.getState().diskConflict) return;
+  diskCheckRunning = true;
+  try {
+    const diskText = await readLevelText(target.fs, project.levelPath);
+    // Ignore the result when a write started meanwhile (it may be our own file).
+    if (writesInFlight > 0 || folder !== target || useEditorStore.getState().project !== project) return;
+    if (diskText !== null && compareDisk(diskText, knownLevelText) === "changed") {
+      useSaveStatus.setState({ diskConflict: { path: project.levelPath, diskText } });
+    }
+  } catch (error) {
+    console.warn("Disk check failed", error);
+  } finally {
+    diskCheckRunning = false;
+  }
+}
+
+/** "Diskten yükle": reopens the project from its folder. */
+export async function reloadFromDisk(): Promise<void> {
+  const target = folder;
+  useSaveStatus.setState({ diskConflict: null });
+  if (!target) return;
+  await withBusy(async () => {
+    try {
+      await openFromFolder(target);
+      toast.success(t("toast.reloaded", { name: useEditorStore.getState().project?.name ?? target.fs.name }));
+    } catch (error) {
+      console.error(error);
+      toast.error(t("toast.openFailed", { detail: describeError(error) }));
+    }
+  });
+}
+
+/** "Benimkini koru": keep the map here; the next save overwrites the file on disk. */
+export function keepMine(): void {
+  const conflict = useSaveStatus.getState().diskConflict;
+  if (conflict) knownLevelText = conflict.diskText;
+  useSaveStatus.setState({ diskConflict: null });
+  if (useEditorStore.getState().project) useEditorStore.getState().setDirty(true);
+}
+
+// ------------------------------------------------------------------ backups
+
+/** Backups of the open level, newest first (empty for a project without a folder). */
+export async function listProjectBackups(): Promise<BackupEntry[]> {
+  const project = useEditorStore.getState().project;
+  if (!project || !folder) return [];
+  return listBackups(folder.fs, levelName(project.levelPath));
+}
+
+/**
+ * Opens a backup in place of the current level. The result is marked dirty:
+ * saving it makes it the current version (undo history starts fresh).
+ */
+export async function openBackup(entry: BackupEntry): Promise<boolean> {
+  const project = useEditorStore.getState().project;
+  const target = folder;
+  if (!project || !target) return false;
+  try {
+    const text = await target.fs.readText(entry.path);
+    const document = parseLevel(text, project.store.document.tilesets);
+    const store = new MapStore(document);
+    store.clearHistory();
+    useEditorStore.getState().setProject({ ...project, store });
+    useEditorStore.getState().setDirty(true);
+    toast.success(t("toast.backupOpened", { time: entry.date.toLocaleString() }));
+    return true;
+  } catch (error) {
+    console.error(error);
+    toast.error(t("toast.backupFailed", { detail: describeError(error) }));
+    return false;
+  }
+}
+
+async function openFromFolder(target: ProjectFolder): Promise<string> {
+  const loaded = await loadProject(target.fs, decodePng);
   const store = new MapStore(loaded.document);
   store.clearHistory();
   const project: OpenProject = { name: loaded.name, store, levelPath: loaded.levelPath };
-  activate(project, loaded.images, { fs, handle });
+  activate(project, loaded.images, target, loaded.levelText);
   for (const path of loaded.missingImages) toast.warning(t("toast.missingTilesetImage", { path }));
-  toast.success(t("toast.opened", { name: loaded.name }));
-  void rememberRecent(loaded.name, handle);
+  return loaded.name;
+}
+
+async function openFromHandle(handle: FileSystemDirectoryHandle): Promise<boolean> {
+  const name = await openFromFolder({ fs: new DirectoryHandleFileSystem(handle), handle });
+  toast.success(t("toast.opened", { name }));
+  void rememberRecent(name, handle);
   return true;
 }
 
@@ -329,14 +520,26 @@ export async function openRecentProject(recent: RecentProject): Promise<void> {
  * closes with unsaved work. Call once at startup; returns a cleanup.
  */
 export function installSession(): () => void {
+  const scheduler = new AutosaveScheduler({
+    save: autosaveNow,
+    onError: (error) => {
+      console.error(error);
+      // One toast per failure streak, not one per attempt.
+      if (!useSaveStatus.getState().failed) toast.error(t("toast.autosaveFailed", { detail: describeError(error) }));
+      useSaveStatus.setState({ failed: true });
+    },
+  });
+  autosave = scheduler;
   let unsubscribeStore: (() => void) | null = null;
   const watch = (project: OpenProject | null) => {
     unsubscribeStore?.();
     unsubscribeStore = null;
+    scheduler.cancel();
     if (!project) return;
     unsubscribeStore = project.store.subscribe((event) => {
       if (event.cells.length === 0 && event.structure.length === 0) return;
       if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
+      if (folder) scheduler.notifyChange();
     });
   };
   watch(useEditorStore.getState().project);
