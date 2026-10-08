@@ -41,7 +41,9 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   const imageBox = (await image.boundingBox())!;
   await image.click({ position: { x: imageBox.width * 0.4, y: imageBox.height * 0.2 } });
 
-  // Level 1 ("main") is listed and active.
+  // Level 1 ("main"): with a single level the list starts folded; unfolding shows it active.
+  const levelsToggle = page.getByRole("button", { name: "Level listesini aç" });
+  await levelsToggle.click();
   await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
   await drawStroke(page, -40);
 

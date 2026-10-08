@@ -1,4 +1,4 @@
-import { createMapDocument, MapStore } from "@smap/core";
+import { createDocument, MapStore, type Tileset } from "@smap/core";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { useEditorStore } from "../../state/editorStore";
@@ -6,9 +6,10 @@ import { useUiStore } from "../uiStore";
 import { pickRecentTile } from "./recentTiles";
 
 function openProject() {
-  const doc = createMapDocument({ width: 8, height: 8, tileWidth: 16, tileHeight: 16 });
-  const store = new MapStore(doc);
-  store.dispatch({ type: "addTileset", tileset: { id: "ts", name: "ts", image: "tilesets/ts.png", imageWidth: 64, imageHeight: 64, tileWidth: 16, tileHeight: 16 } });
+  const store = new MapStore(createDocument({ width: 8, height: 8, tileWidth: 16, tileHeight: 16 }));
+  const ts: Tileset = { id: "ts", name: "ts", imagePath: "tilesets/ts.png", tileWidth: 16, tileHeight: 16, columns: 4, rows: 4, margin: 0, spacing: 0 };
+  store.dispatch({ type: "addTileset", tileset: ts });
+  store.dispatch({ type: "addLayer", layer: { name: "Zemin" } });
   useEditorStore.getState().setProject({ name: "p", store, levelPath: "levels/main.json" });
 }
 

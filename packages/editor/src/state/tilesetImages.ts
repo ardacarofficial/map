@@ -41,3 +41,13 @@ export function onTilesetImage(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
+
+/**
+ * Tells image listeners (canvas atlases, thumbnails) to rebuild `tilesetId`
+ * although its image did not change: its grid (tile size, margin, spacing)
+ * did, so the tiles are cut from other pixels.
+ */
+export function notifyTilesetImage(tilesetId: string): void {
+  if (!images.has(tilesetId)) return;
+  for (const l of listeners) l(tilesetId);
+}

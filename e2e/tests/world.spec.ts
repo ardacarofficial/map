@@ -38,7 +38,8 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  // A single level: the list starts folded (unfolds by itself once there are two).
+  await expect(levelRow(page, "main")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Yeni level" }).click();
   const dialog = page.locator("[data-dialog='new-level']");

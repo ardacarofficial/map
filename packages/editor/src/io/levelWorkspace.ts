@@ -156,6 +156,8 @@ export class LevelWorkspace {
   #activeId: string;
   /** Files of removed levels, deleted on the next save. */
   readonly #removedFiles = new Set<string>();
+  /** Levels that stay in memory for the session (see {@link pin}). */
+  readonly #pinned = new Set<string>();
 
   constructor(init: WorkspaceInit) {
     if (!init.levels.some((l) => l.id === init.active.id)) throw new Error(`LevelWorkspace: unknown level "${init.active.id}"`);
@@ -289,8 +291,37 @@ export class LevelWorkspace {
     return this.#entries.get(id)?.store.document ?? this.#parse(text);
   }
 
+  /**
+   * Keeps a level in memory for the rest of the session, even when it is
+   * clean and has no history (a project-wide tileset grid edit must be able
+   * to follow undo / redo in every level, see `tilesetRegrid.ts`).
+   */
+  pin(id: string): void {
+    if (this.level(id)) this.#pinned.add(id);
+  }
+
+  /**
+   * A level's store without activating it: the cached one, or read from
+   * `fs` and cached (clean, parsed with the active level's project data).
+   * @throws on an unknown id, a level that is neither cached nor readable.
+   */
+  async load(id: string, fs: ProjectFileSystem | null): Promise<LevelEntry> {
+    const cached = this.#entries.get(id);
+    if (cached) return cached;
+    const level = this.level(id);
+    if (!level) throw new Error(`load: unknown level "${id}"`);
+    if (!fs) throw new FileNotFoundError(level.path);
+    const text = await fs.readText(level.path);
+    const again = this.#entries.get(id);
+    if (again) return again;
+    if (!this.level(id)) throw new Error(`load: level "${id}" was removed`);
+    const entry: LevelEntry = { id, store: new MapStore(this.#parse(text)), dirty: false, knownText: text };
+    this.#entries.set(id, entry);
+    return entry;
+  }
+
   #droppable(entry: LevelEntry): boolean {
-    return !entry.dirty && entry.knownText !== null && !entry.store.canUndo && !entry.store.canRedo && !entry.store.inTransaction;
+    return !this.#pinned.has(entry.id) && !entry.dirty && entry.knownText !== null && !entry.store.canUndo && !entry.store.canRedo && !entry.store.inTransaction;
   }
 
   /** Appends a new empty level (one tile layer, project tilesets and types). Not active yet. */
@@ -390,6 +421,7 @@ export class LevelWorkspace {
     const entry = this.#entries.get(id);
     this.#apply(removeLevel(this.#data(), id));
     this.#entries.delete(id);
+    this.#pinned.delete(id);
     if (!entry || entry.knownText !== null) this.#removedFiles.add(level.path);
   }
 
