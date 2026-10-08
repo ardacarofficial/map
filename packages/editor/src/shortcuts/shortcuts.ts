@@ -54,6 +54,8 @@ export type CommandId =
   | "file.close"
   | "file.openBackup"
   | "tileset.add"
+  | "tileset.settings"
+  | "tileset.replaceImage"
   | "tileset.markSolid"
   | "tileset.defineTerrain"
   | "level.new"
@@ -105,6 +107,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "file.close", keys: [] },
   { command: "file.openBackup", keys: [] },
   { command: "tileset.add", keys: [] },
+  { command: "tileset.settings", keys: [] },
+  { command: "tileset.replaceImage", keys: [] },
   { command: "layer.add", keys: ["Ctrl+Shift+N"] },
   { command: "layer.remove", keys: [] },
   { command: "map.resize", keys: [] },
