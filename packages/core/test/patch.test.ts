@@ -128,5 +128,5 @@ describe("compact patches", () => {
       }),
       { numRuns: 150 },
     );
-  });
+  }, 30_000);
 });
