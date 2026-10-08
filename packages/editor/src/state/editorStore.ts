@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { isEntityLayer, type MapDocument, type MapStore, type TileClip } from "@smap/core";
 
+import { pushRecent, type RecentItem } from "./recentItems";
+
 /**
  * Shared editor UI state. Tile data never lives here — it lives in the core
  * `MapStore`. Canvas (`src/canvas`) and panels (`src/ui`) both read this store.
@@ -66,8 +68,8 @@ export interface EditorState {
   /** Brush footprint in cells (1 = single cell). Applies to brush, eraser and grid painting. */
   brushSize: number;
   brushShape: "square" | "circle";
-  /** Most recently used single tiles, newest first (max 24). */
-  recentTiles: TileSelection[];
+  /** Most recently used tiles and multi-tile stamps, newest first (max 24 together). */
+  recentTiles: RecentItem[];
   /**
    * Random brush: when non-empty (2+ tiles picked in the tileset with Alt),
    * the brush picks per cell with core `pickRandomTile` instead of `selection`.
@@ -101,6 +103,8 @@ export interface EditorState {
   setBrushShape(shape: "square" | "circle"): void;
   /** Records a tile as used (dedupes, moves to front, caps at 24). */
   pushRecentTile(tile: TileSelection): void;
+  /** Records a tile or stamp entry as used (see `recentItems`). */
+  pushRecentItem(item: RecentItem): void;
   setRandomSet(set: { tilesetId: string; tileId: number; weight?: number }[]): void;
   setEntityTypeId(id: string | null): void;
   setSelectedEntity(id: string | null): void;
@@ -173,12 +177,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setSelectedEntity: (selectedEntityId) => set({ selectedEntityId }),
   setBrushSize: (size) => set({ brushSize: Math.max(1, Math.min(16, Math.round(size))) }),
   setBrushShape: (brushShape) => set({ brushShape }),
-  pushRecentTile: (tile) =>
-    set((s) => ({
-      recentTiles: [
-        tile,
-        ...s.recentTiles.filter((t) => t.tilesetId !== tile.tilesetId || t.tileId !== tile.tileId),
-      ].slice(0, 24),
-    })),
+  pushRecentTile: (tile) => set((s) => ({ recentTiles: pushRecent(s.recentTiles, { tilesetId: tile.tilesetId, tileId: tile.tileId }) })),
+  pushRecentItem: (item) => set((s) => ({ recentTiles: pushRecent(s.recentTiles, item) })),
   toggleCollisionOverlay: () => set((s) => ({ collisionOverlay: !s.collisionOverlay })),
 }));

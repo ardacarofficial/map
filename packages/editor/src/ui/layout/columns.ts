@@ -25,6 +25,30 @@ export const MIN_CANVAS = 400;
 /** Width of the tool rail (keep in sync with `--spacing-rail`). */
 export const RAIL_WIDTH = 44;
 
+/** Library width before the user ever resized, by window width: wide screens get room for 12-column tilesets. */
+export function defaultLibraryWidth(viewport: number): number {
+  return viewport >= 1600 ? 352 : COLUMNS.library.initial;
+}
+
+/** localStorage key: the user resized the library by hand (auto-widening then only offers, never acts). */
+export const LIBRARY_MANUAL_KEY = "smap.layout.libraryManual";
+/** localStorage key: tileset ids the library was already auto-widened for (once per tileset). */
+export const LIBRARY_WIDENED_KEY = "smap.layout.libraryWidened";
+
+/**
+ * Library width that gives the tileset view `extra` more CSS px, or null
+ * when that is no wider than now or would not fit: the column max, and the
+ * canvas keeping MIN_CANVAS next to the right column. `wanted` are the
+ * widths the layout asks for (both columns shown).
+ */
+export function widenLibraryTarget(viewport: number, wanted: { library: number; right: number }, extra: number): number | null {
+  if (!(extra > 0)) return null;
+  const cur = fitColumns(viewport, wanted);
+  const target = Math.ceil(cur.library + extra);
+  const max = Math.min(COLUMNS.library.max, viewport - RAIL_WIDTH - cur.right - MIN_CANVAS);
+  return target > cur.library && target <= max ? target : null;
+}
+
 /** localStorage key of the library's collapsed flag. */
 export const LIBRARY_COLLAPSED_KEY = "smap.layout.libraryCollapsed";
 
@@ -49,6 +73,45 @@ export function readWidth(spec: ColumnSpec, storage: WidthStorage | null): numbe
     return Number.isFinite(value) ? clampWidth(spec, value) : spec.initial;
   } catch {
     return spec.initial;
+  }
+}
+
+/** The stored width, clamped, or null when none is stored (the layout then picks a default). */
+export function readStoredWidth(spec: ColumnSpec, storage: WidthStorage | null): number | null {
+  try {
+    const raw = storage?.getItem(spec.key);
+    if (raw == null || raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? clampWidth(spec, value) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forgets the stored width (back to the default). */
+export function clearWidth(spec: ColumnSpec, storage: WidthStorage | null): void {
+  try {
+    storage?.setItem(spec.key, "");
+  } catch {
+    // See writeWidth.
+  }
+}
+
+/** A stored JSON list of strings (empty on errors). */
+export function readList(key: string, storage: WidthStorage | null): string[] {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(key) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeList(key: string, storage: WidthStorage | null, list: readonly string[]): void {
+  try {
+    storage?.setItem(key, JSON.stringify(list));
+  } catch {
+    // See writeWidth.
   }
 }
 

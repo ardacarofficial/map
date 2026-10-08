@@ -63,6 +63,12 @@ export class CameraController {
   frameCorner: (() => CornerBox | null) | null = null;
   #anim: ZoomAnim | null = null;
   #pendingFrameMap = true;
+  /**
+   * The camera still shows the last {@link frameMap} result (the user has not
+   * panned or zoomed since): a view resize re-frames instead of leaving the
+   * map off-centre, e.g. when a side column widens.
+   */
+  #framed = false;
   readonly #map: () => MapInfo | undefined;
   readonly #requestRender: () => void;
 
@@ -91,7 +97,7 @@ export class CameraController {
     this.resolution = resolution;
     this.viewW = viewW;
     this.viewH = viewH;
-    if (this.#pendingFrameMap) this.frameMap();
+    if (this.#pendingFrameMap || this.#framed) this.frameMap();
     else if (resChanged) this.setZoom(this.zoomLevel, this.viewCenter());
   }
 
@@ -106,6 +112,7 @@ export class CameraController {
   }
 
   panBy(dx: number, dy: number): void {
+    this.#framed = false;
     this.camera = { ...this.camera, x: this.camera.x + dx, y: this.camera.y + dy };
     this.#requestRender();
   }
@@ -114,19 +121,32 @@ export class CameraController {
   centerOnWorld(wx: number, wy: number): void {
     this.#anim = null;
     this.#pendingFrameMap = false;
+    this.#framed = false;
     this.camera = cameraCenteredOn(wx, wy, this.camera.zoom, this.viewW, this.viewH);
+    this.#requestRender();
+  }
+
+  /** Places the camera directly (zoom = CSS px per map px); counts as a user move. */
+  place(x: number, y: number, zoom: number): void {
+    this.#anim = null;
+    this.#pendingFrameMap = false;
+    this.#framed = false;
+    this.zoomLevel = zoom;
+    this.camera = { x, y, zoom };
     this.#requestRender();
   }
 
   /** Immediately sets the zoom keeping `anchor` fixed. */
   setZoom(zoom: number, anchor: Point): void {
     this.#anim = null;
+    this.#framed = false;
     this.zoomLevel = this.#clamp(zoom);
     this.camera = cameraAnchored(anchor, this.#worldAt(anchor), this.#quantize(this.zoomLevel));
     this.#requestRender();
   }
 
   animateZoomTo(target: number, anchor: Point): void {
+    this.#framed = false;
     this.#anim = {
       current: this.#anim?.current ?? this.zoomLevel,
       target: this.#clamp(target),
@@ -159,6 +179,7 @@ export class CameraController {
     }
     this.#pendingFrameMap = false;
     this.#anim = null;
+    this.#framed = true;
     if (this.frameBounds) {
       this.#frameRect(this.frameBounds());
       return;
@@ -172,9 +193,18 @@ export class CameraController {
     }
     const mw = map.width * map.tileWidth;
     const mh = map.height * map.tileHeight;
-    const framed = frameCamera(this.viewW, this.viewH, mw, mh, FRAME_PADDING, this.frameCorner?.() ?? null);
-    this.zoomLevel = framed.zoom;
-    const z = this.#quantize(framed.zoom);
+    const framed = frameCamera(this.viewW, this.viewH, mw, mh, FRAME_PADDING, this.frameCorner?.() ?? null, {
+      tileSize: map.tileWidth,
+      resolution: this.resolution,
+    });
+    let z = this.#quantize(framed.zoom);
+    // The renderer rounds to whole device pixels per tile; round down here so the framed map still fits.
+    if (z > framed.zoom * (1 + 1e-9)) {
+      const unit = map.tileWidth * this.resolution;
+      const down = Math.floor(framed.zoom * unit) / unit;
+      if (down >= this.minZoom) z = down;
+    }
+    this.zoomLevel = z;
     // Quantizing may nudge the zoom: keep the framed centre.
     const cx = framed.x + (mw * framed.zoom) / 2;
     const cy = framed.y + (mh * framed.zoom) / 2;

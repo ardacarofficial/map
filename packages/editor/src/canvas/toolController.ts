@@ -45,6 +45,7 @@ import {
 
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection } from "../state/editorStore";
+import { isRecentStamp, recentOfClip } from "../state/recentItems";
 import { cellWrites, strokeCells } from "./brush";
 import type { Point } from "./camera";
 import { gridPickEvent, pickEvent, recentTileOf, strokeSummary, type CanvasPickEvent, type StrokeSummary, type StrokeTool } from "./canvasEvents";
@@ -380,8 +381,23 @@ export class ToolController {
   #pushRecent(tile: TileSelection): void {
     const s = useEditorStore.getState();
     const head = s.recentTiles[0];
-    if (head && head.tilesetId === tile.tilesetId && head.tileId === tile.tileId) return;
+    if (head && !isRecentStamp(head) && head.tilesetId === tile.tilesetId && head.tileId === tile.tileId) return;
     s.pushRecentTile({ tilesetId: tile.tilesetId, tileId: tile.tileId });
+  }
+
+  /** Adds a used stamp (or the single tile it holds) to the recent strip. */
+  #pushRecentClip(clip: TileClip): void {
+    const s = useEditorStore.getState();
+    const head = s.recentTiles[0];
+    if (head && isRecentStamp(head) && head.stamp === clip) return;
+    const item = recentOfClip(clip);
+    if (item) s.pushRecentItem(item);
+  }
+
+  /** The brush stamp, when fill / rectangle just painted with it (not a random set). */
+  #pushUsedStamp(): void {
+    const s = useEditorStore.getState();
+    if (s.stamp && !isRandomBrush(s.randomSet)) this.#pushRecentClip(s.stamp);
   }
 
   /** The selected single tile when the fill / rectangle tools paint it (no stamp, no random set). */
@@ -529,6 +545,7 @@ export class ToolController {
       return this.#paintCells(store, layer.id, cells);
     });
     if (single) this.#pushRecent(single);
+    else this.#pushUsedStamp();
   }
 
   /** Fills `r` (modifiers already applied); a stamp repeats from the drag start `anchor`. */
@@ -569,6 +586,7 @@ export class ToolController {
       return this.#paintCells(store, layer.id, cells);
     });
     if (single) this.#pushRecent(single);
+    else this.#pushUsedStamp();
   }
 
   #finishSelect(start: CellPoint, end: CellPoint, moved: boolean): void {
@@ -692,6 +710,7 @@ export class ToolController {
     store.beginTransaction();
     this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, saved, start, placed: new Set(), count: 0, last: null });
     this.#paint([e]);
+    this.#pushRecentClip(clip);
   }
 
   #paint(events: readonly PointerEvent[]): void {

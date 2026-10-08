@@ -9,12 +9,11 @@ import { useLayoutStore } from "./layoutStore";
  * the column's min/max, stored on release), double-click restores the
  * initial width, arrow keys nudge it when focused.
  */
-export function ResizeHandle({ column, edge }: { column: ColumnId; edge: "left" | "right" }) {
-  const width = useLayoutStore((s) => (column === "library" ? s.libraryWidth : s.rightWidth));
+export function ResizeHandle({ column, edge, width }: { column: ColumnId; edge: "left" | "right"; /** The column's width as laid out. */ width: number }) {
   const setWidth = useLayoutStore((s) => s.setWidth);
   const commit = useLayoutStore((s) => s.commitWidth);
   const reset = useLayoutStore((s) => s.resetWidth);
-  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const drag = useRef<{ startX: number; startWidth: number; moved: boolean } | null>(null);
   // Handle on the right edge (library): dragging right widens. On the left edge (right column): dragging left widens.
   const sign = edge === "right" ? 1 : -1;
   const spec = COLUMNS[column];
@@ -23,17 +22,21 @@ export function ResizeHandle({ column, edge }: { column: ColumnId; edge: "left" 
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { startX: event.clientX, startWidth: width };
+    drag.current = { startX: event.clientX, startWidth: width, moved: false };
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d) return;
+    if (!d.moved && Math.abs(event.clientX - d.startX) < 2) return;
+    d.moved = true;
     setWidth(column, d.startWidth + sign * (event.clientX - d.startX));
   };
   const end = () => {
-    if (!drag.current) return;
+    const d = drag.current;
+    if (!d) return;
     drag.current = null;
-    commit(column);
+    // A click (or the first half of a double-click) is not a resize.
+    if (d.moved) commit(column);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 16;

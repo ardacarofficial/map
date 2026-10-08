@@ -1,18 +1,20 @@
 import { entityCell, isEntityLayer, SPAWN_TYPE_ID, type Entity, type EntityType, type MapDocument } from "@smap/core";
 
-import type { ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { chooseEntityType, entityCounts, entityTypeName } from "../../commands/entityActions";
+import { chooseEntityType, entityCounts, entityTypeName, saveEntityType } from "../../commands/entityActions";
 import { runCommand } from "../../commands/registry";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 import { LibraryTabs } from "../panels/LibraryPanel";
 import { PanelSection } from "../panels/PanelSection";
-import { Button, IconButton } from "../primitives/Button";
+import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
+import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
+import { TYPE_COLORS, typeFromDraft } from "./fieldValues";
 
 /** Icon of an entity type: built-ins have their own, user types a box. */
 export function entityTypeIcon(type: Pick<EntityType, "id" | "icon"> | undefined): IconName {
@@ -71,15 +73,7 @@ export function EntityPalette() {
           {custom.map((type) => (
             <TypeChip key={type.id} type={type} count={counts.get(type.id) ?? 0} />
           ))}
-          {custom.length === 0 && (
-            <div className="flex items-center gap-2 rounded-md border border-dashed border-line-strong py-1.5 pr-1.5 pl-2.5">
-              <span className="min-w-0 flex-1 text-xs text-faint">{t("entities.noCustom")}</span>
-              <Button className="h-6 shrink-0 px-2 text-sm" onClick={() => useUiStore.getState().setEntityTypesOpen(true, true)}>
-                <Icon name="plus" size={13} />
-                {t("entities.newType")}
-              </Button>
-            </div>
-          )}
+          <NewTypeRow doc={doc} />
         </Group>
         {isEntityLayer(layer) && layer.entities.length > 0 && <EntityList doc={doc} entities={layer.entities} />}
       </div>
@@ -156,6 +150,117 @@ function EntityList({ doc, entities }: { doc: MapDocument; entities: readonly En
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * "+ Yeni tür" under the user's types: turns into an inline name field with a
+ * color chip (click: next color). Enter creates the type with no fields and
+ * picks it for placing; Esc / an empty blur cancels. "Düzenle…" opens the
+ * full dialog (fields, color, delete) on the chosen type.
+ */
+function NewTypeRow({ doc }: { doc: MapDocument }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  const [colorIndex, setColorIndex] = useState(0);
+  const chosen = useEditorStore((s) => (s.tool === "entity" ? s.entityTypeId : null));
+  const done = useRef(false);
+  const custom = doc.entityTypes;
+
+  const start = () => {
+    done.current = false;
+    setName("");
+    setColorIndex(custom.length % TYPE_COLORS.length);
+    setEditing(true);
+  };
+  const finish = (commit: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    setEditing(false);
+    if (!commit || name.trim().length === 0) return;
+    const result = typeFromDraft({ id: null, name, color: TYPE_COLORS[colorIndex]!, fields: [] }, custom.map((ty) => ty.id));
+    if (!result.ok) {
+      toast.error(result.error.startsWith("entities.") ? t(result.error as MessageKey) : result.error);
+      return;
+    }
+    if (!saveEntityType(result.type)) return;
+    chooseEntityType(result.type.id);
+    const id = result.type.id;
+    toast.withAction(t("entities.typeAdded", { name: result.type.name }), {
+      label: t("entities.editFields"),
+      run: () => useUiStore.getState().setEntityTypesOpen(true, false, id),
+    });
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      finish(false);
+    }
+  };
+
+  if (editing) {
+    const color = TYPE_COLORS[colorIndex]!;
+    return (
+      <div className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-accent bg-panel pr-1.5 pl-1.5 ring-2 ring-accent-soft" data-new-entity-type>
+        <Tooltip label={t("entities.nextColor")}>
+          <button
+            type="button"
+            aria-label={t("entities.nextColor")}
+            // Keep focus in the name field.
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => setColorIndex((i) => (i + 1) % TYPE_COLORS.length)}
+            className="grid size-[18px] shrink-0 place-items-center rounded-sm text-inverse transition-transform duration-100 hover:scale-110"
+            style={{ background: color }}
+          >
+            <Icon name="box" size={12} strokeWidth={2.25} />
+          </button>
+        </Tooltip>
+        <input
+          autoFocus
+          value={name}
+          aria-label={t("entities.name")}
+          placeholder={t("entities.typeNamePlaceholder")}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => finish(true)}
+          onKeyDown={onKeyDown}
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={64}
+          className="h-6 min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-faint focus-visible:outline-none"
+        />
+      </div>
+    );
+  }
+
+  const editTarget = chosen && custom.some((ty) => ty.id === chosen) ? chosen : null;
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        data-new-entity-type-button
+        onClick={start}
+        className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-dashed pr-2 pl-1.5 text-sm transition-colors ${
+          custom.length === 0 ? "border-line-strong text-muted hover:border-accent-line hover:text-text" : "border-line text-faint hover:border-line-strong hover:text-text"
+        }`}
+      >
+        <span aria-hidden className="grid size-[18px] shrink-0 place-items-center">
+          <Icon name="plus" size={14} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-left">{t("entities.newType")}</span>
+        {custom.length === 0 && <span className="shrink-0 truncate text-2xs text-faint">{t("entities.noCustom")}</span>}
+      </button>
+      <button
+        type="button"
+        onClick={() => useUiStore.getState().setEntityTypesOpen(true, false, editTarget)}
+        className="h-8 shrink-0 rounded-md px-2 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+      >
+        {t("entities.editType")}
+      </button>
     </div>
   );
 }

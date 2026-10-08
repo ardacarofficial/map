@@ -55,11 +55,12 @@ function TypesEditor() {
   const doc = store.document;
   const all = doc.allEntityTypes();
   const startsNew = useUiStore.getState().entityTypesStartNew;
+  const selectId = useUiStore.getState().entityTypesSelect;
   const newDraft = (): TypeDraft => {
     const n = doc.entityTypes.length;
     return { id: null, name: t("entities.newTypeName"), color: TYPE_COLORS[n % TYPE_COLORS.length]!, fields: [] };
   };
-  const [selected, setSelected] = useState<string>(() => (startsNew ? NEW_KEY : (doc.entityTypes[0]?.id ?? all[0]!.id)));
+  const [selected, setSelected] = useState<string>(() => (startsNew ? NEW_KEY : selectId && doc.getEntityType(selectId) ? selectId : (doc.entityTypes[0]?.id ?? all[0]!.id)));
   /** Unsaved edits per type (kept while switching between types; dropped on close). */
   const [drafts, setDrafts] = useState<Record<string, TypeDraft>>(() => (startsNew ? { [NEW_KEY]: newDraft() } : {}));
 

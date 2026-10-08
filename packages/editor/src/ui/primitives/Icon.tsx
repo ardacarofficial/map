@@ -232,6 +232,13 @@ const PATHS = {
       <path d="M12 7v5l4 2" />
     </>
   ),
+  widen: (
+    <>
+      <path d="m7 8-4 4 4 4" />
+      <path d="m17 8 4 4-4 4" />
+      <path d="M3 12h18" />
+    </>
+  ),
   resize: (
     <>
       <path d="M21 3 9 15" />

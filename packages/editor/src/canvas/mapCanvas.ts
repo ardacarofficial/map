@@ -140,6 +140,8 @@ export interface CanvasHandle {
    * Read it per frame (it follows pan / zoom, no event).
    */
   cellRectToScreen(region: { x: number; y: number; width: number; height: number }): ScreenRect | null;
+  /** Size of the bottom-right box the minimap takes (margin included), or null when it is hidden. */
+  minimapCorner(): { width: number; height: number } | null;
   /**
    * Fills `region` on the active layer with the current brush (tile, stamp
    * pattern, random set or terrain / collision value) as one undo step,
@@ -480,10 +482,7 @@ export class MapCanvas {
       },
       /** Sets the camera directly (zoom = CSS px per map px). */
       setCamera: (x: number, y: number, zoom: number) => {
-        this.#camera.stopAnimation();
-        this.#camera.zoomLevel = zoom;
-        this.#camera.camera = { x, y, zoom };
-        this.#requestRender();
+        this.#camera.place(x, y, zoom);
       },
       handle: this.handle,
       /** World view: level boxes as last drawn, in client (page) px. */
@@ -566,6 +565,7 @@ export class MapCanvas {
       const th = map.tileHeight * c.zoom;
       return { x: c.x + region.x * tw, y: c.y + region.y * th, width: region.width * tw, height: region.height * th };
     },
+    minimapCorner: () => (this.#view === "level" && this.#minimap?.visible ? this.#minimap.footprint() : null),
     fillRegion: (region) => {
       if (this.#view !== "level" || this.#destroyed) return;
       this.#tools.fillRegion({ x: region.x, y: region.y, width: region.width, height: region.height });
@@ -624,9 +624,8 @@ export class MapCanvas {
       this.#levelCamera = null;
       if (this.#frameOnLevelView || !saved) cam.requestFrameMap();
       else {
-        cam.stopAnimation();
+        cam.place(saved.camera.x, saved.camera.y, saved.camera.zoom);
         cam.zoomLevel = saved.zoomLevel;
-        cam.camera = saved.camera;
       }
       this.#frameOnLevelView = false;
     }

@@ -4,14 +4,14 @@
  * flips and oversized tiles look the same as in an exported image.
  * Grid layers (terrain / collision) carry no pixels and are not drawn.
  */
-import { cellFlags, cellPaletteIndex, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type Tileset } from "@smap/core";
+import { cellFlags, cellPaletteIndex, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
 
 import { compositeOps, type CanvasOp } from "../../export/pngComposite";
 import { replayOps } from "../../export/pngRender";
 
 /** Draw list of a stamp's tile layers in its own pixel space (cell = `tileWidth × tileHeight`). */
 export function stampDrawList(
-  stamp: Stamp,
+  stamp: TileClip,
   tileWidth: number,
   tileHeight: number,
   tileset: (id: string) => Tileset | undefined,
@@ -67,7 +67,7 @@ interface CachedThumb {
   canvas: HTMLCanvasElement;
 }
 
-const cache = new WeakMap<Stamp, CachedThumb>();
+const cache = new WeakMap<TileClip, CachedThumb>();
 
 /**
  * The thumbnail of `stamp` at device resolution, cached per stamp object.
@@ -75,7 +75,7 @@ const cache = new WeakMap<Stamp, CachedThumb>();
  * box size); a cached thumbnail with another key is redrawn.
  */
 export function stampThumbnail(
-  stamp: Stamp,
+  stamp: TileClip,
   key: string,
   box: { width: number; height: number },
   tileWidth: number,

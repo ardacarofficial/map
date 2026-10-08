@@ -30,7 +30,7 @@ export function BrushPreview({ clip, doc, width, height }: { clip: TileClip; doc
     canvas.height = Math.round(height * dpr);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const { tileWidth, tileHeight } = doc.map;
-    const list = stampDrawList({ ...clip, id: "", name: "" }, tileWidth, tileHeight, (id) => doc.getTileset(id));
+    const list = stampDrawList(clip, tileWidth, tileHeight, (id) => doc.getTileset(id));
     const pad = 6 * dpr;
     const scale = thumbScale(list.width, list.height, canvas.width - pad * 2, canvas.height - pad * 2, 8);
     const w = Math.max(1, Math.round(list.width * scale));

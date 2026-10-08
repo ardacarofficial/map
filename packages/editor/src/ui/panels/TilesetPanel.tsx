@@ -47,6 +47,8 @@ import { TilesetSwitcher } from "../tileset/TilesetSwitcher";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { anchoredScroll, fitScale, stepZoom, wheelIntent, zoomLabel } from "../tileset/zoomModel";
 import { useUiStore } from "../uiStore";
+import { widenLibraryTarget } from "../layout/columns";
+import { useLayoutStore, wantedLibraryWidth } from "../layout/layoutStore";
 import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
 
@@ -299,6 +301,17 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // ---- smart widen: a tileset wider than the panel at 1× (e.g. 12 columns) would show shrunk and blurry.
+  // Once per tileset, grow the library so it fits at 1× (never after the user resized the panel by hand);
+  // otherwise the footer offers it.
+  const widenExtra = storedZoom === null && availWidth > 0 && contentW > availWidth ? contentW - availWidth : 0;
+  useEffect(() => {
+    if (widenExtra > 0) useLayoutStore.getState().widenLibrary(widenExtra, tileset.id);
+  }, [tileset.id, widenExtra]);
+  const canWiden = useLayoutStore(
+    (s) => widenExtra > 0 && widenLibraryTarget(window.innerWidth, { library: wantedLibraryWidth(s, window.innerWidth), right: s.rightWidth }, widenExtra) !== null,
+  );
 
   // ---- zoom
 
@@ -820,6 +833,18 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5" data-tileset-zoom>
+          {canWiden && (
+            <Tooltip label={t("tilesetPanel.widen")} side="top">
+              <IconButton
+                aria-label={t("tilesetPanel.widen")}
+                data-tileset-widen
+                className="size-6 text-accent"
+                onClick={() => useLayoutStore.getState().widenLibrary(widenExtra)}
+              >
+                <Icon name="widen" size={13} />
+              </IconButton>
+            </Tooltip>
+          )}
           <Tooltip label={t("tilesetPanel.zoomOut")} side="top">
             <IconButton aria-label={t("tilesetPanel.zoomOut")} className="size-6" onClick={() => zoomTo(stepZoom(scale, -1))}>
               <Icon name="minus" size={13} />

@@ -142,9 +142,22 @@ export function nextZoomStep(zoom: number, dir: 1 | -1): number {
   return MIN_ZOOM;
 }
 
+/** Pixel snapping for {@link fitZoom}: tile size (world px) and device pixels per CSS px. */
+export interface FitSnap {
+  readonly tileSize: number;
+  readonly resolution: number;
+}
+
+/** How far below the exact fit a pixel-snapped zoom may fall and still be preferred. */
+export const FIT_SNAP_TOLERANCE = 0.1;
+
 /**
  * Zoom that fits a `mapW`×`mapH` px map into the view with `padding` CSS px
- * on each side: the largest {@link ZOOM_STEPS} level that fits, capped at `max`.
+ * on each side, capped at `max`. Continuous (not a {@link ZOOM_STEPS} level),
+ * so a map fills the view whatever its size. With `snap`, the zoom is rounded
+ * down to a whole number of device pixels per tile (crisp pixel art) when
+ * that is within {@link FIT_SNAP_TOLERANCE} of the exact fit; otherwise the
+ * exact fit is used. Never exceeds the exact fit.
  */
 export function fitZoom(
   viewW: number,
@@ -153,13 +166,15 @@ export function fitZoom(
   mapH: number,
   padding: number,
   max = 4,
+  snap: FitSnap | null = null,
 ): number {
   const availW = Math.max(1, viewW - padding * 2);
   const availH = Math.max(1, viewH - padding * 2);
-  const fit = Math.min(availW / mapW, availH / mapH, max);
-  let best = MIN_ZOOM;
-  for (const s of ZOOM_STEPS) if (s <= fit + 1e-9) best = s;
-  return best;
+  const fit = Math.max(MIN_ZOOM, Math.min(availW / Math.max(1, mapW), availH / Math.max(1, mapH), max));
+  if (!snap || snap.tileSize <= 0 || snap.resolution <= 0) return fit;
+  const unit = snap.tileSize * snap.resolution;
+  const snapped = Math.floor(fit * unit + 1e-9) / unit;
+  return snapped >= MIN_ZOOM && snapped >= fit * (1 - FIT_SNAP_TOLERANCE) ? snapped : fit;
 }
 
 /** Camera centering a `mapW`×`mapH` px map at `zoom` in a `viewW`×`viewH` view. */
@@ -186,8 +201,9 @@ export function frameCamera(
   mapH: number,
   padding: number,
   corner: CornerBox | null = null,
+  snap: FitSnap | null = null,
 ): Camera {
-  const zoom = fitZoom(viewW, viewH, mapW, mapH, padding);
+  const zoom = fitZoom(viewW, viewH, mapW, mapH, padding, 4, snap);
   const full = centeredCamera(viewW, viewH, mapW, mapH, zoom);
   if (!corner || corner.width <= 0 || corner.height <= 0) return full;
   const clear = (c: Camera, z: number) =>
@@ -196,8 +212,8 @@ export function frameCamera(
   // The strip's edge next to the box needs no extra padding: the box has its own margin.
   const leftW = viewW - corner.width + padding;
   const topH = viewH - corner.height + padding;
-  const zLeft = leftW > padding * 2 ? fitZoom(leftW, viewH, mapW, mapH, padding) : 0;
-  const zTop = topH > padding * 2 ? fitZoom(viewW, topH, mapW, mapH, padding) : 0;
+  const zLeft = leftW > padding * 2 ? fitZoom(leftW, viewH, mapW, mapH, padding, 4, snap) : 0;
+  const zTop = topH > padding * 2 ? fitZoom(viewW, topH, mapW, mapH, padding, 4, snap) : 0;
   if (zLeft <= 0 && zTop <= 0) return full;
   return zLeft >= zTop
     ? centeredCamera(leftW, viewH, mapW, mapH, zLeft)

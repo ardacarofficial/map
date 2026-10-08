@@ -1,14 +1,14 @@
 import { ContextMenu } from "@base-ui/react/context-menu";
 import type { Stamp } from "@smap/core";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { runCommand } from "../../commands/registry";
 import { activeStampId, deleteStamp, pickStamp, renameStamp, stampRegion } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
-import { getTilesetImage, onTilesetImage } from "../../state/tilesetImages";
-import { useStructureVersion } from "../hooks";
+import { getTilesetImage } from "../../state/tilesetImages";
+import { useImageVersion, useStructureVersion } from "../hooks";
 import { LibraryTabs } from "../panels/LibraryPanel";
 import { PanelSection } from "../panels/PanelSection";
 import { Button, IconButton } from "../primitives/Button";
@@ -19,17 +19,6 @@ import { Tooltip } from "../primitives/Tooltip";
 import { stampLayerCounts, stampThumbnail } from "./stampThumb";
 
 const THUMB_H = 72;
-
-/** Bumps whenever a tileset image is (re)registered, so thumbnails redraw. */
-let imageVersion = 0;
-const subscribeImages = (notify: () => void) =>
-  onTilesetImage(() => {
-    imageVersion++;
-    notify();
-  });
-function useImageVersion(): number {
-  return useSyncExternalStore(subscribeImages, () => imageVersion);
-}
 
 /** True while the map has a marquee to save. */
 function useCanSave(): boolean {

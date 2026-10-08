@@ -49,3 +49,16 @@ export function useHistoryState(store: MapStore | undefined): { canUndo: boolean
   );
   return { canUndo: key[0] === "1", canRedo: key[1] === "1" };
 }
+
+/** Bumps whenever a tileset image is (re)registered, so thumbnails redraw. */
+let imageVersion = 0;
+const subscribeImages = (notify: () => void) =>
+  onTilesetImage(() => {
+    imageVersion++;
+    notify();
+  });
+
+/** A number that changes whenever any tileset image is (re)registered. */
+export function useImageVersion(): number {
+  return useSyncExternalStore(subscribeImages, () => imageVersion);
+}

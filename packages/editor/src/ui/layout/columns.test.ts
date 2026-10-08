@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { clampWidth, COLUMNS, fitColumns, MIN_CANVAS, RAIL_WIDTH, readFlag, readWidth, writeFlag, writeWidth, type WidthStorage } from "./columns";
+import { clampWidth, COLUMNS, defaultLibraryWidth, fitColumns, MIN_CANVAS, RAIL_WIDTH, readFlag, readWidth, widenLibraryTarget, writeFlag, writeWidth, type WidthStorage } from "./columns";
 
 function memory(initial: Record<string, string> = {}): WidthStorage & { data: Record<string, string> } {
   const data = { ...initial };
@@ -75,6 +75,40 @@ describe("column widths", () => {
         expect(fit.right).toBeLessThanOrEqual(COLUMNS.right.max);
         const roomForMins = vw - RAIL_WIDTH - COLUMNS.library.min - COLUMNS.right.min >= MIN_CANVAS;
         if (roomForMins) expect(vw - RAIL_WIDTH - fit.library - fit.right).toBeGreaterThanOrEqual(MIN_CANVAS);
+      }),
+    );
+  });
+});
+
+describe("library default and smart widen", () => {
+  it("is wider by default on wide screens", () => {
+    expect(defaultLibraryWidth(1366)).toBe(COLUMNS.library.initial);
+    expect(defaultLibraryWidth(1920)).toBeGreaterThanOrEqual(340);
+    expect(defaultLibraryWidth(1920)).toBeLessThanOrEqual(360);
+  });
+
+  it("widens by the missing width when it fits", () => {
+    // 12 columns × 32 px = 384 px of tiles in a 272 px view: 112 px more.
+    expect(widenLibraryTarget(1366, { library: 288, right: 288 }, 112)).toBe(400);
+  });
+
+  it("refuses past the column max or into the canvas minimum", () => {
+    expect(widenLibraryTarget(1920, { library: 352, right: 288 }, 400)).toBeNull();
+    // 1100 px window: 1100 − 44 − 288 − 400 = 368 px at most.
+    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 112)).toBeNull();
+    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 80)).toBe(368);
+    expect(widenLibraryTarget(1366, { library: 288, right: 288 }, 0)).toBeNull();
+  });
+
+  it("never leaves the canvas below its minimum", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 900, max: 3000 }), fc.integer({ min: 240, max: 520 }), fc.integer({ min: 260, max: 440 }), fc.integer({ min: 1, max: 400 }), (vw, lib, right, extra) => {
+        const target = widenLibraryTarget(vw, { library: lib, right }, extra);
+        if (target === null) return;
+        const fitted = fitColumns(vw, { library: target, right });
+        expect(fitted.library).toBe(target);
+        expect(vw - RAIL_WIDTH - fitted.library - fitted.right).toBeGreaterThanOrEqual(MIN_CANVAS);
+        expect(target).toBeLessThanOrEqual(COLUMNS.library.max);
       }),
     );
   });

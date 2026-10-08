@@ -138,15 +138,45 @@ describe("zoom", () => {
     for (let i = 1; i < ZOOM_STEPS.length; i++) expect(ZOOM_STEPS[i]!).toBeGreaterThan(ZOOM_STEPS[i - 1]!);
   });
 
-  it("fits the map with a zoom step and centers it", () => {
-    // 100×80 map of 32 px = 3200×2560 px in a 1200×800 view → largest step ≤ 0.275 is 0.25
+  it("fits the map with a continuous zoom and centers it", () => {
+    // 100×80 map of 32 px = 3200×2560 px in a 1200×800 view → exact fit min(1104/3200, 704/2560) = 0.275
     const z = fitZoom(1200, 800, 3200, 2560, 48);
-    expect(z).toBe(0.25);
+    expect(z).toBeCloseTo(0.275, 9);
     const cam = centeredCamera(1200, 800, 3200, 2560, z);
-    expect(cam.x + (3200 * z) / 2).toBe(600);
-    expect(cam.y + (2560 * z) / 2).toBe(400);
+    expect(cam.x + (3200 * z) / 2).toBeCloseTo(600, 9);
+    expect(cam.y + (2560 * z) / 2).toBeCloseTo(400, 9);
     // small map: capped at 4×
     expect(fitZoom(1200, 800, 64, 64, 48)).toBe(4);
+  });
+
+  it("snaps the fit to whole device pixels per tile when that is close", () => {
+    // 64×48 map of 32 px in a 745×628 view (1366 layout): exact 649/2048 ≈ 0.3169 → 10 px tiles = 0.3125.
+    expect(fitZoom(745, 628, 2048, 1536, 48, 4, { tileSize: 32, resolution: 1 })).toBe(10 / 32);
+    // At 150 % scaling: 0.3169 × 48 = 15.2 device px → 15.
+    expect(fitZoom(745, 628, 2048, 1536, 48, 4, { tileSize: 32, resolution: 1.5 })).toBe(15 / 48);
+    // Tiny tiles: flooring to 4 → 3 device px would lose 25 %: exact fit instead.
+    const exact = fitZoom(1200, 800, 32 * 300, 32 * 200, 48);
+    expect(fitZoom(1200, 800, 32 * 300, 32 * 200, 48, 4, { tileSize: 32, resolution: 1 })).toBe(exact);
+  });
+
+  it("never exceeds the exact fit and stays within 10 % of it", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 300, max: 3000 }),
+        fc.integer({ min: 300, max: 2000 }),
+        fc.integer({ min: 1, max: 512 }),
+        fc.integer({ min: 1, max: 512 }),
+        fc.constantFrom(8, 16, 32, 48),
+        fc.constantFrom(1, 1.25, 1.5, 2),
+        (vw, vh, w, h, tile, res) => {
+          const exact = fitZoom(vw, vh, w * tile, h * tile, 48);
+          const z = fitZoom(vw, vh, w * tile, h * tile, 48, 4, { tileSize: tile, resolution: res });
+          expect(z).toBeLessThanOrEqual(exact + 1e-12);
+          expect(z).toBeGreaterThanOrEqual(exact * 0.9 - 1e-12);
+          if (z !== exact) expect(Number.isInteger(Math.round(z * tile * res * 1e6) / 1e6)).toBe(true);
+        },
+      ),
+    );
   });
 });
 
@@ -162,11 +192,12 @@ describe("frameCamera", () => {
 
   it("moves a map that would run under the box beside or above it", () => {
     // Square map: centred it would reach under the minimap; fits left of it at the same zoom.
-    expect(clearOf(centeredCamera(1000, 800, 2048, 2048, 1 / 3), 2048, 2048, 1000, 800)).toBe(false);
+    const full = fitZoom(1000, 800, 2048, 2048, 48);
+    expect(clearOf(centeredCamera(1000, 800, 2048, 2048, full), 2048, 2048, 1000, 800)).toBe(false);
     const cam = frameCamera(1000, 800, 2048, 2048, 48, corner);
-    expect(cam.zoom).toBe(1 / 3);
+    expect(cam.zoom).toBeCloseTo(full, 9);
     expect(clearOf(cam, 2048, 2048, 1000, 800)).toBe(true);
-    expect(cam.y + (2048 * cam.zoom) / 2).toBe(400);
+    expect(cam.y + (2048 * cam.zoom) / 2).toBeCloseTo(400, 9);
     // Very wide map: above the minimap.
     const wide = frameCamera(1200, 800, 4096, 512, 48, corner);
     expect(clearOf(wide, 4096, 512, 1200, 800)).toBe(true);
@@ -184,7 +215,7 @@ describe("frameCamera", () => {
   });
 
   it("without a box it is the plain centred fit", () => {
-    expect(frameCamera(1200, 800, 3200, 2560, 48, null)).toEqual(centeredCamera(1200, 800, 3200, 2560, 0.25));
+    expect(frameCamera(1200, 800, 3200, 2560, 48, null)).toEqual(centeredCamera(1200, 800, 3200, 2560, fitZoom(1200, 800, 3200, 2560, 48)));
   });
 });
 

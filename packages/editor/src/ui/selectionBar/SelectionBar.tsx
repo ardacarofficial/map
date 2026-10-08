@@ -10,7 +10,7 @@ import { useStructureVersion } from "../hooks";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import { fillBlocker } from "./fillCheck";
-import { placeSelectionBar, type BarPlacement } from "./placement";
+import { BAR_GAP, BAR_MARGIN, placeSelectionBar, type BarPlacement } from "./placement";
 import { registerSelectionBarCommands, useSelectionBarPrefs } from "./selectionBarStore";
 
 registerSelectionBarCommands();
@@ -23,7 +23,8 @@ function samePlacement(a: BarPlacement | null, b: BarPlacement): boolean {
  * Small floating bar next to a map selection (select tool): Doldur, Sil,
  * Kopyala, Kes, Stamp olarak kaydet, Seçimi kaldır — each runs the existing
  * command (or the canvas' region fill). It sits below the selection, flips
- * above near the bottom edge, and follows pan / zoom. Esc clears the
+ * above near the bottom edge, goes beside a very tall selection, never covers
+ * the selection or (when it can move) the minimap, and follows pan / zoom. Esc clears the
  * selection and with it the bar; View → "Seçim çubuğu" hides it for good.
  * Mount inside the (relative) canvas container.
  */
@@ -58,11 +59,15 @@ function Bar({ region }: { region: CellRegion }) {
       const el = ref.current;
       const view = el?.parentElement;
       if (!el || !view) return;
-      const sel = getCanvasHandle()?.cellRectToScreen(region) ?? null;
+      const handle = getCanvasHandle();
+      const sel = handle?.cellRectToScreen(region) ?? null;
       const next = placeSelectionBar(
         sel,
         { width: el.offsetWidth, height: el.offsetHeight },
         { width: view.clientWidth, height: view.clientHeight },
+        BAR_GAP,
+        BAR_MARGIN,
+        handle?.minimapCorner() ?? null,
       );
       if (samePlacement(placementRef.current, next)) return;
       placementRef.current = next;

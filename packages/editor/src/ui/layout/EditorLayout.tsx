@@ -15,7 +15,7 @@ import { ToolOptionsBar } from "../toolOptions/ToolOptionsBar";
 import { useUiStore } from "../uiStore";
 import { AppBar } from "./AppBar";
 import { fitColumns } from "./columns";
-import { useLayoutStore } from "./layoutStore";
+import { useLayoutStore, wantedLibraryWidth } from "./layoutStore";
 import { RecentTilesStrip } from "./RecentTilesStrip";
 import { ResizeHandle } from "./ResizeHandle";
 import { StatusBar } from "./StatusBar";
@@ -46,7 +46,7 @@ export function EditorLayout() {
   // v1.2 world map: only the level list (plus a short hint); the map panels stay mounted but hidden.
   const world = useWorldView((s) => s.view === "world");
   const viewport = useViewportWidth();
-  const wantedLibrary = useLayoutStore((s) => s.libraryWidth);
+  const wantedLibrary = useLayoutStore((s) => wantedLibraryWidth(s, viewport));
   const wantedRight = useLayoutStore((s) => s.rightWidth);
   const collapsed = useLayoutStore((s) => s.libraryCollapsed);
   const showLibrary = !hidden && !collapsed && !world;
@@ -67,7 +67,7 @@ export function EditorLayout() {
           className={`relative shrink-0 flex-col border-r border-line bg-panel ${showLibrary ? "flex" : "hidden"}`}
         >
           <LibraryPanel />
-          <ResizeHandle column="library" edge="right" />
+          <ResizeHandle column="library" edge="right" width={widths.library} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <main className="relative min-h-0 min-w-0 flex-1">
@@ -84,7 +84,7 @@ export function EditorLayout() {
           style={{ width: widths.right }}
           className={`relative shrink-0 flex-col border-l border-line bg-panel ${showRight ? "flex" : "hidden"}`}
         >
-          <ResizeHandle column="right" edge="left" />
+          <ResizeHandle column="right" edge="left" width={widths.right} />
           <LevelsPanel />
           {world && <WorldHint />}
           <div className={world ? "hidden" : "contents"}>
