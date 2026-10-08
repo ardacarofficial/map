@@ -98,6 +98,17 @@ export function tilesetWheel(event: WheelLike, recentPan: boolean): TilesetWheel
   return { kind: "zoom", delta: dy };
 }
 
+/**
+ * The "Tümü" stacked list is a long scroll of tilesets, so there a plain
+ * wheel (mouse or trackpad) scrolls the list natively and only a pinch or
+ * Ctrl / Cmd + wheel zooms (the global zoom). Returns the zoom delta (px,
+ * for {@link accumulateWheelZoom}), or null to leave the event to the
+ * browser's scrolling. "Tek" keeps the map's model ({@link tilesetWheel}).
+ */
+export function stackWheel(event: Pick<WheelLike, "deltaY" | "deltaMode" | "ctrlKey" | "metaKey">): number | null {
+  return event.ctrlKey || event.metaKey ? wheelDeltaPixels(event.deltaY, event.deltaMode) : null;
+}
+
 /** Wheel delta (px) per zoom step: a mouse notch (~100 px) is one step, a pinch's many small deltas add up. */
 export const WHEEL_ZOOM_STEP = 40;
 

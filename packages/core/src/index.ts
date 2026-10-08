@@ -137,6 +137,7 @@ export {
   createDocument,
   mapInfoProblem,
   isValidSeed,
+  uniqueLayerName,
   DOCUMENT_FORMAT_VERSION,
   DEFAULT_TILE_SIZE,
   MAX_MAP_SIZE,

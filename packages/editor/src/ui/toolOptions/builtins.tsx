@@ -20,13 +20,8 @@ import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel, Segmented, StepButton, triggerClass } from "./parts";
 
 const isTerrainLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "terrain";
-/**
- * The terrain picker also sits next to a tile layer once terrains exist:
- * picking one there moves to (or creates) its terrain layer, with a toast
- * and the layer row flashed (see `activateTerrain`).
- */
-const showsTerrainPicker = (c: ToolOptionsContext) =>
-  isTerrainLayer(c) || (isTileLayer(c.layer) && !!c.doc && c.doc.tilesets.some((ts) => (ts.terrains?.length ?? 0) > 0));
+/** The terrain picker shows only on a terrain layer (plain tile layers paint tiles; terrains are picked in the Araziler list). */
+const showsTerrainPicker = isTerrainLayer;
 const isCollisionLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "collision";
 
 // ---- Brush size / shape

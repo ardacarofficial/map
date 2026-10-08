@@ -1,7 +1,7 @@
 import { terrainSlotAt, type TerrainSlot } from "./autotile";
 import { isValidCell, cellPaletteIndex, makeCell, type Cell } from "./cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, CHUNK_SIZE, chunkKey, localIndex, parseChunkKey, type ChunkKey } from "./chunk";
-import { mapInfoProblem, type MapDocument, type MapInfo } from "./document";
+import { mapInfoProblem, uniqueLayerName, type MapDocument, type MapInfo } from "./document";
 import {
   defaultEntityFields,
   entityProblem,
@@ -867,8 +867,9 @@ export class MapStore {
     const doc = this.#doc;
     const source = doc.getLayer(op.layerId);
     if (!source) throw new Error(`duplicateLayer: unknown layer "${String(op.layerId)}"`);
-    const name = op.name ?? source.name;
-    if (typeof name !== "string") throw new TypeError("duplicateLayer: name must be a string");
+    const requested = op.name ?? source.name;
+    if (typeof requested !== "string") throw new TypeError("duplicateLayer: name must be a string");
+    if (op.targetName !== undefined && typeof op.targetName !== "string") throw new TypeError("duplicateLayer: targetName must be a string");
     const copyProps = (from: TileLayer, id: string, layerName: string): LayerProps => ({ id, ...from.props(), name: layerName });
     const ctx = this.#openOp();
     const insertAbove = (layer: TileLayer, belowId: string): void => {
@@ -882,7 +883,9 @@ export class MapStore {
     const target = isGridLayer(source) && source.role === "terrain" && source.targetLayerId !== null ? doc.getLayer(source.targetLayerId) : undefined;
     if (isGridLayer(source) && isTileLayer(target)) {
       // Terrain pair: copy the derived tile layer first, then the grid deriving into it.
-      const tiles = new TileLayer(copyProps(target, this.#generateLayerId(), target.name));
+      const tilesName = uniqueLayerName(doc, op.targetName ?? target.name);
+      const name = uniqueLayerName(doc, requested, [tilesName]);
+      const tiles = new TileLayer(copyProps(target, this.#generateLayerId(), tilesName));
       tiles._restore(target._snapshot());
       insertAbove(tiles, target.id);
       const grid = new GridLayer(copyProps(source, this.#generateLayerId(), name), "terrain", tiles.id);
@@ -891,11 +894,13 @@ export class MapStore {
       this.#deriveTerrain(ctx, grid, this.#derivableCells(grid));
       result = grid.id;
     } else if (isGridLayer(source)) {
+      const name = uniqueLayerName(doc, requested);
       const grid = new GridLayer(copyProps(source, this.#generateLayerId(), name), source.role, null);
       grid._restore(source._snapshot());
       insertAbove(grid, source.id);
       result = grid.id;
     } else if (isEntityLayer(source)) {
+      const name = uniqueLayerName(doc, requested);
       const layer = new EntityLayer(copyProps(source, this.#generateLayerId(), name));
       const taken = new Set<string>();
       for (const l of doc.entityLayers()) for (const e of l.entities) taken.add(e.id);
@@ -913,6 +918,7 @@ export class MapStore {
       insertAbove(layer, source.id);
       result = layer.id;
     } else {
+      const name = uniqueLayerName(doc, requested);
       const layer = new TileLayer(copyProps(source, this.#generateLayerId(), name));
       layer._restore(source._snapshot());
       insertAbove(layer, source.id);

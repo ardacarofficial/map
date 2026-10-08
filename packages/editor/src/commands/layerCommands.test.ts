@@ -70,6 +70,20 @@ describe("layer commands", () => {
     expect(layerUnits(store.document).length).toBe(before);
   });
 
+  it("names both layers of a duplicated terrain group uniquely", () => {
+    const tile = store.dispatch({ type: "addLayer", layer: { name: "Arazi 1" } });
+    const grid = store.dispatch({ type: "addLayer", layer: { type: "grid", role: "terrain", targetLayerId: tile, name: "Arazi 1 (arazi)" } });
+    const copy = duplicateLayer(grid)!;
+    const head = store.document.getLayer(copy);
+    expect(head!.name).toBe("Arazi 1 kopya (arazi)");
+    expect(isGridLayer(head) && store.document.getLayer(head.targetLayerId!)!.name).toBe("Arazi 1 kopya");
+    duplicateLayer(grid);
+    const all = names();
+    expect(all).toContain("Arazi 1 kopya 2");
+    expect(all).toContain("Arazi 1 kopya 2 (arazi)");
+    expect(new Set(all).size).toBe(all.length);
+  });
+
   it("merges down only plain, unlocked tile layers", () => {
     expect(mergeDownProblem(store.document, upper)).toBeNull();
     expect(mergeDownProblem(store.document, ground)).toBe("noBelow");

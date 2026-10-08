@@ -56,11 +56,17 @@ export function TerrainSets() {
   };
 
   return (
-    <section aria-label={t("terrain.list")} data-terrain-sets="" className="flex shrink-0 flex-col border-t border-line-subtle">
+    // No terrains yet: just a slim "Araziler · 0  +" header (the + explains).
+    <section
+      aria-label={t("terrain.list")}
+      data-terrain-sets=""
+      data-empty={terrains.length === 0 || undefined}
+      className="flex shrink-0 flex-col border-t border-line-subtle"
+    >
       <div className="flex h-7 items-center pr-1.5 pl-3 text-2xs font-semibold tracking-wide text-faint">
         {t("terrain.list")}
-        {terrains.length > 0 && <span className="ml-1.5 font-mono font-normal tabular">{terrains.length}</span>}
-        <Tooltip label={t("terrain.defineNew")}>
+        <span className="ml-1.5 font-mono font-normal tabular">{terrains.length}</span>
+        <Tooltip label={terrains.length === 0 ? t("terrain.setsEmpty") : t("terrain.defineNew")}>
           <button
             type="button"
             aria-label={t("terrain.defineNew")}
@@ -72,16 +78,7 @@ export function TerrainSets() {
           </button>
         </Tooltip>
       </div>
-      {terrains.length === 0 ? (
-        <button
-          type="button"
-          onClick={startDefine}
-          className="mx-1.5 mb-1.5 flex items-center gap-2 rounded-md border border-dashed border-line px-2.5 py-2 text-left text-xs leading-4 text-muted hover:border-line-strong hover:bg-hover hover:text-text"
-        >
-          <Icon name="terrain" size={14} className="shrink-0 text-terrain-tint" />
-          <span>{t("terrain.setsEmpty")}</span>
-        </button>
-      ) : (
+      {terrains.length > 0 && (
         <ul role="listbox" aria-label={t("terrain.list")} className="flex max-h-[168px] flex-col overflow-y-auto px-1.5 pb-1.5">
           {terrains.map((terrain) => {
             const tileset = doc.getTileset(terrain.tilesetId);

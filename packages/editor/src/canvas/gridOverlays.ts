@@ -40,6 +40,7 @@ import {
   type CodeColors,
   type CodePattern,
 } from "./gridRaster";
+import { releaseTexture } from "./releaseTexture";
 
 /** Colours the overlays need (from `CANVAS_COLORS` / theme tokens). */
 export interface GridOverlayColors {
@@ -164,7 +165,7 @@ class ChunkOverlay {
 function disposeImage(img: ChunkImage): void {
   if (!img.view) return;
   img.view.sprite.destroy();
-  img.view.texture.destroy(true);
+  releaseTexture(img.view.texture);
   img.view = null;
 }
 

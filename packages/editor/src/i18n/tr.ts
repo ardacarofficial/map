@@ -936,6 +936,7 @@ export const tr = {
     jump: "Tileset'e atla",
     count: "{count} tileset",
     zoomSlider: "Tüm tileset'lerin yakınlaştırması",
+    wheelHint: "Tümü: tekerlek kaydırır · Ctrl+tekerlek yakınlaştırır",
     zoomOverride: "Bu: {zoom}",
     zoomOverrideReset: "Bu tileset'in kendi yakınlaştırmasını sıfırla",
   },

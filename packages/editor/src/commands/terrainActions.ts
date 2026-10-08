@@ -13,6 +13,7 @@ import {
   isTileLayer,
   terrainProblem,
   terrainTemplateInfo,
+  uniqueLayerName,
   COLLISION_PASSABLE,
   COLLISION_SOLID,
   type MapDocument,
@@ -243,14 +244,15 @@ function activateIn(store: MapStore, terrainId: number, announce: TerrainAnnounc
   } else {
     store.beginTransaction();
     try {
-      const tileLayerId = store.dispatch({ type: "addLayer", layer: { name: terrain.name }, index: plan.index });
+      const tilesName = uniqueLayerName(store.document, terrain.name);
+      const tileLayerId = store.dispatch({ type: "addLayer", layer: { name: tilesName }, index: plan.index });
       layerId = store.dispatch({
         type: "addLayer",
         layer: {
           type: "grid",
           role: "terrain",
           targetLayerId: tileLayerId,
-          name: t("terrain.layerName", { name: terrain.name }),
+          name: uniqueLayerName(store.document, t("terrain.layerName", { name: tilesName })),
         },
         index: plan.index + 1,
       });
@@ -394,13 +396,7 @@ export function removeTerrainGroup(terrainLayerId: string): boolean {
 
 /** "Collision" / "Collision 2" ... */
 function uniqueCollisionName(doc: MapDocument): string {
-  const names = new Set(doc.layers.map((l) => l.name));
-  const base = t("layers.collisionName");
-  if (!names.has(base)) return base;
-  for (let n = 2; ; n++) {
-    const name = `${base} ${n}`;
-    if (!names.has(name)) return name;
-  }
+  return uniqueLayerName(doc, t("layers.collisionName"));
 }
 
 /** Adds a collision (exceptions) layer right above the active one and makes it active. */

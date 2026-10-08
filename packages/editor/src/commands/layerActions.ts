@@ -2,7 +2,7 @@
  * Layer operations used by the layers panel and the command registry. All go
  * through core ops, so every one of them is undoable.
  */
-import { isEntityLayer, isGridLayer, isTileLayer, selectAllContent, type LayerPropsPatch, type MapDocument, type MapStore } from "@smap/core";
+import { isEntityLayer, isGridLayer, isTileLayer, selectAllContent, uniqueLayerName, type LayerPropsPatch, type MapDocument, type MapStore } from "@smap/core";
 import { create } from "zustand";
 
 import { t } from "../i18n";
@@ -18,7 +18,7 @@ function current(): { store: MapStore; activeLayerId: string | null } | null {
 }
 
 /** "Katman N" with the smallest N ≥ layer count + 1 that no layer uses. */
-export function uniqueLayerName(doc: MapDocument): string {
+export function newLayerName(doc: MapDocument): string {
   const names = new Set(doc.layers.map((l) => l.name));
   for (let n = doc.layers.length + 1; ; n++) {
     const name = t("layers.newName", { n });
@@ -33,7 +33,7 @@ export function addLayer(): string | null {
   const layers = c.store.document.layers;
   const activeIndex = layers.findIndex((l) => l.id === c.activeLayerId);
   const index = activeIndex >= 0 ? activeIndex + 1 : layers.length;
-  const id = c.store.dispatch({ type: "addLayer", layer: { name: uniqueLayerName(c.store.document) }, index });
+  const id = c.store.dispatch({ type: "addLayer", layer: { name: newLayerName(c.store.document) }, index });
   useEditorStore.getState().setActiveLayer(id);
   return id;
 }
@@ -178,13 +178,7 @@ function applyOrder(store: MapStore, order: readonly string[]): void {
 
 /** "Zemin kopya" (the next free "… kopya 2" when taken). */
 export function copyLayerName(doc: MapDocument, name: string): string {
-  const names = new Set(doc.layers.map((l) => l.name));
-  const base = t("layers.copyName", { name });
-  if (!names.has(base)) return base;
-  for (let n = 2; ; n++) {
-    const next = `${base} ${n}`;
-    if (!names.has(next)) return next;
-  }
+  return uniqueLayerName(doc, t("layers.copyName", { name }));
 }
 
 /**
@@ -200,7 +194,14 @@ export function duplicateLayer(layerId: string): string | null {
   store.beginTransaction();
   let id: string;
   try {
-    id = store.dispatch({ type: "duplicateLayer", layerId: unit.head.id, name: copyLayerName(doc, unit.head.name) });
+    if (unit.child) {
+      // Terrain pair "Çimen" + "Çimen (arazi)" → "Çimen kopya" + "Çimen kopya (arazi)".
+      const tilesName = copyLayerName(doc, unit.child.name);
+      const name = uniqueLayerName(doc, t("terrain.layerName", { name: tilesName }), [tilesName]);
+      id = store.dispatch({ type: "duplicateLayer", layerId: unit.head.id, name, targetName: tilesName });
+    } else {
+      id = store.dispatch({ type: "duplicateLayer", layerId: unit.head.id, name: copyLayerName(doc, unit.head.name) });
+    }
     const copy = doc.getLayer(id);
     if (unit.child && isGridLayer(copy) && copy.targetLayerId) {
       // Keep the copy a group: [… child, head, copyTiles, copyGrid …] (bottom first).

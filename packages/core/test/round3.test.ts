@@ -17,6 +17,7 @@ import {
   type MapStore,
   type StoreChangeEvent,
   type Tileset,
+  uniqueLayerName,
 } from "../src";
 import { BLOB_ID, TERRAIN_TILESET, TILESET, derivedMismatches, makeStore, makeTerrainStore } from "./helpers";
 
@@ -208,14 +209,14 @@ describe("duplicateLayer", () => {
     expect(snap(store)).toBe(before);
   });
 
-  it("name defaults to the source name; collision grids copy as collision", () => {
+  it("name defaults to a unique form of the source name; collision grids copy as collision", () => {
     const { store } = makeStore(8, 8);
     store.dispatch({ type: "addLayer", layer: { id: "col", name: "Col", type: "grid", role: "collision" } });
     store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 2, y: 2, value: COLLISION_SOLID }] });
     const id = store.dispatch({ type: "duplicateLayer", layerId: "col" });
     const copy = store.document.getGridLayer(id)!;
     expect(copy.role).toBe("collision");
-    expect(copy.name).toBe("Col");
+    expect(copy.name).toBe("Col 2");
     expect(copy.getCell(2, 2)).toBe(COLLISION_SOLID);
   });
 
@@ -241,6 +242,27 @@ describe("duplicateLayer", () => {
     expect(doc.getLayer("tiles")!.getCell(9, 9)).toBe(0);
     while (store.undo());
     expect(snap(store)).toBe(before);
+  });
+
+  it("names copies uniquely within the level", () => {
+    const store = makeTerrainStore(8, 8);
+    const doc = store.document;
+    const id = store.dispatch({ type: "duplicateLayer", layerId: "terrain" });
+    const grid = doc.getGridLayer(id)!;
+    const tilesName = doc.getLayer(grid.targetLayerId!)!.name;
+    expect(tilesName).not.toBe(doc.getLayer("tiles")!.name);
+    expect(grid.name).not.toBe(doc.getLayer("terrain")!.name);
+    const id2 = store.dispatch({ type: "duplicateLayer", layerId: "terrain", name: "Pair", targetName: "Pair" });
+    const grid2 = doc.getGridLayer(id2)!;
+    expect(doc.getLayer(grid2.targetLayerId!)!.name).toBe("Pair");
+    expect(grid2.name).toBe("Pair 2");
+    const tilesCopy = store.dispatch({ type: "duplicateLayer", layerId: "tiles", name: "Pair" });
+    expect(doc.getLayer(tilesCopy)!.name).toBe("Pair 3");
+    const all = doc.layers.map((l) => l.name);
+    expect(new Set(all).size).toBe(all.length);
+    expect(uniqueLayerName(doc, "Pair")).toBe("Pair 4");
+    expect(uniqueLayerName(doc, "Fresh")).toBe("Fresh");
+    expect(uniqueLayerName(doc, "Fresh", ["Fresh"])).toBe("Fresh 2");
   });
 
   it("a derived tile layer alone copies as a plain tile layer", () => {

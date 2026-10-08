@@ -167,3 +167,28 @@ describe("CameraController world framing", () => {
     expect(cam.zoomLevel).toBeGreaterThanOrEqual(0.1);
   });
 });
+
+describe("CameraController level view memory", () => {
+  const map = { width: 64, height: 48, tileWidth: 32, tileHeight: 32 };
+  it("remembers nothing for the untouched opening view", () => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(800, 600, 1);
+    cam.initialView();
+    expect(cam.savedView()).toBeNull();
+  });
+  it("restores zoom and centre, also in another view size", () => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(800, 600, 1);
+    cam.initialView();
+    cam.setZoom(2, { x: 400, y: 300 });
+    cam.panBy(-120, 40);
+    const view = cam.savedView()!;
+    expect(view.zoom).toBe(2);
+    const other = new CameraController(() => map, () => {});
+    other.resize(1000, 700, 1);
+    other.restoreView(view);
+    expect(other.camera.zoom).toBe(2);
+    expect((500 - other.camera.x) / 2).toBeCloseTo(view.cx);
+    expect((350 - other.camera.y) / 2).toBeCloseTo(view.cy);
+  });
+});

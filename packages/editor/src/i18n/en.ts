@@ -933,6 +933,7 @@ export const en: Messages = {
     jump: "Jump to tileset",
     count: "{count} tilesets",
     zoomSlider: "Zoom of all tilesets",
+    wheelHint: "All: wheel scrolls · Ctrl+wheel zooms",
     zoomOverride: "This: {zoom}",
     zoomOverrideReset: "Reset this tileset's own zoom",
   },

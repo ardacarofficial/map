@@ -7,6 +7,7 @@ import { CanvasSource, Container, Mesh, MeshGeometry, Sprite, Texture } from "pi
 
 import type { CellMaskImage } from "./cellMask";
 import { buildCellQuads, type CellQuad } from "./chunkGeometry";
+import { releaseTexture } from "./releaseTexture";
 
 /** Semi-transparent tiles drawn from atlas pages. */
 export class TilePreview {
@@ -102,7 +103,7 @@ export class MaskPreview {
     const tex = this.sprite.texture;
     if (tex && tex !== Texture.EMPTY) {
       this.sprite.texture = Texture.EMPTY;
-      tex.destroy(true);
+      releaseTexture(tex);
     }
   }
 }

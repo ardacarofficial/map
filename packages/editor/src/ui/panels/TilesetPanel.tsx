@@ -3,8 +3,9 @@
  * stacked in one scroll with sticky group / tileset headers ("Tümü").
  *
  * The scroll viewport is the host of the grids (see `TilesetGrid`): it
- * owns zoom (the map's wheel model at the cursor, a global zoom in the
- * footer plus a per-tileset override), hand panning (Space / middle drag),
+ * owns zoom ("Tek": the map's wheel model at the cursor; "Tümü": the wheel
+ * scrolls, Ctrl / pinch zooms; a global zoom in the footer plus a
+ * per-tileset override), hand panning (Space / middle drag),
  * keyboard routing and the placed terrain block.
  */
 import type { Tileset } from "@smap/core";
@@ -39,7 +40,7 @@ import { installTilesetPickSync } from "../tileset/tilesetSelect";
 import { TilesetContextMenu, TilesetSwitcher, TilesetThumb } from "../tileset/TilesetSwitcher";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { usePanDrag } from "../tileset/usePanDrag";
-import { accumulateWheelZoom, fitScale, MAX_ZOOM, MIN_ZOOM, PAN_GESTURE_MS, stepZoom, tilesetWheel, ZOOM_STEPS, zoomLabel } from "../tileset/zoomModel";
+import { accumulateWheelZoom, fitScale, MAX_ZOOM, MIN_ZOOM, PAN_GESTURE_MS, stackWheel, stepZoom, tilesetWheel, ZOOM_STEPS, zoomLabel } from "../tileset/zoomModel";
 import { useUiStore } from "../uiStore";
 import { widenLibraryTarget } from "../layout/columns";
 import { useLayoutStore, wantedLibraryWidth } from "../layout/layoutStore";
@@ -237,13 +238,24 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     vp.scrollTop += r.top + a.uy * scale - a.cy;
   });
 
-  // The map's wheel model. Native listener: React wheel handlers are passive.
+  // "Tek": the map's wheel model. "Tümü": a plain wheel scrolls the list
+  // (native), a pinch / Ctrl + wheel zooms globally. Native listener: React
+  // wheel handlers are passive.
   const wheelAcc = useRef(0);
   const lastPan = useRef(-Infinity);
   const onWheelRef = useRef<(e: WheelEvent) => void>(() => undefined);
   onWheelRef.current = (e: WheelEvent) => {
     const vp = viewportRef.current;
     if (!vp) return;
+    if (stack) {
+      const delta = stackWheel(e);
+      if (delta === null) return;
+      e.preventDefault();
+      const r = accumulateWheelZoom(wheelAcc.current, delta);
+      wheelAcc.current = r.acc;
+      if (r.step !== 0) zoomGlobal(stepZoom(globalZoom ?? scaleOf(active), r.step));
+      return;
+    }
     e.preventDefault();
     const now = performance.now();
     const action = tilesetWheel(e, now - lastPan.current < PAN_GESTURE_MS);
@@ -256,11 +268,8 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     const r = accumulateWheelZoom(wheelAcc.current, action.delta);
     wheelAcc.current = r.acc;
     if (r.step === 0) return;
-    // Zoom the tileset under the cursor (its own zoom); in "Tümü" outside a tileset, the global zoom.
-    const id = (e.target as Element | null)?.closest?.("[data-tileset-grid]")?.getAttribute("data-tileset-grid") ?? (stack ? null : active.id);
-    const ts = id ? tilesets.find((x) => x.id === id) : undefined;
-    if (ts) zoomTileset(ts.id, stepZoom(scaleOf(ts), r.step), e.clientX, e.clientY);
-    else zoomGlobal(stepZoom(globalZoom ?? 1, r.step));
+    // Zoom the shown tileset at the cursor (its own zoom).
+    zoomTileset(active.id, stepZoom(scaleOf(active), r.step), e.clientX, e.clientY);
   };
   useEffect(() => {
     const el = viewportRef.current;
@@ -321,7 +330,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
         )}
         <ModeTabs mode={mode} onChange={setMode} />
         {mode === "pick" && (
-          <div className="mx-3 mb-1 shrink-0 truncate text-2xs leading-4 text-faint" title={t("tilesetPanel.hintSelect")} data-tileset-hint>
+          <div className="mx-3 mb-1 shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
             {t("tilesetPanel.hintSelect")}
           </div>
         )}
@@ -352,7 +361,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
               onDone={() => setMode("pick")}
             />
             {!pendingCell && (
-              <div className="mx-3 mb-1 shrink-0 truncate text-2xs leading-4 text-faint" data-tileset-hint>
+              <div className="mx-3 mb-1 shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
                 {t(MODE_HINT.terrain)}
               </div>
             )}
@@ -383,7 +392,20 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
 
         <TerrainSets />
 
-        <div className="flex h-8 shrink-0 items-center gap-2 border-t border-line-subtle pr-1.5 pl-3 text-xs text-faint" data-tileset-footer>
+        {stack && (
+          // How the wheel behaves in the stacked list (it scrolls here, unlike "Tek").
+          <div
+            className="shrink-0 border-t border-line-subtle px-3 pt-1 text-2xs leading-4 text-pretty text-faint"
+            title={t("tilesetLib.wheelHint")}
+            data-tileset-wheel-hint
+          >
+            {t("tilesetLib.wheelHint")}
+          </div>
+        )}
+        <div
+          className={`flex h-8 shrink-0 items-center gap-2 pr-1.5 pl-3 text-xs text-faint ${stack ? "" : "border-t border-line-subtle"}`}
+          data-tileset-footer
+        >
           {stack ? (
             <span className="min-w-0 truncate">{t("tilesetLib.count", { count: tilesets.length })}</span>
           ) : (
@@ -555,14 +577,64 @@ function LibrarySearch({ tilesets, trailing }: { tilesets: readonly Tileset[]; t
 function JumpChips({ tilesets, activeId }: { tilesets: readonly Tileset[]; activeId: string }) {
   const query = useTilesetView((s) => s.query);
   const shown = filterTilesets(tilesets, query);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // Which ends have chips scrolled out of sight (they fade there).
+  const [more, setMore] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setMore((m) => (m.left === left && m.right === right ? m : { left, right }));
+  }, []);
+  useLayoutEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    // A vertical wheel scrolls the row sideways (it has no vertical scroll).
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey || el.scrollWidth <= el.clientWidth) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (d === 0) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaMode === 1 ? d * 16 : d;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [measure, shown.length]);
+  // Keep the active chip in view.
+  useEffect(() => {
+    rowRef.current?.querySelector(`[data-tileset-chip="${CSS.escape(activeId)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId]);
   if (shown.length < 2) return null;
+  const fade = 20;
+  const mask =
+    more.left || more.right
+      ? `linear-gradient(to right, ${more.left ? "transparent" : "#000"} 0, #000 ${more.left ? fade : 0}px, #000 calc(100% - ${more.right ? fade : 0}px), ${more.right ? "transparent" : "#000"} 100%)`
+      : undefined;
   return (
-    <div className="flex shrink-0 gap-1 overflow-x-auto px-2 pb-1.5 [scrollbar-width:none]" data-tileset-jump role="navigation" aria-label={t("tilesetLib.jump")}>
+    <div
+      ref={rowRef}
+      onScroll={measure}
+      className="flex shrink-0 gap-1 overflow-x-auto px-2 pb-1.5 [scrollbar-width:none]"
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
+      data-tileset-jump
+      data-more-left={more.left || undefined}
+      data-more-right={more.right || undefined}
+      role="navigation"
+      aria-label={t("tilesetLib.jump")}
+    >
       {shown.map((ts) => (
         <button
           key={ts.id}
           type="button"
           data-tileset-chip={ts.id}
+          title={ts.name}
           onClick={() => gotoTileset(ts.id)}
           className={`h-5 max-w-[120px] shrink-0 truncate rounded-full border px-2 text-2xs transition-colors ${
             ts.id === activeId ? "border-accent-line bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:text-text"

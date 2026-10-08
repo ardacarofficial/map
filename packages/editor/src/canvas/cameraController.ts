@@ -207,6 +207,40 @@ export class CameraController {
     this.#requestRender();
   }
 
+  /**
+   * The view to remember for this level (map px at the view centre + zoom),
+   * or null while it still shows the opening / framed view (reopening shows
+   * that again anyway). `camera` defaults to the current one.
+   */
+  savedView(camera: Camera = this.camera): { cx: number; cy: number; zoom: number } | null {
+    if (this.#pendingFrameMap || (this.#framed && camera === this.camera) || this.viewW <= 1 || this.viewH <= 1) return null;
+    const zoom = this.#anim && camera === this.camera ? this.#quantize(this.#clamp(this.#anim.target)) : camera.zoom;
+    const cx = (this.viewW / 2 - camera.x) / camera.zoom;
+    const cy = (this.viewH / 2 - camera.y) / camera.zoom;
+    return { cx, cy, zoom };
+  }
+
+  /** The camera that shows `view` (see {@link savedView}) in this view size. */
+  cameraFor(view: { cx: number; cy: number; zoom: number }): Camera {
+    const zoom = this.#quantize(this.#clamp(view.zoom));
+    return cameraCenteredOn(view.cx, view.cy, zoom, this.viewW, this.viewH);
+  }
+
+  /** Shows a remembered level view; falls back to the opening view while the view has no size. */
+  restoreView(view: { cx: number; cy: number; zoom: number }): void {
+    if (this.viewW <= 1 || this.viewH <= 1) {
+      this.requestInitialView();
+      return;
+    }
+    const camera = this.cameraFor(view);
+    this.place(camera.x, camera.y, camera.zoom);
+  }
+
+  /** The zoom the camera actually ends at for a requested `zoom` (clamped, tiles whole device px). */
+  effectiveZoom(zoom: number): number {
+    return this.#quantize(this.#clamp(zoom));
+  }
+
   /** Places the camera directly (zoom = CSS px per map px); counts as a user move. */
   place(x: number, y: number, zoom: number): void {
     this.#anim = null;

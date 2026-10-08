@@ -121,7 +121,9 @@ function ZoomControl() {
   const shown = formatZoomPercent(zoom, locale);
   const [draft, setDraft] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const presets = getCanvasHandle()?.zoomPresets ?? FALLBACK_PRESETS;
+  const handle = getCanvasHandle();
+  // Labelled with the zoom each preset really gives (what the field then shows).
+  const presets = [...new Set((handle?.zoomPresets ?? FALLBACK_PRESETS).map((p) => handle?.effectiveZoom(p) ?? p))];
 
   const apply = () => {
     const value = draft === null ? null : parseZoomPercent(draft);

@@ -17,6 +17,7 @@ import {
 
 import { t } from "../i18n";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
+import { clearLevelViews } from "../state/levelViewMemory";
 import {
   allTilesetImages,
   clearTilesetImages,
@@ -145,6 +146,7 @@ function activate(
     active: { id: level.id, store: project.store, knownText: levelText },
   });
   activeLayerMemory.clear();
+  clearLevelViews();
   useProjectLibrary.getState().load(library);
   clearTilesetImages();
   for (const image of images) setTilesetImage(image);
@@ -200,6 +202,7 @@ export function closeProject(): void {
   setFolder(null);
   workspace = null;
   activeLayerMemory.clear();
+  clearLevelViews();
   useEditorStore.getState().setProject(null);
   clearTilesetImages();
   useUiStore.getState().setActiveTileset(null);

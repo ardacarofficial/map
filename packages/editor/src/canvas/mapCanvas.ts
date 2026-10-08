@@ -37,6 +37,7 @@ import { Application, CanvasSource, Container, Sprite, Texture, Ticker } from "p
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
+import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
 import { t } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { CameraController } from "./cameraController";
@@ -55,6 +56,7 @@ import { PointerInput } from "./pointerInput";
 import { ToolController, type Gesture } from "./toolController";
 import { isPaintable, regionContains, toolForLayer } from "./tools";
 import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
+import { releaseFilterInputs, releaseTexture } from "./releaseTexture";
 
 export type { CanvasView, LevelMovedEvent, WorldDataSource, WorldSourceChange } from "./worldView";
 export type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary, StrokeTool } from "./canvasEvents";
@@ -95,6 +97,12 @@ export interface CanvasHandle {
   setZoom(zoom: number): void;
   /** The level view's zoom presets (12.5 % … 1600 %) for a zoom dropdown, ascending. */
   readonly zoomPresets: readonly number[];
+  /**
+   * The zoom {@link setZoom}(`zoom`) actually ends at: clamped and rounded
+   * so a tile is whole device px (e.g. the 66,7 % preset is 65,6 % with
+   * 32 px tiles). Menus label presets with it, so they match the zoom field.
+   */
+  effectiveZoom(zoom: number): number;
   /** Center the map in the view (fit if it is larger than the view). */
   frameMap(): void;
   /**
@@ -574,6 +582,7 @@ export class MapCanvas {
       this.#camera.animateZoomTo(zoom, this.#camera.viewCenter());
     },
     zoomPresets: ZOOM_PRESETS,
+    effectiveZoom: (zoom) => this.#camera.effectiveZoom(zoom),
     frameMap: () => this.#camera.frameMap(),
     onNavigate: (cb) => {
       this.#navigateListeners.add(cb);
@@ -746,6 +755,7 @@ export class MapCanvas {
   }
 
   #teardownApp(): void {
+    releaseFilterInputs(this.#app.renderer);
     this.#app.destroy({ removeView: true }, { children: true, texture: false, textureSource: false });
     this.#removeCanvas();
   }
@@ -801,6 +811,11 @@ export class MapCanvas {
     if (outgoing && this.#thumb && outgoingId !== null && outgoingId !== (project?.levelId ?? null) && this.#thumbTexture) {
       this.#worldView.snapshotActive(outgoingId, outgoing, this.#thumb.canvas, !this.#thumb.pending);
     }
+    // Remember where the outgoing level was viewed (this session).
+    if (outgoing && outgoingId !== null) {
+      if (this.#view === "level") rememberLevelView(outgoingId, this.#camera.savedView());
+      else if (!this.#frameOnLevelView && this.#levelCamera) rememberLevelView(outgoingId, this.#camera.savedView(this.#levelCamera.camera));
+    }
     this.#destroySceneObjects();
     this.#loadedLevelId = project ? this.#activeLevelId() : null;
     if (project) {
@@ -818,8 +833,14 @@ export class MapCanvas {
     // Previews above the layers.
     this.#world.addChild(this.#overlays.previews);
     this.#worldView.activeChanged();
-    // The world view keeps its camera; the new level is framed when the level view returns.
-    if (this.#view === "world") this.#frameOnLevelView = true;
+    // A level seen before this session comes back where it was left; a new
+    // one opens centred. The world view keeps its camera; the level view
+    // shows the new level when it returns.
+    const remembered = this.#loadedLevelId !== null ? recallLevelView(this.#loadedLevelId) : null;
+    if (this.#view === "world") {
+      this.#frameOnLevelView = remembered === null;
+      if (remembered) this.#levelCamera = { camera: this.#camera.cameraFor(remembered), zoomLevel: remembered.zoom };
+    } else if (remembered) this.#camera.restoreView(remembered);
     else this.#camera.requestInitialView();
     this.#requestRender();
   }
@@ -900,6 +921,7 @@ export class MapCanvas {
     if (devW <= 0 || devH <= 0) return;
     const viewW = devW / resolution;
     const viewH = devH / resolution;
+    releaseFilterInputs(this.#app.renderer);
     this.#app.renderer.resize(viewW, viewH, resolution);
     this.#input.invalidateRect();
     this.#camera.resize(viewW, viewH, resolution);
@@ -1185,7 +1207,7 @@ export class MapCanvas {
    * still reference it (Pixi warns when a bound source is destroyed).
    */
   #retire(texture: Texture): void {
-    this.#afterRender(() => texture.destroy(true));
+    this.#afterRender(() => releaseTexture(texture));
   }
 
   /** Runs `fn` after the next render (right away when nothing renders any more). */

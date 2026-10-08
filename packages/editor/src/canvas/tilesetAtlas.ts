@@ -7,6 +7,7 @@ import { tileCount, tileRect, type Tileset } from "@smap/core";
 import { CanvasSource, Rectangle, Texture } from "pixi.js";
 
 import { layoutAtlas, tileBlits, tileUV, type AtlasLayout, type TileUV } from "./atlas";
+import { releaseTexture } from "./releaseTexture";
 
 export class TilesetAtlas {
   readonly tilesetId: string;
@@ -72,6 +73,6 @@ export class TilesetAtlas {
   destroy(): void {
     for (const t of this.#tileTextures.values()) t.destroy(false);
     this.#tileTextures.clear();
-    for (const p of this.pages) p.destroy(true);
+    for (const p of this.pages) releaseTexture(p);
   }
 }

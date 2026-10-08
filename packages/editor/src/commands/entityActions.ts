@@ -9,6 +9,7 @@
 import {
   isEntityLayer,
   SPAWN_TYPE_ID,
+  uniqueLayerName,
   type EntityFieldValue,
   type EntityType,
   type MapDocument,
@@ -43,10 +44,7 @@ export function entityFieldLabel(typeId: string, field: string): string {
 
 /** "Entity", "Entity 2"… — the first name no layer uses. */
 export function uniqueEntityLayerName(doc: MapDocument): string {
-  const names = new Set(doc.layers.map((l) => l.name));
-  const base = t("layers.entityName");
-  if (!names.has(base)) return base;
-  for (let n = 2; ; n++) if (!names.has(`${base} ${n}`)) return `${base} ${n}`;
+  return uniqueLayerName(doc, t("layers.entityName"));
 }
 
 /** Adds an entity layer right above the active layer and makes it active. */

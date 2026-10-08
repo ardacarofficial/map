@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { classifyWheel } from "../../canvas/brush";
 
-import { accumulateWheelZoom, anchoredScroll, fitScale, MAX_FIT_SCALE, stepZoom, tilesetWheel, zoomLabel } from "./zoomModel";
+import { accumulateWheelZoom, anchoredScroll, fitScale, MAX_FIT_SCALE, stackWheel, stepZoom, tilesetWheel, zoomLabel } from "./zoomModel";
 
 describe("tileset zoom", () => {
   it("fit prefers a whole-number scale", () => {
@@ -88,5 +88,13 @@ describe("tileset zoom", () => {
     expect(steps).toBe(1);
     // A turn in the other direction starts over.
     expect(accumulateWheelZoom(-30, 10)).toEqual({ acc: 10, step: 0 });
+  });
+
+  it("in the Tümü list a plain wheel scrolls; only Ctrl / Cmd / pinch zooms", () => {
+    const base = { deltaY: -100, deltaMode: 0, ctrlKey: false, metaKey: false };
+    expect(stackWheel(base)).toBeNull();
+    expect(stackWheel({ ...base, deltaY: 8 })).toBeNull();
+    expect(stackWheel({ ...base, ctrlKey: true })).toBe(-100);
+    expect(stackWheel({ ...base, metaKey: true, deltaY: 3, deltaMode: 1 })).toBeGreaterThan(3);
   });
 });

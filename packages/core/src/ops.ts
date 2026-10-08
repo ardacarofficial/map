@@ -127,13 +127,17 @@ export interface MoveTilesetOp {
  * - Entity layer: entities get new ids; the spawn point is not copied
  *   (a level has at most one).
  *
- * `name` defaults to the source layer's name (the UI passes a localized
- * "… copy" name). Throws on an unknown layer.
+ * Names are made unique within the level ({@link uniqueLayerName}):
+ * `name` (default: the source layer's name) names the copy, `targetName`
+ * (default: the derived tile layer's name) the copied derived tile layer of
+ * a terrain pair; a taken name gets the next free " 2", " 3"... suffix.
+ * The UI passes localized "… copy" names. Throws on an unknown layer.
  */
 export interface DuplicateLayerOp {
   readonly type: "duplicateLayer";
   readonly layerId: string;
   readonly name?: string;
+  readonly targetName?: string;
 }
 
 /**

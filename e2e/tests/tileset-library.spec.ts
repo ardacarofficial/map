@@ -95,6 +95,23 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, one toas
   await page.locator("[data-tileset-search]").press("Escape");
   await expect(page.locator("[data-tileset-section]")).toHaveCount(5);
 
+  // In "Tümü" a plain wheel scrolls the list; Ctrl + wheel zooms (all tilesets).
+  await expect(page.locator("[data-tileset-wheel-hint]")).toContainText("Ctrl+tekerlek");
+  const list = page.locator("[data-tileset-view='all']");
+  const scales = () => page.locator("[data-tileset-grid]").evaluateAll((els) => els.map((el) => el.getAttribute("data-tileset-scale")));
+  const scales0 = await scales();
+  const listBox = (await list.boundingBox())!;
+  await page.mouse.move(listBox.x + listBox.width / 2, listBox.y + listBox.height / 2);
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await scales()).toEqual(scales0);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Control");
+  await expect.poll(scales).not.toEqual(scales0);
+  await page.locator("[data-tileset-zoom] button[aria-pressed]").click();
+  await expect.poll(scales).toEqual(scales0);
+
   // One "Geri al" removes all four.
   await toast.getByRole("button", { name: "Geri al" }).click();
   await expect.poll(() => tilesetIds(page)).toEqual(["overworld-32"]);

@@ -251,6 +251,21 @@ export function createDocument(options: CreateDocumentOptions): MapDocument {
   return doc;
 }
 
+/**
+ * `base` when no layer of `doc` (and nothing in `taken`) uses it, otherwise
+ * the first free "base 2", "base 3", ... Layer names are unique within a
+ * level so exports (which name objects after layers) never clash.
+ */
+export function uniqueLayerName(doc: MapDocument, base: string, taken: Iterable<string> = []): string {
+  const names = new Set(doc.layers.map((l) => l.name));
+  for (const name of taken) names.add(name);
+  if (!names.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const name = `${base} ${n}`;
+    if (!names.has(name)) return name;
+  }
+}
+
 /** Returns a description of what is wrong with `map`, or `null`. */
 export function mapInfoProblem(map: MapInfo): string | null {
   for (const key of ["width", "height"] as const) {
