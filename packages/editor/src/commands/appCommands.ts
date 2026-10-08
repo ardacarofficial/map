@@ -11,6 +11,7 @@ import { getCanvasHandle } from "../ui/canvas/canvasHandle";
 import { useUiStore } from "../ui/uiStore";
 import { pickFiles } from "../ui/pickFiles";
 import { registerCommands, type Command } from "./registry";
+import { registerProjectCommands } from "../io/projectRename";
 import type { ToolId } from "../state/editorStore";
 import { copySelection, cutSelection, deleteSelection, flipStampOrTile, pasteFromSystem } from "./clipboard";
 import {
@@ -28,11 +29,27 @@ import {
   contextOf,
   type EditContext,
 } from "./enablement";
-import { addLayer, removeLayer } from "./layerActions";
+import {
+  addLayer,
+  canMoveUnit,
+  canRemoveUnit,
+  duplicateLayer,
+  mergeDownProblem,
+  mergeLayerDown,
+  moveUnit,
+  removeUnit,
+  startLayerRename,
+  unitOf,
+} from "./layerActions";
+import { revealSection, useLayoutStore } from "../ui/layout/layoutStore";
+import type { SectionId } from "../ui/layout/sections";
+import { toast } from "../ui/toast/toastStore";
+import { t } from "../i18n";
 import { addCollisionLayer } from "./terrainActions";
 import { addEntityLayer, deleteEntity } from "./entityActions";
 import { stampRegion } from "./stampActions";
-import { askRemoveLevel, duplicateLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
+import { askRemoveLevel, duplicateLevel, openAdjacentLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
+import { getLevelWorkspace } from "../io/session";
 import { isWorldView, setCanvasView } from "./worldActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
@@ -75,6 +92,48 @@ function togglePanels(): void {
     handle.setMinimapVisible(minimapBeforeHide);
     minimapBeforeHide = null;
   }
+}
+
+const layout = () => useLayoutStore.getState();
+const activeDoc = () => editor().project?.store.document;
+/** A layer command can act on the active layer (map view, no stroke running). */
+const layerReady = () => hasProject() && !isWorldView() && !(editor().project?.store.inTransaction ?? true);
+
+/** View menu check item for a right-column section. */
+const sectionToggle = (id: SectionId, command: "view.toggleLevels" | "view.toggleProperties" | "view.toggleLayers"): Command => ({
+  id: command,
+  title: `commands.${command}`,
+  category: "view",
+  enabled: hasProject,
+  checked: () => !layout().sections[id].hidden,
+  run: () => {
+    const hidden = !layout().sections[id].hidden;
+    layout().setSectionHidden(id, hidden);
+    // Showing a section of a hidden column shows the column too.
+    if (!hidden && layout().inspectorCollapsed) layout().setInspectorCollapsed(false);
+  },
+});
+
+/**
+ * Ctrl+Shift+I. Selections are rectangles, so the only inversions that stay
+ * one are "nothing selected → everything" and "everything → nothing"; for
+ * a partial selection the command is disabled (palette / menu) and says why
+ * when pressed.
+ */
+function invertSelection(): void {
+  const map = activeDoc()?.map;
+  if (!map) return;
+  const region = editor().region;
+  if (!region) {
+    editor().setRegion({ x: 0, y: 0, width: map.width, height: map.height });
+    if (editor().tool !== "select") editor().setTool("select");
+    return;
+  }
+  if (region.x <= 0 && region.y <= 0 && region.x + region.width >= map.width && region.y + region.height >= map.height) {
+    editor().setRegion(null);
+    return;
+  }
+  toast.info(t("toast.invertNotRect"));
 }
 
 const COMMANDS: Command[] = [
@@ -215,10 +274,64 @@ const COMMANDS: Command[] = [
     id: "layer.remove",
     title: "commands.layer.remove",
     category: "layer",
-    enabled: when(canRemoveLayer),
+    enabled: () => when(canRemoveLayer)() && canRemoveUnit(activeDoc(), editor().activeLayerId),
     run: () => {
       const layer = activeLayer(ctx());
-      if (layer) removeLayer(layer.id);
+      if (layer) removeUnit(layer.id);
+    },
+  },
+  {
+    id: "layer.duplicate",
+    title: "commands.layer.duplicate",
+    category: "layer",
+    enabled: () => layerReady() && activeLayer(ctx()) !== undefined,
+    run: () => {
+      const id = editor().activeLayerId;
+      if (id) duplicateLayer(id);
+    },
+  },
+  {
+    id: "layer.mergeDown",
+    title: "commands.layer.mergeDown",
+    category: "layer",
+    enabled: () => layerReady() && mergeDownProblem(activeDoc(), editor().activeLayerId) === null,
+    run: () => {
+      const id = editor().activeLayerId;
+      if (id) mergeLayerDown(id);
+    },
+  },
+  {
+    id: "layer.rename",
+    title: "commands.layer.rename",
+    category: "layer",
+    enabled: () => hasProject() && !isWorldView() && activeLayer(ctx()) !== undefined,
+    run: () => {
+      const doc = activeDoc();
+      const { unit } = doc ? unitOf(doc, editor().activeLayerId) : { unit: undefined };
+      if (!unit) return;
+      if (ui().panelsHidden) togglePanels();
+      revealSection("layers");
+      startLayerRename(unit.head.id);
+    },
+  },
+  {
+    id: "layer.moveUp",
+    title: "commands.layer.moveUp",
+    category: "layer",
+    enabled: () => layerReady() && canMoveUnit(activeDoc(), editor().activeLayerId, "up"),
+    run: () => {
+      const id = editor().activeLayerId;
+      if (id) moveUnit(id, "up");
+    },
+  },
+  {
+    id: "layer.moveDown",
+    title: "commands.layer.moveDown",
+    category: "layer",
+    enabled: () => layerReady() && canMoveUnit(activeDoc(), editor().activeLayerId, "down"),
+    run: () => {
+      const id = editor().activeLayerId;
+      if (id) moveUnit(id, "down");
     },
   },
   {
@@ -256,6 +369,32 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "level.next",
+    title: "commands.level.next",
+    category: "level",
+    enabled: () => noPick() && (getLevelWorkspace()?.levels.length ?? 0) > 1,
+    run: () => void openAdjacentLevel(1),
+  },
+  {
+    id: "level.previous",
+    title: "commands.level.previous",
+    category: "level",
+    enabled: () => noPick() && (getLevelWorkspace()?.levels.length ?? 0) > 1,
+    run: () => void openAdjacentLevel(-1),
+  },
+  {
+    id: "edit.invertSelection",
+    title: "commands.edit.invertSelection",
+    category: "edit",
+    enabled: () => {
+      if (!hasProject() || isWorldView()) return false;
+      const map = activeDoc()?.map;
+      const r = editor().region;
+      return !!map && (r === null || (r.x <= 0 && r.y <= 0 && r.x + r.width >= map.width && r.y + r.height >= map.height));
+    },
+    run: invertSelection,
+  },
+  {
     id: "level.remove",
     title: "commands.level.remove",
     category: "level",
@@ -270,6 +409,7 @@ const COMMANDS: Command[] = [
   tool("select"),
   tool("eyedropper"),
   tool("entity"),
+  tool("hand"),
 
   // ---- View
   {
@@ -277,15 +417,69 @@ const COMMANDS: Command[] = [
     title: "commands.view.toggleCollision",
     category: "view",
     enabled: hasProject,
+    checked: () => editor().collisionOverlay,
     run: () => editor().toggleCollisionOverlay(),
   },
-  { id: "view.toggleGrid", title: "commands.view.toggleGrid", category: "view", enabled: hasProject, run: () => editor().toggleGrid() },
+  {
+    id: "view.toggleGrid",
+    title: "commands.view.toggleGrid",
+    category: "view",
+    enabled: hasProject,
+    checked: () => editor().gridVisible,
+    run: () => editor().toggleGrid(),
+  },
+  {
+    id: "view.toggleLibrary",
+    title: "commands.view.toggleLibrary",
+    category: "view",
+    enabled: () => hasProject() && !isWorldView(),
+    checked: () => !layout().libraryCollapsed,
+    run: () => {
+      if (ui().panelsHidden) togglePanels();
+      layout().toggleLibrary();
+    },
+  },
+  {
+    id: "view.toggleInspector",
+    title: "commands.view.toggleInspector",
+    category: "view",
+    enabled: hasProject,
+    checked: () => !layout().inspectorCollapsed,
+    run: () => {
+      if (ui().panelsHidden) togglePanels();
+      layout().toggleInspector();
+    },
+  },
+  sectionToggle("levels", "view.toggleLevels"),
+  sectionToggle("properties", "view.toggleProperties"),
+  sectionToggle("layers", "view.toggleLayers"),
+  {
+    id: "view.toggleRecent",
+    title: "commands.view.toggleRecent",
+    category: "view",
+    enabled: hasProject,
+    checked: () => !layout().recentHidden,
+    run: () => layout().setRecentHidden(!layout().recentHidden),
+  },
+  {
+    id: "view.resetLayout",
+    title: "commands.view.resetLayout",
+    category: "view",
+    enabled: hasProject,
+    run: () => {
+      if (ui().panelsHidden) togglePanels();
+      layout().resetLayout();
+      getCanvasHandle()?.setMinimapVisible(true);
+      minimapBeforeHide = null;
+    },
+  },
   { id: "view.togglePanels", title: "commands.view.togglePanels", category: "view", enabled: hasProject, run: togglePanels },
   {
     id: "view.toggleMinimap",
     title: "commands.view.toggleMinimap",
     category: "view",
     enabled: hasProject,
+    checked: () => getCanvasHandle()?.isMinimapVisible() ?? false,
     run: canvas((h) => {
       h.setMinimapVisible(!h.isMinimapVisible());
       minimapBeforeHide = null;
@@ -312,4 +506,5 @@ export function registerAppCommands(): void {
   if (registered) return;
   registered = true;
   registerCommands(COMMANDS);
+  registerProjectCommands();
 }

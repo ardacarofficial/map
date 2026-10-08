@@ -1,17 +1,20 @@
+import { ContextMenu } from "@base-ui/react/context-menu";
 import { Menu } from "@base-ui/react/menu";
 import type { Tileset } from "@smap/core";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, type ReactNode } from "react";
 
-import { openTilesetImport, openTilesetSettings, replaceTilesetImage } from "../../commands/tilesetActions";
+import { openTilesetImport } from "../../commands/tilesetActions";
 import { t } from "../../i18n";
 import { useTilesetImage } from "../hooks";
 import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { Tooltip } from "../primitives/Tooltip";
+import { groupTilesets, UNGROUPED } from "./libraryModel";
+import { TilesetMenuItems } from "./TilesetMenu";
 
 /** The whole tileset image shrunk into a `size` px square (crisp, centred). */
-function TilesetThumb({ tileset, size }: { tileset: Tileset; size: number }) {
+export function TilesetThumb({ tileset, size }: { tileset: Tileset; size: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const image = useTilesetImage(tileset.id);
   useEffect(() => {
@@ -33,22 +36,47 @@ function TilesetThumb({ tileset, size }: { tileset: Tileset; size: number }) {
   return <canvas ref={ref} aria-hidden style={{ width: size, height: size }} className="checker shrink-0 rounded-xs border border-line-subtle pixelated" />;
 }
 
+/** Right click on a tileset's header / switcher: the tileset menu. */
+export function TilesetContextMenu({ tileset, children }: { tileset: Tileset; children: ReactNode }) {
+  return (
+    <ContextMenu.Root>
+      {children}
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner className={menuPositionerClass}>
+          <ContextMenu.Popup className={menuPopupClass} data-tileset-context-menu={tileset.id}>
+            <TilesetMenuItems tileset={tileset} />
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
 /**
- * Tileset row under the library tabs: a dropdown (thumbnail + name) to
- * switch tilesets, and a "⋯" menu (settings, replace image, add).
+ * Tileset row under the library tabs ("Tek" view): a dropdown (thumbnail +
+ * name, grouped) to switch tilesets, and a "⋯" menu (settings, replace
+ * image, group, remove, add). Right click on the dropdown opens the same
+ * tileset menu.
  */
 export function TilesetSwitcher({
   tilesets,
   active,
   onSelect,
+  trailing,
 }: {
   tilesets: readonly Tileset[];
   active: Tileset;
   onSelect(id: string): void;
+  /** Extra controls at the end of the row (the view toggle). */
+  trailing?: ReactNode;
 }) {
   const many = tilesets.length > 1;
+  const groups = groupTilesets(tilesets);
+  const labelled = groups.some((g) => g.name !== UNGROUPED);
   return (
     <div className="flex shrink-0 items-center gap-1 px-2 pb-1.5">
+      <TilesetContextMenu tileset={active}>
+      <ContextMenu.Trigger className="flex min-w-0 flex-1">
       <Menu.Root>
         <Menu.Trigger
           disabled={!many}
@@ -66,7 +94,14 @@ export function TilesetSwitcher({
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
             <Menu.Popup className={`${menuPopupClass} max-h-[min(420px,var(--available-height))] w-(--anchor-width) min-w-[220px] overflow-y-auto`}>
-              {tilesets.map((ts) => (
+              {groups.map((g) => (
+                <Fragment key={g.name}>
+                {labelled && (
+                  <div className="px-2 pt-2 pb-1 text-2xs font-semibold tracking-wide text-faint" data-switcher-group={g.name}>
+                    {g.name === UNGROUPED ? t("tilesetLib.ungrouped") : g.name}
+                  </div>
+                )}
+                {g.tilesets.map((ts) => (
                 <Menu.Item
                   key={ts.id}
                   className={`${menuItemClass} ${ts.id === active.id ? "bg-active" : ""}`}
@@ -82,11 +117,15 @@ export function TilesetSwitcher({
                   </span>
                   {ts.id === active.id && <Icon name="check" size={14} className="shrink-0 text-accent" />}
                 </Menu.Item>
+                ))}
+                </Fragment>
               ))}
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      </ContextMenu.Trigger>
+      </TilesetContextMenu>
       <Menu.Root>
         <Tooltip label={t("tilesetPanel.menu")}>
           <Menu.Trigger
@@ -100,14 +139,7 @@ export function TilesetSwitcher({
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
             <Menu.Popup className={menuPopupClass}>
-              <Menu.Item className={menuItemClass} onClick={() => void openTilesetSettings(active.id)}>
-                <Icon name="grid" size={15} className="text-muted" />
-                {t("tilesetPanel.settings")}
-              </Menu.Item>
-              <Menu.Item className={menuItemClass} onClick={() => void replaceTilesetImage(active.id)}>
-                <Icon name="image" size={15} className="text-muted" />
-                {t("tilesetPanel.replaceImage")}
-              </Menu.Item>
+              <TilesetMenuItems tileset={active} />
               <div role="separator" className={menuSeparatorClass} />
               <Menu.Item className={menuItemClass} onClick={() => void openTilesetImport()}>
                 <Icon name="plus" size={15} className="text-muted" />
@@ -117,6 +149,7 @@ export function TilesetSwitcher({
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      {trailing}
     </div>
   );
 }

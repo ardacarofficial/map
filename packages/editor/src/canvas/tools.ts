@@ -422,6 +422,16 @@ export function isEditTool(tool: ToolId): boolean {
   return tool === "brush" || tool === "eraser" || tool === "fill" || tool === "rect";
 }
 
+/**
+ * Tool for a newly active layer: tile tools (brush, eraser, fill,
+ * rectangle) become the entity tool on an entity layer, the entity tool
+ * becomes the brush elsewhere; select, eyedropper and hand stay.
+ */
+export function toolForLayer(tool: ToolId, entityLayer: boolean): ToolId {
+  if (entityLayer) return isEditTool(tool) ? "entity" : tool;
+  return tool === "entity" ? "brush" : tool;
+}
+
 /** CSS cursor for the canvas. */
 export function cursorFor(s: CursorInput): string {
   if (s.panning) return "grabbing";

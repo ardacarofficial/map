@@ -11,6 +11,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { registerAppCommands } from "./commands/appCommands";
+import { registerHandToolCommand } from "./commands/handTool";
 import { registerExportCommands } from "./commands/exportCommands";
 import { installKeyboardLayout } from "./commands/keymap";
 import { installAutoExport } from "./export/exportActions";
@@ -91,13 +92,16 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   setPlatform(platform);
   installErrorLogging();
   installContextMenuGuard();
-  void installKeyboardLayout();
+  // Shortcut labels follow the keyboard layout ("Ğ" for "[" on Turkish-Q); never waits long.
+  const layoutReady = Promise.race([installKeyboardLayout().catch(() => undefined), timeout(100)]);
   registerAppCommands();
+  registerHandToolCommand();
   registerExportCommands();
   registerSettingsCommands();
   installAutoExport();
 
   await loadAppSettings().catch((error: unknown) => platform.log("warn", `settings: ${String(error)}`));
+  await layoutReady;
   mark("settings");
 
   createRoot(rootElement).render(

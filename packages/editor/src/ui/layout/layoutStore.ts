@@ -163,3 +163,26 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     return true;
   },
 }));
+
+/**
+ * Makes a right-column section visible and open (and the column shown), e.g.
+ * before F2 renames a layer or "Özellikler" shows an entity. Returns true
+ * when something had to change.
+ */
+export function revealSection(id: SectionId): boolean {
+  const s = useLayoutStore.getState();
+  let changed = false;
+  if (s.inspectorCollapsed) {
+    s.setInspectorCollapsed(false);
+    changed = true;
+  }
+  if (s.sections[id].hidden) {
+    s.setSectionHidden(id, false);
+    changed = true;
+  }
+  if (s.sections[id].collapsed === true || (id === "levels" && s.sections[id].collapsed === null)) {
+    s.setSectionCollapsed(id, false);
+    changed = true;
+  }
+  return changed;
+}

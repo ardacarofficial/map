@@ -5,6 +5,7 @@ type Handler = (args: Record<string, unknown>) => unknown;
 const handlers = new Map<string, Handler>();
 const calls: [string, Record<string, unknown>][] = [];
 let fileChanged: ((event: { payload: unknown }) => void) | null = null;
+let closeRequested: ((event: { payload: unknown }) => void) | null = null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args: Record<string, unknown> = {}) => {
@@ -22,16 +23,22 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (event: string, cb: (event: { payload: unknown }) => void) => {
     if (event === "smap://file-changed") fileChanged = cb;
+    if (event === "smap://close-requested") closeRequested = cb;
     return Promise.resolve(() => undefined);
   },
 }));
 
-const { createDesktopPlatform } = await import("./desktopPlatform");
+const { createDesktopPlatform, listenCloseRequests } = await import("./desktopPlatform");
+
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
 
 beforeEach(() => {
   handlers.clear();
   calls.length = 0;
   fileChanged = null;
+  closeRequested = null;
   handlers.set("settings_path", () => "/cfg/settings.json");
 });
 
@@ -98,5 +105,41 @@ describe("desktop platform", () => {
       throw { kind: "NotFound", path: "/p/a/project.smap", message: "gone" };
     });
     await expect(platform.recents.open(a!)).rejects.toBeInstanceOf(RecentGoneError);
+  });
+
+  it("tells Rust whether closing would lose work", () => {
+    const platform = createDesktopPlatform();
+    platform.setUnsavedChanges(true);
+    platform.setUnsavedChanges(false);
+    expect(calls.filter(([c]) => c === "close_guard_set")).toEqual([
+      ["close_guard_set", { unsaved: true }],
+      ["close_guard_set", { unsaved: false }],
+    ]);
+  });
+
+  it("acknowledges close requests and closes only when the editor agrees", async () => {
+    const answers = [false, true];
+    let asked = 0;
+    let release: () => void = () => undefined;
+    const unsubscribe = listenCloseRequests(async () => {
+      asked++;
+      if (asked === 2) await new Promise<void>((r) => (release = r));
+      return answers.shift()!;
+    });
+    await flush();
+    closeRequested?.({ payload: {} });
+    await flush();
+    expect(calls.filter(([c]) => c === "close_request_ack")).toHaveLength(1);
+    expect(calls.some(([c]) => c === "window_close")).toBe(false); // Vazgeç
+
+    closeRequested?.({ payload: {} });
+    await flush();
+    closeRequested?.({ payload: {} }); // X again while the dialog is open: not asked twice
+    await flush();
+    expect(asked).toBe(2);
+    release();
+    await flush();
+    expect(calls.filter(([c]) => c === "window_close")).toHaveLength(1);
+    unsubscribe();
   });
 });

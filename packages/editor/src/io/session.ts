@@ -12,11 +12,13 @@ import {
   type ProjectLevel,
   type Stamp,
   type TileGridSpec,
+  type Tileset,
 } from "@smap/core";
 
 import { t } from "../i18n";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
 import {
+  allTilesetImages,
   clearTilesetImages,
   getTilesetImage,
   setTilesetImage,
@@ -24,7 +26,10 @@ import {
 } from "../state/tilesetImages";
 import { preloadCanvas } from "../ui/canvas/loadCanvas";
 import { askUnsaved } from "../ui/dialogs/confirmStore";
-import { toast } from "../ui/toast/toastStore";
+import { toast, useToastStore } from "../ui/toast/toastStore";
+import { undoStepAction } from "../commands/undoStepAction";
+import { isConfidentGuess, readAutoAdd } from "../ui/tilesetImport/bulkModel";
+import { groupNames } from "../ui/tileset/libraryModel";
 import { useUiStore } from "../ui/uiStore";
 import { getPlatform, FolderTakenError, RecentGoneError, type ProjectLocation, type RecentEntry } from "../platform";
 import { UnsupportedError } from "./browserFs";
@@ -39,7 +44,7 @@ import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";
 import { refreshRecentProjects } from "../platform/recentProjects";
 import { hasPngSignature, looksLikePng, planTilesetGrid, baseName } from "./tilesetImport";
 import { inferDraft, readLastSpec, rememberSpec } from "../ui/tilesetImport/importModel";
-import { openTilesetCard, type CardMode } from "../ui/tilesetImport/importStore";
+import { openBulkCard, openTilesetCard, type BulkFile, type BulkRequest, type CardMode } from "../ui/tilesetImport/importStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 
 /** Default map size for a project created by dropping a tileset. */
@@ -307,72 +312,190 @@ async function promptTilesetGrid(png: DecodedPng, mode: CardMode, mapTile: { til
   return result?.kind === "confirm" ? result : null;
 }
 
-function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec): boolean {
+/** A decoded PNG with the name and grid it is added with. */
+export interface PlannedTileset {
+  readonly png: DecodedPng;
+  readonly name: string;
+  readonly spec: TileGridSpec;
+}
+
+/**
+ * Adds decoded PNGs as tilesets in ONE undo step (optionally all in
+ * `group`). Returns the added tilesets; images that hold no tile are
+ * reported and skipped. Ids taken by a removed tileset whose image is still
+ * registered (its removal can be undone) are not reused.
+ */
+export function addDecodedTilesets(store: MapStore, items: readonly PlannedTileset[], group: string | null = null): Tileset[] {
   const doc: MapDocument = store.document;
-  const { width, height } = png.bitmap;
-  // The id / file name comes from the file name, or from the typed name for a pasted "image.png".
-  const fileName = genericImageName(png.file.name) ? `${name}.png` : png.file.name;
-  const tileset = planTilesetGrid(name, fileName, width, height, spec, new Set(doc.tilesets.map((ts) => ts.id)));
-  if (!tileset) {
-    png.bitmap.close();
-    toast.error(t("toast.imageTooSmall", { name: png.file.name, tile: spec.tileWidth }));
-    return false;
+  const taken = new Set(doc.tilesets.map((ts) => ts.id));
+  for (const image of allTilesetImages()) taken.add(image.tilesetId);
+  const added: Tileset[] = [];
+  for (const { png, name, spec } of items) {
+    const { width, height } = png.bitmap;
+    // The id / file name comes from the file name, or from the typed name for a pasted "image.png".
+    const fileName = genericImageName(png.file.name) ? `${name}.png` : png.file.name;
+    const planned = planTilesetGrid(name, fileName, width, height, spec, taken);
+    if (!planned) {
+      png.bitmap.close();
+      toast.error(t("toast.imageTooSmall", { name: png.file.name, tile: spec.tileWidth }));
+      continue;
+    }
+    const tileset: Tileset = group ? { ...planned, group } : planned;
+    taken.add(tileset.id);
+    // Register the image first so the canvas finds it when the tileset appears.
+    setTilesetImage({ tilesetId: tileset.id, bitmap: png.bitmap, bytes: png.bytes });
+    added.push(tileset);
+    rememberSpec(spec);
   }
-  // Register the image first so the canvas finds it when the tileset appears.
-  setTilesetImage({ tilesetId: tileset.id, bitmap: png.bitmap, bytes: png.bytes });
-  store.dispatch({ type: "addTileset", tileset });
-  useUiStore.getState().setActiveTileset(tileset.id);
-  rememberSpec(spec);
-  toast.success(t("tilesetImport.added", { name: tileset.name, count: tileset.columns * tileset.rows }));
+  if (added.length === 0) return added;
+  store.beginTransaction();
+  try {
+    for (const tileset of added) store.dispatch({ type: "addTileset", tileset });
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+  useUiStore.getState().setActiveTileset(added[0]!.id);
+  return added;
+}
+
+/** Adds one tileset (one undo step) and says so, with "Geri al". */
+function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec): boolean {
+  const [tileset] = addDecodedTilesets(store, [{ png, name, spec }]);
+  if (!tileset) return false;
+  announceAdded(store, [tileset]);
   return true;
+}
+
+/** "Tileset eklendi: X · 24 tile" / "4 tileset eklendi", with "Geri al" (undoes the one step that added them). */
+function announceAdded(store: MapStore, added: readonly Tileset[]): void {
+  if (added.length === 0) return;
+  const message =
+    added.length === 1
+      ? t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows })
+      : t("bulkImport.added", { count: added.length });
+  useToastStore.getState().push("success", message, 6000, undoStepAction(store));
+}
+
+/** The grid guess for a decoded PNG (alpha, file name; the last used size — or the map's — as a hint). */
+function guessGrid(png: DecodedPng, mapTile: { tileWidth: number; tileHeight: number } | null) {
+  const { width, height } = png.bitmap;
+  const alpha = readAlpha(png.bitmap);
+  const last = readLastSpec();
+  const hintSize = last && last.tileWidth === last.tileHeight ? last.tileWidth : mapTile?.tileWidth === mapTile?.tileHeight ? mapTile?.tileWidth : null;
+  const name = tilesetDisplayName(png.file.name);
+  const inferred = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null });
+  return { name, alpha, hintSize: hintSize ?? null, ...inferred };
+}
+
+/** Decodes every PNG (non-PNGs are reported and skipped). */
+async function decodeAll(files: readonly File[]): Promise<DecodedPng[]> {
+  const out: DecodedPng[] = [];
+  for (const file of files) {
+    const png = await decodeTilesetFile(file);
+    if (png) out.push(png);
+  }
+  return out;
+}
+
+/** Shows the bulk card for `pngs`; resolves with what to add (bitmaps of dropped rows are closed). */
+async function promptBulk(pngs: readonly DecodedPng[], mode: BulkRequest["mode"], mapTile: { tileWidth: number; tileHeight: number } | null, groups: readonly string[]) {
+  const files: BulkFile[] = pngs.map((png) => {
+    const guess = guessGrid(png, mapTile);
+    return { fileName: png.file.name, name: guess.name, bitmap: png.bitmap, width: png.bitmap.width, height: png.bitmap.height, alpha: guess.alpha, suggestions: guess.suggestions };
+  });
+  const result = await openBulkCard({ mode, files, mapTile, groups, fallback: mapTile?.tileWidth ?? 32 });
+  const used = new Set(result?.items.map((i) => i.file) ?? []);
+  pngs.forEach((png, i) => {
+    if (!used.has(i)) png.bitmap.close();
+  });
+  if (!result) return null;
+  return { group: result.group, items: result.items.map((i) => ({ png: pngs[i.file]!, name: i.name, spec: i.spec })) };
 }
 
 /**
  * Adds PNG files as tilesets to the open project (drag-drop, "+", menu,
- * paste): one import card per file, one after another.
+ * paste). One file: the import card — or, with "Tahmin güvenliyse sormadan
+ * ekle" on and a safe guess, added right away. Several: ONE summary card
+ * for all of them, added as one undo step.
  */
 export async function addTilesetFiles(files: readonly File[]): Promise<void> {
-  for (const file of files) {
-    if (!useEditorStore.getState().project) return;
-    const png = await decodeTilesetFile(file);
-    if (!png) continue;
-    const map = useEditorStore.getState().project?.store.document.map;
-    const choice = map ? await promptTilesetGrid(png, { kind: "add" }, { tileWidth: map.tileWidth, tileHeight: map.tileHeight }) : null;
+  if (!useEditorStore.getState().project) return;
+  const pngs = await decodeAll(files);
+  const project = useEditorStore.getState().project;
+  if (!project || pngs.length === 0) {
+    for (const png of pngs) png.bitmap.close();
+    return;
+  }
+  const map = project.store.document.map;
+  const mapTile = { tileWidth: map.tileWidth, tileHeight: map.tileHeight };
+  if (pngs.length === 1) {
+    const png = pngs[0]!;
+    const guess = guessGrid(png, mapTile);
+    const best = guess.suggestions[0];
+    if (best && readAutoAdd() && isConfidentGuess(guess.suggestions, mapTile)) {
+      addDecodedTileset(project.store, png, guess.name, { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing });
+      return;
+    }
+    const choice = await promptTilesetGrid(png, { kind: "add" }, mapTile);
     const store = useEditorStore.getState().project?.store;
     if (!choice || !store) {
       png.bitmap.close();
-      continue;
+      return;
     }
     addDecodedTileset(store, png, choice.name, choice.spec);
+    return;
   }
+  const plan = await promptBulk(pngs, { kind: "add" }, mapTile, groupNames(project.store.document.tilesets));
+  const store = useEditorStore.getState().project?.store;
+  if (!plan || !store) {
+    for (const item of plan?.items ?? []) item.png.bitmap.close();
+    return;
+  }
+  announceAdded(store, addDecodedTilesets(store, plan.items, plan.group));
 }
 
 /**
- * Welcome-screen drop (or paste): the import card for the first PNG; its
- * tile size becomes the new 64×48 project's. The other files follow as
- * ordinary imports.
+ * Welcome-screen drop (or paste): the import card for one PNG, the bulk
+ * card for several; the (first) confirmed tile size becomes the new 64×48
+ * project's.
  */
 export async function createProjectFromTilesets(files: readonly File[]): Promise<void> {
-  const [first, ...rest] = files;
-  if (!first) return;
+  if (files.length === 0) return;
   if (!(await confirmDiscard())) return;
-  const png = await decodeTilesetFile(first);
-  if (!png) return;
-  const choice = await promptTilesetGrid(png, { kind: "new", mapWidth: DEFAULT_MAP_WIDTH, mapHeight: DEFAULT_MAP_HEIGHT }, null);
-  if (!choice) {
-    png.bitmap.close();
-    return;
+  const pngs = await decodeAll(files);
+  if (pngs.length === 0) return;
+  let items: PlannedTileset[];
+  let group: string | null = null;
+  if (pngs.length === 1) {
+    const png = pngs[0]!;
+    const choice = await promptTilesetGrid(png, { kind: "new", mapWidth: DEFAULT_MAP_WIDTH, mapHeight: DEFAULT_MAP_HEIGHT }, null);
+    if (!choice) {
+      png.bitmap.close();
+      return;
+    }
+    items = [{ png, name: choice.name, spec: choice.spec }];
+  } else {
+    const plan = await promptBulk(pngs, { kind: "new", mapWidth: DEFAULT_MAP_WIDTH, mapHeight: DEFAULT_MAP_HEIGHT }, null, []);
+    if (!plan || plan.items.length === 0) return;
+    items = plan.items;
+    group = plan.group;
   }
+  const first = items[0]!;
   const project = createProjectDocument({
-    name: genericImageName(first.name) ? choice.name : baseName(first.name),
+    name: genericImageName(first.png.file.name) ? first.name : baseName(first.png.file.name),
     width: DEFAULT_MAP_WIDTH,
     height: DEFAULT_MAP_HEIGHT,
-    tileSize: choice.spec.tileWidth,
-    tileHeight: choice.spec.tileHeight,
+    tileSize: first.spec.tileWidth,
+    tileHeight: first.spec.tileHeight,
   });
   activate(project, [], null);
-  addDecodedTileset(project.store, png, choice.name, choice.spec);
-  await addTilesetFiles(rest);
+  const added = addDecodedTilesets(project.store, items, group);
+  // Starting a project is not an undo step: the first Ctrl+Z must not take the tilesets away.
+  project.store.clearHistory();
+  if (added.length === 1) toast.success(t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows }));
+  else if (added.length > 1) toast.success(t("bulkImport.added", { count: added.length }));
 }
 
 /** A finished save (manual or autosave). */

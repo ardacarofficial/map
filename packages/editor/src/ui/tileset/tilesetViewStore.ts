@@ -49,6 +49,12 @@ interface TilesetViewState {
   setView(view: LibraryView): void;
   toggleCollapsed(group: string): void;
   setQuery(query: string): void;
+  /** "Scroll the stack to this tileset" (goto, search Enter, jump chips). */
+  jump: RevealRequest | null;
+  requestJump(tilesetId: string): void;
+  /** Changes when the library search field should take focus (`tileset.goto`). */
+  searchFocus: number;
+  requestSearchFocus(): void;
   selection: PanelSelection | null;
   reveal: RevealRequest | null;
   setZoom(tilesetId: string, zoom: number | null): void;
@@ -138,6 +144,10 @@ export const useTilesetView = create<TilesetViewState>()((set, get) => ({
     writePrefs({ ...get(), collapsed: [...get().collapsed] });
   },
   setQuery: (query) => set({ query }),
+  jump: null,
+  requestJump: (tilesetId) => set({ jump: { tilesetId, ids: [], nonce: ++nonce } }),
+  searchFocus: 0,
+  requestSearchFocus: () => set((s) => ({ searchFocus: s.searchFocus + 1 })),
   setZoom: (tilesetId, zoom) => {
     const next = { ...get().zoom, [tilesetId]: zoom };
     set({ zoom: next });

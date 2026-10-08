@@ -16,6 +16,7 @@
 import {
   gridCount,
   inferTileGrid,
+  tilesetUsage,
   type MapDocument,
   type MapStore,
   type TileGrid,
@@ -26,7 +27,20 @@ import {
 import { t } from "../i18n";
 import { decodeTilesetFile, addTilesetFiles, createProjectFromTilesets, describeError, getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { gridCopy, loadAllLevels, recordRegrid, remapBrush, sameGrid, syncLevelGrids, syncStampGrid, type StampRegrid } from "../io/tilesetRegrid";
+import {
+  dropTilesetRefs,
+  gridCopy,
+  loadAllLevels,
+  recordListChange,
+  recordRegrid,
+  remapBrush,
+  sameGrid,
+  syncLevelGrids,
+  syncLevelLists,
+  syncStampGrid,
+  tilesetListKey,
+  type StampRegrid,
+} from "../io/tilesetRegrid";
 import { decodePng } from "../io/projectIo";
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, notifyTilesetImage, setTilesetImage } from "../state/tilesetImages";
@@ -37,6 +51,9 @@ import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
+import { groupNames, planTilesetMove, summarizeUsage, uniqueGroupName, type DropTarget, type LevelUsage } from "../ui/tileset/libraryModel";
+import { askRemoveTileset } from "../ui/tileset/RemoveTilesetDialog";
+import { askText } from "../ui/tileset/TextPrompt";
 import { registerCommands, registerPaletteProvider, type Command } from "./registry";
 import { undoStepAction } from "./undoStepAction";
 
@@ -313,8 +330,9 @@ export function syncProject(): SyncStats {
     }
     seenGrids.set(tileset.id, gridCopy(tileset));
   }
+  const lists = syncLevelLists(ws);
   const levels = syncLevelGrids(ws);
-  stats.levels = levels.levels.length;
+  stats.levels = new Set([...lists.levels, ...levels.levels]).size;
   stats.clearedCells = levels.clearedCells;
   const stamps = syncStamps(doc);
   stats.stamps = stamps.changed;
@@ -325,6 +343,7 @@ export function syncProject(): SyncStats {
   }
   // The brush, random set and recent strip name tiles by id: they follow the pixels too.
   for (const { tilesetId, before, after } of regridded) followBrush(tilesetId, before, after);
+  dropMissingTilesets(doc);
   if (stats.levels > 0) {
     publishLevelState();
     if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
@@ -339,6 +358,18 @@ function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void
   if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
   const view = useTilesetView.getState();
   if (view.selection?.tilesetId === tilesetId) view.setSelection(null);
+}
+
+/** Clears the brush, panel selection and active tileset of tilesets the active level no longer has (removed, or an add undone). */
+function dropMissingTilesets(doc: MapDocument): void {
+  const exists = (id: string) => doc.getTileset(id) !== undefined;
+  const editor = useEditorStore.getState();
+  const changes = dropTilesetRefs(editor, exists);
+  if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
+  const view = useTilesetView.getState();
+  if (view.selection && !exists(view.selection.tilesetId)) view.setSelection(null);
+  const ui = useUiStore.getState();
+  if (ui.activeTilesetId !== null && !exists(ui.activeTilesetId)) ui.setActiveTileset(doc.tilesets[0]?.id ?? null);
 }
 
 /** Remaps (or restores) the stamp library to `doc`'s grids; how many stamps changed, and how many edited ones were remapped instead of restored. */
@@ -374,6 +405,156 @@ function resetSync(): void {
   }
 }
 
+/**
+ * Follows the active level's tileset changes: records list edits (so the
+ * other levels can mirror their undo exactly) and syncs the project once
+ * per step — after the transaction, not for every op inside it.
+ */
+function watchTilesets(store: MapStore): () => void {
+  let key = tilesetListKey(store.document.tilesets);
+  let pending = false;
+  return store.subscribe((event) => {
+    if (store.inTransaction) {
+      if (event.structure.includes("tilesets")) pending = true;
+      return;
+    }
+    if (!event.structure.includes("tilesets") && !(pending && (event.cause === "commit" || event.cause === "rollback"))) return;
+    pending = false;
+    // A new step (not undo / redo of an old one): remember what it did to the list.
+    if (event.cause === "dispatch" || event.cause === "commit") recordListChange(store, key);
+    key = tilesetListKey(store.document.tilesets);
+    syncProject();
+  });
+}
+
+// ------------------------------------------------------------------ library: name, group, order, remove
+
+/** Runs `edit` on the active level as one undo step (the other levels follow via the store subscription). */
+function listStep(edit: (store: MapStore) => void): boolean {
+  const store = activeStore();
+  if (!store || store.inTransaction) return false;
+  const before = store.revision;
+  store.beginTransaction();
+  try {
+    edit(store);
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    console.error(error);
+    toast.error(t("tilesetImport.failed", { detail: describeError(error) }));
+    return false;
+  }
+  return store.revision !== before;
+}
+
+/** Renames a tileset (all levels; undoable). */
+export function renameTileset(tilesetId: string, name: string): void {
+  const trimmed = name.trim();
+  const tileset = activeStore()?.document.getTileset(tilesetId);
+  if (!tileset || trimmed === "" || trimmed === tileset.name) return;
+  listStep((store) => store.dispatch({ type: "setTilesetMeta", tilesetId, name: trimmed }));
+}
+
+/** Moves a tileset into `group` (null = ungrouped), at the group's end. */
+export function setTilesetGroup(tilesetId: string, group: string | null): void {
+  const doc = activeStore()?.document;
+  if (!doc) return;
+  const plan = planTilesetMove(doc.tilesets, tilesetId, { group: group ?? "", beforeId: null });
+  if (plan) applyMove(tilesetId, plan);
+}
+
+/** Drag and drop in the library: reorder and / or regroup (one undo step). */
+export function dropTileset(tilesetId: string, target: DropTarget): void {
+  const doc = activeStore()?.document;
+  if (!doc) return;
+  const plan = planTilesetMove(doc.tilesets, tilesetId, target);
+  if (plan) applyMove(tilesetId, plan);
+}
+
+function applyMove(tilesetId: string, plan: { index: number; group: string | null | undefined }): void {
+  listStep((store) => {
+    if (plan.group !== undefined) store.dispatch({ type: "setTilesetMeta", tilesetId, group: plan.group });
+    if (store.document.tilesets.findIndex((ts) => ts.id === tilesetId) !== plan.index) {
+      store.dispatch({ type: "moveTileset", tilesetId, index: plan.index });
+    }
+  });
+}
+
+/** "Gruba taşı ▸ Yeni grup…": asks for a name, then moves the tileset there. */
+export async function moveTilesetToNewGroup(tilesetId: string): Promise<void> {
+  const doc = activeStore()?.document;
+  if (!doc?.getTileset(tilesetId)) return;
+  const name = await askText({
+    title: t("tilesetLib.newGroupTitle"),
+    label: t("tilesetLib.groupName"),
+    initial: uniqueGroupName(doc.tilesets, t("tilesetLib.newGroupName")),
+    confirm: t("tilesetLib.newGroupConfirm"),
+  });
+  if (name) setTilesetGroup(tilesetId, name);
+}
+
+/** Renames a group (every tileset in it; one undo step). An existing name merges the two. */
+export function renameTilesetGroup(from: string, to: string): void {
+  const name = to.trim();
+  const doc = activeStore()?.document;
+  if (!doc || name === "" || name === from) return;
+  listStep((store) => {
+    for (const ts of doc.tilesets.filter((x) => (x.group ?? "") === from)) store.dispatch({ type: "setTilesetMeta", tilesetId: ts.id, group: name });
+  });
+}
+
+/** Group names in use (for menus). */
+export function tilesetGroups(): string[] {
+  return groupNames(activeStore()?.document.tilesets ?? []);
+}
+
+/** Shows a tileset in the library: its tab, made active, scrolled to in "Tümü". */
+export function gotoTileset(tilesetId: string): void {
+  if (!activeStore()?.document.getTileset(tilesetId)) return;
+  const ui = useUiStore.getState();
+  ui.setLibraryTab("tileset");
+  ui.setActiveTileset(tilesetId);
+  useTilesetView.getState().requestJump(tilesetId);
+}
+
+/**
+ * "Kaldır": an unused tileset goes right away (toast with "Geri al"); a
+ * painted one asks first, with its usage over every level. Either way it
+ * is one undo step in the active level, mirrored in every other level
+ * (their cells come back exactly on undo).
+ */
+export async function removeTileset(tilesetId: string | null = currentTilesetId()): Promise<boolean> {
+  const ws = getLevelWorkspace();
+  const store = activeStore();
+  const tileset = tilesetId ? store?.document.getTileset(tilesetId) : undefined;
+  if (!ws || !store || !tileset || store.inTransaction) return false;
+  // Every level must be in memory: their cells are cleared too, and one read later would name a missing tileset.
+  const failed = await loadAllLevels(ws, getProjectFolder()?.fs ?? null);
+  if (failed.length > 0) {
+    toast.error(t("tilesetLib.levelsUnreadable", { names: failed.join(", ") }));
+    return false;
+  }
+  if (getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tileset.id)) return false;
+  const perLevel: LevelUsage[] = ws.cachedIds().map((id) => tilesetUsage(ws.entry(id)!.store.document, tileset.id));
+  const usage = summarizeUsage(perLevel);
+  if (usage.used && !(await askRemoveTileset({ name: tileset.name, usage }))) return false;
+  if (activeStore() !== store || !store.document.getTileset(tileset.id) || store.inTransaction) return false;
+  const index = store.document.tilesets.findIndex((ts) => ts.id === tileset.id);
+  try {
+    store.dispatch({ type: "removeTileset", tilesetId: tileset.id });
+  } catch (error) {
+    console.error(error);
+    toast.error(t("tilesetImport.failed", { detail: describeError(error) }));
+    return false;
+  }
+  const next = store.document.tilesets[Math.min(index, store.document.tilesets.length - 1)];
+  useUiStore.getState().setActiveTileset(next?.id ?? null);
+  const undo = undoStepAction(store, () => useUiStore.getState().setActiveTileset(tileset.id), () => activeStore() === store);
+  useToastStore.getState().push(usage.used ? "warning" : "success", t("tilesetLib.removed", { name: tileset.name }), 8000, undo);
+  if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
+  return true;
+}
+
 // ------------------------------------------------------------------ commands
 
 const hasTileset = () => (activeStore()?.document.tilesets.length ?? 0) > 0;
@@ -393,6 +574,24 @@ const COMMANDS: Command[] = [
     enabled: hasTileset,
     run: () => void replaceTilesetImage(),
   },
+  {
+    id: "tileset.remove",
+    title: "commands.tileset.remove",
+    category: "tileset",
+    enabled: hasTileset,
+    run: () => void removeTileset(),
+  },
+  {
+    // The palette lists "Tileset'e git: X" for each tileset; the command itself opens the library search.
+    id: "tileset.goto",
+    title: "commands.tileset.goto",
+    category: "tileset",
+    enabled: hasTileset,
+    run: () => {
+      useUiStore.getState().setLibraryTab("tileset");
+      useTilesetView.getState().requestSearchFocus();
+    },
+  },
 ];
 
 /**
@@ -404,24 +603,29 @@ export function installTilesetActions(): () => void {
   // With several tilesets: "Tileset ayarları: Zindan" for each.
   const unregisterPalette = registerPaletteProvider(() => {
     const tilesets = activeStore()?.document.tilesets ?? [];
-    if (tilesets.length < 2) return [];
-    return tilesets.map((ts) => ({
-      key: `tileset.settings:${ts.id}`,
-      prefix: t("commands.tileset.settings"),
-      title: ts.name,
-      run: () => void openTilesetSettings(ts.id),
+    const goto = tilesets.map((ts) => ({
+      key: `tileset.goto:${ts.id}`,
+      prefix: t("tilesetLib.gotoPrefix"),
+      title: ts.group ? `${ts.name} · ${ts.group}` : ts.name,
+      run: () => gotoTileset(ts.id),
     }));
+    if (tilesets.length < 2) return goto;
+    return [
+      ...goto,
+      ...tilesets.map((ts) => ({
+        key: `tileset.settings:${ts.id}`,
+        prefix: t("commands.tileset.settings"),
+        title: ts.name,
+        run: () => void openTilesetSettings(ts.id),
+      })),
+    ];
   });
 
   let workspace = getLevelWorkspace();
   let unsubscribeStore: (() => void) | null = null;
   const watch = (store: MapStore | null) => {
     unsubscribeStore?.();
-    unsubscribeStore = store
-      ? store.subscribe((event) => {
-          if (event.structure.includes("tilesets")) syncProject();
-        })
-      : null;
+    unsubscribeStore = store ? watchTilesets(store) : null;
   };
   resetSync();
   watch(activeStore());

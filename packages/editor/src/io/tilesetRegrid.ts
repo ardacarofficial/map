@@ -728,3 +728,20 @@ function followList(store: MapStore, want: readonly Tileset[]): void {
   }
   recordListChange(store, haveKey);
 }
+
+/**
+ * The brush state without anything that names a tile of a tileset that
+ * is gone (`exists` says which tilesets remain): the selection, random set
+ * entries, a brush stamp or recent stamp using it, recent tiles. Returns
+ * only the fields that changed.
+ */
+export function dropTilesetRefs(refs: BrushRefs, exists: (tilesetId: string) => boolean): Partial<BrushRefs> {
+  const out: Partial<BrushRefs> = {};
+  const clipOk = (clip: TileClip) => clip.palette.every((e) => exists(e.tilesetId));
+  if (refs.selection && !exists(refs.selection.tilesetId)) out.selection = null;
+  if (refs.randomSet.some((r) => !exists(r.tilesetId))) out.randomSet = refs.randomSet.filter((r) => exists(r.tilesetId));
+  if (refs.stamp && !clipOk(refs.stamp)) out.stamp = null;
+  const recent = refs.recentTiles.filter((item) => (isRecentStamp(item) ? clipOk(item.stamp) : exists(item.tilesetId)));
+  if (recent.length !== refs.recentTiles.length) out.recentTiles = recent;
+  return out;
+}

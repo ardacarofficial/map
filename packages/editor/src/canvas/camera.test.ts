@@ -85,7 +85,7 @@ describe("zoom", () => {
     expect(cam.y + 32 * 3).toBe(300);
   });
 
-  it("clamps zoom to [0.1, 32]", () => {
+  it("clamps zoom to [MIN_ZOOM, MAX_ZOOM]", () => {
     expect(clampZoom(0.01)).toBe(MIN_ZOOM);
     expect(clampZoom(100)).toBe(MAX_ZOOM);
     expect(clampZoom(Number.NaN)).toBe(1);
@@ -94,7 +94,7 @@ describe("zoom", () => {
 
   it("quantizes so one tile is a whole number of device pixels", () => {
     for (const res of [1, 1.25, 1.5, 1.75, 2]) {
-      for (let z = 0.25; z <= 32; z *= 1.07) {
+      for (let z = 0.25; z <= MAX_ZOOM; z *= 1.07) {
         const q = quantizeZoom(z, 32, res);
         const device = 32 * q * res;
         if (device >= 8) expect(Math.abs(device - Math.round(device))).toBeLessThan(1e-9);
@@ -134,7 +134,7 @@ describe("zoom", () => {
     expect(nextZoomStep(1, -1)).toBeCloseTo(2 / 3);
     expect(nextZoomStep(1.2, 1)).toBe(1.5);
     expect(nextZoomStep(1.2, -1)).toBe(1);
-    expect(nextZoomStep(32, 1)).toBe(MAX_ZOOM);
+    expect(nextZoomStep(16, 1)).toBe(MAX_ZOOM);
     expect(nextZoomStep(0.1, -1)).toBe(MIN_ZOOM);
     for (let i = 1; i < ZOOM_STEPS.length; i++) expect(ZOOM_STEPS[i]!).toBeGreaterThan(ZOOM_STEPS[i - 1]!);
   });

@@ -1,7 +1,8 @@
 /**
  * The tileset card: one dialog for every way a tileset comes in (welcome
  * drop, drop on the editor, "+" / menu, pasted image) and for its settings
- * later. Left: the image, crisp and zoomable with Ctrl + wheel, with the grid
+ * later. Left: the image, crisp and zoomable like the map (wheel at the
+ * cursor, Space / middle drag pans), with the grid
  * of the current settings over it and fully transparent tiles dimmed.
  * Right: name, tile size (linked), margin, spacing, suggestion chips, the
  * tile count and a leftover hint. Enter confirms.
@@ -15,6 +16,7 @@ import { backdropClass, popupClass } from "../dialogs/styles";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
+import { usePanDrag } from "../tileset/usePanDrag";
 import {
   applySpec,
   alphaScanOf,
@@ -31,10 +33,25 @@ import {
   type GridDraft,
   type GridSummary,
 } from "./importModel";
-import { wheelIntent } from "../tileset/zoomModel";
-import { useTilesetCard, type CardRequest } from "./importStore";
+import { RemoveTilesetDialog } from "../tileset/RemoveTilesetDialog";
+import { TextPromptDialog } from "../tileset/TextPrompt";
+import { accumulateWheelZoom, PAN_GESTURE_MS, tilesetWheel } from "../tileset/zoomModel";
+import { BulkImportDialog } from "./BulkImportCard";
+import { useTilesetCard, type CardRequest, type CardResult } from "./importStore";
 
+/** Every tileset dialog: the single card, the bulk card, the remove question and the name prompt. */
 export function TilesetImportDialog() {
+  return (
+    <>
+      <SingleCardDialog />
+      <BulkImportDialog />
+      <RemoveTilesetDialog />
+      <TextPromptDialog />
+    </>
+  );
+}
+
+function SingleCardDialog() {
   const request = useTilesetCard((s) => s.request);
   const close = useTilesetCard((s) => s.close);
   return (
@@ -45,15 +62,23 @@ export function TilesetImportDialog() {
           data-testid="tileset-card"
           className={`${popupClass} flex h-[min(640px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] overflow-hidden`}
         >
-          {request && <TilesetCard key={`${request.fileName}:${request.mode.kind}`} request={request} />}
+          {request && <TilesetCard key={`${request.fileName}:${request.mode.kind}`} request={request} onClose={close} />}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
 }
 
-function TilesetCard({ request }: { request: CardRequest }) {
-  const close = useTilesetCard((s) => s.close);
+export function TilesetCard({
+  request,
+  onClose: close,
+  confirmLabel,
+}: {
+  request: CardRequest;
+  onClose(result: CardResult | null): void;
+  /** Primary button text instead of the mode's ("Uygula" for a bulk row). */
+  confirmLabel?: string;
+}) {
   const [draft, setDraft] = useState<GridDraft>(request.initial);
   const parsed = parseDraft(draft);
   const image = useMemo(() => ({ width: request.width, height: request.height, alpha: request.alpha }), [request]);
@@ -84,7 +109,7 @@ function TilesetCard({ request }: { request: CardRequest }) {
       : request.mode.kind === "new"
         ? t("tilesetImport.titleNew")
         : t("tilesetImport.titleAdd");
-  const primary = edit ? t("tilesetImport.apply") : request.mode.kind === "new" ? t("tilesetImport.create") : t("tilesetImport.import");
+  const primary = confirmLabel ?? (edit ? t("tilesetImport.apply") : request.mode.kind === "new" ? t("tilesetImport.create") : t("tilesetImport.import"));
 
   return (
     <form onSubmit={submit} noValidate className="flex min-w-0 flex-1">
@@ -205,7 +230,9 @@ function TilesetCard({ request }: { request: CardRequest }) {
             </Button>
           )}
           <div className="flex justify-end gap-2">
-            <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
+            <Button variant="ghost" onClick={() => close(null)}>
+              {t("common.cancel")}
+            </Button>
             <Button type="submit" variant="primary" disabled={!canSubmit}>
               {primary}
             </Button>
@@ -357,25 +384,27 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
     setZoom(fitZoom(width, height, box.clientWidth, box.clientHeight));
   }, [width, height, zoom]);
 
-  // Same wheel convention as the tileset panel: wheel scrolls, Shift + wheel scrolls sideways,
-  // Ctrl / Cmd + wheel (or pinch) zooms around the cursor (non-passive: the page must not zoom).
+  // The map's wheel model: a mouse notch zooms at the cursor, Shift + wheel scrolls sideways, a
+  // trackpad swipe pans, pinch / Ctrl + wheel zooms (non-passive: the page must not zoom).
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
     let acc = 0;
+    let lastPan = -Infinity;
     const onWheel = (e: WheelEvent) => {
-      const intent = wheelIntent(e);
-      if (intent === "native") return;
       e.preventDefault();
-      if (intent === "scroll-x") {
-        box.scrollLeft += e.deltaY || e.deltaX;
+      const now = performance.now();
+      const action = tilesetWheel(e, now - lastPan < PAN_GESTURE_MS);
+      if (action.kind === "pan") {
+        lastPan = now;
+        box.scrollLeft += action.dx;
+        box.scrollTop += action.dy;
         return;
       }
-      // Trackpad pinches send many small deltas: one step per ~40 px.
-      acc += e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
-      if (Math.abs(acc) < 40) return;
-      const zoomIn = acc < 0;
-      acc = 0;
+      const r = accumulateWheelZoom(acc, action.delta);
+      acc = r.acc;
+      if (r.step === 0) return;
+      const zoomIn = r.step > 0;
       const img = imageRef.current;
       setZoom((z) => {
         const current = z ?? 1;
@@ -391,6 +420,9 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
     box.addEventListener("wheel", onWheel, { passive: false });
     return () => box.removeEventListener("wheel", onWheel);
   }, []);
+
+  // Space + drag or middle drag pans the preview (as on the map).
+  const pan = usePanDrag(scrollRef);
 
   useLayoutEffect(() => {
     const a = anchor.current;
@@ -412,7 +444,13 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
   const z = zoom ?? 1;
   return (
     <div className="relative flex min-w-0 flex-1 flex-col bg-canvas">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" data-testid="tileset-card-preview">
+      <div
+        ref={scrollRef}
+        tabIndex={-1}
+        className={`min-h-0 flex-1 overflow-auto outline-none ${pan.cursor}`}
+        data-testid="tileset-card-preview"
+        {...pan.handlers}
+      >
         <div className="flex min-h-full min-w-full items-center justify-center" style={{ padding: PAD, width: "max-content", height: "max-content" }}>
           <div
             ref={imageRef}
@@ -433,7 +471,7 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
             <Icon name="minus" size={14} />
           </IconButton>
           <Tooltip label={t("tilesetImport.zoomHint")} side="top">
-            <span className="w-12 text-center font-mono text-xs text-muted tabular" aria-label={t("tilesetImport.zoom", { zoom: `${Math.round(z * 100)}%` })}>
+            <span className="w-12 text-center font-mono text-xs text-muted tabular" data-testid="tileset-card-zoom" aria-label={t("tilesetImport.zoom", { zoom: `${Math.round(z * 100)}%` })}>
               {Math.round(z * 100)}%
             </span>
           </Tooltip>

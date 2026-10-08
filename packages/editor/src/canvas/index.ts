@@ -19,6 +19,28 @@
 import { MapCanvas, type CanvasHandle } from "./mapCanvas";
 
 export type { CanvasHandle, ScreenRect } from "./mapCanvas";
+export type { BlockedAction, BlockedReason, CanvasContextRequest } from "./canvasEvents";
+export { ZOOM_PRESETS } from "./camera";
+
+/**
+ * Stable public helper: how a wheel event should be read, shared by every
+ * zoomable surface (map canvas, tileset panel, tileset import dialog) so
+ * the mouse behaves the same everywhere:
+ *
+ * - mouse wheel notch → `"zoom"` (at the cursor);
+ * - Shift + wheel → `"pan"` (horizontal);
+ * - trackpad two-finger scroll (small pixel deltas, any horizontal delta,
+ *   or an ongoing pan gesture `recentPan`) → `"pan"`;
+ * - trackpad pinch (Chrome sends ctrl + small deltas) → `"pinch"`;
+ *   ctrl / ⌘ + mouse wheel → `"zoom"`.
+ *
+ * Pass deltas already in pixels (`deltaMode` 1 = lines ≈ 16 px, 2 = pages
+ * ≈ 800 px; see {@link wheelDeltaPixels}) and the original `deltaMode`.
+ * Keep `recentPan` true for ~250 ms after the last `"pan"` result so a
+ * trackpad gesture does not flip to zooming mid-scroll.
+ */
+export { classifyWheel, type WheelAction } from "./brush";
+export { wheelDeltaPixels } from "./camera";
 
 export async function mountCanvas(container: HTMLElement): Promise<CanvasHandle> {
   const canvas = new MapCanvas(container);

@@ -186,7 +186,7 @@ export function wheelZoomSteps(deltaPx: number, deltaMode: number, acc: number):
   // A change of direction starts over.
   const next = Math.sign(acc) === -Math.sign(deltaPx) ? deltaPx : acc + deltaPx;
   const whole = Math.trunc(next / WHEEL_STEP_PX);
-  return { steps: -whole, acc: next - whole * WHEEL_STEP_PX };
+  return { steps: whole === 0 ? 0 : -whole, acc: next - whole * WHEEL_STEP_PX };
 }
 
 /** Smallest preset at which a tile is at least `px` CSS px (the last preset if none). */

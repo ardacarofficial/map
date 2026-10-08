@@ -12,15 +12,21 @@
 /** Right-clicking these keeps the native (edit) menu. */
 const NATIVE_MENU_SELECTOR = 'input, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
 
+/** Element-like target (duck-typed so the rule is testable without a DOM). */
+interface ElementLike {
+  closest(selector: string): (ElementLike & { tagName?: string; type?: string }) | null;
+}
+
+const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
+
 /** True when the native context menu should open for `target`. */
 export function allowsNativeContextMenu(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  const field = target.closest(NATIVE_MENU_SELECTOR);
+  const el = target as Partial<ElementLike> | null;
+  if (!el || typeof el.closest !== "function") return false;
+  const field = el.closest(NATIVE_MENU_SELECTOR);
   if (!field) return false;
   // Checkboxes, sliders and buttons are inputs too, but have no edit menu.
-  if (field instanceof HTMLInputElement) {
-    return !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"].includes(field.type);
-  }
+  if (field.tagName?.toUpperCase() === "INPUT") return !NON_TEXT_INPUTS.has((field.type ?? "text").toLowerCase());
   return true;
 }
 

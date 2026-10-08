@@ -37,9 +37,10 @@ import { Application, CanvasSource, Container, Sprite, Texture, Ticker } from "p
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
-import { MAX_ZOOM, MIN_ZOOM, snappedOffset, type Camera, type Point } from "./camera";
+import { t } from "../i18n";
+import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { CameraController } from "./cameraController";
-import type { CanvasPickEvent, StrokeSummary } from "./canvasEvents";
+import type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary } from "./canvasEvents";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
 import type { EntityColors } from "./entityLogic";
 import { EntityRenderer } from "./entityRenderer";
@@ -52,11 +53,19 @@ import { nextLod } from "./minimapMath";
 import { OverlayRenderer, type OverlayHost } from "./overlayRenderer";
 import { PointerInput } from "./pointerInput";
 import { ToolController, type Gesture } from "./toolController";
-import { isPaintable } from "./tools";
+import { isPaintable, regionContains, toolForLayer } from "./tools";
 import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
 
 export type { CanvasView, LevelMovedEvent, WorldDataSource, WorldSourceChange } from "./worldView";
-export type { CanvasPickEvent, StrokeSummary, StrokeTool } from "./canvasEvents";
+export type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary, StrokeTool } from "./canvasEvents";
+
+/** i18n key of the on-canvas hint per blocked reason. */
+const BLOCKED_HINT: Record<BlockedReason, "canvas.blockedLocked" | "canvas.blockedHidden" | "canvas.blockedDerived" | "canvas.blockedWrongKind"> = {
+  locked: "canvas.blockedLocked",
+  hidden: "canvas.blockedHidden",
+  derived: "canvas.blockedDerived",
+  wrongKind: "canvas.blockedWrongKind",
+};
 
 /** Zoom limits of the world view: far enough out for big worlds, no closer than 2× (thumbnails). */
 const WORLD_MIN_ZOOM = 0.002;
@@ -72,9 +81,20 @@ export interface NavigateRequest {
 
 export interface CanvasHandle {
   destroy(): void;
+  /** Next zoom preset up / down (animated, around the view centre). */
   zoomIn(): void;
   zoomOut(): void;
+  /** 100 %. */
   zoomReset(): void;
+  /**
+   * Animates to zoom `zoom` (1 = 100 %, CSS px per map px) around the view
+   * centre, e.g. a preset from {@link zoomPresets} or a typed value
+   * (clamped to the view's limits, rounded so tiles stay whole device px).
+   * The current zoom is the editor store's `zoom`.
+   */
+  setZoom(zoom: number): void;
+  /** The level view's zoom presets (12.5 % … 1600 %) for a zoom dropdown, ascending. */
+  readonly zoomPresets: readonly number[];
   /** Center the map in the view (fit if it is larger than the view). */
   frameMap(): void;
   /**
@@ -148,6 +168,23 @@ export interface CanvasHandle {
    * reported by {@link onStrokeCommitted} as "fill". No-op mid-gesture.
    */
   fillRegion(region: { x: number; y: number; width: number; height: number }): void;
+
+  // ---------------------------------------------------------------- round 3
+
+  /**
+   * A left press on the map could not do anything because of the active
+   * layer (locked, hidden, derived from a terrain, wrong kind for the tool).
+   * The canvas also shows a short hint next to the pointer; the UI may add
+   * a toast. Returns an unsubscribe.
+   */
+  onBlockedAction(cb: (action: BlockedAction) => void): () => void;
+  /**
+   * A right click asks for a context menu instead of picking tiles: on an
+   * entity of the active entity layer, or (select tool) inside the
+   * selection without a drag. `x` / `y` are client coordinates. Returns an
+   * unsubscribe.
+   */
+  onContextRequest(cb: (request: CanvasContextRequest) => void): () => void;
 }
 
 /** A rectangle in CSS pixels relative to the canvas' top-left corner. */
@@ -232,6 +269,8 @@ export class MapCanvas {
   readonly #openListeners = new Set<(levelId: string) => void>();
   readonly #pickListeners = new Set<(event: CanvasPickEvent) => void>();
   readonly #strokeListeners = new Set<(summary: StrokeSummary) => void>();
+  readonly #blockedListeners = new Set<(action: BlockedAction) => void>();
+  readonly #contextListeners = new Set<(request: CanvasContextRequest) => void>();
   #view: CanvasView = "level";
   readonly #worldView: WorldView;
   /** Level-view camera saved when the world view opens. */
@@ -310,6 +349,11 @@ export class MapCanvas {
       picked: (event) => void this.#emit(this.#pickListeners, event, "pick"),
       strokeCommitted: (summary) => void this.#emit(this.#strokeListeners, summary, "stroke"),
       flash: (region) => this.#overlays.flash(region),
+      blocked: (action) => {
+        this.#overlays.showHint(t(BLOCKED_HINT[action.reason]));
+        this.#emit(this.#blockedListeners, action, "blocked action");
+      },
+      contextRequest: (request) => void this.#emit(this.#contextListeners, request, "context request"),
     });
     this.#worldView = new WorldView({
       camera: this.#camera,
@@ -340,6 +384,7 @@ export class MapCanvas {
         return isPaintable(activeInfo(this.#scene?.store)) || (s.tool === "brush" && savedStamp(s.stamp) !== null);
       },
       entityCursor: () => this.#entityCursor(),
+      regionCursor: () => this.#regionCursor(),
       doubleClick: (p) => this.#doubleClick(p),
       requestRender: () => this.#requestRender(),
     });
@@ -414,7 +459,7 @@ export class MapCanvas {
     Ticker.system.stop();
     this.#app.stage.eventMode = "none";
     this.#overlays.setColors(this.#colors);
-    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay, this.#worldView.root, this.#overlays.readout);
+    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay, this.#worldView.root, this.#overlays.readout, this.#overlays.hint);
     this.#minimap = new Minimap(
       this.#container,
       {
@@ -426,12 +471,14 @@ export class MapCanvas {
         camera: () => ({ camera: this.#camera.camera, viewW: this.#camera.viewW, viewH: this.#camera.viewH }),
         centerOnWorld: (x, y) => this.#camera.centerOnWorld(x, y),
         colors: () => ({ accent: this.#colors.accent, background: CANVAS_COLORS.mapBackground }),
+        wheel: (e) => {
+          if (this.#view === "level") this.#input.wheel(e, this.#camera.viewCenter());
+        },
       },
       this.#abort.signal,
     );
     this.#minimap.setVisible(this.#minimapVisible);
-    // "Fit map" keeps the minimap's corner clear (level view only: the world view hides it).
-    this.#camera.frameCorner = () => (this.#minimap?.visible ? this.#minimap.footprint() : null);
+    // "Fit map" needs no room for the minimap: it hides itself while the whole map is in view.
 
     this.#observeSize();
     this.#input.attach(this.#abort.signal);
@@ -522,6 +569,11 @@ export class MapCanvas {
     zoomIn: () => this.#camera.zoomStep(1),
     zoomOut: () => this.#camera.zoomStep(-1),
     zoomReset: () => this.#camera.animateZoomTo(1, this.#camera.viewCenter()),
+    setZoom: (zoom) => {
+      if (!Number.isFinite(zoom) || zoom <= 0 || this.#destroyed) return;
+      this.#camera.animateZoomTo(zoom, this.#camera.viewCenter());
+    },
+    zoomPresets: ZOOM_PRESETS,
     frameMap: () => this.#camera.frameMap(),
     onNavigate: (cb) => {
       this.#navigateListeners.add(cb);
@@ -573,6 +625,14 @@ export class MapCanvas {
       if (this.#view !== "level" || this.#destroyed) return;
       this.#tools.fillRegion({ x: region.x, y: region.y, width: region.width, height: region.height });
     },
+    onBlockedAction: (cb) => {
+      this.#blockedListeners.add(cb);
+      return () => this.#blockedListeners.delete(cb);
+    },
+    onContextRequest: (cb) => {
+      this.#contextListeners.add(cb);
+      return () => this.#contextListeners.delete(cb);
+    },
   };
 
   /** Calls every listener (errors are logged, not thrown). Returns true when there was one. */
@@ -612,6 +672,7 @@ export class MapCanvas {
     if (world) {
       this.#levelCamera = { camera: cam.camera, zoomLevel: cam.zoomLevel };
       this.#frameOnLevelView = false;
+      cam.snapSteps = false;
       cam.setZoomLimits(WORLD_MIN_ZOOM, WORLD_MAX_ZOOM);
       cam.frameBounds = () => this.#worldView.bounds();
       this.#worldView.enter();
@@ -622,6 +683,7 @@ export class MapCanvas {
     } else {
       this.#worldView.exit();
       cam.frameBounds = null;
+      cam.snapSteps = true;
       cam.setZoomLimits(MIN_ZOOM, MAX_ZOOM);
       const saved = this.#levelCamera;
       this.#levelCamera = null;
@@ -669,6 +731,9 @@ export class MapCanvas {
     this.#navigateListeners.clear();
     this.#pickListeners.clear();
     this.#strokeListeners.clear();
+    this.#blockedListeners.clear();
+    this.#contextListeners.clear();
+    this.#camera.dispose();
     this.#viewListeners.clear();
     this.#movedListeners.clear();
     this.#openListeners.clear();
@@ -764,6 +829,7 @@ export class MapCanvas {
       this.#loadProject(s.project);
       return;
     }
+    if (s.activeLayerId !== prev.activeLayerId) this.#matchToolToLayer(s);
     if (
       s.gridVisible !== prev.gridVisible ||
       s.tool !== prev.tool ||
@@ -783,6 +849,19 @@ export class MapCanvas {
       this.#input.updateCursor();
       this.#requestRender();
     }
+  }
+
+  /**
+   * Keeps the tool usable on a newly active layer: an entity layer swaps a
+   * tile tool (brush, eraser, fill, rectangle) for the entity tool; a tile /
+   * grid layer swaps the entity tool for the brush. Select, eyedropper and
+   * hand work everywhere and stay.
+   */
+  #matchToolToLayer(s: EditorState): void {
+    const layer = activeLayer(this.#scene?.store);
+    if (!layer) return;
+    const next = toolForLayer(s.tool, isEntityLayer(layer));
+    if (next !== s.tool) s.setTool(next);
   }
 
   // ------------------------------------------------------------------ sizing
@@ -880,6 +959,7 @@ export class MapCanvas {
     this.#input.updateCursor(); // layer lock/visibility may have changed
     this.#overlays.draw();
     this.#entities.draw();
+    this.#updateMinimapAutoHide();
     this.#minimap?.draw();
     this.#app.renderer.render(this.#app.stage);
     this.#flushRetired();
@@ -889,6 +969,16 @@ export class MapCanvas {
 
     if (animating) this.#requestRender();
     else this.#lastFrameTime = 0;
+  }
+
+  /** The minimap hides itself while the whole map fits in the view (it would show nothing new). */
+  #updateMinimapAutoHide(): void {
+    const map = this.#map();
+    const minimap = this.#minimap;
+    if (!map || !minimap) return;
+    const cam = this.#camera;
+    const z = cam.camera.zoom;
+    minimap.setAutoHidden(map.width * map.tileWidth * z <= cam.viewW + 0.5 && map.height * map.tileHeight * z <= cam.viewH + 0.5);
   }
 
   /** Meshes of the chunks just outside the view are built in idle time, so panning finds them ready. */
@@ -1062,6 +1152,15 @@ export class MapCanvas {
     if (s.tool === "select") return null;
     const ok = isEntityLayer(layer) && layer.visible && !layer.locked && !!s.entityTypeId;
     return ok ? null : "blocked";
+  }
+
+  /** Select tool: over the selection (a drag moves its content), or moving it. */
+  #regionCursor(): "over" | "moving" | null {
+    if (this.#tools.gesture?.kind === "move") return "moving";
+    const s = useEditorStore.getState();
+    if (s.tool !== "select" || !s.region || this.#tools.gesture || this.#hoverEntity) return null;
+    const cell = this.#input.cursorCell();
+    return cell && regionContains(s.region, cell) ? "over" : null;
   }
 
   /** Double click: a portal of a visible entity layer asks to open its target level. */

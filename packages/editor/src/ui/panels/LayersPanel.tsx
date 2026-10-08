@@ -1,9 +1,22 @@
 import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
 import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { addLayer, opacityDrag, removeLayer, renameLayer } from "../../commands/layerActions";
-import { addCollisionLayer, applyLayerOrder, removeTerrainGroup, setLayersProps } from "../../commands/terrainActions";
+import { cloneElement, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react";
+import {
+  addLayer,
+  canRemoveUnit,
+  isSolo,
+  opacityDrag,
+  removeUnit,
+  renameLayer,
+  requestOpacityFocus,
+  selectLayerContent,
+  setUnitProps,
+  soloLayer,
+  startLayerRename,
+  useLayerUi,
+} from "../../commands/layerActions";
+import { addCollisionLayer, applyLayerOrder, setLayersProps } from "../../commands/terrainActions";
 import { addEntityLayer } from "../../commands/entityActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -17,6 +30,9 @@ import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { layerRows, layerUnits, moveUnitOrder, unitIndexOf, type LayerRow } from "../terrain/layerGroups";
 import { toast } from "../toast/toastStore";
+import { PointMenu, RowContextMenu, type MenuPoint } from "../contextMenus/RowContextMenu";
+import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
+import type { SectionPanelProps } from "../layout/RightColumn";
 import { dropIndex, rowShift } from "./layerOrder";
 import { PanelSection } from "./PanelSection";
 
@@ -41,9 +57,11 @@ const NO_EXPANDED: ReadonlySet<string> = new Set();
  * drag to reorder, opacity. A terrain layer and the tile layer it writes
  * into show as one group ("Çimen (arazi)", derived tiles nested and
  * collapsed); the group moves, hides and locks as a whole. Every change is
- * a core op, so all are undoable.
+ * a core op, so all are undoable. Right-click a row for its menu (rename,
+ * duplicate, solo, move, merge, opacity, select content, delete), the empty
+ * list area for "new layer"; Alt+click an eye shows only that layer.
  */
-export function LayersPanel() {
+export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Partial<SectionPanelProps> = {}) {
   const store = useEditorStore((s) => s.project?.store);
   const activeId = useEditorStore((s) => s.activeLayerId);
   const setActive = useEditorStore((s) => s.setActiveLayer);
@@ -55,7 +73,9 @@ export function LayersPanel() {
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const [settling, setSettling] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingId = useLayerUi((s) => s.renamingId);
+  const setEditingId = startLayerRename;
+  const [emptyMenu, setEmptyMenu] = useState<MenuPoint | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(NO_EXPANDED);
   const dragRef = useRef<Drag | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -139,16 +159,24 @@ export function LayersPanel() {
   };
 
   const removeActive = () => {
-    if (!active) return;
-    if (activeUnit?.child && activeUnit.head.id === active.id) removeTerrainGroup(active.id);
-    else removeLayer(active.id);
+    if (active) removeUnit(active.id);
   };
-  const removeDisabled = !active || layerCount <= (activeUnit?.child && activeUnit.head.id === active.id ? 2 : 1);
+  const removeDisabled = !active || !canRemoveUnit(doc, active.id) || layerCount <= 1;
+
+  const onListContextMenu = (event: ReactMouseEvent<HTMLUListElement>) => {
+    // Rows have their own menu.
+    if ((event.target as HTMLElement).closest("[data-layer-id]")) return;
+    event.preventDefault();
+    setEmptyMenu({ x: event.clientX, y: event.clientY });
+  };
 
   return (
     <PanelSection
       title={t("panels.layers")}
-      className="shrink-0"
+      className="flex-auto"
+      collapsed={collapsed}
+      extra={extra}
+      {...(onToggleCollapsed ? { onToggleCollapsed } : {})}
       actions={
         <>
           <AddLayerMenu />
@@ -164,7 +192,9 @@ export function LayersPanel() {
         ref={listRef}
         role="listbox"
         aria-label={t("panels.layers")}
-        className="relative flex max-h-[232px] flex-col overflow-y-auto px-1.5 pb-1.5"
+        onContextMenu={onListContextMenu}
+        data-layers-list=""
+        className="relative flex min-h-[40px] flex-auto flex-col overflow-y-auto px-1.5 pb-1.5"
       >
         {rows.map((row) => {
           const { layer } = row;
@@ -178,7 +208,7 @@ export function LayersPanel() {
           const groupLayers = row.kind === "group" ? [layer, row.child] : [layer];
           const visible = groupLayers.some((l) => l.visible);
           const locked = groupLayers.every((l) => l.locked);
-          const item = (
+          const rowElement = (
             <li
               key={layer.id}
               role="option"
@@ -210,7 +240,10 @@ export function LayersPanel() {
                     ? "bg-active text-text"
                     : "text-muted hover:bg-hover hover:text-text"
               }`}
-            >
+            />
+          );
+          const rowChildren = (
+            <>
               {isActive && row.kind !== "derived" && (
                 <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />
               )}
@@ -273,24 +306,79 @@ export function LayersPanel() {
               <RowToggle
                 on={!visible}
                 label={visible ? t("layers.hide") : t("layers.show")}
+                title={t("layers.eyeHint", { label: visible ? t("layers.hide") : t("layers.show") })}
                 icon={visible ? "eye" : "eyeOff"}
-                onClick={() => setLayersProps(groupLayers.map((l) => l.id), { visible: !visible })}
+                onClick={(event) => {
+                  if (event.altKey && row.kind !== "derived") soloLayer(layer.id);
+                  else setLayersProps(groupLayers.map((l) => l.id), { visible: !visible });
+                }}
                 persistent={!visible}
               />
-            </li>
+            </>
           );
-          return row.kind === "derived" ? (
-            <Tooltip key={layer.id} side="left" label={t("layers.derivedTooltip", { name: row.parent.name })}>
-              {item}
-            </Tooltip>
-          ) : (
-            item
+          if (row.kind === "derived") {
+            return (
+              <Tooltip key={layer.id} side="left" label={t("layers.derivedTooltip", { name: row.parent.name })}>
+                {cloneWithChildren(rowElement, rowChildren)}
+              </Tooltip>
+            );
+          }
+          return (
+            <RowContextMenu
+              key={layer.id}
+              render={rowElement}
+              onOpen={() => setActive(row.kind === "group" ? row.child.id : layer.id)}
+              items={() => layerRowItems(layer.id, groupLayers)}
+              disabled={drag?.active === true || editingId === layer.id}
+            >
+              {rowChildren}
+            </RowContextMenu>
           );
         })}
       </ul>
       {opacityLayer && <OpacityRow layer={opacityLayer} />}
+      <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
     </PanelSection>
   );
+}
+
+/** The row element with its content (rows without a context menu). */
+function cloneWithChildren(element: ReactElement<{ children?: ReactNode }>, children: ReactNode) {
+  return cloneElement(element, undefined, children);
+}
+
+/** Right-click menu of a layer row (the row's layer is made active first, so registry commands act on it). */
+function layerRowItems(layerId: string, groupLayers: readonly TileLayer[]): ContextEntry[] {
+  const doc = useEditorStore.getState().project?.store.document;
+  const visible = groupLayers.some((l) => l.visible);
+  const locked = groupLayers.every((l) => l.locked);
+  const solo = doc ? isSolo(doc, layerId) : false;
+  return [
+    { type: "item", id: "rename", label: t("layers.renameMenu"), icon: "pencilLine", command: "layer.rename" },
+    { type: "item", id: "duplicate", label: t("layers.duplicate"), icon: "copy", command: "layer.duplicate" },
+    SEPARATOR,
+    { type: "item", id: "visible", label: visible ? t("layers.hide") : t("layers.show"), icon: visible ? "eyeOff" : "eye", run: () => setUnitProps(layerId, { visible: !visible }) },
+    { type: "item", id: "lock", label: locked ? t("layers.unlock") : t("layers.lock"), icon: locked ? "unlock" : "lock", run: () => setUnitProps(layerId, { locked: !locked }) },
+    { type: "item", id: "solo", label: solo ? t("layers.soloOff") : t("layers.solo"), icon: "eye", run: () => soloLayer(layerId), disabled: (doc?.layers.length ?? 0) <= groupLayers.length },
+    SEPARATOR,
+    { type: "item", id: "moveUp", label: t("layers.moveUp"), icon: "arrowUp", command: "layer.moveUp" },
+    { type: "item", id: "moveDown", label: t("layers.moveDown"), icon: "arrowDown", command: "layer.moveDown" },
+    { type: "item", id: "mergeDown", label: t("layers.mergeDown"), icon: "merge", command: "layer.mergeDown" },
+    SEPARATOR,
+    { type: "item", id: "opacity", label: t("layers.opacityMenu"), icon: "sliders", run: requestOpacityFocus },
+    { type: "item", id: "selectContent", label: t("layers.selectContent"), icon: "select", run: () => void selectLayerContent(layerId) },
+    SEPARATOR,
+    { type: "item", id: "delete", label: t("layers.deleteMenu"), icon: "trash", danger: true, run: () => void removeUnit(layerId), disabled: !canRemoveUnit(doc, layerId) },
+  ];
+}
+
+/** Right-click on the empty part of the list: new layers. */
+function layersEmptyItems(): ContextEntry[] {
+  return [
+    { type: "item", id: "newTile", label: t("layers.newTile"), icon: "layers", command: "layer.add", run: () => void addLayer() },
+    { type: "item", id: "newCollision", label: t("layers.newCollision"), icon: "shield", command: "layer.addCollision", run: () => void addCollisionLayer() },
+    { type: "item", id: "newEntity", label: t("layers.newEntity"), icon: "box", command: "layer.addEntity", run: () => void addEntityLayer() },
+  ];
 }
 
 function layerIcon(layer: TileLayer): IconName {
@@ -387,21 +475,23 @@ function AddLayerMenu() {
 function RowToggle({
   on,
   label,
+  title,
   icon,
   onClick,
   persistent,
 }: {
   on: boolean;
   label: string;
+  title?: string;
   icon: "lock" | "unlock" | "eye" | "eyeOff";
-  onClick(): void;
+  onClick(event: ReactMouseEvent<HTMLButtonElement>): void;
   persistent: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
+      title={title ?? label}
       aria-pressed={on}
       onClick={onClick}
       className={`grid size-6 shrink-0 place-items-center rounded-sm transition-[opacity,color] duration-100 hover:bg-hover hover:text-text focus-visible:opacity-100 ${
@@ -415,6 +505,14 @@ function RowToggle({
 
 function OpacityRow({ layer }: { layer: TileLayer }) {
   const percent = Math.round(layer.opacity * 100);
+  const focusToken = useLayerUi((s) => s.opacityFocus);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // "Opaklık…" from a row menu: focus the slider (arrow keys / drag change it).
+  useEffect(() => {
+    if (focusToken === 0) return;
+    const frame = requestAnimationFrame(() => rowRef.current?.querySelector<HTMLElement>("input, [role=slider]")?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [focusToken]);
   // Safety net: a drag that ends outside the slider still closes its undo step.
   useEffect(() => {
     const end = () => setTimeout(() => opacityDrag.end(), 0);
@@ -425,7 +523,7 @@ function OpacityRow({ layer }: { layer: TileLayer }) {
     };
   }, []);
   return (
-    <div className="flex h-9 items-center gap-3 border-t border-line-subtle pr-3 pl-3">
+    <div ref={rowRef} data-layer-opacity="" className="flex h-9 shrink-0 items-center gap-3 border-t border-line-subtle pr-3 pl-3">
       <span className="text-xs text-faint">{t("layers.opacity")}</span>
       <Slider.Root
         value={percent}
