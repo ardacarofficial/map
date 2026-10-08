@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { t } from "../../i18n";
+import { CANVAS_HOST_ATTR } from "../canvas/canvasHandle";
 import { Icon, type IconName } from "../primitives/Icon";
 import { useToastStore, type Toast, type ToastKind } from "./toastStore";
 
@@ -18,13 +19,46 @@ const ICON_COLOR: Record<ToastKind, string> = {
   error: "text-danger",
 };
 
-/** Bottom-left stack of the canvas area (the minimap owns its bottom-right corner) of auto-dismissing notifications. */
+/**
+ * Where the stack goes: the bottom-left corner of the map canvas (above the
+ * recent tiles strip, right of the library column), or the window's
+ * bottom-left corner when no canvas is shown (welcome screen).
+ */
+function useCanvasCorner(active: boolean): CSSProperties | undefined {
+  const [corner, setCorner] = useState<CSSProperties | undefined>(undefined);
+  useEffect(() => {
+    if (!active) return;
+    let frame = 0;
+    const measure = () => {
+      const host = document.querySelector(`[${CANVAS_HOST_ATTR}]`);
+      const r = host?.getBoundingClientRect();
+      const next = r && r.width > 0 && r.height > 0 ? { left: Math.round(r.left + 16), bottom: Math.round(window.innerHeight - r.bottom + 12) } : undefined;
+      setCorner((c) => (c?.left === next?.left && c?.bottom === next?.bottom ? c : next));
+    };
+    const loop = () => {
+      measure();
+      frame = window.setTimeout(loop, 250);
+    };
+    loop();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(frame);
+      window.removeEventListener("resize", measure);
+    };
+  }, [active]);
+  return active ? corner : undefined;
+}
+
+/** Stack of auto-dismissing notifications at the canvas' bottom-left (the minimap owns its bottom-right corner). */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
+  const corner = useCanvasCorner(toasts.length > 0);
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+12px)] left-[calc(var(--spacing-rail)+16px)] z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col items-start gap-2"
+      data-toaster
+      style={corner}
+      className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+var(--spacing-recentstrip)+12px)] left-[calc(var(--spacing-rail)+16px)] z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col items-start gap-2"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />

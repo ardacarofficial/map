@@ -71,7 +71,7 @@ describe("grid helpers", () => {
 });
 
 describe("remapStamp", () => {
-  const stamp: Stamp = Object.freeze({
+  const stamp: Stamp = {
     id: "ev",
     name: "Ev",
     width: 3,
@@ -85,7 +85,7 @@ describe("remapStamp", () => {
       { layerId: "a", name: "Zemin", cells: Uint32Array.of(makeCell(1, FLIP_H), makeCell(2), makeCell(3)) },
       { layerId: "g", name: "Collision", grid: true, role: "collision", cells: Uint32Array.of(1, 0, 1) },
     ],
-  });
+  };
 
   it("moves tiles by pixel position and clears the ones that map nowhere", () => {
     const r = remapStamp(stamp, "dungeon", dungeon, as32);

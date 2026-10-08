@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -14,12 +13,7 @@ import {
 
 import { inRandomSet, toggleInSet, toggleRandomTile } from "../../commands/randomBrush";
 import { SolidStroke } from "../../commands/solidStroke";
-import {
-  activateTerrain,
-  defineTerrain,
-  terrainBlockProblem,
-  uniqueTerrainName,
-} from "../../commands/terrainActions";
+import { terrainBlockProblem } from "../../commands/terrainActions";
 import { openTilesetImport } from "../../commands/tilesetActions";
 import { t } from "../../i18n";
 import { useEditorStore, type TileSelection } from "../../state/editorStore";
@@ -27,8 +21,8 @@ import { useStructureVersion, useTilesetImage } from "../hooks";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
-import { TemplatePicker } from "../terrain/TemplatePicker";
-import { TerrainList, useActiveTerrainId } from "../terrain/TerrainList";
+import { TerrainDefineBar } from "../terrain/TerrainDefineBar";
+import { TerrainSets, useActiveTerrainId } from "../terrain/TerrainList";
 import { templateGlyphs } from "../terrain/templateGlyph";
 import { useEmptyTiles } from "../tileset/emptyTiles";
 import { ModeTabs } from "../tileset/ModeTabs";
@@ -51,7 +45,6 @@ import { commitTilesetSelection, highlightedIds, installTilesetPickSync } from "
 import { TilesetSwitcher } from "../tileset/TilesetSwitcher";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { anchoredScroll, fitScale, stepZoom, zoomLabel } from "../tileset/zoomModel";
-import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
 import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
@@ -640,7 +633,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
         </ModeBar>
       )}
       {mode === "terrain" && (
-        <TerrainBar
+        <TerrainDefineBar
           tileset={tileset}
           template={template}
           pending={pending}
@@ -810,7 +803,7 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
         )}
       </div>
 
-      <TerrainList tileset={tileset} />
+      <TerrainSets />
 
       <div className="flex h-8 shrink-0 items-center gap-2 border-t border-line-subtle pr-1.5 pl-3 text-xs text-faint" data-tileset-footer>
         <span className="truncate">{t("tileset.tileCount", { count: tileset.columns * tileset.rows })}</span>
@@ -909,7 +902,7 @@ function SelectionOverlay({
       shapeRendering="crispEdges"
       data-selected-tiles={ids.join(",")}
     >
-      <path d={fill} fill="var(--color-accent)" fillOpacity={live ? 0.22 : 0.16} />
+      <path d={fill} fill="var(--color-accent)" fillOpacity={live ? 0.28 : 0.22} />
       <path d={outline} fill="none" stroke="var(--color-bg)" strokeWidth={4} strokeLinecap="square" strokeOpacity={0.7} />
       <path d={outline} fill="none" stroke="var(--color-accent)" strokeWidth={2} strokeLinecap="square" strokeDasharray={live ? "4 3" : undefined} />
     </svg>
@@ -972,100 +965,6 @@ function ModeBar({
         {t("tileset.done")}
       </Button>
     </div>
-  );
-}
-
-/** "Arazi tanımla": template picker, then the name of the placed block. */
-function TerrainBar({
-  tileset,
-  template,
-  pending,
-  problem,
-  onCancel,
-  onDone,
-}: {
-  tileset: Tileset;
-  template: TerrainTemplate;
-  pending: TileCell | null;
-  problem: string | null;
-  onCancel(): void;
-  onDone(): void;
-}) {
-  const setTemplate = useUiStore((s) => s.setTerrainTemplate);
-  return (
-    <div className="mx-2 mb-1 flex shrink-0 flex-col gap-1.5 rounded-md border border-line bg-raised p-1.5">
-      <div className="flex items-center gap-1.5">
-        <TemplatePicker value={template} onChange={setTemplate} />
-        <Button variant="ghost" className="h-7 shrink-0 px-2 text-sm" onClick={onDone}>
-          {t("tileset.done")}
-        </Button>
-      </div>
-      {pending ? (
-        <NameForm key={`${pending.col},${pending.row}`} tileset={tileset} template={template} origin={pending} onCancel={onCancel} onDone={onDone} />
-      ) : problem ? (
-        <div role="alert" className="flex items-start gap-1.5 px-0.5 text-xs leading-4 text-danger">
-          <Icon name="alert" size={13} className="mt-px shrink-0" />
-          {problem}
-        </div>
-      ) : (
-        <div className="px-0.5 text-xs leading-4 text-muted">{t("tileset.terrainModeHint")}</div>
-      )}
-    </div>
-  );
-}
-
-function NameForm({
-  tileset,
-  template,
-  origin,
-  onCancel,
-  onDone,
-}: {
-  tileset: Tileset;
-  template: TerrainTemplate;
-  origin: TileCell;
-  onCancel(): void;
-  onDone(): void;
-}) {
-  const store = useEditorStore((s) => s.project?.store);
-  const [name, setName] = useState(() => (store ? uniqueTerrainName(store.document) : ""));
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const terrain = defineTerrain(tileset.id, template, origin, name);
-    if (!terrain) return;
-    onDone();
-    toast.withAction(t("toast.terrainDefined", { name: terrain.name }), {
-      label: t("terrain.paint"),
-      run: () => activateTerrain(terrain.id),
-    });
-  };
-  return (
-    <form onSubmit={submit} className="flex items-center gap-1.5">
-      <input
-        autoFocus
-        value={name}
-        aria-label={t("terrain.name")}
-        onChange={(e) => setName(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            onCancel();
-          }
-        }}
-        spellCheck={false}
-        autoComplete="off"
-        maxLength={64}
-        className="h-7 min-w-0 flex-1 rounded-md border border-line bg-panel px-2 text-md text-text focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
-      />
-      <Button type="submit" variant="primary" className="h-7 px-2.5 text-sm">
-        {t("terrain.define")}
-      </Button>
-      <Button variant="ghost" className="h-7 px-2 text-sm" onClick={onCancel}>
-        {t("common.cancel")}
-      </Button>
-    </form>
   );
 }
 

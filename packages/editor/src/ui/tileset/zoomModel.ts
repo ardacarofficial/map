@@ -15,7 +15,7 @@ export const MAX_FIT_SCALE = 6;
  * width; below it (e.g. 1× in a panel 1.8× as wide) a tile-aligned
  * fractional scale fills the panel instead.
  */
-export const MIN_INTEGER_FILL = 0.75;
+export const MIN_INTEGER_FILL = 0.7;
 
 /**
  * Scale that fits `contentWidth` CSS px (columns × tile width at 1×) into

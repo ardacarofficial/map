@@ -19,7 +19,7 @@ const TONE: Record<TilesetMode, string> = {
 /** Labelled segmented control: what a click in the tileset does. */
 export function ModeTabs({ mode, onChange }: { mode: TilesetMode; onChange(mode: TilesetMode): void }) {
   return (
-    <div role="radiogroup" aria-label={t("tilesetPanel.modes")} className="mx-2 mb-1.5 grid shrink-0 grid-cols-4 gap-0.5 rounded-md bg-raised p-0.5" data-tileset-modes>
+    <div role="radiogroup" aria-label={t("tilesetPanel.modes")} className="mx-2 mb-1.5 flex shrink-0 gap-0.5 rounded-md bg-raised p-0.5" data-tileset-modes>
       {MODES.map((m) => {
         const on = m.mode === mode;
         return (
@@ -31,7 +31,7 @@ export function ModeTabs({ mode, onChange }: { mode: TilesetMode; onChange(mode:
             title={t(m.title)}
             data-tileset-mode={m.mode}
             onClick={() => onChange(m.mode)}
-            className={`flex h-6 min-w-0 items-center justify-center gap-1 rounded-sm px-1 text-xs font-medium transition-colors ${
+            className={`flex h-6 min-w-0 flex-auto items-center justify-center gap-1 rounded-sm px-1.5 text-xs font-medium transition-colors ${
               on ? "bg-active text-text shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-faint hover:bg-hover hover:text-muted"
             }`}
           >

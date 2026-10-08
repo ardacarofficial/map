@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+
 import { confirmTilesetCard, dropFile, expect, sampleBytes, test } from "../support/fixtures";
 
 type Hook = {
@@ -13,7 +15,7 @@ type Hook = {
 };
 
 /** Tile id drawn at (x, y) of the first tile layer (null = empty). */
-const tileAt = (page: import("@playwright/test").Page, x: number, y: number) =>
+const tileAt = (page: Page, x: number, y: number) =>
   page.evaluate(
     ([x, y]) => {
       const store = (window as unknown as { __smap: Hook }).__smap.store;
