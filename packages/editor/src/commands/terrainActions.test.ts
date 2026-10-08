@@ -159,6 +159,21 @@ describe("define → ready to paint", () => {
     expect(useLayerFlash.getState().layerId).toBe(active!.id);
   });
 
+  // Bug: "Tanımla" made two undo steps (the terrain, then its layer pair): one Ctrl+Z left a
+  // defined terrain without layers, a second one was needed to take the action back.
+  it("defining + creating the layer pair is ONE undo step", () => {
+    const layersBefore = store.document.layers.length;
+    const terrain = defineAndActivateTerrain("t", "blob47-godot", { col: 0, row: 4 }, "Çimen")!;
+    expect(store.document.layers.length).toBe(layersBefore + 2);
+    expect(store.undoDepth).toBe(1);
+    store.undo();
+    expect(store.document.getTerrain(terrain.id)).toBeUndefined();
+    expect(store.document.layers).toHaveLength(layersBefore);
+    store.redo();
+    expect(store.document.getTerrain(terrain.id)?.name).toBe("Çimen");
+    expect(store.document.layers.length).toBe(layersBefore + 2);
+  });
+
   it("an invalid block changes nothing", () => {
     const before = store.document.layers.length;
     expect(defineAndActivateTerrain("t", "blob47-godot", { col: 5, row: 6 }, "x")).toBeNull();

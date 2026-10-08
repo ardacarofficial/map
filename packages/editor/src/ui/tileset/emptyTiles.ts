@@ -1,5 +1,7 @@
-import { alphaFromRgba, emptyTileIds, type Tileset } from "@smap/core";
+import { emptyTileIds, type Tileset } from "@smap/core";
 import { useMemo } from "react";
+
+import { readAlpha } from "../tilesetImport/imageAlpha";
 
 const NONE: ReadonlySet<number> = new Set();
 const cache = new WeakMap<ImageBitmap, Map<string, ReadonlySet<number>>>();
@@ -14,19 +16,14 @@ export function emptyTilesOf(tileset: Tileset, bitmap: ImageBitmap): ReadonlySet
   const hit = byGrid?.get(key);
   if (hit) return hit;
   let result: ReadonlySet<number> = NONE;
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (ctx && bitmap.width > 0 && bitmap.height > 0) {
-      ctx.drawImage(bitmap, 0, 0);
-      const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
-      result = emptyTileIds(tileset, { width: bitmap.width, height: bitmap.height, alpha: alphaFromRgba(data, bitmap.width, bitmap.height) });
+  // Same reader (and size cap) as the import card: a huge sheet is not scanned on the main thread.
+  const alpha = readAlpha(bitmap);
+  if (alpha) {
+    try {
+      result = emptyTileIds(tileset, { width: bitmap.width, height: bitmap.height, alpha });
+    } catch (error) {
+      console.warn("[tileset] cannot scan transparent tiles", error);
     }
-  } catch (error) {
-    // A closed bitmap or a tainted canvas: treat every tile as non-empty.
-    console.warn("[tileset] cannot scan transparent tiles", error);
   }
   if (!byGrid) {
     byGrid = new Map();

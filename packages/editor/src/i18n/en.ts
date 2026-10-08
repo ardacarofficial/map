@@ -725,6 +725,7 @@ export const en: Messages = {
     fillNoLayer: "Pick a layer first",
     fillEntity: "Entity layers cannot be filled",
     fillLocked: "The layer is locked",
+    fillHidden: "The layer is hidden; show it first",
     fillDerived: "This layer comes from a terrain; select the terrain layer",
     fillNoBrush: "Pick a tile to fill with first",
     fillNoTerrain: "Pick a terrain to fill with first",

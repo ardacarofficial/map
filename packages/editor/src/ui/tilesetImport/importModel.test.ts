@@ -101,6 +101,21 @@ describe("summary and leftover", () => {
     expect(leftoverFix({ tileWidth: 16, tileHeight: 16, margin: 0, spacing: 0 }, 103, 64)).toBeNull();
   });
 
+  // Bug: typing "16" into a selected field passes through "1": a 1 px grid over a 2048² sheet
+  // scanned and listed millions of "empty" tiles (and drew one SVG square each) — seconds of freeze.
+  it("skips the empty-tile scan for absurdly fine grids (typing through 1 px stays instant)", () => {
+    const n = 2048;
+    const alpha = new Uint8Array(n * n);
+    const start = performance.now();
+    const s = summarize({ tileWidth: 1, tileHeight: 1, margin: 0, spacing: 0 }, { width: n, height: n, alpha })!;
+    expect(s.count).toBe(n * n);
+    expect(s.emptyIds.size).toBe(0);
+    expect(s.empty).toBe(0);
+    expect(performance.now() - start).toBeLessThan(1000);
+    // Normal grids still count empty tiles.
+    expect(summarize({ tileWidth: 32, tileHeight: 32, margin: 0, spacing: 0 }, { width: n, height: n, alpha })!.empty).toBe(64 * 64);
+  });
+
   it("returns null when not even one tile fits", () => {
     expect(summarize({ tileWidth: 64, tileHeight: 64, margin: 0, spacing: 0 }, { width: 32, height: 32, alpha: null })).toBeNull();
   });

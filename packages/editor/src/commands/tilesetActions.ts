@@ -27,7 +27,7 @@ import {
 import { t } from "../i18n";
 import { decodeTilesetFile, addTilesetFiles, createProjectFromTilesets, describeError, getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { gridKey, loadAllLevels, remapStamps, sameGrid, syncLevelGrids } from "../io/tilesetRegrid";
+import { gridKey, loadAllLevels, remapBrush, remapStamps, sameGrid, syncLevelGrids } from "../io/tilesetRegrid";
 import { decodePng } from "../io/projectIo";
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, notifyTilesetImage, setTilesetImage } from "../state/tilesetImages";
@@ -36,6 +36,7 @@ import { toast, useToastStore } from "../ui/toast/toastStore";
 import { useUiStore } from "../ui/uiStore";
 import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
+import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 import { registerCommands, registerPaletteProvider, type Command } from "./registry";
 
@@ -312,11 +313,13 @@ export function syncProject(): SyncStats {
   const store = activeStore();
   if (!ws || !store || suspended) return stats;
   const doc = store.document;
+  const regridded: { tilesetId: string; before: TileGrid; after: TileGrid }[] = [];
   for (const tileset of doc.tilesets) {
     const seen = seenGrids.get(tileset.id);
     if (seen && !sameGrid(seen, tileset)) {
       followImage(doc, tileset.id);
       notifyTilesetImage(tileset.id);
+      regridded.push({ tilesetId: tileset.id, before: seen, after: gridOf(tileset) });
     }
     seenGrids.set(tileset.id, gridOf(tileset));
   }
@@ -324,11 +327,22 @@ export function syncProject(): SyncStats {
   stats.levels = levels.levels.length;
   stats.clearedCells = levels.clearedCells;
   stats.stamps = syncStamps(doc);
+  // The brush, random set and recent strip name tiles by id: they follow the pixels too.
+  for (const { tilesetId, before, after } of regridded) followBrush(tilesetId, before, after);
   if (stats.levels > 0) {
     publishLevelState();
     if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
   }
   return stats;
+}
+
+/** Moves the editor's brush state (and the tileset panel selection) of `tilesetId` to the new grid. */
+function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void {
+  const editor = useEditorStore.getState();
+  const changes = remapBrush(editor, tilesetId, before, after, useProjectLibrary.getState().stamps);
+  if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
+  const view = useTilesetView.getState();
+  if (view.selection?.tilesetId === tilesetId) view.setSelection(null);
 }
 
 /** Remaps (or restores) the stamp library to `doc`'s grids; returns how many stamps changed. */

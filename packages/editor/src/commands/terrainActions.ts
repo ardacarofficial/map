@@ -170,10 +170,12 @@ export function defineTerrain(
   template: TerrainTemplate,
   origin: { col: number; row: number },
   name: string,
+  /** @internal Part of an open transaction (see {@link defineAndActivateTerrain}). */
+  nested = false,
 ): Terrain | null {
   const store = currentStore();
   const tileset = store?.document.getTileset(tilesetId);
-  if (!store || !tileset || store.inTransaction) return null;
+  if (!store || !tileset || (store.inTransaction && !nested)) return null;
   if (terrainBlockProblem(tileset, template, origin.col, origin.row) !== null) return null;
   const trimmed = name.trim() || uniqueTerrainName(store.document);
   const terrain: Terrain = { id: nextTerrainId(store.document), name: trimmed, tilesetId, template, origin };
@@ -230,10 +232,16 @@ export type TerrainAnnounce = "pick" | "define" | "silent";
  * brush tool. Returns what happened, or null when nothing could be done.
  */
 export function activateTerrain(terrainId: number, announce: TerrainAnnounce = "pick"): TerrainActivation | null {
+  const store = currentStore();
+  if (!store || store.inTransaction) return null;
+  return activateIn(store, terrainId, announce);
+}
+
+/** {@link activateTerrain} without the transaction guard (a layer pair it creates joins an open transaction). */
+function activateIn(store: MapStore, terrainId: number, announce: TerrainAnnounce): TerrainActivation | null {
   const state = useEditorStore.getState();
-  const store = state.project?.store;
-  const terrain = store?.document.getTerrain(terrainId);
-  if (!store || !terrain || store.inTransaction) return null;
+  const terrain = store.document.getTerrain(terrainId);
+  if (!terrain) return null;
   const plan = planTerrainLayer(store.document, state.activeLayerId);
   let layerId: string;
   if (plan.kind === "use") {
@@ -294,9 +302,19 @@ export function defineAndActivateTerrain(
   origin: { col: number; row: number },
   name: string,
 ): Terrain | null {
-  const terrain = defineTerrain(tilesetId, template, origin, name);
-  if (!terrain) return null;
-  activateTerrain(terrain.id, "define");
+  const store = currentStore();
+  if (!store || store.inTransaction) return null;
+  // One user action, one undo step: the terrain and the layer pair it may create.
+  store.beginTransaction();
+  let terrain: Terrain | null;
+  try {
+    terrain = defineTerrain(tilesetId, template, origin, name, true);
+    if (terrain) activateIn(store, terrain.id, "define");
+  } catch (error) {
+    if (store.inTransaction) store.rollback();
+    throw error;
+  }
+  store.commit();
   return terrain;
 }
 

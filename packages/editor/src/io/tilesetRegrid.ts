@@ -25,9 +25,13 @@ import {
   type MapStore,
   type PaletteEntry,
   type Stamp,
+  type TileClip,
   type TileGrid,
   type Tileset,
 } from "@smap/core";
+
+import type { TileSelection } from "../state/editorStore";
+import { isRecentStamp, recentKey, recentOfClip, type RecentItem } from "../state/recentItems";
 
 import type { ProjectFileSystem } from "./fs";
 import type { LevelWorkspace } from "./levelWorkspace";
@@ -57,8 +61,8 @@ export function regridMode(before: TileGrid, after: TileGrid): RegridMode {
     : "grid";
 }
 
-export interface StampRemap {
-  stamp: Stamp;
+export interface StampRemap<T extends TileClip = Stamp> {
+  stamp: T;
   /** True when the stamp changed (palette or cells). */
   changed: boolean;
   /** Tile cells cleared because their tile has no place in the new grid. */
@@ -73,7 +77,13 @@ export interface StampRemap {
  * like `replaceTilesetImage` keeps it in levels). The clip palette is
  * rebuilt so it lists only used entries, without duplicates.
  */
-export function remapStamp(stamp: Stamp, tilesetId: string, before: TileGrid, after: TileGrid, mode: RegridMode = regridMode(before, after)): StampRemap {
+export function remapStamp<T extends TileClip = Stamp>(
+  stamp: T,
+  tilesetId: string,
+  before: TileGrid,
+  after: TileGrid,
+  mode: RegridMode = regridMode(before, after),
+): StampRemap<T> {
   if (!stamp.palette.some((e) => e.tilesetId === tilesetId) || sameGrid(before, after)) {
     return { stamp, changed: false, clearedCells: 0 };
   }
@@ -128,7 +138,7 @@ export function remapStamp(stamp: Stamp, tilesetId: string, before: TileGrid, af
     return { stamp, changed: false, clearedCells: 0 };
   }
   return {
-    stamp: Object.freeze({ ...stamp, palette: Object.freeze(palette), layers: Object.freeze(layers) }),
+    stamp: Object.freeze({ ...stamp, palette: Object.freeze(palette), layers: Object.freeze(layers) }) as T,
     changed: true,
     clearedCells,
   };
@@ -153,6 +163,93 @@ export function remapStamps(stamps: readonly Stamp[], tilesetId: string, before:
     return r.stamp;
   });
   return { stamps: out, changed, clearedCells };
+}
+
+/** The brush state that names tiles of a tileset by id (editor store fields). */
+export interface BrushRefs {
+  selection: TileSelection | null;
+  randomSet: readonly { tilesetId: string; tileId: number; weight?: number }[];
+  stamp: TileClip | null;
+  recentTiles: readonly RecentItem[];
+}
+
+/**
+ * The brush, random set, brush stamp and recent strip with the tiles of
+ * `tilesetId` moved from grid `before` to grid `after` (the same pixel rule
+ * as the levels and stamps), so that after a grid edit (or its undo) the
+ * brush keeps painting the pixels the user picked. Tiles that map nowhere
+ * are dropped (a selection becomes null, a stamp loses those cells and
+ * becomes null when nothing is left). A saved stamp on the brush is
+ * replaced by the library's copy with the same id when `library` has one.
+ * Returns only the fields that changed.
+ */
+export function remapBrush(
+  refs: BrushRefs,
+  tilesetId: string,
+  before: TileGrid,
+  after: TileGrid,
+  library: readonly Stamp[] = [],
+): Partial<BrushRefs> {
+  if (sameGrid(before, after)) return {};
+  const remap = tilesetGridRemap(before, after);
+  const count = after.columns * after.rows;
+  const tileTo = (tileId: number): number | null => {
+    const to = remap(tileId);
+    return to !== null && to < count ? to : null;
+  };
+  const clipTo = (clip: TileClip): TileClip | null => {
+    const id = (clip as Partial<Stamp>).id;
+    const saved = typeof id === "string" ? library.find((s) => s.id === id) : undefined;
+    if (saved) return saved;
+    const r = remapStamp(clip, tilesetId, before, after, "grid");
+    if (!r.changed) return clip;
+    return recentOfClip(r.stamp) === null && !r.stamp.layers.some((l) => l.grid) ? null : r.stamp;
+  };
+  const out: Partial<BrushRefs> = {};
+  const sel = refs.selection;
+  if (sel && sel.tilesetId === tilesetId) {
+    const to = tileTo(sel.tileId);
+    out.selection = to === null ? null : { tilesetId, tileId: to };
+  }
+  if (refs.randomSet.some((r) => r.tilesetId === tilesetId)) {
+    const next: BrushRefs["randomSet"][number][] = [];
+    for (const r of refs.randomSet) {
+      if (r.tilesetId !== tilesetId) next.push(r);
+      else {
+        const to = tileTo(r.tileId);
+        if (to !== null && !next.some((n) => n.tilesetId === tilesetId && n.tileId === to)) next.push({ ...r, tileId: to });
+      }
+    }
+    out.randomSet = next;
+  }
+  if (refs.stamp) {
+    const next = clipTo(refs.stamp);
+    if (next !== refs.stamp) out.stamp = next;
+  }
+  let recentChanged = false;
+  const recent: RecentItem[] = [];
+  const keys = new Set<string>();
+  for (const item of refs.recentTiles) {
+    let next: RecentItem | null = item;
+    if (isRecentStamp(item)) {
+      const clip = clipTo(item.stamp);
+      next = clip === item.stamp ? item : clip ? recentOfClip(clip) : null;
+    } else if (item.tilesetId === tilesetId) {
+      const to = tileTo(item.tileId);
+      next = to === null ? null : to === item.tileId ? item : { tilesetId, tileId: to };
+    }
+    if (next !== item) recentChanged = true;
+    if (!next) continue;
+    const key = recentKey(next);
+    if (keys.has(key)) {
+      recentChanged = true;
+      continue;
+    }
+    keys.add(key);
+    recent.push(next);
+  }
+  if (recentChanged) out.recentTiles = recent;
+  return out;
 }
 
 /** True when a stamp uses a tile of `tilesetId`. */

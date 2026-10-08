@@ -14,6 +14,25 @@ type Hook = {
   };
 };
 
+type EditorHook = {
+  getState(): {
+    selection: { tilesetId: string; tileId: number } | null;
+    recentTiles: { tilesetId?: string; tileId?: number }[];
+    setSelection(s: { tilesetId: string; tileId: number }): void;
+    pushRecentTile(s: { tilesetId: string; tileId: number }): void;
+  };
+};
+
+/** The brush's dungeon tile id and the recent strip's dungeon tile ids. */
+const brush = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __smap: { editor: EditorHook } }).__smap.editor.getState();
+    return {
+      selection: s.selection?.tilesetId === "dungeon-16" ? s.selection.tileId : null,
+      recent: s.recentTiles.filter((r) => r.tilesetId === "dungeon-16").map((r) => r.tileId),
+    };
+  });
+
 /** Tile id drawn at (x, y) of the first tile layer (null = empty). */
 const tileAt = (page: Page, x: number, y: number) =>
   page.evaluate(
@@ -61,6 +80,12 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
     store.dispatch({ type: "paintCells", layerId: layer.id, cells: [{ x: 1, y: 1, cell: a }, { x: 2, y: 1, cell: b }] });
   });
   expect(await tileAt(page, 1, 1)).toBe(2);
+  // The brush is dungeon tile 2 (x = 32 px), also in the recent strip.
+  await page.evaluate(() => {
+    const editor = (window as unknown as { __smap: { editor: EditorHook } }).__smap.editor.getState();
+    editor.setSelection({ tilesetId: "dungeon-16", tileId: 2 });
+    editor.pushRecentTile({ tilesetId: "dungeon-16", tileId: 2 });
+  });
 
   // Settings from the command palette → 32 px.
   await page.keyboard.press("Control+k");
@@ -79,12 +104,15 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
   await expect(result).toBeVisible();
   expect(await tileAt(page, 1, 1)).toBe(1);
   expect(await tileAt(page, 2, 1)).toBeNull();
+  // The brush follows the pixels too (it would otherwise paint 32 px tile 2 = x 64 px).
+  expect(await brush(page)).toEqual({ selection: 1, recent: [1] });
 
   // Undo from the toast restores the grid and both cells.
   await page.getByRole("status").filter({ hasText: "Izgara güncellendi" }).getByRole("button", { name: "Geri al" }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.document.getTileset("dungeon-16")!.tileWidth)).toBe(16);
   expect(await tileAt(page, 1, 1)).toBe(2);
   expect(await tileAt(page, 2, 1)).toBe(3);
+  expect(await brush(page)).toEqual({ selection: 2, recent: [2] });
   expect(errors).toEqual([]);
 });
 

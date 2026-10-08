@@ -141,6 +141,13 @@ export interface GridSummary {
   fix: TileGridSpec | null;
 }
 
+/**
+ * Above this many tiles the card does not look for empty tiles (nor dim
+ * them): a grid that fine is a typo in progress ("1" on the way to "16"),
+ * and listing millions of tiles would freeze the card.
+ */
+export const MAX_EMPTY_SCAN_TILES = 65536;
+
 /** What `spec` makes of the image, or `null` when not even one tile fits. */
 export function summarize(spec: TileGridSpec, image: CardImageInfo): GridSummary | null {
   const { width, height } = image;
@@ -149,7 +156,8 @@ export function summarize(spec: TileGridSpec, image: CardImageInfo): GridSummary
   if (columns < 1 || rows < 1) return null;
   const leftoverX = width - 2 * spec.margin - columns * spec.tileWidth - (columns - 1) * spec.spacing;
   const leftoverY = height - 2 * spec.margin - rows * spec.tileHeight - (rows - 1) * spec.spacing;
-  const emptyIds = image.alpha ? emptyTileIds({ ...spec, columns, rows }, { width, height, alpha: image.alpha }) : new Set<number>();
+  const emptyIds =
+    image.alpha && columns * rows <= MAX_EMPTY_SCAN_TILES ? emptyTileIds({ ...spec, columns, rows }, { width, height, alpha: image.alpha }) : new Set<number>();
   return {
     columns,
     rows,

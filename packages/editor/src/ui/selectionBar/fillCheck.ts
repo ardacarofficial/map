@@ -18,6 +18,7 @@ export function fillBlocker(
   if (!doc || !layer) return "selectionBar.fillNoLayer";
   if (isEntityLayer(layer)) return "selectionBar.fillEntity";
   if (layer.locked) return "selectionBar.fillLocked";
+  if (!layer.visible) return "selectionBar.fillHidden";
   if (terrainOwnerOf(doc, layer.id)) return "selectionBar.fillDerived";
   if (isGridLayer(layer)) {
     if (layer.role === "collision") return s.gridValue === COLLISION_SOLID || s.gridValue === COLLISION_PASSABLE ? null : "selectionBar.fillNoBrush";

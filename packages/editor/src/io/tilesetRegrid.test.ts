@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { LevelWorkspace } from "./levelWorkspace";
 import { MemoryFileSystem } from "./memoryFs";
 import { defaultLevels } from "./projectIo";
-import { gridKey, loadAllLevels, remapStamp, remapStamps, sameGrid, syncLevelGrids } from "./tilesetRegrid";
+import { gridKey, loadAllLevels, remapBrush, remapStamp, remapStamps, sameGrid, syncLevelGrids } from "./tilesetRegrid";
+import { clipFromTileset } from "@smap/core";
 
 /** 96 × 64 px image cut in 16 px tiles: 6 × 4. */
 const dungeon: Tileset = {
@@ -185,5 +186,55 @@ describe("project-wide grid edit", () => {
     const { fs, ws } = await project();
     fs.files.delete("levels/zindan.json");
     expect(await loadAllLevels(ws, fs)).toEqual(["Zindan"]);
+  });
+});
+
+describe("remapBrush (the brush follows a grid edit)", () => {
+  // Bug: after "Tileset ayarları" 16 → 32 px the brush kept tile id 2 / 4 of the old grid
+  // and painted other pixels (or, for ids beyond the new grid, silently nothing).
+  it("moves the selected tile, random set, brush stamp and recent strip by pixel position", () => {
+    const clip = clipFromTileset(dungeon, [{ col: 2, row: 0 }, { col: 4, row: 0 }])!;
+    const refs = {
+      selection: { tilesetId: "dungeon", tileId: 2 },
+      randomSet: [
+        { tilesetId: "dungeon", tileId: 2 },
+        { tilesetId: "dungeon", tileId: 3 },
+        { tilesetId: "other", tileId: 7 },
+      ],
+      stamp: clip,
+      recentTiles: [
+        { tilesetId: "dungeon", tileId: 4 },
+        { tilesetId: "dungeon", tileId: 5 },
+        { tilesetId: "other", tileId: 1 },
+        { tilesetId: "dungeon", tileId: 2 },
+      ],
+    };
+    const r = remapBrush(refs, "dungeon", dungeon, as32);
+    expect(r.selection).toEqual({ tilesetId: "dungeon", tileId: 1 });
+    expect(r.randomSet).toEqual([
+      { tilesetId: "dungeon", tileId: 1 },
+      { tilesetId: "other", tileId: 7 },
+    ]);
+    expect(r.stamp!.palette).toEqual([
+      { tilesetId: "dungeon", tileId: 1 },
+      { tilesetId: "dungeon", tileId: 2 },
+    ]);
+    expect(r.recentTiles).toEqual([
+      { tilesetId: "dungeon", tileId: 2 },
+      { tilesetId: "other", tileId: 1 },
+      { tilesetId: "dungeon", tileId: 1 },
+    ]);
+  });
+
+  it("drops what maps nowhere; a saved stamp is taken from the library by id", () => {
+    const saved: Stamp = { id: "ev", name: "Ev", ...clipFromTileset(dungeon, [{ col: 3, row: 0 }, { col: 2, row: 0 }])! };
+    const library: Stamp[] = [{ ...saved, palette: [{ tilesetId: "dungeon", tileId: 1 }] }];
+    const r = remapBrush({ selection: { tilesetId: "dungeon", tileId: 3 }, randomSet: [], stamp: saved, recentTiles: [] }, "dungeon", dungeon, as32, library);
+    expect(r.selection).toBeNull();
+    expect(r.stamp).toBe(library[0]);
+    const lone = clipFromTileset(dungeon, [{ col: 3, row: 0 }, { col: 5, row: 0 }])!;
+    expect(remapBrush({ selection: null, randomSet: [], stamp: lone, recentTiles: [] }, "dungeon", dungeon, as32).stamp).toBeNull();
+    // Nothing of that tileset: nothing changes.
+    expect(remapBrush({ selection: { tilesetId: "x", tileId: 3 }, randomSet: [], stamp: null, recentTiles: [] }, "dungeon", dungeon, as32)).toEqual({});
   });
 });

@@ -728,6 +728,7 @@ export const tr = {
     fillNoLayer: "Önce bir katman seç",
     fillEntity: "Entity katmanı doldurulamaz",
     fillLocked: "Katman kilitli",
+    fillHidden: "Katman gizli; önce göster",
     fillDerived: "Bu katman araziden otomatik gelir; arazi katmanını seç",
     fillNoBrush: "Doldurmak için önce bir tile seç",
     fillNoTerrain: "Doldurmak için önce bir arazi seç",
