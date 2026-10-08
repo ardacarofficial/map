@@ -44,6 +44,8 @@ export class MapThumbnail {
   /** Palette index → k×k block (`null` = not drawable). */
   #blocks: (Uint8ClampedArray | null)[] = [];
   #scratch: HTMLCanvasElement | null = null;
+  /** Reused chunk image (one per k). */
+  #image: ImageData | null = null;
   /** Bumps whenever pixels change. */
   version = 0;
   /** Bumps when the canvas is resized (textures must be recreated). */
@@ -166,9 +168,10 @@ export class MapThumbnail {
       return;
     }
     const k = this.#k;
-    const px = compositeChunk(inputs, k, (i) => this.#block(i));
     const side = CHUNK_SIZE * k;
-    const image = new ImageData(px as Uint8ClampedArray<ArrayBuffer>, side, side);
+    if (this.#image?.width !== side) this.#image = new ImageData(side, side);
+    const image = this.#image;
+    compositeChunk(inputs, k, (i) => this.#block(i), image.data);
     if (this.#scale >= 1) {
       // Integer scale: chunk edges are exact; putImageData clips at the canvas edge.
       ctx.putImageData(image, cx * side, cy * side);

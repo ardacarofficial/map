@@ -6,6 +6,11 @@
  * - A chunk is rebuilt only when a store change event lists it as dirty, or
  *   when a tileset image it uses (re)arrives. A dirty key whose chunk no
  *   longer exists destroys the view.
+ * - Meshes are built lazily: a dirty (or never built) chunk is built by
+ *   {@link MapScene.flush} only once it is inside the visible range of a
+ *   visible layer. Opening a 1024×1024 map therefore builds the ~12–50
+ *   chunks on screen, not all 4096; a fill over the whole map rebuilds only
+ *   what is seen, the rest when it scrolls into view.
  * - Chunks outside the view are hidden (cheap manual culling).
  * - Grid and entity layers get an empty view: they are not tiles.
  */
@@ -54,7 +59,10 @@ export class MapScene {
   #nextGroup = 0;
   /** Palette index → quad source; `null` = resolved as not drawable. Cleared when atlases change. */
   #resolved: (QuadSource | null)[] = [];
+  /** Chunks whose mesh is missing or out of date, per layer (built when visible). */
   readonly #dirty = new Map<string, Set<ChunkKey>>();
+  /** Visible chunk range from the last {@link updateVisibility} (inclusive), or null before the first. */
+  #range: { cx0: number; cy0: number; cx1: number; cy1: number } | null = null;
   readonly #images: ImageLookup;
   readonly #unsubscribe: () => void;
   readonly #onChange: () => void;
@@ -112,17 +120,35 @@ export class MapScene {
     return this.#dirty.size > 0;
   }
 
-  /** Rebuilds every dirty chunk. Call once per frame before rendering. */
+  /**
+   * Rebuilds the dirty chunks inside the visible range of visible layers
+   * (and drops views of chunks that no longer exist). Call once per frame
+   * after {@link updateVisibility}, before rendering. Others stay dirty
+   * until they are scrolled into view; nothing is built while the tile
+   * layers are hidden (far-zoom LOD).
+   */
   flush(): void {
-    if (this.#dirty.size === 0) return;
+    if (this.#dirty.size === 0 || !this.#layers.visible) return;
+    const range = this.#range;
+    if (!range) return;
     const doc = this.store.document;
     for (const [layerId, keys] of this.#dirty) {
       const layer = doc.getLayer(layerId);
       const view = this.#views.get(layerId);
-      if (!layer || !view) continue;
-      for (const key of keys) this.#rebuildChunk(layer, view, key);
+      if (!layer || !view || !isTileLayer(layer)) {
+        // Grid layers are not drawn here (see #rebuildChunk).
+        this.#dirty.delete(layerId);
+        continue;
+      }
+      const shown = layer.visible && layer.opacity > 0;
+      for (const key of keys) {
+        const chunk = layer.getChunkByKey(key);
+        if (chunk && !(shown && chunk.cx >= range.cx0 && chunk.cx <= range.cx1 && chunk.cy >= range.cy0 && chunk.cy <= range.cy1)) continue;
+        this.#rebuildChunk(layer, view, key);
+        keys.delete(key);
+      }
+      if (keys.size === 0) this.#dirty.delete(layerId);
     }
-    this.#dirty.clear();
   }
 
   /** Syncs layer visibility/opacity and hides chunks outside the visible cell range. */
@@ -131,6 +157,7 @@ export class MapScene {
     const cy0 = Math.floor(y0 / CHUNK_SIZE);
     const cx1 = Math.floor((x1 - 1) / CHUNK_SIZE);
     const cy1 = Math.floor((y1 - 1) / CHUNK_SIZE);
+    this.#range = { cx0, cy0, cx1, cy1 };
     for (const layer of this.store.document.layers) {
       const view = this.#views.get(layer.id);
       if (!view) continue;
@@ -168,7 +195,10 @@ export class MapScene {
       for (const ts of this.store.document.tilesets) this.#ensureAtlas(ts.id);
       changed = true;
     }
-    if (e.structure.includes("layers")) this.#syncLayers();
+    if (e.structure.includes("layers")) {
+      this.#syncLayers();
+      changed = true;
+    }
     if (e.structure.includes("map")) {
       // Resize: bounds changed, cells outside were dropped. Rare → rebuild everything.
       this.#drawBackground();
@@ -184,11 +214,31 @@ export class MapScene {
     this.#background.clear().rect(0, 0, width * tileWidth, height * tileHeight).fill(CANVAS_COLORS.mapBackground);
   }
 
+  #inRange(layer: TileLayer, key: ChunkKey): boolean {
+    const r = this.#range;
+    if (!r || !this.#layers.visible || !layer.visible || layer.opacity <= 0) return false;
+    const { cx, cy } = parseChunkKey(key);
+    return cx >= r.cx0 && cx <= r.cx1 && cy >= r.cy0 && cy <= r.cy1;
+  }
+
+  #markDirty(layerId: string, key: ChunkKey): void {
+    let set = this.#dirty.get(layerId);
+    if (!set) this.#dirty.set(layerId, (set = new Set()));
+    set.add(key);
+  }
+
   #rebuildLayer(view: LayerView): void {
     for (const c of view.chunks.values()) destroyChunkView(c);
     view.chunks.clear();
-    this.#dirty.delete(view.layer.id);
-    for (const chunk of view.layer.chunks()) this.#rebuildChunk(view.layer, view, chunk.key);
+    this.#markAll(view.layer);
+  }
+
+  /** Marks every chunk of `layer` as needing a mesh (built when it becomes visible). */
+  #markAll(layer: TileLayer): void {
+    const keys = new Set<ChunkKey>();
+    for (const chunk of layer.chunks()) keys.add(chunk.key);
+    if (keys.size > 0) this.#dirty.set(layer.id, keys);
+    else this.#dirty.delete(layer.id);
   }
 
   #ensureAtlas(tilesetId: string): void {
@@ -219,7 +269,15 @@ export class MapScene {
       if (!view) continue;
       // Snapshot: #rebuildChunk re-inserts keys, which a live Map iteration would visit again.
       const keys = [...view.chunks].filter(([, c]) => c.tilesets.has(tilesetId)).map(([key]) => key);
-      for (const key of keys) this.#rebuildChunk(layer, view, key);
+      for (const key of keys) {
+        if (this.#inRange(layer, key)) this.#rebuildChunk(layer, view, key);
+        else {
+          // Off screen: drop the mesh now (the old atlas goes away), rebuild when seen.
+          destroyChunkView(view.chunks.get(key)!);
+          view.chunks.delete(key);
+          this.#markDirty(layer.id, key);
+        }
+      }
     }
     if (old) {
       for (let i = 0; i < old.atlas.pages.length; i++) this.#groupTextures.delete(old.groupBase + i);
@@ -242,7 +300,7 @@ export class MapScene {
       if (!view) {
         view = { layer, container: new Container(), chunks: new Map() };
         this.#views.set(layer.id, view);
-        for (const chunk of layer.chunks()) this.#rebuildChunk(layer, view, chunk.key);
+        this.#markAll(layer);
       }
       this.#layers.addChildAt(view.container, Math.min(index, this.#layers.children.length));
     });

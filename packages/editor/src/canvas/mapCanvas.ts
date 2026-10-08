@@ -774,7 +774,6 @@ export class MapCanvas {
       return;
     }
 
-    this.#scene?.flush();
     const off = snappedOffset(cam.camera, cam.resolution);
     this.#world.position.set(off.x, off.y);
     this.#world.scale.set(cam.camera.zoom);
@@ -785,6 +784,8 @@ export class MapCanvas {
       this.#visible = visible;
     }
     this.#updateLod();
+    // After visibility and LOD: builds only the dirty chunks that are on screen.
+    this.#scene?.flush();
     this.#updateGridOverlays();
     this.#input.updateHover();
     this.#updateHoverEntity();

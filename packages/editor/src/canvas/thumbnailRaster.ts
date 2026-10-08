@@ -62,43 +62,97 @@ export interface ChunkLayerInput {
   readonly opacity: number;
 }
 
+/** Blocks whose pixels are all fully opaque (cached per block array). */
+const opaqueBlocks = new WeakMap<Uint8ClampedArray, boolean>();
+
+function isOpaque(px: Uint8ClampedArray): boolean {
+  let o = opaqueBlocks.get(px);
+  if (o === undefined) {
+    o = true;
+    for (let i = 3; i < px.length; i += 4) {
+      if (px[i] !== 255) {
+        o = false;
+        break;
+      }
+    }
+    opaqueBlocks.set(px, o);
+  }
+  return o;
+}
+
+/** Reused accumulation buffer (one chunk at a time; JS is single-threaded). */
+let accBuffer = new Float32Array(0);
+
 /**
  * Composites one chunk at `k` px per cell, bottom layer first ("over"
  * blending with layer opacity). `block(paletteIndex)` gives the tile's k×k
  * pixels (undefined = not drawable). Horizontal / vertical flips are
  * honoured (like the chunk meshes, the diagonal flip is not drawn).
- * Returns straight-alpha RGBA of (32k)×(32k) px.
+ * Returns straight-alpha RGBA of (32k)×(32k) px, written into `out` when
+ * given (it must hold exactly that many bytes).
+ *
+ * Per cell, layers below the topmost fully opaque tile (at full layer
+ * opacity) are skipped: they cannot show through.
  */
 export function compositeChunk(
   layers: readonly ChunkLayerInput[],
   k: number,
   block: (paletteIndex: number) => Uint8ClampedArray | undefined,
+  out?: Uint8ClampedArray,
 ): Uint8ClampedArray {
   const side = CHUNK_SIZE * k;
+  const size = side * side * 4;
+  if (accBuffer.length < size) accBuffer = new Float32Array(size);
   // Premultiplied accumulation.
-  const acc = new Float32Array(side * side * 4);
+  const acc = accBuffer;
+  acc.fill(0, 0, size);
+  const used: { data: ArrayLike<number>; op: number; n: number }[] = [];
   for (const layer of layers) {
     const data = layer.data;
     if (!data || layer.opacity <= 0) continue;
-    const op = Math.min(1, layer.opacity);
-    const n = Math.min(data.length, CHUNK_SIZE * CHUNK_SIZE);
-    for (let i = 0; i < n; i++) {
-      const cell = data[i]! >>> 0;
-      if (cell === 0) continue;
-      const px = block(cell & CELL_INDEX_MASK);
+    used.push({ data, op: Math.min(1, layer.opacity), n: Math.min(data.length, CHUNK_SIZE * CHUNK_SIZE) });
+  }
+  const pxs: (Uint8ClampedArray | undefined)[] = new Array<Uint8ClampedArray | undefined>(used.length);
+  const cellFlags: number[] = new Array<number>(used.length);
+  for (let i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++) {
+    // Topmost opaque tile: compositing starts there.
+    let from = 0;
+    for (let l = used.length - 1; l >= 0; l--) {
+      const u = used[l]!;
+      const cell = i < u.n ? u.data[i]! >>> 0 : 0;
+      const px = cell === 0 ? undefined : block(cell & CELL_INDEX_MASK);
+      pxs[l] = px;
+      cellFlags[l] = cell;
+      if (px && u.op >= 1 && isOpaque(px)) {
+        from = l;
+        break;
+      }
+    }
+    const ox = (i & (CHUNK_SIZE - 1)) * k;
+    const oy = (i >> CHUNK_SHIFT) * k;
+    for (let l = from; l < used.length; l++) {
+      const px = pxs[l];
       if (!px) continue;
+      const op = used[l]!.op;
+      const cell = cellFlags[l]!;
       const fh = (cell & FLIP_H) !== 0;
       const fv = (cell & FLIP_V) !== 0;
-      const ox = (i & (CHUNK_SIZE - 1)) * k;
-      const oy = (i >> CHUNK_SHIFT) * k;
+      const solid = l === from && op >= 1 && isOpaque(px);
       for (let y = 0; y < k; y++) {
         const sy = fv ? k - 1 - y : y;
-        for (let x = 0; x < k; x++) {
+        let d = ((oy + y) * side + ox) * 4;
+        for (let x = 0; x < k; x++, d += 4) {
           const sx = fh ? k - 1 - x : x;
           const s = (sy * k + sx) * 4;
+          if (solid) {
+            acc[d] = px[s]!;
+            acc[d + 1] = px[s + 1]!;
+            acc[d + 2] = px[s + 2]!;
+            acc[d + 3] = 1;
+            continue;
+          }
           const sa = (px[s + 3]! / 255) * op;
           if (sa <= 0) continue;
-          const d = ((oy + y) * side + ox + x) * 4;
           const keep = 1 - sa;
           acc[d] = px[s]! * sa + acc[d]! * keep;
           acc[d + 1] = px[s + 1]! * sa + acc[d + 1]! * keep;
@@ -108,14 +162,15 @@ export function compositeChunk(
       }
     }
   }
-  const out = new Uint8ClampedArray(side * side * 4);
-  for (let d = 0; d < out.length; d += 4) {
+  const result = out ?? new Uint8ClampedArray(size);
+  if (out) out.fill(0);
+  for (let d = 0; d < size; d += 4) {
     const a = acc[d + 3]!;
     if (a <= 0) continue;
-    out[d] = acc[d]! / a;
-    out[d + 1] = acc[d + 1]! / a;
-    out[d + 2] = acc[d + 2]! / a;
-    out[d + 3] = a * 255;
+    result[d] = acc[d]! / a;
+    result[d + 1] = acc[d + 1]! / a;
+    result[d + 2] = acc[d + 2]! / a;
+    result[d + 3] = a * 255;
   }
-  return out;
+  return result;
 }

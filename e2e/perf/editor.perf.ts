@@ -181,7 +181,7 @@ async function setCamera(page: Page, cellX: number, cellY: number, zoom: number)
   await page.evaluate(
     ({ cellX, cellY, zoom }) => {
       const hook = (window as unknown as { __smap: { setCamera(x: number, y: number, z: number): void } }).__smap;
-      const canvas = document.querySelector("canvas[aria-label='map canvas']")!;
+      const canvas = document.querySelector("canvas[data-perf-main]")!;
       const r = canvas.getBoundingClientRect();
       hook.setCamera(r.width / 2 - cellX * 32 * zoom, r.height / 2 - cellY * 32 * zoom, zoom);
     },
@@ -191,18 +191,24 @@ async function setCamera(page: Page, cellX: number, cellY: number, zoom: number)
 }
 
 /** Per input that changed the document: event time → end of the first frame that started after its handler. */
-function inputLatencies(list: InputRecord[], fr: Frame[]): { latency: number[]; handler: number[]; coalesced: number[] } {
+function inputLatencies(list: InputRecord[], fr: Frame[]): { latency: number[]; handler: number[]; coalesced: number[]; js: number[]; queue: number[] } {
   const latency: number[] = [];
   const handler: number[] = [];
   const coalesced: number[] = [];
+  const js: number[] = [];
+  const queue: number[] = [];
   for (const i of list) {
     if (i.handlerEnd < 0 || i.revAfter <= i.revBefore) continue;
     handler.push(i.handlerEnd - i.capture);
     coalesced.push(i.coalesced);
     const f = fr.find((f) => f.start >= i.handlerEnd && f.revision >= i.revAfter);
-    if (f) latency.push(f.end - i.t);
+    queue.push(i.capture - i.t);
+    if (!f) continue;
+    latency.push(f.end - i.t);
+    // CPU work this input costs on the main thread: its handler + the frame that shows it.
+    js.push(i.handlerEnd - i.capture + (f.end - f.start));
   }
-  return { latency, handler, coalesced };
+  return { latency, handler, coalesced, js, queue };
 }
 
 /** Event time → end of the first frame showing revision ≥ `rev`. */
@@ -332,8 +338,15 @@ test("editor perf", async ({ browser }) => {
   // One page for (c)–(g).
   const { page, cdp, close } = await newPage(browser);
   await openRun(page, cdp, null);
-  const canvas = page.locator("canvas[aria-label='map canvas']").first();
+  // The tileset panel's preview canvas shares the label: the map canvas is the largest.
+  await page.evaluate(() => {
+    const all = Array.from(document.querySelectorAll("canvas[aria-label='map canvas']"));
+    const area = (c: Element) => c.getBoundingClientRect().width * c.getBoundingClientRect().height;
+    all.sort((a, b) => area(b) - area(a))[0]!.setAttribute("data-perf-main", "");
+  });
+  const canvas = page.locator("canvas[data-perf-main]");
   const box = (await canvas.boundingBox())!;
+  if (process.env.PERF_DEBUG) console.log("box", JSON.stringify(box));
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   const heapOpen = await heapMb(cdp);
@@ -383,12 +396,12 @@ test("editor perf", async ({ browser }) => {
   });
   for (const zoom of want("c") ? [1, 0.25] : []) {
     await setCamera(page, 512, 512, zoom);
-    const strokes: { latency: number[]; handler: number[]; coalesced: number[] } = { latency: [], handler: [], coalesced: [] };
+    const strokes: { latency: number[]; handler: number[]; coalesced: number[]; js: number[]; queue: number[] } = { latency: [], handler: [], coalesced: [], js: [], queue: [] };
     const fr: Frame[] = [];
     if (zoom === 1) await startProfile(cdp);
     for (const [steps, dx] of [
-      [80, 600],
-      [12, 600],
+      [80, 480],
+      [12, 480],
     ] as const) {
       for (let k = 0; k < 3; k++) {
         await page.mouse.move(cx - dx, cy - 250 + k * 60);
@@ -413,12 +426,17 @@ test("editor perf", async ({ browser }) => {
         strokes.latency.push(...l.latency);
         strokes.handler.push(...l.handler);
         strokes.coalesced.push(...l.coalesced);
+        strokes.js.push(...l.js);
+        strokes.queue.push(...l.queue);
         fr.push(...(await frames(page)));
       }
     }
     if (zoom === 1) await stopProfile(cdp, "brush", results);
     await resetLog(page, false);
     const s = frameStats(fr.filter((f) => f.end - f.start >= 0));
+    put(`c.brush @${zoom * 100}% JS per input (handler+frame) p50`, median(strokes.js));
+    put(`c.brush @${zoom * 100}% JS per input (handler+frame) p95`, percentile(strokes.js, 95));
+    put(`c.brush @${zoom * 100}% input dispatch delay p50`, median(strokes.queue));
     put(`c.brush @${zoom * 100}% input→frame p50`, median(strokes.latency));
     put(`c.brush @${zoom * 100}% input→frame p95`, percentile(strokes.latency, 95));
     put(`c.brush @${zoom * 100}% handler p95`, percentile(strokes.handler, 95));
