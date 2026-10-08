@@ -31,6 +31,7 @@ import {
   isGridLayer,
   isTileLayer,
   makeCell,
+  moveRegion,
   pasteClip,
   patchCellCount,
   placeStamp,
@@ -44,20 +45,48 @@ import {
 } from "@smap/core";
 
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
-import { useEditorStore, type CellRegion, type TileSelection } from "../state/editorStore";
+import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
 import { isRecentStamp, recentOfClip } from "../state/recentItems";
 import { cellWrites, strokeCells } from "./brush";
 import type { Point } from "./camera";
-import { gridPickEvent, pickEvent, recentTileOf, strokeSummary, type CanvasPickEvent, type StrokeSummary, type StrokeTool } from "./canvasEvents";
+import {
+  gridPickEvent,
+  pickEvent,
+  recentTileOf,
+  strokeSummary,
+  type BlockedAction,
+  type CanvasContextRequest,
+  type CanvasPickEvent,
+  type StrokeSummary,
+  type StrokeTool,
+} from "./canvasEvents";
 import type { CameraController } from "./cameraController";
 import { dragPosition, type WorldPoint } from "./entityLogic";
 import type { EntityRenderer } from "./entityRenderer";
 import { brushFootprint, constrainRect, footprintCells, type RectModifiers } from "./footprint";
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
-import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
+import { activeLayer, isDerivedLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { isRandomBrush, randomCellPicker } from "./randomPaint";
-import { decidePick, dragRegion, isEditable, isGridEditable, isPaintable, patternCell, patternLayerIndex, regionContains, stampOrigins } from "./tools";
+import {
+  blockedReason,
+  decidePick,
+  dragRegion,
+  isEditable,
+  isEmptyGridPick,
+  isGridEditable,
+  isPaintable,
+  moveOffset,
+  movedRegion,
+  patternCell,
+  patternLayerIndex,
+  regionContains,
+  rightPressAction,
+  rightReleaseAction,
+  stampOrigins,
+  type LayerState,
+  type RightPress,
+} from "./tools";
 
 /** A pointer interaction in progress (left or right button). */
 export type Gesture =
@@ -104,7 +133,31 @@ export type Gesture =
       fromCenter: boolean;
     }
   | { readonly kind: "select"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint; moved: boolean }
-  | { readonly kind: "pick"; readonly pointerId: number; readonly button: number; readonly start: CellPoint; end: CellPoint }
+  | {
+      readonly kind: "pick";
+      readonly pointerId: number;
+      readonly button: number;
+      readonly start: CellPoint;
+      end: CellPoint;
+      /** Right press: what it asks for (menu presses turn into a pick / nothing when dragged). */
+      readonly press?: RightPress;
+      /** Entity under a right press on an entity layer. */
+      readonly entityId?: string | undefined;
+      /** Client (page) position of the press, for a context menu. */
+      readonly client?: Point;
+    }
+  | {
+      /** Select tool: the selection's content is dragged (live, rolled back and redone per cell). */
+      readonly kind: "move";
+      readonly pointerId: number;
+      readonly store: MapStore;
+      readonly layerId: string;
+      /** The selection when the drag started. */
+      readonly region: CellRegion;
+      readonly grab: CellPoint;
+      dx: number;
+      dy: number;
+    }
   | {
       readonly kind: "entity";
       readonly pointerId: number;
@@ -137,6 +190,20 @@ export interface ToolHost {
   strokeCommitted?(summary: StrokeSummary): void;
   /** Briefly outline `region` (pick feedback). */
   flash?(region: CellRegion): void;
+  /** A left press could not do anything on the active layer (see `blockedReason`). */
+  blocked?(action: BlockedAction): void;
+  /** A right click asks for a context menu (entity / selection). */
+  contextRequest?(request: CanvasContextRequest): void;
+}
+
+/** Tool view of a layer for {@link blockedReason}. */
+export function layerState(layer: TileLayer, doc: { readonly layers: readonly TileLayer[] } | undefined): LayerState {
+  return {
+    kind: isEntityLayer(layer) ? "entity" : isGridLayer(layer) ? "grid" : "tile",
+    visible: layer.visible,
+    locked: layer.locked,
+    derived: !!doc && isDerivedLayer(doc as Parameters<typeof isDerivedLayer>[0], layer.id),
+  };
 }
 
 /** Map region of a rectangle gesture (modifiers applied), clipped to the map. */
@@ -214,7 +281,7 @@ export class ToolController {
   pointerDown(e: PointerEvent, cell: CellPoint): void {
     if (e.button === 2) {
       e.preventDefault();
-      this.#start({ kind: "pick", pointerId: e.pointerId, button: 2, start: cell, end: cell });
+      this.#rightDown(e, cell);
       return;
     }
     if (e.button !== 0) return;
@@ -222,11 +289,17 @@ export class ToolController {
     const s = useEditorStore.getState();
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
+    if (this.#reportBlocked(s.tool)) return;
     if ((s.tool === "entity" || s.tool === "select") && isEntityLayer(active)) {
       if (this.#entityDown(e, cell) || s.tool === "entity") {
         this.#host.requestRender();
         return;
       }
+    }
+    if (s.tool === "select" && s.region && regionContains(s.region, cell)) {
+      this.#beginMove(e, s.region, cell);
+      this.#host.requestRender();
+      return;
     }
     switch (s.tool) {
       case "brush":
@@ -270,6 +343,8 @@ export class ToolController {
       this.#paint(events.length > 0 ? events : [e]);
     } else if (g.kind === "entity") {
       this.#dragEntity(g);
+    } else if (g.kind === "move") {
+      this.#dragMove(g);
     } else {
       if (g.kind === "rect") this.setModifiers(e.shiftKey, e.altKey);
       const cell = this.#host.pointerCell();
@@ -288,6 +363,7 @@ export class ToolController {
     if (!released(e, button)) return;
     if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
     else if (g.kind === "entity") this.#dragEntity(g);
+    else if (g.kind === "move") this.#dragMove(g);
     else {
       if (g.kind === "rect") this.setModifiers(e.shiftKey, e.altKey);
       const cell = this.#host.pointerCell();
@@ -299,7 +375,7 @@ export class ToolController {
   /** Rectangle, marquee and pick drags can be cancelled (Esc, right click); strokes only by Esc. */
   isCancelable(): boolean {
     const g = this.#gesture;
-    return !!g && (g.kind === "rect" || g.kind === "select" || g.kind === "entity" || (g.kind === "pick" && g.button === 0));
+    return !!g && (g.kind === "rect" || g.kind === "select" || g.kind === "entity" || g.kind === "move" || (g.kind === "pick" && g.button === 0));
   }
 
   /** Ends without applying drags; keeps what a stroke already painted (lost capture, project change). */
@@ -307,9 +383,10 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) {
+    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) {
       g.store.commit();
-      if (g.kind !== "entity") this.#strokeDone(g);
+      if (g.kind === "move") this.#moveDone(g);
+      else if (g.kind !== "entity") this.#strokeDone(g);
     }
     this.#host.release(g.pointerId);
     this.#host.requestRender();
@@ -320,7 +397,7 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) g.store.rollback();
+    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) g.store.rollback();
     this.#host.release(g.pointerId);
     this.#host.requestRender();
   }
@@ -349,6 +426,12 @@ export class ToolController {
       case "entity":
         if (g.store.inTransaction) g.store.commit();
         break;
+      case "move":
+        if (g.store.inTransaction) {
+          g.store.commit();
+          this.#moveDone(g);
+        }
+        break;
       case "rect": {
         const map = this.#host.scene?.store.document.map;
         const r = map ? rectGestureRegion(g, map) : null;
@@ -359,7 +442,7 @@ export class ToolController {
         this.#finishSelect(g.start, g.end, g.moved);
         break;
       case "pick":
-        this.#finishPick(g.start, g.end);
+        this.#finishRight(g);
         break;
     }
     this.#host.release(g.pointerId);
@@ -615,13 +698,13 @@ export class ToolController {
     // On a grid layer a single-cell pick takes the painted value.
     const active = this.#activeLayer();
     if (isGridLayer(active) && r.width === 1 && r.height === 1) {
+      // An empty grid cell picks nothing (not the tiles under it); drag for an area.
+      if (isEmptyGridPick(r, (x, y) => active.getCell(x, y))) return;
       const value = active.getCell(r.x, r.y);
-      if (value !== 0) {
-        s.setGridValue(value);
-        switchTool();
-        this.#picked(gridPickEvent(value, r));
-        return;
-      }
+      s.setGridValue(value);
+      switchTool();
+      this.#picked(gridPickEvent(value, r));
+      return;
     }
     const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i));
     if (result.kind === "none") return;
@@ -774,6 +857,120 @@ export class ToolController {
     }
     g.count += changed;
     if (changed > 0) this.#markDirty();
+  }
+
+  // ------------------------------------------------------------------ blocked, right click
+
+  /** Emits a blocked action (and returns true) when `tool` cannot act on the active layer. */
+  #reportBlocked(tool: ToolId | "move"): boolean {
+    const layer = this.#activeLayer();
+    const doc = this.#host.scene?.store.document;
+    if (!layer || !doc) return false;
+    const s = useEditorStore.getState();
+    const reason = blockedReason(tool, layerState(layer, doc), tool === "brush" && savedStamp(s.stamp) !== null);
+    if (!reason) return false;
+    this.#host.blocked?.({ reason, layerId: layer.id });
+    this.#host.requestRender();
+    return true;
+  }
+
+  /** Right press: pick, or a context menu request on release (entity / selection). */
+  #rightDown(e: PointerEvent, cell: CellPoint): void {
+    const s = useEditorStore.getState();
+    const layer = this.#activeLayer();
+    let entityId: string | undefined;
+    if (isEntityLayer(layer) && layer.visible) entityId = this.#host.entities.hitTest(layer, this.#host.toLocal(e))?.id;
+    const press = rightPressAction({
+      layer: layer ? layerState(layer, undefined).kind : null,
+      tool: s.tool,
+      inRegion: regionContains(s.region, cell),
+      entityHit: entityId !== undefined,
+    });
+    if (press === "none") return;
+    this.#start({ kind: "pick", pointerId: e.pointerId, button: 2, start: cell, end: cell, press, entityId, client: { x: e.clientX, y: e.clientY } });
+  }
+
+  /** Release of a pick gesture (right button or eyedropper). */
+  #finishRight(g: Extract<Gesture, { kind: "pick" }>): void {
+    const moved = g.start.x !== g.end.x || g.start.y !== g.end.y;
+    const action = rightReleaseAction(g.press ?? "pick", moved);
+    const client = g.client ?? { x: 0, y: 0 };
+    if (action === "pick") this.#finishPick(g.start, g.end);
+    else if (action === "entityMenu" && g.entityId) {
+      const s = useEditorStore.getState();
+      if (s.selectedEntityId !== g.entityId) s.setSelectedEntity(g.entityId);
+      this.#host.contextRequest?.({ kind: "entity", entityId: g.entityId, x: client.x, y: client.y });
+    } else if (action === "selectionMenu") {
+      this.#host.contextRequest?.({ kind: "selection", x: client.x, y: client.y });
+    }
+  }
+
+  // ------------------------------------------------------------------ selection move
+
+  /** Select tool, press inside the selection: drag its content (active layer). */
+  #beginMove(e: PointerEvent, region: CellRegion, cell: CellPoint): void {
+    const store = this.#host.scene?.store;
+    const layer = this.#activeLayer();
+    if (!store || !layer || this.#reportBlocked("move")) return;
+    store.beginTransaction();
+    this.#start({ kind: "move", pointerId: e.pointerId, store, layerId: layer.id, region: { ...region }, grab: cell, dx: 0, dy: 0 });
+  }
+
+  /** Redoes the move for the cell under the pointer (the open transaction is rolled back first). */
+  #dragMove(g: Extract<Gesture, { kind: "move" }>): void {
+    const cell = this.#host.pointerCell();
+    if (!cell) return;
+    const map = g.store.document.map;
+    const off = moveOffset(g.region, g.grab, cell, map);
+    if (off.x === g.dx && off.y === g.dy) return;
+    g.dx = off.x;
+    g.dy = off.y;
+    if (g.store.inTransaction) g.store.rollback();
+    g.store.beginTransaction();
+    if (g.dx === 0 && g.dy === 0) return;
+    try {
+      moveRegion(g.store, [g.layerId], g.region, g.dx, g.dy);
+    } catch (error) {
+      console.error("[canvas] move failed", error);
+      this.cancel();
+      return;
+    }
+    this.#markDirty();
+    this.#host.requestRender();
+  }
+
+  /** After a move's commit: the selection follows its content. */
+  #moveDone(g: Extract<Gesture, { kind: "move" }>): void {
+    if (g.dx === 0 && g.dy === 0) return;
+    const map = g.store.document.map;
+    useEditorStore.getState().setRegion(movedRegion(g.region, g.dx, g.dy, map));
+  }
+
+  /**
+   * Arrow keys with the select tool: moves the selection's content by
+   * (`dx`, `dy`) cells on the active layer as one undo step. False when
+   * there is nothing to move (no selection, a gesture running, blocked).
+   */
+  nudgeSelection(dx: number, dy: number): boolean {
+    const s = useEditorStore.getState();
+    const store = this.#host.scene?.store;
+    const layer = this.#activeLayer();
+    const region = s.region;
+    if (this.#gesture || s.tool !== "select" || !region || !store || !layer) return false;
+    if (this.#reportBlocked("move")) return true;
+    const map = store.document.map;
+    const off = moveOffset(region, { x: 0, y: 0 }, { x: dx, y: dy }, map);
+    if (off.x === 0 && off.y === 0) return true;
+    try {
+      moveRegion(store, [layer.id], region, off.x, off.y);
+    } catch (error) {
+      console.error("[canvas] move failed", error);
+      return true;
+    }
+    this.#markDirty();
+    s.setRegion(movedRegion(region, off.x, off.y, map));
+    this.#host.requestRender();
+    return true;
   }
 
   // ------------------------------------------------------------------ entities

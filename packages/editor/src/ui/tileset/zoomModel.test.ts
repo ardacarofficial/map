@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { anchoredScroll, fitScale, MAX_FIT_SCALE, stepZoom, wheelIntent, zoomLabel } from "./zoomModel";
+import { classifyWheel } from "../../canvas/brush";
+
+import { accumulateWheelZoom, anchoredScroll, fitScale, MAX_FIT_SCALE, stepZoom, tilesetWheel, zoomLabel } from "./zoomModel";
 
 describe("tileset zoom", () => {
   it("fit prefers a whole-number scale", () => {
@@ -49,12 +51,42 @@ describe("tileset zoom", () => {
     expect(zoomLabel(57 / 32)).toBe("178%");
   });
 
-  it("wheel scrolls, Shift + wheel scrolls sideways, Ctrl / Cmd + wheel (and pinch) zooms", () => {
-    const plain = { ctrlKey: false, metaKey: false, shiftKey: false };
-    expect(wheelIntent(plain)).toBe("native");
-    expect(wheelIntent({ ...plain, shiftKey: true })).toBe("scroll-x");
-    expect(wheelIntent({ ...plain, ctrlKey: true })).toBe("zoom");
-    expect(wheelIntent({ ...plain, metaKey: true })).toBe("zoom");
-    expect(wheelIntent({ ...plain, ctrlKey: true, shiftKey: true })).toBe("zoom");
+  it("wheel follows the map: mouse notch zooms, Shift scrolls sideways, trackpad pans, pinch / Ctrl zooms", () => {
+    const base = { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, shiftKey: false };
+    for (const e of [
+      { ...base, deltaY: 100 },
+      { ...base, deltaY: 3, deltaMode: 1 },
+      { ...base, deltaY: 2.5, ctrlKey: true },
+      { ...base, deltaY: -120, metaKey: true },
+      { ...base, deltaX: 2, deltaY: 1 },
+      { ...base, deltaY: 4 },
+      { ...base, deltaY: 100, shiftKey: true },
+    ]) {
+      // Same decision as the map canvas.
+      const map = classifyWheel({ ...e, deltaY: e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY }, false);
+      expect(tilesetWheel(e, false).kind, JSON.stringify(e)).toBe(map === "pan" ? "pan" : "zoom");
+    }
+    expect(tilesetWheel({ ...base, deltaY: 100 }, false)).toEqual({ kind: "zoom", delta: 100 });
+    expect(tilesetWheel({ ...base, deltaY: 3, deltaMode: 1 }, false)).toEqual({ kind: "zoom", delta: 48 });
+    // Shift + mouse wheel: sideways.
+    expect(tilesetWheel({ ...base, deltaY: 100, shiftKey: true }, false)).toEqual({ kind: "pan", dx: 100, dy: 0 });
+    // Two-finger swipe: both axes; an ongoing pan keeps panning.
+    expect(tilesetWheel({ ...base, deltaX: 5, deltaY: -3 }, false)).toEqual({ kind: "pan", dx: 5, dy: -3 });
+    expect(tilesetWheel({ ...base, deltaY: 60 }, true).kind).toBe("pan");
+  });
+
+  it("wheel zoom steps once per notch, pinches add up", () => {
+    expect(accumulateWheelZoom(0, -100)).toEqual({ acc: 0, step: 1 });
+    expect(accumulateWheelZoom(0, 100)).toEqual({ acc: 0, step: -1 });
+    let acc = 0;
+    let steps = 0;
+    for (let i = 0; i < 10; i++) {
+      const r = accumulateWheelZoom(acc, -5);
+      acc = r.acc;
+      steps += r.step;
+    }
+    expect(steps).toBe(1);
+    // A turn in the other direction starts over.
+    expect(accumulateWheelZoom(-30, 10)).toEqual({ acc: 10, step: 0 });
   });
 });

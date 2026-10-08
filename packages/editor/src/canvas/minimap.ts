@@ -2,7 +2,10 @@
  * Minimap (v0.5): a small DOM 2D canvas in the bottom-right corner of the
  * canvas container showing the map thumbnail (the same picture the far-zoom
  * LOD renders) and the viewport rectangle. Click / drag pans the camera.
- * Shown / hidden with `CanvasHandle.setMinimapVisible`.
+ * Shown / hidden with `CanvasHandle.setMinimapVisible` (the user's choice);
+ * while that is on it still hides itself whenever the whole map fits the
+ * view (`setAutoHidden`), since it would show nothing new. The wheel over it
+ * zooms the map.
  */
 import type { Camera } from "./camera";
 import { minimapLayout, minimapToWorld, viewportRect, type MinimapLayout } from "./minimapMath";
@@ -38,6 +41,8 @@ export interface MinimapHost {
   /** Moves the camera so map px (`x`, `y`) is at the view centre. */
   centerOnWorld(x: number, y: number): void;
   colors(): { accent: number; background: number };
+  /** A wheel event over the minimap: zoom the map (around the view centre). */
+  wheel?(e: WheelEvent): void;
 }
 
 function css(color: number, alpha = 1): string {
@@ -54,6 +59,7 @@ export class Minimap {
   readonly #cache = document.createElement("canvas");
   readonly #host: MinimapHost;
   #visible = true;
+  #autoHidden = false;
   #layout: MinimapLayout = { width: 0, height: 0, scale: 0 };
   #cacheKey = "";
   #drawKey = "";
@@ -120,7 +126,10 @@ export class Minimap {
     };
     c.addEventListener("pointerup", end, opts);
     c.addEventListener("pointercancel", end, opts);
-    c.addEventListener("wheel", (e) => e.preventDefault(), { signal, passive: false });
+    c.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      this.#host.wheel?.(e);
+    }, { signal, passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
     signal.addEventListener("abort", () => {
       el.remove();
@@ -139,7 +148,7 @@ export class Minimap {
    */
   footprint(): { width: number; height: number } | null {
     const size = this.#host.mapSize();
-    if (!this.#visible || !size || size.width <= 0 || size.height <= 0) return null;
+    if (!this.visible || !size || size.width <= 0 || size.height <= 0) return null;
     const layout = this.#layoutFor(size);
     return { width: layout.width + 2 * FRAME + MARGIN, height: layout.height + 2 * FRAME + MARGIN };
   }
@@ -150,8 +159,9 @@ export class Minimap {
     return minimapLayout(size.width, size.height, Math.round(MAX_W * k), Math.round(MAX_H * k));
   }
 
+  /** Shown right now: the user's choice and not auto-hidden. */
   get visible(): boolean {
-    return this.#visible;
+    return this.#visible && !this.#autoHidden;
   }
 
   setVisible(visible: boolean): void {
@@ -160,11 +170,20 @@ export class Minimap {
     this.draw();
   }
 
+  /** Hides the minimap while the whole map is in view (the user's choice still applies otherwise). */
+  setAutoHidden(hidden: boolean): void {
+    if (hidden === this.#autoHidden) return;
+    this.#autoHidden = hidden;
+    this.#drawKey = "";
+    // Keep the pointer state sane if it disappears under a drag.
+    if (hidden) this.#drag = null;
+  }
+
   /** Redraws if anything it shows changed. Cheap when nothing did; call every frame. */
   draw(): void {
     const thumb = this.#host.thumbnail();
     const size = this.#host.mapSize();
-    const show = this.#visible && !!thumb && !!size && size.width > 0 && size.height > 0;
+    const show = this.visible && !!thumb && !!size && size.width > 0 && size.height > 0;
     this.element.style.display = show ? "block" : "none";
     if (!show) return;
     const dpr = window.devicePixelRatio || 1;

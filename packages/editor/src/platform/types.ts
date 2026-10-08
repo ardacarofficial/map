@@ -96,6 +96,19 @@ export interface Platform {
   /** Window title. */
   setTitle(title: string): void;
 
+  /**
+   * The user closes the window (X button, Alt+F4, taskbar). `shouldClose`
+   * decides (asks about unsaved work); resolving true closes the window.
+   * Desktop only: the browser build keeps `beforeunload`, which cannot wait
+   * for an answer. Returns an unsubscribe.
+   */
+  onCloseRequested(shouldClose: () => Promise<boolean>): () => void;
+  /**
+   * Whether closing now would lose work. While false the desktop closes at
+   * once without asking the page (so a hung page can still be closed).
+   */
+  setUnsavedChanges(unsaved: boolean): void;
+
   /** Raw settings JSON, or `null` when none is stored yet. */
   readSettings(): Promise<string | null>;
   writeSettings(text: string): Promise<void>;

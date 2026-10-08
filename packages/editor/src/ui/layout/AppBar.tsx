@@ -1,6 +1,7 @@
 import { runCommand } from "../../commands/registry";
 import { ExportIcon } from "../../export/ExportDialog";
 import { t } from "../../i18n";
+import { useSaveIndicator } from "../../io/saveIndicator";
 import { useEditorStore } from "../../state/editorStore";
 import { useHistoryState } from "../hooks";
 import { MenuBar } from "../menu/MenuBar";
@@ -16,7 +17,7 @@ import { ViewToggle } from "./ViewToggle";
  */
 export function AppBar() {
   const name = useEditorStore((s) => s.project?.name ?? "");
-  const dirty = useEditorStore((s) => s.dirty);
+  const dirty = useSaveIndicator().unsaved;
   const store = useEditorStore((s) => s.project?.store);
   const { canUndo, canRedo } = useHistoryState(store);
   const saveLabel = dirty ? t("toolbar.unsaved") : t("toolbar.saved");

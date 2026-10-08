@@ -38,6 +38,7 @@ import { templateShortName } from "../terrain/TemplatePicker";
 import { terrainSwatchTile } from "../terrain/TerrainList";
 import { chooseEntityType } from "../../commands/entityActions";
 import { EntityProperties } from "../entities/EntityProperties";
+import type { SectionPanelProps } from "../layout/RightColumn";
 import { PanelSection } from "./PanelSection";
 import { RandomBrushChip } from "./RandomBrushChip";
 
@@ -61,7 +62,7 @@ function SubHeading({ children }: { children: ReactNode }) {
  * from inspector sections (`layout/inspector/registry.ts`); later features
  * add theirs with `registerInspectorSection`.
  */
-export function PropertiesPanel() {
+export function PropertiesPanel({ collapsed = false, onToggleCollapsed, extra }: Partial<SectionPanelProps> = {}) {
   const store = useEditorStore((s) => s.project?.store);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
   const selectedEntityId = useEditorStore((s) => s.selectedEntityId);
@@ -77,7 +78,13 @@ export function PropertiesPanel() {
   };
   const sections = inspectorSectionsFor(ctx);
   return (
-    <PanelSection title={t("panels.properties")} className="min-h-0 flex-1">
+    <PanelSection
+      title={t("panels.properties")}
+      className="min-h-0 flex-auto"
+      collapsed={collapsed}
+      extra={extra}
+      {...(onToggleCollapsed ? { onToggleCollapsed } : {})}
+    >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2" data-inspector>
         {sections.map(({ id, Component }) => (
           <div key={id} data-inspector-section={id} className="first:[&>h3]:pt-0.5">

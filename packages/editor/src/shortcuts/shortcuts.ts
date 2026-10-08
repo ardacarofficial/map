@@ -4,9 +4,11 @@
  * (`platform/settings.ts` validates it; `setShortcutOverrides` applies it).
  *
  * Key syntax: modifiers joined with "+", then a `KeyboardEvent.code`-style key
- * name, e.g. "B", "Ctrl+G", "Ctrl+Shift+P", "Space". "Ctrl" means Ctrl on
- * Windows/Linux and Cmd on macOS.
+ * name, e.g. "B", "Ctrl+G", "Ctrl+Shift+P", "Space", "Plus". "Ctrl" means Ctrl on
+ * Windows/Linux and Cmd on macOS. Character keys match the typed character
+ * first (layout-aware, see `commands/keymap.ts`).
  */
+import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
   | "tool.brush"
@@ -37,6 +39,10 @@ export type CommandId =
   | "view.toggleLibrary"
   | "view.toggleInspector"
   | "view.resetLayout"
+  | "view.toggleLevels"
+  | "view.toggleProperties"
+  | "view.toggleLayers"
+  | "view.toggleRecent"
   | "layer.duplicate"
   | "layer.mergeDown"
   | "layer.rename"
@@ -105,7 +111,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "edit.flipY", keys: ["Y"] },
   { command: "view.toggleGrid", keys: ["Ctrl+G"] },
   { command: "view.togglePanels", keys: ["Tab"] },
-  { command: "view.zoomIn", keys: ["Ctrl+Equal"] },
+  /** By character: Ctrl+"+" (Shift+= on US, Shift+4 or numpad on Turkish-Q); Ctrl+= also works. */
+  { command: "view.zoomIn", keys: ["Ctrl+Plus", "Ctrl+Equal"] },
   { command: "view.zoomOut", keys: ["Ctrl+Minus"] },
   { command: "view.zoomReset", keys: ["Ctrl+Digit0"] },
   { command: "view.frameMap", keys: ["Shift+Digit1"] },
@@ -130,12 +137,17 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "map.resize", keys: [] },
   { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
   { command: "tool.entity", keys: ["O"] },
-  { command: "brush.smaller", keys: ["BracketLeft"] },
-  { command: "brush.larger", keys: ["BracketRight"] },
+  /** "," / "." too: "[" "]" need AltGr on Turkish-Q. */
+  { command: "brush.smaller", keys: ["BracketLeft", "Comma"] },
+  { command: "brush.larger", keys: ["BracketRight", "Period"] },
   { command: "tool.hand", keys: ["H"] },
   { command: "view.toggleLibrary", keys: ["Ctrl+B"] },
   { command: "view.toggleInspector", keys: ["Ctrl+Alt+B"] },
   { command: "view.resetLayout", keys: [] },
+  { command: "view.toggleLevels", keys: [] },
+  { command: "view.toggleProperties", keys: [] },
+  { command: "view.toggleLayers", keys: [] },
+  { command: "view.toggleRecent", keys: [] },
   { command: "layer.duplicate", keys: ["Ctrl+J"] },
   { command: "layer.mergeDown", keys: [] },
   { command: "layer.rename", keys: ["F2"] },
@@ -181,8 +193,8 @@ export function effectiveShortcuts(): ShortcutDef[] {
   });
 }
 
+/** A command's keys, the ones reachable on the user's keyboard layout first (display uses `[0]`). */
 export function keysFor(command: CommandId): string[] {
-  const keys = overrides.get(command);
-  if (keys) return [...keys];
-  return SHORTCUTS.find((s) => s.command === command)?.keys ?? [];
+  const keys = overrides.get(command) ?? SHORTCUTS.find((s) => s.command === command)?.keys ?? [];
+  return preferReachable(keys);
 }

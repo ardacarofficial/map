@@ -1,0 +1,601 @@
+/**
+ * One tileset's interactive grid: the image, its marks and overlays, and
+ * what the mouse does in each mode (see `modeModel.ts`: left adds /
+ * selects, right removes). Shared by the single view and the "Tümü" stack;
+ * the host (the scroll viewport) owns zoom, panning, keyboard routing and
+ * the placed terrain block, and hands them down through {@link GridHostContext}.
+ *
+ * In the stack, a grid far outside the viewport keeps its size but draws
+ * nothing (IntersectionObserver), so a long library stays cheap.
+ */
+import { ContextMenu } from "@base-ui/react/context-menu";
+import { isTileSolid, terrainTemplateInfo, type TerrainTemplate, type Tileset } from "@smap/core";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
+
+import { inRandomSet, toggleInSet, toggleRandomTile } from "../../commands/randomBrush";
+import { SolidStroke } from "../../commands/solidStroke";
+import { deleteTerrain, setTilesSolid, terrainBlockProblem } from "../../commands/terrainActions";
+import { t } from "../../i18n";
+import { useEditorStore, type TileSelection } from "../../state/editorStore";
+import { onTilesetImage } from "../../state/tilesetImages";
+import { useTilesetImage } from "../hooks";
+import { Icon } from "../primitives/Icon";
+import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { useActiveTerrainId } from "../terrain/TerrainList";
+import { toast } from "../toast/toastStore";
+import { useUiStore } from "../uiStore";
+import { useEmptyTiles } from "./emptyTiles";
+import { contextMenuEnabled, isStroke, tilePointerAction } from "./modeModel";
+import {
+  arrowDelta,
+  arrowSelect,
+  boundsOf,
+  cellOf,
+  clampCell,
+  gestureIds,
+  idOf,
+  insideGrid,
+  startGesture,
+  type Cell,
+  type SelectGesture,
+} from "./selectionModel";
+import { BlockGhost, CellLabel, drawMarks, drawTiles, SelectionOverlay } from "./TilesetOverlays";
+import { commitTilesetSelection, highlightedIds } from "./tilesetSelect";
+import { useTilesetView } from "./tilesetViewStore";
+
+/** A terrain block placed with a click, waiting for its name (one per panel). */
+export interface PendingBlock {
+  readonly tilesetId: string;
+  readonly cell: Cell;
+  readonly template: TerrainTemplate;
+}
+
+/** What a grid needs from the viewport around it. */
+export interface GridHost {
+  /** Focuses the viewport (keyboard). */
+  focus(): void;
+  /** True while Space is held or a pan drag runs: the left button pans instead. */
+  panning(): boolean;
+  /** Arrow / Esc keys for this tileset (null unregisters). Returns true when handled. */
+  registerKeys(tilesetId: string, handler: ((event: KeyboardEvent) => boolean) | null): void;
+  pending: PendingBlock | null;
+  setPending(block: PendingBlock | null): void;
+  /** Scrolls so that `box` (px, relative to `grid`) is visible; centred when it was out of view and `center`. */
+  reveal(grid: HTMLElement, box: { left: number; top: number; right: number; bottom: number }, center: boolean): void;
+  /** Draw only while near the viewport (the stack). */
+  lazy: boolean;
+}
+
+export const GridHostContext = createContext<GridHost | null>(null);
+
+/** Terrain whose block covers tile (`col`, `row`), or null. */
+export function terrainAt(tileset: Tileset, col: number, row: number): number | null {
+  for (const terrain of tileset.terrains ?? []) {
+    const info = terrainTemplateInfo(terrain.template);
+    if (col >= terrain.origin.col && col < terrain.origin.col + info.columns && row >= terrain.origin.row && row < terrain.origin.row + info.rows) {
+      return terrain.id;
+    }
+  }
+  return null;
+}
+
+/** "Arazi başlat buradan": terrain mode with the block placed at `cell` (or why it does not fit). */
+export function startTerrainAt(host: GridHost, tileset: Tileset, cell: Cell): void {
+  const ui = useUiStore.getState();
+  ui.setTilesetMode("terrain");
+  const problem = terrainBlockProblem(tileset, ui.terrainTemplate, cell.col, cell.row);
+  if (problem) {
+    toast.warning(problem);
+    host.setPending(null);
+    return;
+  }
+  host.setPending({ tilesetId: tileset.id, cell, template: ui.terrainTemplate });
+}
+
+type Drag =
+  | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell }
+  | { kind: "random"; pointerId: number; adding: boolean; visited: Set<number> }
+  | { kind: "solid"; pointerId: number };
+
+export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: number }) {
+  const host = useContext(GridHostContext)!;
+  const image = useTilesetImage(tileset.id);
+  const store = useEditorStore((s) => s.project?.store);
+  const stamp = useEditorStore((s) => s.stamp);
+  const selection = useEditorStore((s) => s.selection);
+  const randomSet = useEditorStore((s) => s.randomSet);
+  const panelSelection = useTilesetView((s) => s.selection);
+  const reveal = useTilesetView((s) => s.reveal);
+  const mode = useUiStore((s) => s.tilesetMode);
+  const template = useUiStore((s) => s.terrainTemplate);
+  const activeTerrainId = useActiveTerrainId();
+  const empty = useEmptyTiles(tileset, image?.bitmap);
+  const [imageVersion, setImageVersion] = useState(0);
+  useEffect(() => onTilesetImage((id) => id === tileset.id && setImageVersion((v) => v + 1)), [tileset.id]);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const marksRef = useRef<HTMLCanvasElement>(null);
+  const strokeRef = useRef<SolidStroke | null>(null);
+  const [hover, setHover] = useState<Cell | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const [menuCell, setMenuCell] = useState<Cell | null>(null);
+  /** A tile was picked in this "Rastgele" session (the first click starts a fresh set). */
+  const randomSessionRef = useRef(false);
+  const [visible, setVisible] = useState(!host.lazy);
+
+  const cellW = tileset.tileWidth * scale;
+  const cellH = tileset.tileHeight * scale;
+  const cssW = Math.round(tileset.columns * cellW);
+  const cssH = Math.round(tileset.rows * cellH);
+
+  const pending = host.pending && host.pending.tilesetId === tileset.id && host.pending.template === template && mode === "terrain" ? host.pending.cell : null;
+
+  const updateDrag = (next: Drag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  useEffect(() => {
+    randomSessionRef.current = false;
+  }, [mode]);
+  useEffect(() => () => strokeRef.current?.end(), []);
+
+  // Stack: draw only near the viewport.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!host.lazy || !el) return;
+    const root = el.closest<HTMLElement>("[data-tileset-scroll]");
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry?.isIntersecting ?? false), { root, rootMargin: "400px 0px" });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [host.lazy]);
+
+  // ---- drawing
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas && image && visible) drawTiles(canvas, tileset, image.bitmap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw only when the image or the grid changes
+  }, [visible, image, imageVersion, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
+
+  useEffect(() => {
+    if (marksRef.current && visible) drawMarks(marksRef.current, tileset, empty, cellW, cellH, cssW, cssH, mode === "solid");
+  }, [visible, tileset, empty, cellW, cellH, cssW, cssH, mode, image, imageVersion]);
+
+  // ---- hit testing
+
+  const rawCellAt = (clientX: number, clientY: number): Cell => {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return { col: -1, row: -1 };
+    return { col: Math.floor((clientX - rect.left) / cellW), row: Math.floor((clientY - rect.top) / cellH) };
+  };
+  const cellAt = (clientX: number, clientY: number): Cell | null => {
+    const c = rawCellAt(clientX, clientY);
+    return insideGrid(tileset, c) ? c : null;
+  };
+
+  // The pointer stays put across a mode switch / zoom (no pointermove): re-derive the hovered tile.
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const p = pointerRef.current;
+    if (!p) return;
+    const next = cellAt(p.x, p.y);
+    setHover((h) => (h?.col === next?.col && h?.row === next?.row ? h : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cellAt` only reads the grid and scale
+  }, [mode, template, cellW, cellH, cssW, tileset.columns, tileset.rows]);
+
+  // ---- selection
+
+  const highlighted = useMemo(
+    () => highlightedIds({ stamp, selection, randomSet }, panelSelection, tileset.id),
+    [stamp, selection, randomSet, panelSelection, tileset.id],
+  );
+  const corners = useMemo((): { anchor: Cell; focus: Cell } | null => {
+    if (highlighted.length === 0) return null;
+    if (
+      panelSelection &&
+      panelSelection.tilesetId === tileset.id &&
+      panelSelection.ids.length === highlighted.length &&
+      panelSelection.ids.every((id, i) => id === highlighted[i])
+    ) {
+      return { anchor: panelSelection.anchor, focus: panelSelection.focus };
+    }
+    return { anchor: cellOf(tileset, highlighted[0]!), focus: cellOf(tileset, highlighted[highlighted.length - 1]!) };
+  }, [highlighted, panelSelection, tileset]);
+
+  const commit = (ids: readonly number[], anchor: Cell, focus: Cell) => {
+    if (ids.length === 0) {
+      const s = useEditorStore.getState();
+      s.setStamp(null);
+      s.setSelection(null);
+      useTilesetView.getState().setSelection(null);
+      return;
+    }
+    if (useUiStore.getState().activeTilesetId !== tileset.id) useUiStore.getState().setActiveTileset(tileset.id);
+    commitTilesetSelection(tileset, ids, { anchor, focus }, empty);
+  };
+
+  const revealIds = useCallback(
+    (ids: readonly number[], center: boolean) => {
+      const el = gridRef.current;
+      const b = boundsOf(tileset, ids);
+      if (!el || !b) return;
+      host.reveal(el, { left: b.col * cellW, top: b.row * cellH, right: (b.col + b.width) * cellW, bottom: (b.row + b.height) * cellH }, center);
+    },
+    [host, tileset, cellW, cellH],
+  );
+
+  // Map picks: scroll the picked tiles into view.
+  const revealedNonce = useRef(0);
+  useLayoutEffect(() => {
+    if (!reveal || reveal.tilesetId !== tileset.id || revealedNonce.current === reveal.nonce || cssW === 0) return;
+    revealedNonce.current = reveal.nonce;
+    revealIds(reveal.ids, true);
+  }, [reveal, tileset.id, cssW, revealIds]);
+
+  // ---- random brush
+
+  const toggleRandom = (tile: TileSelection, alt: boolean) => {
+    if (alt && mode !== "random") {
+      toggleRandomTile(tile);
+      return;
+    }
+    const s = useEditorStore.getState();
+    // Entering "Rastgele" does not silently add the tile that happened to be selected.
+    const fresh = s.randomSet.length === 0 && !randomSessionRef.current;
+    const result = toggleInSet(s.randomSet, fresh ? null : s.selection, tile);
+    randomSessionRef.current = true;
+    s.setRandomSet(result.randomSet);
+    s.setSelection(result.selection);
+    s.setStamp(null);
+    if (s.tool !== "brush" && s.tool !== "fill" && s.tool !== "rect") s.setTool("brush");
+  };
+  /** Puts `tile` in (or takes it out of) the random brush; nothing when it already is. */
+  const setRandom = (tile: TileSelection, add: boolean) => {
+    if (inRandomSet(useEditorStore.getState().randomSet, tile) !== add) toggleRandom(tile, false);
+  };
+
+  // ---- keyboard (routed here by the host)
+
+  const keysRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  keysRef.current = (event) => {
+    if (event.key === "Escape" && dragRef.current) {
+      strokeRef.current?.end();
+      strokeRef.current = null;
+      updateDrag(null);
+      return true;
+    }
+    const d = arrowDelta(event.key);
+    if (!d || event.ctrlKey || event.metaKey || event.altKey || mode !== "pick") return false;
+    const next = arrowSelect(tileset, corners, d, event.shiftKey);
+    commit(next.ids, next.anchor, next.focus);
+    revealIds([idOf(tileset, next.focus)], false);
+    return true;
+  };
+  useEffect(() => {
+    host.registerKeys(tileset.id, (e) => keysRef.current(e));
+    return () => host.registerKeys(tileset.id, null);
+  }, [host, tileset.id]);
+
+  // ---- pointer
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if ((e.button !== 0 && e.button !== 2) || host.panning()) return;
+    const cell = cellAt(e.clientX, e.clientY);
+    if (!cell) return;
+    if (e.button === 2) setMenuCell(cell);
+    host.focus();
+    const tile = { tilesetId: tileset.id, tileId: idOf(tileset, cell) };
+    const action = tilePointerAction(mode, {
+      button: e.button,
+      alt: e.altKey,
+      pending: pending !== null,
+      terrainId: terrainAt(tileset, cell.col, cell.row),
+    });
+    if (isStroke(action)) e.currentTarget.setPointerCapture(e.pointerId);
+    switch (action.kind) {
+      case "none":
+        return;
+      case "select": {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const gesture = startGesture(tileset, cell, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, corners ? { ids: highlighted, anchor: corners.anchor } : null);
+        updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell });
+        return;
+      }
+      case "randomToggle":
+        toggleRandom(tile, true);
+        return;
+      case "random":
+        setRandom(tile, action.add);
+        updateDrag({ kind: "random", pointerId: e.pointerId, adding: action.add, visited: new Set([tile.tileId]) });
+        return;
+      case "solid":
+        if (!store || store.inTransaction || !store.document.getTileset(tileset.id)) return;
+        strokeRef.current = new SolidStroke(store, tileset.id, cell.col, cell.row, action.solid);
+        updateDrag({ kind: "solid", pointerId: e.pointerId });
+        return;
+      case "placeBlock":
+        if (terrainBlockProblem(tileset, template, cell.col, cell.row) === null) host.setPending({ tilesetId: tileset.id, cell, template });
+        return;
+      case "cancelBlock":
+        host.setPending(null);
+        return;
+      case "removeTerrain":
+        deleteTerrain(action.terrainId);
+        return;
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    pointerRef.current = { x: e.clientX, y: e.clientY };
+    const g = dragRef.current;
+    if (g?.kind === "solid" && g.pointerId === e.pointerId && strokeRef.current) {
+      const c = rawCellAt(e.clientX, e.clientY);
+      strokeRef.current.moveTo(c.col, c.row);
+    } else if (g?.kind === "select" && g.pointerId === e.pointerId) {
+      const c = clampCell(tileset, rawCellAt(e.clientX, e.clientY));
+      if (c.col !== g.cell.col || c.row !== g.cell.row) updateDrag({ ...g, cell: c });
+    } else if (g?.kind === "random" && g.pointerId === e.pointerId) {
+      const c = cellAt(e.clientX, e.clientY);
+      if (c) {
+        const id = idOf(tileset, c);
+        if (!g.visited.has(id)) {
+          g.visited.add(id);
+          setRandom({ tilesetId: tileset.id, tileId: id }, g.adding);
+        }
+      }
+    }
+    const cell = cellAt(e.clientX, e.clientY);
+    setHover((h) => (h?.col === cell?.col && h?.row === cell?.row ? h : cell));
+  };
+
+  const endStroke = () => {
+    strokeRef.current?.end();
+    strokeRef.current = null;
+  };
+
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    const g = dragRef.current;
+    if (!g || g.pointerId !== e.pointerId) return;
+    endStroke();
+    updateDrag(null);
+    if (g.kind === "select") commit(gestureIds(tileset, g.gesture, g.cell), g.gesture.anchor, g.cell);
+  };
+
+  const onPointerCancel = () => {
+    endStroke();
+    if (dragRef.current) updateDrag(null);
+  };
+
+  // ---- render
+
+  const info = terrainTemplateInfo(template);
+  const blockAt = mode === "terrain" ? (pending ?? hover) : null;
+  const tooSmall = mode === "terrain" ? terrainBlockProblem(tileset, template, 0, 0) : null;
+  const blockProblem = blockAt ? terrainBlockProblem(tileset, template, blockAt.col, blockAt.row) : null;
+  const preview = useMemo(() => (drag?.kind === "select" ? gestureIds(tileset, drag.gesture, drag.cell) : null), [drag, tileset]);
+  const shown = useMemo(() => (mode === "pick" ? (preview ?? highlighted) : []), [mode, preview, highlighted]);
+  const shownBounds = preview ? boundsOf(tileset, preview) : null;
+  const randomHere = randomSet.length >= 2 ? randomSet.filter((r) => r.tilesetId === tileset.id) : [];
+  const shownSet = useMemo(() => new Set(shown), [shown]);
+  const hoverTerrain = mode === "terrain" && hover && !pending ? terrainAt(tileset, hover.col, hover.row) : null;
+  const cursor =
+    mode === "pick" || mode === "random"
+      ? "cursor-pointer"
+      : mode === "terrain" && blockProblem && hoverTerrain === null
+        ? "cursor-not-allowed"
+        : "cursor-crosshair";
+  const hoverId = hover ? idOf(tileset, hover) : null;
+
+  if (!image) {
+    return <div className="py-6 text-center text-sm text-faint">{t("tileset.missingImage", { path: tileset.imagePath })}</div>;
+  }
+
+  return (
+    <ContextMenu.Root disabled={!contextMenuEnabled(mode)}>
+      <ContextMenu.Trigger
+        render={
+          <div
+            ref={gridRef}
+            className={`checker relative touch-none select-none ${cursor}`}
+            style={{ width: cssW, height: cssH }}
+            data-tileset-grid={tileset.id}
+            data-tileset-scale={scale}
+            onPointerMove={onPointerMove}
+            onPointerLeave={() => {
+              pointerRef.current = null;
+              setHover(null);
+            }}
+            onPointerDown={onPointerDown}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onLostPointerCapture={(e) => {
+              if (dragRef.current?.pointerId !== e.pointerId || dragRef.current.kind === "select") return;
+              endStroke();
+              updateDrag(null);
+            }}
+            onAuxClick={(e) => e.preventDefault()}
+            onContextMenu={(e) => {
+              // Outside a tile (or in a mode where the right button removes): no menu, no browser menu.
+              e.preventDefault();
+              const c = cellAt(e.clientX, e.clientY);
+              if (c) setMenuCell(c);
+            }}
+          />
+        }
+      >
+        {visible && (
+          <>
+            <canvas
+              ref={canvasRef}
+              role="img"
+              aria-label={t("tileset.preview")}
+              className={`absolute inset-0 block size-full ${scale >= 1 ? "pixelated" : ""}`}
+            />
+            {cellW >= 12 && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, var(--color-tile-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--color-tile-grid) 1px, transparent 1px)",
+                  backgroundSize: `${cellW}px ${cellH}px`,
+                }}
+              />
+            )}
+            <canvas ref={marksRef} aria-hidden className="pointer-events-none absolute inset-0 block size-full" />
+          </>
+        )}
+        {visible && mode !== "solid" &&
+          (tileset.terrains ?? []).map((terrain) => {
+            const ti = terrainTemplateInfo(terrain.template);
+            const strong = mode === "terrain" || terrain.id === activeTerrainId;
+            const doomed = hoverTerrain === terrain.id;
+            return (
+              <div
+                key={terrain.id}
+                aria-hidden
+                data-terrain-outline={terrain.id}
+                className={`pointer-events-none absolute ${doomed ? "bg-danger/15 outline-danger" : "outline-terrain-tint"} ${strong ? "outline-2" : "outline-1 opacity-70"}`}
+                style={{
+                  left: terrain.origin.col * cellW,
+                  top: terrain.origin.row * cellH,
+                  width: ti.columns * cellW,
+                  height: ti.rows * cellH,
+                  outlineStyle: "solid",
+                  outlineOffset: -1,
+                }}
+              >
+                <span
+                  className={`absolute top-0 left-0 max-w-full truncate rounded-br-sm px-1 text-2xs leading-[14px] font-medium text-inverse ${doomed ? "bg-danger" : "bg-terrain-tint"}`}
+                >
+                  {doomed ? t("tilesetLib.terrainRemoveHint", { name: terrain.name }) : terrain.name}
+                </span>
+              </div>
+            );
+          })}
+        {randomHere.map((r) => {
+          const col = r.tileId % tileset.columns;
+          const row = Math.floor(r.tileId / tileset.columns);
+          return (
+            <div
+              key={r.tileId}
+              aria-hidden
+              data-random-tile={r.tileId}
+              className="pointer-events-none absolute rounded-[1px] outline-2 outline-accent"
+              style={{ left: col * cellW, top: row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
+            >
+              {cellW >= 14 && (
+                <span className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-accent text-on-accent shadow-popup">
+                  <Icon name="dice" size={9} strokeWidth={2.5} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+        {(mode === "pick" || mode === "random") && hover && hoverId !== null && !shownSet.has(hoverId) && !drag && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
+            style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH }}
+          />
+        )}
+        {mode === "solid" && hover && (
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute outline-2 outline-collision-solid ${
+              isTileSolid(tileset, hover.row * tileset.columns + hover.col) ? "" : "bg-collision-solid/20"
+            }`}
+            style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -2 }}
+          />
+        )}
+        {shown.length > 0 && (
+          <SelectionOverlay tileset={tileset} ids={shown} empty={empty} cellW={cellW} cellH={cellH} width={cssW} height={cssH} live={preview !== null} />
+        )}
+        {blockAt && !tooSmall && hoverTerrain === null && (
+          <BlockGhost
+            template={template}
+            left={blockAt.col * cellW}
+            top={blockAt.row * cellH}
+            cellW={cellW}
+            cellH={cellH}
+            invalid={blockProblem !== null}
+            pinned={pending !== null}
+            columns={info.columns}
+            rows={info.rows}
+          />
+        )}
+        {(mode === "pick" || mode === "random") && (shownBounds ? shownBounds.width * shownBounds.height > 1 : hover !== null) && (
+          <CellLabel
+            cell={shownBounds && drag?.kind === "select" ? drag.cell : hover!}
+            cellW={cellW}
+            cellH={cellH}
+            width={cssW}
+            rows={tileset.rows}
+            text={
+              shownBounds
+                ? t("tilesetPanel.dragSize", { width: shownBounds.width, height: shownBounds.height })
+                : t(empty.has(hoverId!) ? "tilesetPanel.hoverEmpty" : "tilesetPanel.hover", { id: hoverId!, col: hover!.col, row: hover!.row })
+            }
+          />
+        )}
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner className={menuPositionerClass}>
+          <ContextMenu.Popup className={menuPopupClass} data-tile-menu>
+            {menuCell && <TileMenuItems tileset={tileset} cell={menuCell} host={host} />}
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+/** Context menu of a tile (Seç mode): solid, terrain from here, random brush, copy the tile number. */
+function TileMenuItems({ tileset, cell, host }: { tileset: Tileset; cell: Cell; host: GridHost }) {
+  const tileId = idOf(tileset, cell);
+  const tile = { tilesetId: tileset.id, tileId };
+  const solid = isTileSolid(tileset, tileId);
+  const inRandom = inRandomSet(useEditorStore.getState().randomSet, tile);
+  const copy = () => {
+    const text = String(tileId);
+    const done = () => toast.success(t("tilesetLib.tileIdCopied", { id: tileId }));
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => toast.error(t("tilesetLib.copyFailed")));
+    else toast.error(t("tilesetLib.copyFailed"));
+  };
+  return (
+    <>
+      <div className="px-2 pt-1 pb-1.5 font-mono text-2xs text-faint tabular">{t("tilesetPanel.hover", { id: tileId, col: cell.col, row: cell.row })}</div>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="solid" onClick={() => setTilesSolid(tileset.id, [tileId], !solid)}>
+        <Icon name="bricks" size={15} className="text-collision-solid" />
+        {solid ? t("tilesetLib.menuUnsolid") : t("tilesetLib.menuSolid")}
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="terrain" onClick={() => startTerrainAt(host, tileset, cell)}>
+        <Icon name="terrain" size={15} className="text-terrain-tint" />
+        {t("tilesetLib.menuTerrain")}
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="random" onClick={() => toggleRandomTile(tile)}>
+        <Icon name="dice" size={15} className="text-accent" />
+        {inRandom ? t("tilesetLib.menuRandomRemove") : t("tilesetLib.menuRandomAdd")}
+      </ContextMenu.Item>
+      <div role="separator" className={menuSeparatorClass} />
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="copy" onClick={copy}>
+        <Icon name="copy" size={15} className="text-muted" />
+        {t("tilesetLib.menuCopyId")}
+      </ContextMenu.Item>
+    </>
+  );
+}

@@ -32,10 +32,13 @@ import {
   collisionChunkRaster,
   collisionInvalidation,
   layerInvalidation,
+  PATTERN_SCALE,
   paintedChunkRaster,
+  patternImage,
   rasterImage,
   rgba,
   type CodeColors,
+  type CodePattern,
 } from "./gridRaster";
 
 /** Colours the overlays need (from `CANVAS_COLORS` / theme tokens). */
@@ -63,19 +66,25 @@ interface ChunkImage {
   view: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; texture: Texture; sprite: Sprite } | null;
 }
 
+/** Turns a chunk's code raster into RGBA pixels (`scale` px per cell), or null when fully transparent. */
+type ImageFn = (raster: Uint8Array, cx: number, cy: number) => Uint8ClampedArray | null;
+
 /** One overlay: a container of per-chunk sprites plus its raster cache. */
 class ChunkOverlay {
   readonly root = new Container();
   readonly cache = new ChunkCache<ChunkImage>();
-  #colors: CodeColors;
+  #image: ImageFn;
+  readonly #scale: number;
 
-  constructor(colors: CodeColors, visible = false) {
-    this.#colors = colors;
+  /** `scale`: texture pixels per cell (1 = flat colours; more for patterns). */
+  constructor(image: ImageFn, scale = 1, visible = false) {
+    this.#image = image;
+    this.#scale = scale;
     this.root.visible = visible;
   }
 
-  setColors(colors: CodeColors): void {
-    this.#colors = colors;
+  setImage(image: ImageFn): void {
+    this.#image = image;
     this.cache.invalidate({ all: true, keys: [] });
   }
 
@@ -116,19 +125,28 @@ class ChunkOverlay {
   ): ChunkImage {
     const img: ChunkImage = prev ?? { raster: new Uint8Array(CHUNK_AREA), view: null };
     raster(cx, cy, img.raster);
-    const pixels = rasterImage(img.raster, this.#colors);
+    const pixels = this.#image(img.raster, cx, cy);
     if (!pixels) {
       disposeImage(img);
       return img;
     }
+    const side = CHUNK_SIZE * this.#scale;
     if (!img.view) {
       const canvas = document.createElement("canvas");
-      canvas.width = CHUNK_SIZE;
-      canvas.height = CHUNK_SIZE;
+      canvas.width = side;
+      canvas.height = side;
       const ctx = canvas.getContext("2d");
       if (!ctx) return img;
+      // Patterns: crisp when magnified, mipmapped when far out (no moiré); flat colours: nearest.
+      const patterned = this.#scale > 1;
       const texture = new Texture({
-        source: new CanvasSource({ resource: canvas, scaleMode: "nearest", autoGenerateMipmaps: false, antialias: false }),
+        source: new CanvasSource({
+          resource: canvas,
+          scaleMode: "nearest",
+          ...(patterned ? { minFilter: "linear" as const, mipmapFilter: "linear" as const } : {}),
+          autoGenerateMipmaps: patterned,
+          antialias: false,
+        }),
       });
       const sprite = new Sprite(texture);
       sprite.position.set(cx * CHUNK_SIZE * tileW, cy * CHUNK_SIZE * tileH);
@@ -137,7 +155,7 @@ class ChunkOverlay {
       this.root.addChild(sprite);
       img.view = { canvas, ctx, texture, sprite };
     }
-    img.view.ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), CHUNK_SIZE, CHUNK_SIZE), 0, 0);
+    img.view.ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), side, side), 0, 0);
     img.view.texture.source.update();
     return img;
   }
@@ -181,15 +199,15 @@ export class GridOverlays {
   constructor(store: MapStore, colors: GridOverlayColors, onChange: () => void) {
     this.#store = store;
     this.#onChange = onChange;
-    this.#terrain = new ChunkOverlay(terrainColors(colors));
-    this.#collision = new ChunkOverlay(collisionColors(colors));
+    this.#terrain = new ChunkOverlay(flatImage(terrainColors(colors)));
+    this.#collision = new ChunkOverlay(collisionImage(colors), PATTERN_SCALE);
     this.root.addChild(this.#terrain.root, this.#collision.root);
     this.#unsubscribe = store.subscribe((e) => this.#handle(e));
   }
 
   setColors(colors: GridOverlayColors): void {
-    this.#terrain.setColors(terrainColors(colors));
-    this.#collision.setColors(collisionColors(colors));
+    this.#terrain.setImage(flatImage(terrainColors(colors)));
+    this.#collision.setImage(collisionImage(colors));
   }
 
   /** Brings the visible chunks up to date. Call once per frame before rendering. */
@@ -248,11 +266,26 @@ function terrainColors(c: GridOverlayColors): CodeColors {
   return [null, rgba(c.terrainTint, c.terrainTintAlpha)];
 }
 
-function collisionColors(c: GridOverlayColors): CodeColors {
-  const out: (readonly [number, number, number, number] | null)[] = [];
+/** Flat colour per code, one texture pixel per cell. */
+function flatImage(colors: CodeColors): ImageFn {
+  return (raster) => rasterImage(raster, colors);
+}
+
+/**
+ * Collision overlay patterns: solid = diagonal hatch, forced solid (a
+ * collision layer) = cross hatch, forced passable = dots in the passable
+ * colour. The crisp edge outline is drawn by the overlay renderer.
+ */
+export function collisionPatterns(c: GridOverlayColors): (CodePattern | null)[] {
+  const out: (CodePattern | null)[] = [];
   out[COLL_NONE] = null;
-  out[COLL_SOLID] = rgba(c.collisionSolid, c.collisionSolidAlpha);
-  out[COLL_FORCED_SOLID] = rgba(c.collisionSolid, Math.min(1, c.collisionSolidAlpha * 1.5));
-  out[COLL_FORCED_PASSABLE] = rgba(c.collisionPassable, c.collisionPassableAlpha);
+  out[COLL_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.5, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.6), kind: "/" };
+  out[COLL_FORCED_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.6, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.8), kind: "x" };
+  out[COLL_FORCED_PASSABLE] = { color: c.collisionPassable, fillAlpha: c.collisionPassableAlpha * 0.4, markAlpha: Math.min(1, c.collisionPassableAlpha * 2), kind: "dots" };
   return out;
+}
+
+function collisionImage(c: GridOverlayColors): ImageFn {
+  const patterns = collisionPatterns(c);
+  return (raster, cx, cy) => patternImage(raster, patterns, cx, cy);
 }

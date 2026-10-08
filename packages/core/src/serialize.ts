@@ -30,6 +30,9 @@
  * - clip / stamp grid layer `role`;
  * - stamp files `stamps/<id>.json` (`format: "smap-stamp"`).
  *
+ * Round 3 additions (optional, version stays 1):
+ * - tileset `group` (library group name; written right after `name`, only when set).
+ *
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
@@ -224,6 +227,7 @@ function tilesetJson(tileset: Tileset): Record<string, unknown> {
   return {
     id: t.id,
     name: t.name,
+    ...(t.group !== undefined ? { group: t.group } : {}),
     imagePath: t.imagePath,
     tileWidth: t.tileWidth,
     tileHeight: t.tileHeight,
@@ -670,8 +674,14 @@ function readTileset(item: unknown, path: string): Tileset {
       if (terrains[i]!.id <= terrains[i - 1]!.id) throw new FormatError(`${path}.terrains`, "must be sorted by ascending id without duplicates");
     }
   }
+  let group: string | undefined;
+  if (t["group"] !== undefined) {
+    group = str(t, "group", path);
+    if (group.length === 0) throw new FormatError(`${path}.group`, "must not be empty (omit it instead)");
+  }
   const full: Tileset = {
     ...tileset,
+    ...(group !== undefined ? { group } : {}),
     ...(solidTiles && solidTiles.length > 0 ? { solidTiles } : {}),
     ...(terrains && terrains.length > 0 ? { terrains } : {}),
   };

@@ -258,6 +258,144 @@ export function rectPreviewCells(
   return out;
 }
 
+// ------------------------------------------------------------------ blocked actions, right click
+
+/** Why a left press on the map cannot do anything (the canvas says so instead of failing silently). */
+export type BlockedReason = "locked" | "hidden" | "derived" | "wrongKind";
+
+/** What {@link blockedReason} needs to know about the active layer. */
+export interface LayerState {
+  readonly kind: "tile" | "grid" | "entity";
+  readonly visible: boolean;
+  readonly locked: boolean;
+  /** Tile layer derived from a terrain (written by its terrain layer only). */
+  readonly derived: boolean;
+}
+
+/**
+ * Why a left press with `tool` on the active `layer` does nothing, or null
+ * when it can act (or when there is nothing to explain, e.g. no layer).
+ *
+ * - Paint tools (brush, eraser, fill, rectangle) need a visible, unlocked
+ *   tile or grid layer that is not derived from a terrain. A saved library
+ *   stamp (`savedStampBrush`) maps its own layers and is never blocked.
+ * - The entity tool needs a visible entity layer. A locked entity layer is
+ *   left to the entity action (its own toast; clicking still selects).
+ * - `"move"` (dragging the selection with the select tool) needs a visible,
+ *   unlocked layer of any kind (core moves a derived layer's terrain).
+ */
+export function blockedReason(tool: ToolId | "move", layer: LayerState | null, savedStampBrush = false): BlockedReason | null {
+  if (!layer) return null;
+  if (tool === "move") {
+    if (layer.locked) return "locked";
+    return layer.visible ? null : "hidden";
+  }
+  if (tool === "entity") {
+    if (layer.kind !== "entity") return "wrongKind";
+    return layer.visible ? null : "hidden";
+  }
+  if (!isEditTool(tool) || (tool === "brush" && savedStampBrush)) return null;
+  if (layer.kind === "entity") return "wrongKind";
+  if (layer.locked) return "locked";
+  if (!layer.visible) return "hidden";
+  if (layer.derived) return "derived";
+  return null;
+}
+
+/**
+ * What a right press does:
+ * - `"pick"`: take tiles from the map (single cell / dragged area);
+ * - `"entityMenu"`: entity layer, pressed on an entity: ask for its context menu;
+ * - `"selectionMenu"`: select tool, pressed inside the selection: its context
+ *   menu on release without a drag (a drag picks the area instead);
+ * - `"none"`: entity layer elsewhere (no tiles to pick there).
+ */
+export type RightPress = "pick" | "entityMenu" | "selectionMenu" | "none";
+
+export function rightPressAction(input: {
+  readonly layer: LayerState["kind"] | null;
+  readonly tool: ToolId;
+  readonly inRegion: boolean;
+  readonly entityHit: boolean;
+}): RightPress {
+  if (input.layer === "entity") return input.entityHit ? "entityMenu" : "none";
+  if (input.tool === "select" && input.inRegion) return "selectionMenu";
+  return "pick";
+}
+
+/** What a right press turns into on release: a dragged menu press picks (selection) or does nothing (entity). */
+export function rightReleaseAction(press: RightPress, moved: boolean): RightPress {
+  if (!moved) return press;
+  if (press === "selectionMenu") return "pick";
+  if (press === "entityMenu") return "none";
+  return press;
+}
+
+/**
+ * True when a pick of `region` on a grid layer finds nothing to take: one
+ * cell holding no value (the tiles under it are not picked; drag for an area).
+ */
+export function isEmptyGridPick(region: CellRegion, gridValueAt: (x: number, y: number) => number): boolean {
+  return region.width === 1 && region.height === 1 && gridValueAt(region.x, region.y) === 0;
+}
+
+// ------------------------------------------------------------------ selection move
+
+/** Region moved by (`dx`, `dy`) and clipped to the map, or null when nothing of it is left on the map. */
+export function movedRegion(region: CellRegion, dx: number, dy: number, bounds: CellBounds): CellRegion | null {
+  const x0 = Math.max(0, region.x + dx);
+  const y0 = Math.max(0, region.y + dy);
+  const x1 = Math.min(bounds.width, region.x + dx + region.width);
+  const y1 = Math.min(bounds.height, region.y + dy + region.height);
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
+/**
+ * Offset of a selection drag grabbed at cell `grab` with the pointer now at
+ * `cell`, limited so at least one cell of `region` stays on the map.
+ */
+export function moveOffset(region: CellRegion, grab: CellPoint, cell: CellPoint, bounds: CellBounds): CellPoint {
+  const dx = Math.min(bounds.width - 1 - region.x, Math.max(-(region.x + region.width - 1), cell.x - grab.x));
+  const dy = Math.min(bounds.height - 1 - region.y, Math.max(-(region.y + region.height - 1), cell.y - grab.y));
+  return { x: dx, y: dy };
+}
+
+/** Arrow key → nudge offset (Shift: 10 cells), or null for other keys. */
+export function nudgeOffset(key: string, shift: boolean): CellPoint | null {
+  const n = shift ? 10 : 1;
+  switch (key) {
+    case "ArrowLeft":
+      return { x: -n, y: 0 };
+    case "ArrowRight":
+      return { x: n, y: 0 };
+    case "ArrowUp":
+      return { x: 0, y: -n };
+    case "ArrowDown":
+      return { x: 0, y: n };
+    default:
+      return null;
+  }
+}
+
+// ------------------------------------------------------------------ marching ants
+
+/**
+ * Dashes along a closed outline of length `perimeter`: `[start, end)` spans
+ * of `dash` on / `gap` off, shifted forward by `phase` (marching ants).
+ */
+export function dashSpans(perimeter: number, dash: number, gap: number, phase: number): [number, number][] {
+  const out: [number, number][] = [];
+  const period = dash + gap;
+  if (perimeter <= 0 || dash <= 0 || period <= 0) return out;
+  const shift = mod(phase, period);
+  for (let start = shift - period; start < perimeter; start += period) {
+    const a = Math.max(0, start);
+    const b = Math.min(perimeter, start + dash);
+    if (b > a) out.push([a, b]);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ cursor
 
 export interface CursorInput {
@@ -275,6 +413,8 @@ export interface CursorInput {
    * (`"blocked"`: no entity layer active, layer locked, no type chosen).
    */
   readonly entity?: "over" | "drag" | "blocked" | null;
+  /** Select tool: pointer over the selection (drag moves it), or its content is being moved. */
+  readonly region?: "over" | "moving" | null;
 }
 
 /** Tools that write to the active layer. */
@@ -285,8 +425,10 @@ export function isEditTool(tool: ToolId): boolean {
 /** CSS cursor for the canvas. */
 export function cursorFor(s: CursorInput): string {
   if (s.panning) return "grabbing";
-  if (s.spaceDown) return "grab";
+  if (s.spaceDown || s.tool === "hand") return "grab";
   if (!s.hasMap) return "default";
+  if (s.region === "moving") return "grabbing";
+  if (s.region === "over") return "move";
   if (s.entity === "drag") return "grabbing";
   if (s.entity === "over") return "move";
   if (s.overMap && s.entity === "blocked") return "not-allowed";

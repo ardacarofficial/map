@@ -196,6 +196,13 @@ export class MapDocument {
     this.#terrains = null;
   }
 
+  /** @internal Replaces the whole tileset list (order = display order; validated by the caller). */
+  _setTilesets(tilesets: readonly Tileset[]): void {
+    this.#tilesets.length = 0;
+    for (const tileset of tilesets) this.#tilesets.push(Object.isFrozen(tileset) ? tileset : normalizeTileset(tileset));
+    this.#terrains = null;
+  }
+
   /** @internal Replaces the user-defined entity types (validated by the caller). */
   _setEntityTypes(types: readonly EntityType[]): void {
     this.#entityTypes = Object.freeze(types.map((t) => (Object.isFrozen(t) ? t : normalizeEntityType(t))));

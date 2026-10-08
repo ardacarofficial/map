@@ -4,13 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use smap_host::close_guard::{CloseDecision, CloseGuard};
 use smap_host::settings::SettingsFile;
 use smap_host::{find_open_arg, percent_decode, ErrorKind, FileChange, Host, HostError, OpenedProject};
 use tauri::ipc::{InvokeBody, Request, Response};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, Window, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 const MAIN: &str = "main";
@@ -18,6 +19,8 @@ const MAIN: &str = "main";
 const SHOW_FALLBACK: Duration = Duration::from_secs(3);
 pub const EVENT_FILE_CHANGED: &str = "smap://file-changed";
 pub const EVENT_OPEN_FILE: &str = "smap://open-file";
+/// Kaydedilmemiş iş varken pencere kapatılmak istendi: ön yüz sorar.
+pub const EVENT_CLOSE_REQUESTED: &str = "smap://close-requested";
 const PATH_HEADER: &str = "x-smap-path";
 
 struct Shown(AtomicBool);
@@ -116,6 +119,42 @@ fn settings_path(settings: State<'_, SettingsFile>) -> String {
 #[tauri::command]
 fn window_set_title(window: WebviewWindow, title: String) {
     let _ = window.set_title(&title);
+}
+
+// ---- pencere kapatma ----------------------------------------------------------
+// X / Alt+F4 / görev çubuğu: kaydedilmemiş iş yoksa hemen kapanır, varsa ön
+// yüz sorar (Kaydet / Kaydetme / Vazgeç) ve kararı `window_close` ile verir.
+
+#[tauri::command]
+fn close_guard_set(guard: State<'_, CloseGuard>, unsaved: bool) {
+    guard.set_unsaved(unsaved);
+}
+
+#[tauri::command]
+fn close_request_ack(guard: State<'_, CloseGuard>) {
+    guard.ack();
+}
+
+/// Ön yüz "kapat" dedi. `destroy` `CloseRequested` üretmez; son pencereyle uygulama çıkar.
+#[tauri::command]
+fn window_close(window: WebviewWindow) {
+    log::info!("window closed by the user");
+    let _ = window.destroy();
+}
+
+fn on_window_event(window: &Window, event: &WindowEvent) {
+    let WindowEvent::CloseRequested { api, .. } = event else { return };
+    if window.label() != MAIN {
+        return;
+    }
+    let Some(guard) = window.try_state::<CloseGuard>() else { return };
+    match guard.on_close_requested(Instant::now()) {
+        CloseDecision::Close => log::info!("window closing"),
+        CloseDecision::Ask => {
+            api.prevent_close();
+            let _ = window.app_handle().emit_to(MAIN, EVENT_CLOSE_REQUESTED, Poke {});
+        }
+    }
 }
 
 // ---- diyaloglar -------------------------------------------------------------
@@ -275,29 +314,58 @@ fn focus_main(app: &AppHandle) {
     }
 }
 
-/// WebView2'nin kendi zoom'u (Ctrl+tekerlek, Ctrl+±, dokunmatik yüzey
-/// sıkıştırma) kapalı; olaylar sayfaya gider, tuval kendi zoom'unu yapar.
-/// `zoomHotkeysEnabled: false` wry'de zaten `IsZoomControlEnabled`'ı
-/// kapatır; burada açıkça bir kez daha ve pinch için de yapılır.
+/// WebView2'yi tarayıcı değil uygulama gibi davrandırır:
+///
+/// - Kendi zoom'u (Ctrl+tekerlek, Ctrl+±, dokunmatik yüzey sıkıştırma)
+///   kapalı; olaylar sayfaya gider, tuval kendi zoom'unu yapar.
+///   `zoomHotkeysEnabled: false` wry'de zaten `IsZoomControlEnabled`'ı
+///   kapatır; burada açıkça bir kez daha ve pinch için de yapılır.
+/// - Tarayıcı kısayolları (F5, Ctrl+R, Ctrl+P, Ctrl+F, F7, Ctrl+U...) kapalı.
+///   Düzenleme tuşları (Ctrl+C/V/X/Z/A) tarayıcı kısayolu sayılmaz, metin
+///   kutularında çalışmaya devam eder; olaylar sayfaya yine gelir.
+/// - Sağ tık menüsü (Geri / Yenile / Yazdır) yalnız metin kutularında
+///   (Kes / Kopyala / Yapıştır) açılır; başka her yerde sayfa kendi menüsünü
+///   gösterir ya da hiçbir şey olmaz. Olay kaydı olmazsa menü tamamen kapanır.
 #[cfg(windows)]
-fn disable_browser_zoom(window: &WebviewWindow) {
+fn harden_webview(window: &WebviewWindow) {
     let result = window.with_webview(|webview| unsafe {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
-        use windows_core::Interface;
+        use webview2_com::ContextMenuRequestedEventHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings3, ICoreWebView2Settings5, ICoreWebView2_11};
+        use windows_core::{Interface, BOOL};
         let Ok(core) = webview.controller().CoreWebView2() else { return };
         let Ok(settings) = core.Settings() else { return };
-        let _ = settings.SetIsZoomControlEnabled(false.into());
+        let _ = settings.SetIsZoomControlEnabled(false);
         if let Ok(s5) = settings.cast::<ICoreWebView2Settings5>() {
-            let _ = s5.SetIsPinchZoomEnabled(false.into());
+            let _ = s5.SetIsPinchZoomEnabled(false);
+        }
+        if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+            if let Err(e) = s3.SetAreBrowserAcceleratorKeysEnabled(false) {
+                log::warn!("could not disable WebView2 accelerator keys: {e}");
+            }
+        }
+        let handler = ContextMenuRequestedEventHandler::create(Box::new(|_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let mut editable = BOOL::default();
+            let is_editable = args.ContextMenuTarget().and_then(|t| t.IsEditable(&mut editable)).is_ok() && editable.as_bool();
+            if !is_editable {
+                args.SetHandled(true)?;
+            }
+            Ok(())
+        }));
+        let mut token = 0i64;
+        let filtered = core.cast::<ICoreWebView2_11>().and_then(|core11| core11.add_ContextMenuRequested(&handler, &mut token));
+        if let Err(e) = filtered {
+            log::warn!("WebView2 context menu filter unavailable ({e}); disabling default context menus");
+            let _ = settings.SetAreDefaultContextMenusEnabled(false);
         }
     });
     if let Err(e) = result {
-        log::warn!("could not disable WebView2 zoom: {e}");
+        log::warn!("could not configure WebView2: {e}");
     }
 }
 
 #[derive(Clone, Serialize)]
-struct OpenFilePoke {}
+struct Poke {}
 
 pub fn run() {
     let started = std::time::Instant::now();
@@ -306,7 +374,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             if let Some(path) = find_open_arg(&argv, Path::new(&cwd)) {
                 if app.state::<Host>().offer_open(&path).is_some() {
-                    let _ = app.emit_to(MAIN, EVENT_OPEN_FILE, OpenFilePoke {});
+                    let _ = app.emit_to(MAIN, EVENT_OPEN_FILE, Poke {});
                 }
             }
             focus_main(app);
@@ -338,10 +406,11 @@ pub fn run() {
             }
             app.manage(host);
             app.manage(Shown(AtomicBool::new(false)));
+            app.manage(CloseGuard::new());
 
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window(MAIN) {
-                disable_browser_zoom(&w);
+                harden_webview(&w);
             }
 
             std::thread::spawn(move || {
@@ -351,6 +420,7 @@ pub fn run() {
             log::info!("setup done in {} ms", started.elapsed().as_millis());
             Ok(())
         })
+        .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             read_file,
             read_text,
@@ -365,6 +435,9 @@ pub fn run() {
             settings_write,
             settings_path,
             window_set_title,
+            close_guard_set,
+            close_request_ack,
+            window_close,
             dialog_open_project,
             dialog_pick_folder,
             dialog_pick_files,

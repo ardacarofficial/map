@@ -12,8 +12,10 @@ import { createRoot } from "react-dom/client";
 
 import { registerAppCommands } from "./commands/appCommands";
 import { registerExportCommands } from "./commands/exportCommands";
+import { installKeyboardLayout } from "./commands/keymap";
 import { installAutoExport } from "./export/exportActions";
 import { t } from "./i18n";
+import { readSaveIndicator, subscribeSaveIndicator } from "./io/saveIndicator";
 import { openProjectPath } from "./io/session";
 import { browserPlatform, setPlatform, type Platform } from "./platform";
 import { installSettingsReload, loadAppSettings, useAppSettings } from "./platform/appSettings";
@@ -24,6 +26,7 @@ import { SettingsDialog } from "./platform/SettingsDialog";
 import { useEditorStore } from "./state/editorStore";
 import { useUiStore } from "./ui/uiStore";
 import { App } from "./ui";
+import { installContextMenuGuard } from "./ui/contextMenuGuard";
 import { preloadCanvas } from "./ui/canvas/loadCanvas";
 
 export interface StartEditorOptions {
@@ -57,15 +60,15 @@ function nextFrame(): Promise<void> {
 function installTitle(platform: Platform): () => void {
   let last = "";
   const update = () => {
-    const { project, dirty } = useEditorStore.getState();
+    const project = useEditorStore.getState().project;
     const app = t("app.name");
-    const title = project ? `${dirty ? "● " : ""}${project.name} — ${app}` : app;
+    const title = project ? `${readSaveIndicator().unsaved ? "● " : ""}${project.name} — ${app}` : app;
     if (title === last) return;
     last = title;
     platform.setTitle(title);
   };
   update();
-  const a = useEditorStore.subscribe(update);
+  const a = subscribeSaveIndicator(update);
   const b = useAppSettings.subscribe(update);
   return () => {
     a();
@@ -87,6 +90,8 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   const platform = options.platform ?? browserPlatform;
   setPlatform(platform);
   installErrorLogging();
+  installContextMenuGuard();
+  void installKeyboardLayout();
   registerAppCommands();
   registerExportCommands();
   registerSettingsCommands();

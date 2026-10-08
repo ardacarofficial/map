@@ -26,12 +26,20 @@ export interface Point {
 }
 
 export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 32;
+/** Highest level-view zoom: the largest preset (1600 %). */
+export const MAX_ZOOM = 16;
 
-/** Zoom levels used by zoom-in / zoom-out commands (pixel-art friendly). */
-export const ZOOM_STEPS: readonly number[] = [
-  0.1, 0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32,
-];
+/**
+ * Zoom presets of the level view (12.5 % … 1600 %). Wheel notches, Ctrl+± and
+ * a finished pinch settle on these; the UI's zoom dropdown lists them.
+ * Integer steps at ≥ 100 % draw every tile pixel as a whole number of
+ * device pixels at 100 % Windows scaling, and every step draws every tile at
+ * the same whole device-pixel size (see {@link quantizeZoom}).
+ */
+export const ZOOM_PRESETS: readonly number[] = [0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8, 12, 16];
+
+/** Zoom levels used by zoom-in / zoom-out commands (same as {@link ZOOM_PRESETS}). */
+export const ZOOM_STEPS: readonly number[] = ZOOM_PRESETS;
 
 /**
  * Below this many device pixels per tile the zoom is left continuous;
@@ -131,15 +139,74 @@ export function wheelZoomFactor(deltaPx: number, pinch: boolean): number {
   return Math.exp(-d * (Math.LN2 / 310));
 }
 
-/** Next zoom step strictly above (`dir` = 1) or below (`dir` = -1) `zoom`. */
-export function nextZoomStep(zoom: number, dir: 1 | -1): number {
+/**
+ * Next zoom step strictly above (`dir` = 1) or below (`dir` = -1) `zoom`;
+ * past the last step: `max` / `min`.
+ */
+export function nextZoomStep(zoom: number, dir: 1 | -1, steps: readonly number[] = ZOOM_STEPS, min = MIN_ZOOM, max = MAX_ZOOM): number {
   const eps = 1e-6;
-  if (dir > 0) return ZOOM_STEPS.find((s) => s > zoom * (1 + eps)) ?? MAX_ZOOM;
-  for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
-    const s = ZOOM_STEPS[i]!;
-    if (s < zoom * (1 - eps)) return s;
+  if (dir > 0) return steps.find((s) => s > zoom * (1 + eps) && s <= max) ?? max;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const s = steps[i]!;
+    if (s < zoom * (1 - eps) && s >= min) return s;
   }
-  return MIN_ZOOM;
+  return min;
+}
+
+/** The step closest to `zoom` in log space (a pinch settles there). */
+export function nearestZoomStep(zoom: number, steps: readonly number[] = ZOOM_STEPS): number {
+  let best = steps[0] ?? zoom;
+  let bestD = Infinity;
+  const lz = Math.log(Math.max(1e-9, zoom));
+  for (const s of steps) {
+    const d = Math.abs(Math.log(s) - lz);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** Wheel distance (px) of one zoom step for small-delta wheels (high-resolution mice). */
+export const WHEEL_STEP_PX = 100;
+/** A single wheel event at least this large (px) is one whole notch. */
+export const WHEEL_NOTCH_PX = 50;
+
+/**
+ * Zoom steps of one wheel event: a notch (line / page mode, or ≥
+ * {@link WHEEL_NOTCH_PX}) is one step; smaller deltas (high-resolution
+ * wheels) accumulate in `acc` until they make {@link WHEEL_STEP_PX}.
+ * Positive steps zoom in (wheel up = negative delta). Returns the new
+ * accumulator; reset it to 0 when the gesture pauses.
+ */
+export function wheelZoomSteps(deltaPx: number, deltaMode: number, acc: number): { steps: number; acc: number } {
+  if (deltaPx === 0) return { steps: 0, acc };
+  if (deltaMode !== 0 || Math.abs(deltaPx) >= WHEEL_NOTCH_PX) return { steps: deltaPx < 0 ? 1 : -1, acc: 0 };
+  // A change of direction starts over.
+  const next = Math.sign(acc) === -Math.sign(deltaPx) ? deltaPx : acc + deltaPx;
+  const whole = Math.trunc(next / WHEEL_STEP_PX);
+  return { steps: -whole, acc: next - whole * WHEEL_STEP_PX };
+}
+
+/** Smallest preset at which a tile is at least `px` CSS px (the last preset if none). */
+function stepForTilePx(tileSize: number, px: number, steps: readonly number[]): number {
+  return steps.find((s) => tileSize * s >= px - 1e-9) ?? steps[steps.length - 1]!;
+}
+
+/**
+ * Zoom a level opens at: the largest preset that still fits the map
+ * (`fit`), but no smaller than 50 % and a tile of ~16 CSS px (grid still
+ * readable) and no larger than 100 % or a tile of ~32 CSS px. A big map
+ * opens at a working zoom centred, not as a tiny overview.
+ */
+export function initialZoom(fit: number, tileSize: number, steps: readonly number[] = ZOOM_PRESETS): number {
+  const ts = Math.max(1, tileSize);
+  const lo = Math.max(0.5, stepForTilePx(ts, 16, steps));
+  const hi = Math.max(1, stepForTilePx(ts, 32, steps));
+  let z = steps[0]!;
+  for (const s of steps) if (s <= fit * (1 + 1e-9)) z = s;
+  return Math.min(hi, Math.max(lo, z));
 }
 
 /** Pixel snapping for {@link fitZoom}: tile size (world px) and device pixels per CSS px. */

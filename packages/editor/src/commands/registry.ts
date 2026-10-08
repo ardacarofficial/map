@@ -5,7 +5,7 @@
  */
 import type { MessageKey } from "../i18n";
 import { effectiveShortcuts, shortcutsRevision, type CommandId } from "../shortcuts/shortcuts";
-import { matchesChord, parseChord, type KeyChord, type KeyEventLike } from "./keymap";
+import { findBinding, parseChord, type KeyChord, type KeyEventLike } from "./keymap";
 
 export type CommandCategory = "file" | "edit" | "view" | "tool" | "layer" | "map" | "tileset" | "entity" | "level" | "general";
 
@@ -18,6 +18,8 @@ export interface Command {
   enabled?(): boolean;
   /** Set false to keep the command out of the palette (e.g. the palette itself). */
   inPalette?: boolean;
+  /** On / off state of a toggle command (menus show it as a check mark). */
+  checked?(): boolean;
 }
 
 const commands = new Map<CommandId, Command>();
@@ -90,5 +92,5 @@ function allBindings(): Binding[] {
 
 /** The command bound to this key event, if any. */
 export function commandForEvent(event: KeyEventLike): CommandId | null {
-  return allBindings().find((b) => matchesChord(event, b.chord))?.command ?? null;
+  return findBinding(event, allBindings())?.command ?? null;
 }

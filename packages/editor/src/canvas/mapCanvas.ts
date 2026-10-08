@@ -625,7 +625,7 @@ export class MapCanvas {
       cam.setZoomLimits(MIN_ZOOM, MAX_ZOOM);
       const saved = this.#levelCamera;
       this.#levelCamera = null;
-      if (this.#frameOnLevelView || !saved) cam.requestFrameMap();
+      if (this.#frameOnLevelView || !saved) cam.requestInitialView();
       else {
         cam.place(saved.camera.x, saved.camera.y, saved.camera.zoom);
         cam.zoomLevel = saved.zoomLevel;
@@ -755,7 +755,7 @@ export class MapCanvas {
     this.#worldView.activeChanged();
     // The world view keeps its camera; the new level is framed when the level view returns.
     if (this.#view === "world") this.#frameOnLevelView = true;
-    else this.#camera.requestFrameMap();
+    else this.#camera.requestInitialView();
     this.#requestRender();
   }
 

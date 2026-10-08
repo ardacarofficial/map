@@ -14,6 +14,10 @@ import {
   frameCamera,
   MAX_ZOOM,
   MIN_ZOOM,
+  centeredCamera,
+  fitZoom,
+  initialZoom,
+  nearestZoomStep,
   nextZoomStep,
   quantizeZoom,
   screenToCell,
@@ -28,6 +32,11 @@ import { cameraCenteredOn, type Rect } from "./minimapMath";
 /** Time constant of the wheel-zoom easing. */
 const ZOOM_TAU_MS = 55;
 const FRAME_PADDING = 48;
+/** A pinch settles on the nearest preset after this long without pinch events. */
+const PINCH_SETTLE_MS = 160;
+
+/** How a pending / kept framing places the map: the opening view, or "fit map". */
+type FrameMode = "initial" | "fit";
 
 interface ZoomAnim {
   current: number;
@@ -62,8 +71,15 @@ export class CameraController {
   frameBounds: (() => Rect | null) | null = null;
   /** Bottom-right box {@link frameMap} keeps clear (the minimap), or null. */
   frameCorner: (() => CornerBox | null) | null = null;
+  /**
+   * Level view: wheel notches, zoom commands and a finished pinch settle on
+   * the zoom presets (`ZOOM_STEPS`). The world view zooms in plain factors.
+   */
+  snapSteps = true;
   #anim: ZoomAnim | null = null;
   #pendingFrameMap = true;
+  #frameMode: FrameMode = "initial";
+  #settleTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * The camera still shows the last {@link frameMap} result (the user has not
    * panned or zoomed since): a view resize re-frames instead of leaving the
@@ -98,7 +114,7 @@ export class CameraController {
     this.resolution = resolution;
     this.viewW = viewW;
     this.viewH = viewH;
-    if (this.#pendingFrameMap || this.#framed) this.frameMap();
+    if (this.#pendingFrameMap || this.#framed) this.#applyFrame();
     else if (resChanged) this.setZoom(this.zoomLevel, this.viewCenter());
   }
 
@@ -119,14 +135,61 @@ export class CameraController {
     this.#requestRender();
   }
 
-  /** Frames the map as soon as the view has a size (new project). */
+  /** Frames the map ("fit") as soon as the view has a size. */
   requestFrameMap(): void {
+    this.#frameMode = "fit";
     this.#pendingFrameMap = true;
     if (this.viewW > 1 && this.viewH > 1) this.frameMap();
   }
 
+  /**
+   * Shows a just-opened level as soon as the view has a size: centred at a
+   * working zoom preset (see `initialZoom`), not a tiny overview.
+   */
+  requestInitialView(): void {
+    this.#frameMode = "initial";
+    this.#pendingFrameMap = true;
+    if (this.viewW > 1 && this.viewH > 1) this.initialView();
+  }
+
+  /** Centres the map at its opening zoom (see {@link requestInitialView}). */
+  initialView(): void {
+    const map = this.#map();
+    if (this.frameBounds || !map) {
+      this.frameMap();
+      return;
+    }
+    if (this.viewW <= 1 || this.viewH <= 1) {
+      this.#frameMode = "initial";
+      this.#pendingFrameMap = true;
+      return;
+    }
+    this.#pendingFrameMap = false;
+    this.#frameMode = "initial";
+    this.#anim = null;
+    this.#framed = true;
+    const mw = map.width * map.tileWidth;
+    const mh = map.height * map.tileHeight;
+    const fit = fitZoom(this.viewW, this.viewH, mw, mh, FRAME_PADDING, MAX_ZOOM);
+    const z = this.#quantize(this.#clamp(initialZoom(fit, Math.min(map.tileWidth, map.tileHeight))));
+    this.zoomLevel = z;
+    this.camera = centeredCamera(this.viewW, this.viewH, mw, mh, z);
+    this.#requestRender();
+  }
+
+  #applyFrame(): void {
+    if (this.#frameMode === "initial") this.initialView();
+    else this.frameMap();
+  }
+
   stopAnimation(): void {
     this.#anim = null;
+    this.#clearSettle();
+  }
+
+  /** Stops timers (canvas destroyed). */
+  dispose(): void {
+    this.stopAnimation();
   }
 
   panBy(dx: number, dy: number): void {
@@ -164,6 +227,7 @@ export class CameraController {
   }
 
   animateZoomTo(target: number, anchor: Point): void {
+    this.#clearSettle();
     this.#framed = false;
     this.#anim = {
       current: this.#anim?.current ?? this.zoomLevel,
@@ -174,12 +238,43 @@ export class CameraController {
     this.#requestRender();
   }
 
-  zoomStep(dir: 1 | -1): void {
-    const from = this.zoomTarget;
-    let next = nextZoomStep(from, dir);
-    // Below the smallest step (world view): keep zooming in factors.
-    if (dir < 0 && next >= from) next = from / 1.5;
-    this.animateZoomTo(next, this.viewCenter());
+  zoomStep(dir: 1 | -1, anchor: Point = this.viewCenter()): void {
+    this.animateZoomTo(this.#stepFrom(this.zoomTarget, dir), anchor);
+  }
+
+  /** `count` zoom steps (negative = out) at once, animated, keeping `anchor` fixed (wheel notches). */
+  zoomSteps(count: number, anchor: Point): void {
+    if (count === 0) return;
+    this.#clearSettle();
+    let z = this.zoomTarget;
+    const dir: 1 | -1 = count > 0 ? 1 : -1;
+    for (let i = 0; i < Math.abs(count); i++) z = this.#stepFrom(z, dir);
+    this.animateZoomTo(z, anchor);
+  }
+
+  /**
+   * Continuous zoom by `factor` (trackpad pinch): follows the fingers, then
+   * settles on the nearest preset once the pinch pauses (level view).
+   */
+  pinchZoom(factor: number, anchor: Point): void {
+    this.setZoom(this.zoomTarget * factor, anchor);
+    if (!this.snapSteps) return;
+    this.#clearSettle();
+    this.#settleTimer = setTimeout(() => {
+      this.#settleTimer = null;
+      const target = this.#clamp(nearestZoomStep(this.zoomLevel));
+      if (Math.abs(target - this.zoomLevel) > 1e-9) this.animateZoomTo(target, anchor);
+    }, PINCH_SETTLE_MS);
+  }
+
+  #stepFrom(from: number, dir: 1 | -1): number {
+    if (!this.snapSteps) return this.#clamp(dir > 0 ? from * 1.5 : from / 1.5);
+    return nextZoomStep(from, dir, undefined, this.minZoom, this.maxZoom);
+  }
+
+  #clearSettle(): void {
+    if (this.#settleTimer !== null) clearTimeout(this.#settleTimer);
+    this.#settleTimer = null;
   }
 
   /** Changes the zoom limits; the current zoom is clamped into them. */
@@ -196,6 +291,7 @@ export class CameraController {
       return;
     }
     this.#pendingFrameMap = false;
+    this.#frameMode = "fit";
     this.#anim = null;
     this.#framed = true;
     if (this.frameBounds) {

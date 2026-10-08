@@ -121,6 +121,71 @@ export function rasterImage(raster: Uint8Array, colors: CodeColors): Uint8Clampe
   return data;
 }
 
+// ------------------------------------------------------------------ hatched collision patterns
+
+/** Pattern pixels per cell of the collision overlay textures (32 cells × 8 = 256 px per chunk). */
+export const PATTERN_SCALE = 8;
+/** Repeat of the hatch / dot patterns in pattern pixels (divides {@link PATTERN_SCALE}: seamless across cells). */
+const PATTERN_PERIOD = 4;
+
+/** How a raster code is drawn: a faint base fill plus `kind` marks at `markAlpha`. */
+export interface CodePattern {
+  readonly color: number;
+  readonly fillAlpha: number;
+  readonly markAlpha: number;
+  /** `"/"` diagonal hatch, `"x"` cross hatch, `"dots"` sparse dots. */
+  readonly kind: "/" | "x" | "dots";
+}
+
+/** True where pattern `kind` draws a mark at pattern pixel (`gx`, `gy`) (global, so it runs on across cells). */
+export function patternMark(kind: CodePattern["kind"], gx: number, gy: number): boolean {
+  const p = PATTERN_PERIOD;
+  const fwd = (((gx + gy) % p) + p) % p === 0;
+  if (kind === "/") return fwd;
+  if (kind === "x") return fwd || (((gx - gy) % p) + p) % p === 0;
+  return (((gx % p) + p) % p) === 1 && (((gy % p) + p) % p) === 1;
+}
+
+/**
+ * RGBA pixels of chunk (`cx`, `cy`)'s raster drawn with per-code patterns at
+ * {@link PATTERN_SCALE} pixels per cell (hatched solid, dotted passable), or
+ * null when every cell is transparent.
+ */
+export function patternImage(
+  raster: Uint8Array,
+  patterns: readonly (CodePattern | null | undefined)[],
+  cx: number,
+  cy: number,
+): Uint8ClampedArray | null {
+  const S = PATTERN_SCALE;
+  const side = (1 << CHUNK_SHIFT) * S;
+  let data: Uint8ClampedArray | null = null;
+  const ox = (cx << CHUNK_SHIFT) * S;
+  const oy = (cy << CHUNK_SHIFT) * S;
+  for (let i = 0; i < raster.length; i++) {
+    const code = raster[i]!;
+    if (code === 0) continue;
+    const pat = patterns[code];
+    if (!pat) continue;
+    data ??= new Uint8ClampedArray(side * side * 4);
+    const fill = rgba(pat.color, pat.fillAlpha);
+    const mark = rgba(pat.color, pat.markAlpha);
+    const px0 = (i & CHUNK_MASK) * S;
+    const py0 = (i >> CHUNK_SHIFT) * S;
+    for (let v = 0; v < S; v++) {
+      let o = ((py0 + v) * side + px0) * 4;
+      for (let u = 0; u < S; u++, o += 4) {
+        const c = patternMark(pat.kind, ox + px0 + u, oy + py0 + v) ? mark : fill;
+        data[o] = c[0];
+        data[o + 1] = c[1];
+        data[o + 2] = c[2];
+        data[o + 3] = c[3];
+      }
+    }
+  }
+  return data;
+}
+
 /** `0xRRGGBB` + alpha (0..1) → RGBA bytes. */
 export function rgba(color: number, alpha: number): [number, number, number, number] {
   return [(color >> 16) & 255, (color >> 8) & 255, color & 255, Math.round(Math.min(1, Math.max(0, alpha)) * 255)];

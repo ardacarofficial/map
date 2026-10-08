@@ -11,6 +11,9 @@
  * - `Ctrl+V` is handled by the native `paste` event (it carries the system
  *   clipboard text without a permission prompt).
  * - `Escape` that closes a dialog does not also deselect.
+ * - Matching is layout-aware (`keymap.ts`); AltGr ("[" on Turkish-Q) is not Ctrl.
+ * - With a project open, browser keys that would reload, print or search the
+ *   page (F5, Ctrl+R, Ctrl+P, Ctrl+F, F7, Ctrl+U) do nothing.
  */
 import { CANVAS_HOST_ATTR } from "../ui/canvas/canvasHandle";
 import { useEditorStore } from "../state/editorStore";
@@ -20,6 +23,17 @@ import { importTilesetFiles } from "./tilesetActions";
 import { getCommand, commandForEvent, isEnabled, runCommand } from "./registry";
 import type { CommandId } from "../shortcuts/shortcuts";
 import { modalOpen } from "./modal";
+import { eventModifiers, matchesChord, parseChord, type KeyEventLike } from "./keymap";
+
+/** Browser keys that reload / print / search / view source: no use in the editor, and a reload loses work. */
+const RESERVED_BROWSER_KEYS = ["F5", "Ctrl+F5", "Shift+F5", "Ctrl+R", "Ctrl+Shift+R", "Ctrl+P", "Ctrl+F", "F7", "Ctrl+U", "F3"].map(
+  parseChord,
+);
+
+/** True for a browser key the editor swallows while a project is open. */
+export function isReservedBrowserKey(event: KeyEventLike): boolean {
+  return RESERVED_BROWSER_KEYS.some((chord) => matchesChord(event, chord));
+}
 
 /** Commands that make sense to auto-repeat while a key is held. */
 const REPEATABLE = new Set<CommandId>(["view.zoomIn", "view.zoomOut", "edit.undo", "edit.redo"]);
@@ -65,11 +79,15 @@ export function isCanvasFocused(): boolean {
 function onKeyDown(event: KeyboardEvent): void {
   if (event.defaultPrevented || event.isComposing) return;
   const id = commandForEvent(event);
+  if (!id && isReservedBrowserKey(event) && useEditorStore.getState().project) {
+    event.preventDefault();
+    return;
+  }
   if (!id || id === "view.pan") return;
   const command = getCommand(id);
   if (!command) return;
 
-  const withCtrl = event.ctrlKey || event.metaKey;
+  const withCtrl = eventModifiers(event).ctrl;
   const typing = isTypingTarget(event.target);
   if (typing && (!withCtrl || TEXT_COMMANDS.has(id))) return;
   if (id === "view.togglePanels" && !isCanvasFocused()) return;

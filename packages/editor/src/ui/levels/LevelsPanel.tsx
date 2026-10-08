@@ -15,12 +15,12 @@ import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { dropIndex, rowShift } from "../panels/layerOrder";
 import { PanelSection } from "../panels/PanelSection";
+import type { SectionPanelProps } from "../layout/RightColumn";
 
 /** Row height in px (keep in sync with `h-8`). */
 const ROW = 32;
 /** Pointer travel before a press turns into a drag. */
 const DRAG_THRESHOLD = 4;
-const COLLAPSED_KEY = "smap.levelsCollapsed";
 
 interface Drag {
   levelId: string;
@@ -30,41 +30,20 @@ interface Drag {
   active: boolean;
 }
 
-/** The user's choice, or null when they never toggled (then: collapsed while there is only one level). */
-function readCollapsed(): boolean | null {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_KEY);
-    return raw === null ? null : raw === "1";
-  } catch {
-    return null;
-  }
-}
-
-function writeCollapsed(collapsed: boolean): void {
-  try {
-    localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
-  } catch {
-    // Private mode: the panel just forgets.
-  }
-}
-
 /**
  * Level'lar (CLAUDE.md v1.0: "yan panelde level listesi"), top of the right
  * column: click opens a level, double-click renames, drag reorders, the row
  * menu duplicates or deletes. A dot marks levels with unsaved changes. List
  * edits are project-level and not undoable (deleting asks first).
  */
-export function LevelsPanel() {
+export function LevelsPanel({ collapsed, onToggleCollapsed, extra }: SectionPanelProps) {
   const levels = useProjectLibrary((s) => s.levels);
   const dirtyIds = useProjectLibrary((s) => s.dirtyLevelIds);
   const activeId = useEditorStore((s) => s.project?.levelId ?? null);
   const picking = useLevelUi((s) => s.pick !== null);
   // v1.2: on the world map the list is the only panel (taller), and a click opens the level in the level view.
   const world = useWorldView((s) => s.view === "world");
-  const [stored, setStored] = useState(readCollapsed);
   const count = levels.length;
-  // One level: the list adds nothing, so it starts folded; a second level unfolds it (unless the user chose otherwise).
-  const collapsed = stored ?? (!world && count <= 1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [settling, setSettling] = useState(false);
@@ -77,11 +56,6 @@ export function LevelsPanel() {
     const frame = requestAnimationFrame(() => setSettling(false));
     return () => cancelAnimationFrame(frame);
   }, [settling]);
-
-  const toggle = () => {
-    writeCollapsed(!collapsed);
-    setStored(!collapsed);
-  };
 
   const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;
 
@@ -128,11 +102,14 @@ export function LevelsPanel() {
   return (
     <PanelSection
       title={t("levels.title")}
-      className={world ? "min-h-0 shrink" : "shrink-0"}
+      className="flex-auto"
+      collapsed={collapsed}
+      extra={extra}
       heading={
         <button
           type="button"
-          onClick={toggle}
+          data-section-toggle=""
+          onClick={onToggleCollapsed}
           aria-expanded={!collapsed}
           aria-label={collapsed ? t("levels.expand") : t("levels.collapse")}
           title={collapsed && activeName !== null ? activeName : undefined}
@@ -166,7 +143,7 @@ export function LevelsPanel() {
         <ul
           role="listbox"
           aria-label={t("levels.title")}
-          className={`relative flex flex-col overflow-y-auto px-1.5 pb-1.5 ${world ? "min-h-0" : "max-h-[168px]"}`}
+          className="relative flex min-h-0 flex-auto flex-col overflow-y-auto px-1.5 pb-1.5"
         >
           {levels.map((level, index) => {
             const isActive = level.id === activeId;

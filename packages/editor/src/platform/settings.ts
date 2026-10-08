@@ -44,7 +44,7 @@ const FIXED_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>(["view.pan"]);
 const NAMED_CODES = new Set([
   "Space", "Tab", "Escape", "Enter", "Backspace", "Delete", "Insert", "Home", "End", "PageUp", "PageDown",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-  "Equal", "Minus", "Comma", "Period", "Slash", "Backslash", "Semicolon", "Quote", "Backquote", "BracketLeft", "BracketRight",
+  "Equal", "Plus", "Minus", "Comma", "Period", "Slash", "Backslash", "Semicolon", "Quote", "Backquote", "BracketLeft", "BracketRight",
   "NumpadAdd", "NumpadSubtract", "NumpadMultiply", "NumpadDivide", "NumpadDecimal", "NumpadEnter",
 ]);
 

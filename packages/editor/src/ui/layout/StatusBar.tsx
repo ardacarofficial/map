@@ -3,7 +3,7 @@ import { isEntityLayer } from "@smap/core";
 
 import { formatNumber, getLocale, t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { useSaveStatus } from "../../io/saveStatus";
+import { useSaveIndicator } from "../../io/saveIndicator";
 import { useWorldView } from "../../commands/worldActions";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
@@ -24,19 +24,17 @@ function formatTime(ms: number): string {
 
 /** "Kaydediliyor…" / "Kaydedildi · 12:04" / "Kaydedilmedi" (no folder yet). */
 function SaveState() {
-  const dirty = useEditorStore((s) => s.dirty);
-  const { saving, lastSavedAt, failed, hasFolder } = useSaveStatus();
-  let text: string;
-  let tone = "text-faint";
-  if (saving) text = t("status.saving");
-  else if (failed) {
-    text = t("status.saveFailed");
-    tone = "text-danger";
-  } else if (lastSavedAt !== null && hasFolder) text = t("status.savedAt", { time: formatTime(lastSavedAt) });
-  else if (dirty) text = t("status.notSaved");
-  else return null;
+  // One source of truth with the title dot and the window title (`io/saveIndicator.ts`).
+  const indicator = useSaveIndicator();
+  if (!indicator.text) return null;
+  const saving = indicator.text === "saving";
+  const tone = indicator.text === "saveFailed" ? "text-danger" : "text-faint";
+  const text =
+    indicator.text === "savedAt" && indicator.lastSavedAt !== null
+      ? t("status.savedAt", { time: formatTime(indicator.lastSavedAt) })
+      : t(`status.${indicator.text === "savedAt" ? "notSaved" : indicator.text}`);
   return (
-    <div role="status" className={`ml-auto flex items-center gap-1.5 px-2.5 ${tone}`}>
+    <div role="status" data-save-state={indicator.text} className={`ml-auto flex items-center gap-1.5 px-2.5 ${tone}`}>
       {saving && <span className="size-1.5 animate-pulse rounded-full bg-accent" />}
       {text}
     </div>

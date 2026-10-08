@@ -622,3 +622,109 @@ function matchMetadata(store: MapStore, want: Tileset): void {
     }
   }
 }
+
+// ------------------------------------------------------------------ tileset list (add / remove / name / group / order)
+
+/**
+ * The library itself is project data too: which tilesets exist, their
+ * order, name and group. Every level's document holds a copy; after a
+ * change in the active level (one undo step there) {@link syncLevelLists}
+ * brings every cached level to the same list, the same way grid edits
+ * follow: the level's own recorded step is undone / redone when it is the
+ * exact mirror (byte-exact, also for a removed tileset's cleared cells),
+ * otherwise the core ops apply the difference (one undo step, recorded).
+ * Remove a tileset only after {@link loadAllLevels}: a level read from disk
+ * later would refer to a tileset that no longer exists.
+ */
+
+/** A text key of the tileset list: ids in order with name and group (not the grid: that follows separately). */
+export function tilesetListKey(tilesets: readonly Pick<Tileset, "id" | "name" | "group">[]): string {
+  return JSON.stringify(tilesets.map((ts) => [ts.id, ts.name, ts.group ?? ""]));
+}
+
+/** One list change a level made (its own edit or a follow), with its history step. */
+interface ListRecord {
+  readonly from: string;
+  readonly to: string;
+  readonly entryId: number | undefined;
+}
+
+const listRecords = new WeakMap<MapStore, ListRecord[]>();
+
+/**
+ * Records that `store`'s top history step changed its tileset list from
+ * `fromKey` (a {@link tilesetListKey} taken before). Called for the active
+ * level's own edit and for every level that followed, so whichever level
+ * is open later, the others can mirror its undo exactly.
+ */
+export function recordListChange(store: MapStore, fromKey: string): void {
+  const to = tilesetListKey(store.document.tilesets);
+  if (to === fromKey) return;
+  const list = listRecords.get(store) ?? [];
+  list.push({ from: fromKey, to, entryId: store.peekUndo()?.id });
+  if (list.length > MAX_RECORDS) list.splice(0, list.length - MAX_RECORDS);
+  listRecords.set(store, list);
+}
+
+export interface ListSync {
+  /** Ids of levels whose list was brought to the active level's. */
+  levels: string[];
+}
+
+/** Brings every cached non-active level to the active level's tileset list (see above). Changed levels are marked dirty. */
+export function syncLevelLists(ws: LevelWorkspace): ListSync {
+  const want = ws.active.store.document.tilesets;
+  const wantKey = tilesetListKey(want);
+  const out: ListSync = { levels: [] };
+  for (const id of ws.cachedIds()) {
+    if (id === ws.activeId) continue;
+    const entry = ws.entry(id)!;
+    if (tilesetListKey(entry.store.document.tilesets) === wantKey) continue;
+    followList(entry.store, want);
+    ws.markDirty(id);
+    out.levels.push(id);
+  }
+  return out;
+}
+
+/** Moves `store`'s tileset list to `want` (its own recorded step first, else the core ops). */
+function followList(store: MapStore, want: readonly Tileset[]): void {
+  if (store.inTransaction) store.commit();
+  const wantKey = tilesetListKey(want);
+  const records = listRecords.get(store) ?? [];
+  const key = () => tilesetListKey(store.document.tilesets);
+  const haveKey = key();
+  const top = store.peekUndo();
+  if (top && records.some((r) => r.entryId === top.id && r.to === haveKey && r.from === wantKey)) {
+    store.undo();
+    if (key() === wantKey) return;
+    store.redo();
+  }
+  const next = store.peekRedo();
+  if (next && records.some((r) => r.entryId === next.id && r.from === haveKey && r.to === wantKey)) {
+    store.redo();
+    if (key() === wantKey) return;
+    store.undo();
+  }
+  const doc = store.document;
+  const wantIds = new Set(want.map((ts) => ts.id));
+  store.beginTransaction();
+  try {
+    for (const ts of [...doc.tilesets]) if (!wantIds.has(ts.id)) store.dispatch({ type: "removeTileset", tilesetId: ts.id });
+    for (const ts of want) if (!doc.getTileset(ts.id)) store.dispatch({ type: "addTileset", tileset: ts });
+    for (const ts of want) {
+      const have = doc.getTileset(ts.id)!;
+      if (have.name !== ts.name || (have.group ?? "") !== (ts.group ?? "")) {
+        store.dispatch({ type: "setTilesetMeta", tilesetId: ts.id, name: ts.name, group: ts.group ?? null });
+      }
+    }
+    want.forEach((ts, index) => {
+      if (doc.tilesets[index]?.id !== ts.id) store.dispatch({ type: "moveTileset", tilesetId: ts.id, index });
+    });
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+  recordListChange(store, haveKey);
+}

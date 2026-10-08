@@ -32,9 +32,23 @@ export interface RevealRequest {
   readonly nonce: number;
 }
 
+/** "Tek": one tileset at a time; "Tümü": every tileset stacked in one scroll. */
+export type LibraryView = "single" | "all";
+
 interface TilesetViewState {
-  /** Tileset id → zoom (null or missing = fit to the panel width). */
+  /** Tileset id → zoom override (null or missing = the global zoom). */
   zoom: Readonly<Record<string, number | null>>;
+  /** Zoom of every tileset without an override (null = fit to the panel width). */
+  globalZoom: number | null;
+  view: LibraryView;
+  /** Collapsed group names ("" = the ungrouped bucket). */
+  collapsed: readonly string[];
+  /** Library search text (filters by name). */
+  query: string;
+  setGlobalZoom(zoom: number | null): void;
+  setView(view: LibraryView): void;
+  toggleCollapsed(group: string): void;
+  setQuery(query: string): void;
   selection: PanelSelection | null;
   reveal: RevealRequest | null;
   setZoom(tilesetId: string, zoom: number | null): void;
@@ -43,6 +57,36 @@ interface TilesetViewState {
 }
 
 const ZOOM_KEY = "smap.tilesetZoom";
+const PREFS_KEY = "smap.tilesetLibrary";
+
+interface LibraryPrefs {
+  globalZoom: number | null;
+  view: LibraryView;
+  collapsed: string[];
+}
+
+function readPrefs(): LibraryPrefs {
+  const prefs: LibraryPrefs = { globalZoom: null, view: "single", collapsed: [] };
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const v = (raw ? JSON.parse(raw) : null) as Partial<Record<keyof LibraryPrefs, unknown>> | null;
+    if (!v || typeof v !== "object") return prefs;
+    if (typeof v.globalZoom === "number" && Number.isFinite(v.globalZoom) && v.globalZoom > 0) prefs.globalZoom = v.globalZoom;
+    if (v.view === "all" || v.view === "single") prefs.view = v.view;
+    if (Array.isArray(v.collapsed)) prefs.collapsed = v.collapsed.filter((g): g is string => typeof g === "string");
+  } catch {
+    // Storage blocked or garbage: defaults.
+  }
+  return prefs;
+}
+
+function writePrefs(state: LibraryPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ globalZoom: state.globalZoom, view: state.view, collapsed: state.collapsed }));
+  } catch {
+    // Remembered for this session only.
+  }
+}
 
 function readZoom(): Record<string, number | null> {
   try {
@@ -70,10 +114,30 @@ function writeZoom(zoom: Readonly<Record<string, number | null>>): void {
 
 let nonce = 0;
 
+const prefs = readPrefs();
+
 export const useTilesetView = create<TilesetViewState>()((set, get) => ({
   zoom: readZoom(),
+  globalZoom: prefs.globalZoom,
+  view: prefs.view,
+  collapsed: prefs.collapsed,
+  query: "",
   selection: null,
   reveal: null,
+  setGlobalZoom: (globalZoom) => {
+    set({ globalZoom });
+    writePrefs({ ...get(), collapsed: [...get().collapsed] });
+  },
+  setView: (view) => {
+    set({ view });
+    writePrefs({ ...get(), collapsed: [...get().collapsed] });
+  },
+  toggleCollapsed: (group) => {
+    const have = get().collapsed;
+    set({ collapsed: have.includes(group) ? have.filter((g) => g !== group) : [...have, group] });
+    writePrefs({ ...get(), collapsed: [...get().collapsed] });
+  },
+  setQuery: (query) => set({ query }),
   setZoom: (tilesetId, zoom) => {
     const next = { ...get().zoom, [tilesetId]: zoom };
     set({ zoom: next });

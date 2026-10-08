@@ -1,3 +1,6 @@
+import { classifyWheel } from "../../canvas/brush";
+import { wheelDeltaPixels } from "../../canvas/camera";
+
 /**
  * Tileset panel zoom, as pure functions (unit tested): the default "fit"
  * scale fills the panel width with the tileset's columns, preferring a
@@ -56,17 +59,55 @@ export function zoomLabel(scale: number): string {
   return `${Math.round(scale * 100)}%`;
 }
 
-/**
- * What a wheel event over a scrollable image (tileset panel, import preview)
- * does — the Tiled / Photoshop convention: plain wheel scrolls vertically,
- * Shift + wheel scrolls sideways, Ctrl / Cmd + wheel zooms at the cursor
- * (a trackpad pinch arrives as Ctrl + wheel). Trackpad two-finger swipes
- * (plain wheel with deltaX) scroll natively too.
- */
-export type WheelIntent = "zoom" | "scroll-x" | "native";
+// ------------------------------------------------------------------ wheel
 
-export function wheelIntent(event: Pick<WheelEvent, "ctrlKey" | "metaKey" | "shiftKey">): WheelIntent {
-  if (event.ctrlKey || event.metaKey) return "zoom";
-  if (event.shiftKey) return "scroll-x";
-  return "native";
+/**
+ * What a wheel event over a tileset view (tileset panel, import preview)
+ * does: exactly the map canvas' model (`classifyWheel`), so the mouse
+ * behaves the same everywhere — a mouse notch zooms at the cursor,
+ * Shift + wheel scrolls sideways, a trackpad two-finger swipe pans, a pinch
+ * or Ctrl / Cmd + wheel zooms. Zoom deltas go through
+ * {@link accumulateWheelZoom} (the tileset zooms in crisp steps).
+ */
+export type TilesetWheel = { readonly kind: "zoom"; readonly delta: number } | { readonly kind: "pan"; readonly dx: number; readonly dy: number };
+
+export interface WheelLike {
+  readonly deltaX: number;
+  readonly deltaY: number;
+  readonly deltaMode: number;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+}
+
+/** How long a pan gesture "sticks" for following wheel events (as on the map). */
+export const PAN_GESTURE_MS = 250;
+
+/** `recentPan`: the previous wheel event panned less than {@link PAN_GESTURE_MS} ago. */
+export function tilesetWheel(event: WheelLike, recentPan: boolean): TilesetWheel {
+  const dx = wheelDeltaPixels(event.deltaX, event.deltaMode);
+  const dy = wheelDeltaPixels(event.deltaY, event.deltaMode);
+  const action = classifyWheel(
+    { deltaX: dx, deltaY: dy, deltaMode: event.deltaMode, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey },
+    recentPan,
+  );
+  if (action === "pan") {
+    // Shift + mouse wheel scrolls sideways.
+    return event.shiftKey && dx === 0 ? { kind: "pan", dx: dy, dy: 0 } : { kind: "pan", dx, dy };
+  }
+  return { kind: "zoom", delta: dy };
+}
+
+/** Wheel delta (px) per zoom step: a mouse notch (~100 px) is one step, a pinch's many small deltas add up. */
+export const WHEEL_ZOOM_STEP = 40;
+
+/**
+ * Adds a zoom delta to the running total `acc`; returns the new total and
+ * the step to take (1 = in, -1 = out, 0 = none yet). A delta against the
+ * running direction starts over.
+ */
+export function accumulateWheelZoom(acc: number, delta: number): { acc: number; step: -1 | 0 | 1 } {
+  const next = Math.sign(acc) !== 0 && Math.sign(acc) !== Math.sign(delta) ? delta : acc + delta;
+  if (Math.abs(next) < WHEEL_ZOOM_STEP) return { acc: next, step: 0 };
+  return { acc: 0, step: next < 0 ? 1 : -1 };
 }

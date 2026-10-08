@@ -18,6 +18,8 @@ import {
   terrainCandidates,
   isGridLayer,
   isTileLayer,
+  LayerMergeError,
+  moveRegion,
   SPAWN_TYPE_ID,
   type EntityFieldValue,
   type EntityType,
@@ -313,6 +315,30 @@ const actionArb = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("defineEntityType" as const), variant: fc.nat({ max: 3 }) }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeEntityType" as const), id: fc.constantFrom("chest", "npc") }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("addEntityLayer" as const), index: pick }) },
+  // Round 3: tileset list / metadata, layer duplicate / merge, selection move.
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeTileset" as const), tileset: fc.constantFrom("grass", "terrain") }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("addTileset" as const), tileset: fc.constantFrom("grass", "terrain") }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("tilesetMeta" as const),
+      tileset: fc.constantFrom("grass", "terrain"),
+      name: fc.constantFrom(undefined, "Çimen", "Grass"),
+      group: fc.constantFrom(undefined, null, "", "Dış", "Zindan"),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("moveTileset" as const), tileset: fc.constantFrom("grass", "terrain"), index: pick }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("duplicateLayer" as const), layer: pick }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("mergeLayerDown" as const), layer: pick }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("moveRegion" as const),
+      layers: fc.array(pick, { minLength: 1, maxLength: 3 }),
+      x: coord, y: coord, w: fc.integer({ min: 1, max: 6 }), h: fc.integer({ min: 1, max: 6 }),
+      dx: fc.integer({ min: -4, max: 4 }), dy: fc.integer({ min: -4, max: 4 }),
+    }),
+  },
   { weight: 2, arbitrary: fc.constant({ kind: "undo" as const }) },
   { weight: 2, arbitrary: fc.constant({ kind: "redo" as const }) },
 );
@@ -440,6 +466,8 @@ function applyEdit(store: MapStore, a: EditAction): void {
       if (ids.length === 0) return;
       let clip = copyRegion(doc, ids, { x: a.x, y: a.y, width: a.w, height: a.h });
       if (a.flip) clip = flipClip(clip, a.flip);
+      // Cells may still use palette entries of a removed tileset: pasteClip refuses those clips (before any write).
+      if (clip.palette.some((e) => !doc.getTileset(e.tilesetId))) return;
       pasteClip(store, clip, null, a.tx, a.ty, { emptyCells: a.erase ? "erase" : "skip" });
       return;
     }
@@ -483,7 +511,8 @@ function applyEdit(store: MapStore, a: EditAction): void {
     }
     case "solid": {
       // Tileset grids may have changed: only ids inside the current grid.
-      const ts = doc.getTileset(a.tileset)!;
+      const ts = doc.getTileset(a.tileset);
+      if (!ts) return;
       const tileIds = a.tileIds.filter((id) => id < ts.columns * ts.rows);
       store.dispatch({ type: "setTileSolid", tilesetId: a.tileset, tileIds, solid: a.solid });
       return;
@@ -491,7 +520,8 @@ function applyEdit(store: MapStore, a: EditAction): void {
     case "defineTerrain": {
       // Only on the original grid, and only when every tile of the terrain is
       // already in the palette (palette growth is not undoable; see setup()).
-      const ts = doc.getTileset("terrain")!;
+      const ts = doc.getTileset("terrain");
+      if (!ts) return;
       if (ts.columns !== 12 || ts.rows !== 10 || ts.tileWidth !== 32 || ts.tileHeight !== 32 || ts.margin !== 0 || ts.spacing !== 0) return;
       const tiles = terrainCandidates(ts, a.terrain).flat();
       if (tiles.some((id) => doc.palette.indexOf("terrain", id) === 0)) return;
@@ -499,6 +529,7 @@ function applyEdit(store: MapStore, a: EditAction): void {
       return;
     }
     case "tilesetGrid": {
+      if (!doc.getTileset(a.tileset)) return;
       const [tileWidth, tileHeight, margin, spacing] = GRID_SPECS[a.spec]!;
       const [imageWidth, imageHeight] = IMAGE_SIZES[a.tileset]![0]!;
       store.dispatch({
@@ -513,6 +544,7 @@ function applyEdit(store: MapStore, a: EditAction): void {
       return;
     }
     case "tilesetImage": {
+      if (!doc.getTileset(a.tileset)) return;
       const [imageWidth, imageHeight] = IMAGE_SIZES[a.tileset]![a.size]!;
       store.dispatch({ type: "replaceTilesetImage", tilesetId: a.tileset, imageWidth, imageHeight });
       return;
@@ -585,10 +617,50 @@ function applyEdit(store: MapStore, a: EditAction): void {
     case "removeEntityType":
       if (doc.entityTypes.some((t) => t.id === a.id)) store.dispatch({ type: "removeEntityType", typeId: a.id });
       return;
+    case "removeTileset":
+      if (doc.getTileset(a.tileset)) store.dispatch({ type: "removeTileset", tilesetId: a.tileset });
+      return;
+    case "addTileset":
+      if (!doc.getTileset(a.tileset)) store.dispatch({ type: "addTileset", tileset: a.tileset === "grass" ? TILESET : TERRAIN_TILESET });
+      return;
+    case "tilesetMeta":
+      if (doc.getTileset(a.tileset)) {
+        store.dispatch({
+          type: "setTilesetMeta",
+          tilesetId: a.tileset,
+          ...(a.name !== undefined ? { name: a.name } : {}),
+          ...(a.group !== undefined ? { group: a.group } : {}),
+        });
+      }
+      return;
+    case "moveTileset":
+      if (doc.getTileset(a.tileset)) store.dispatch({ type: "moveTileset", tilesetId: a.tileset, index: a.index % doc.tilesets.length });
+      return;
+    case "duplicateLayer": {
+      const layerId = layerAt(store, a.layer);
+      if (layerId) store.dispatch({ type: "duplicateLayer", layerId });
+      return;
+    }
+    case "mergeLayerDown": {
+      const layerId = layerAt(store, a.layer);
+      if (!layerId) return;
+      try {
+        store.dispatch({ type: "mergeLayerDown", layerId });
+      } catch (error) {
+        if (!(error instanceof LayerMergeError)) throw error;
+      }
+      return;
+    }
+    case "moveRegion": {
+      const ids = layerSet(store, a.layers);
+      if (ids.length === 0) return;
+      moveRegion(store, ids, { x: a.x, y: a.y, width: a.w, height: a.h }, a.dx, a.dy);
+      return;
+    }
   }
 }
 
-describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terrain definitions, entities, entity types, tileset grid edits) are fully reversible", () => {
+describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terrain definitions, entities, entity types, tileset grid edits, tileset add/remove/move/meta, layer duplicate/merge, region move) are fully reversible", () => {
   it("undo all → initial bytes, redo all → final bytes; every state roundtrips; matches a snapshot model", () => {
     fc.assert(
       fc.property(fc.array(stepArb, { maxLength: 60 }).map((steps) => steps.flat().slice(0, 60)), (actions) => {

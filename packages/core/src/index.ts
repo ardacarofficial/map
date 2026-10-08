@@ -176,7 +176,27 @@ export type {
   UpdateTilesetGridOp,
   ReplaceTilesetImageOp,
   TilesetRemapResult,
+  RemoveTilesetOp,
+  SetTilesetMetaOp,
+  MoveTilesetOp,
+  DuplicateLayerOp,
+  MergeLayerDownOp,
+  LayerMergeRefusal,
 } from "./ops";
+
+export { LayerMergeError } from "./ops";
+
+export {
+  type TileSize,
+  type CellRegion,
+  type MoveRegionResult,
+  type TilesetUsage,
+  layerContentBounds,
+  layerCellsAsRegion,
+  selectAllContent,
+  moveRegion,
+  tilesetUsage,
+} from "./region";
 
 export { patchCellCount } from "./patch";
 
@@ -195,6 +215,7 @@ export {
   type LayerPropsHistoryChange,
   type MapHistoryChange,
   type TilesetHistoryChange,
+  type TilesetListHistoryChange,
   type PaletteHistoryChange,
   type EntitiesHistoryChange,
   type EntityTypesHistoryChange,

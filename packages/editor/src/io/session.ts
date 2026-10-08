@@ -35,6 +35,8 @@ import { useProjectLibrary } from "./projectLibrary";
 import { LevelWorkspace, paletteProblems, type SavedLevel } from "./levelWorkspace";
 import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
+import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";
+import { refreshRecentProjects } from "../platform/recentProjects";
 import { hasPngSignature, looksLikePng, planTilesetGrid, baseName } from "./tilesetImport";
 import { inferDraft, readLastSpec, rememberSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard, type CardMode } from "../ui/tilesetImport/importStore";
@@ -175,8 +177,8 @@ async function withBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
  * Returns true when it is fine to continue (saved or discarded).
  */
 export async function confirmDiscard(): Promise<boolean> {
-  const { project, dirty } = useEditorStore.getState();
-  if (!project || !dirty) return true;
+  const project = useEditorStore.getState().project;
+  if (!project || !readSaveIndicator().unsaved) return true;
   const choice = await askUnsaved(project.name);
   if (choice === "cancel") return false;
   if (choice === "discard") return true;
@@ -197,6 +199,50 @@ export function closeProject(): void {
   clearTilesetImages();
   useUiStore.getState().setActiveTileset(null);
   useProjectLibrary.getState().load({ stamps: [], levels: [] });
+}
+
+/**
+ * Renames the open project (AppBar double-click, `project.rename`). The new
+ * name goes into `project.smap` on the next save (autosave when the project
+ * has a folder); the folder keeps its name. Returns false when nothing changed.
+ */
+export function renameProject(name: string): boolean {
+  const project = useEditorStore.getState().project;
+  const next = name.replace(/\s+/g, " ").trim();
+  if (!project || next === "" || next === project.name) return false;
+  // In place: a new `project` object would make the canvas reload the level (camera reset).
+  project.name = next;
+  if (workspace) workspace.name = next;
+  useEditorStore.setState({ dirty: true });
+  if (folder) autosave?.notifyChange();
+  return true;
+}
+
+/** Resolves when every queued write (manual save, autosave) has finished. */
+export function waitForWrites(): Promise<void> {
+  return writeQueue.then(() => undefined);
+}
+
+let closeAsking = false;
+
+/**
+ * The window is being closed (desktop X, Alt+F4, taskbar). Asks Kaydet /
+ * Kaydetme / Vazgeç when work would be lost; "Kaydet" saves first (asking
+ * for a folder when the project was never saved) and closes only if that
+ * worked. Resolves true when the window may close. A second close request
+ * while the question is open is ignored (resolves false).
+ */
+export async function requestWindowClose(): Promise<boolean> {
+  if (closeAsking) return false;
+  closeAsking = true;
+  try {
+    if (!(await confirmDiscard())) return false;
+    // A save (or autosave) still writing: let it finish before the process goes.
+    await waitForWrites();
+    return true;
+  } finally {
+    closeAsking = false;
+  }
 }
 
 export interface DecodedPng {
@@ -430,7 +476,9 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
       settleDirty(libRevision);
       useSaveStatus.setState({ diskConflict: null });
       toast.success(t("toast.saved", { name: project.name || target.fs.name }));
-      void getPlatform().recents.add(target, project.name).catch((error: unknown) => console.warn(error));
+      void getPlatform()
+        .recents.add(target, project.name)
+        .then(refreshRecentProjects, (error: unknown) => console.warn(error));
       return true;
     } catch (error) {
       console.error(error);
@@ -576,7 +624,9 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
 async function openLocation(location: ProjectLocation): Promise<boolean> {
   const name = await openFromFolder(location);
   toast.success(t("toast.opened", { name }));
-  void getPlatform().recents.add(location, name).catch((error: unknown) => console.warn(error));
+  void getPlatform()
+    .recents.add(location, name)
+    .then(refreshRecentProjects, (error: unknown) => console.warn(error));
   return true;
 }
 
@@ -627,7 +677,9 @@ export async function openRecentProject(recent: RecentEntry): Promise<void> {
       console.error(error);
       if (error instanceof RecentGoneError || (error instanceof DOMException && error.name === "NotFoundError")) {
         toast.error(t("toast.recentGone", { name: recent.location }));
-        void getPlatform().recents.remove(recent).catch(() => undefined);
+        void getPlatform()
+          .recents.remove(recent)
+          .then(refreshRecentProjects, () => undefined);
         return;
       }
       toast.error(t("toast.openFailed", { detail: describeError(error) }));
@@ -737,11 +789,26 @@ export function installSession(): () => void {
   });
 
   const onBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!useEditorStore.getState().dirty) return;
+    if (!readSaveIndicator().unsaved) return;
     event.preventDefault();
     event.returnValue = "";
   };
   window.addEventListener("beforeunload", onBeforeUnload);
+
+  // Desktop: the host closes at once while nothing is unsaved (even if the
+  // page hangs) and asks `requestWindowClose` otherwise.
+  const platform = getPlatform();
+  let lastUnsaved: boolean | null = null;
+  const syncUnsaved = () => {
+    const indicator = readSaveIndicator();
+    const unsaved = indicator.unsaved || indicator.text === "saving";
+    if (unsaved === lastUnsaved) return;
+    lastUnsaved = unsaved;
+    platform.setUnsavedChanges(unsaved);
+  };
+  syncUnsaved();
+  const unsubscribeIndicator = subscribeSaveIndicator(syncUnsaved);
+  const unsubscribeClose = platform.onCloseRequested(requestWindowClose);
 
   // "Changed on disk" hints come from the platform (desktop: file watcher,
   // browser: window focus); `platform/fileChanges.ts` reacts to them.
@@ -753,5 +820,7 @@ export function installSession(): () => void {
     scheduler.dispose();
     if (autosave === scheduler) autosave = null;
     window.removeEventListener("beforeunload", onBeforeUnload);
+    unsubscribeIndicator();
+    unsubscribeClose();
   };
 }

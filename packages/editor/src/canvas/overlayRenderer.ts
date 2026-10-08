@@ -35,7 +35,7 @@ import { CANVAS_COLORS, type CanvasColors } from "./colors";
 import { brushFootprint, cellsBounds, footprintCells } from "./footprint";
 import { gridLayout } from "./grid";
 import { gridPaintValue } from "./gridPaint";
-import { isSolidCode, solidEdges, type Edge } from "./gridRaster";
+import { COLL_FORCED_PASSABLE, isSolidCode, solidEdges, type Edge } from "./gridRaster";
 import type { GridOverlays } from "./gridOverlays";
 import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
@@ -43,8 +43,10 @@ import { MaskPreview, TilePreview } from "./preview";
 import { isRandomBrush, randomTileAt } from "./randomPaint";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
+  dashSpans,
   dragRegion,
   isEditable,
+  movedRegion,
   isGridEditable,
   patternCell,
   patternLayerIndex,
@@ -65,6 +67,10 @@ const BRUSH_PREVIEW_LIMIT = 20_000;
 const FLASH_MS = 450;
 /** How long the brush size readout stays after a change. */
 const READOUT_MS = 900;
+/** How long the "cannot paint here" hint stays next to the pointer. */
+const HINT_MS = 1200;
+/** Marching ants of the selection: one step per this interval (~8 fps, renders only while a selection exists). */
+const ANTS_STEP_MS = 125;
 /** Collision outlines are drawn only when a cell is at least this many device pixels wide. */
 const OUTLINE_MIN_CELL_DEVICE_PX = 6;
 /** ...and at most this many cells are on screen. */
@@ -125,6 +131,17 @@ export class OverlayRenderer {
   });
   #readoutUntil = 0;
   #readoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Screen-space hint next to the pointer ("Katman kilitli", ...). */
+  readonly hint = new Container();
+  readonly #hintBg = new Graphics();
+  readonly #hintText = new Text({
+    text: "",
+    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.cursor },
+  });
+  #hintUntil = 0;
+  #hintAt: Point | null = null;
+  #hintTimer: ReturnType<typeof setTimeout> | null = null;
+  #antsTimer: ReturnType<typeof setTimeout> | null = null;
   #flash: { readonly region: CellRegion; readonly start: number } | null = null;
   #fillCache: FillCache | null = null;
   #lastFillAt = -Infinity;
@@ -140,6 +157,21 @@ export class OverlayRenderer {
     this.previews.addChild(this.#fillPreview.sprite, this.#tilePreview.root, this.#stampGridPreview, this.#preview);
     this.readout.addChild(this.#readoutBg, this.#readoutText);
     this.readout.visible = false;
+    this.hint.addChild(this.#hintBg, this.#hintText);
+    this.hint.visible = false;
+  }
+
+  /** Shows `text` next to the pointer for {@link HINT_MS} (e.g. why a click did nothing). */
+  showHint(text: string): void {
+    this.#hintText.text = text;
+    this.#hintAt = this.#host.pointer?.() ?? null;
+    this.#hintUntil = performance.now() + HINT_MS;
+    if (this.#hintTimer !== null) clearTimeout(this.#hintTimer);
+    this.#hintTimer = setTimeout(() => {
+      this.#hintTimer = null;
+      this.#host.requestRender();
+    }, HINT_MS + 20);
+    this.#host.requestRender();
   }
 
   /** Shows the brush size readout next to the pointer for a moment. */
@@ -177,7 +209,10 @@ export class OverlayRenderer {
   destroy(): void {
     if (this.#fillTimer !== null) clearTimeout(this.#fillTimer);
     if (this.#readoutTimer !== null) clearTimeout(this.#readoutTimer);
+    if (this.#hintTimer !== null) clearTimeout(this.#hintTimer);
+    if (this.#antsTimer !== null) clearTimeout(this.#antsTimer);
     this.readout.destroy({ children: true });
+    this.hint.destroy({ children: true });
     this.#tilePreview.destroy();
     this.#fillPreview.destroy();
   }
@@ -195,6 +230,7 @@ export class OverlayRenderer {
     this.#fillPreview.sprite.visible = false;
     this.#stampGridPreview.visible = false;
     this.readout.visible = false;
+    this.#drawHint();
     if (!map) return;
     this.#drawReadout();
     const cam = host.camera;
@@ -224,7 +260,10 @@ export class OverlayRenderer {
     if (host.showCollision) this.#drawCollisionOutline();
 
     const gesture = host.gesture;
-    if (state.region && gesture?.kind !== "select") this.#drawRegion(state.region);
+    if (gesture?.kind === "move") {
+      const r = movedRegion(gesture.region, gesture.dx, gesture.dy, map);
+      if (r) this.#drawRegion(r);
+    } else if (state.region && gesture?.kind !== "select") this.#drawRegion(state.region);
     this.#drawFlash();
     const gridActive = isGridLayer(activeLayer(host.scene?.store));
 
@@ -246,10 +285,13 @@ export class OverlayRenderer {
         return;
       }
       case "pick": {
+        if (gesture.press === "entityMenu") return;
         const r = dragRegion(gesture.start, gesture.end, map);
         if (r) this.#drawDashed(r);
         return;
       }
+      case "move":
+        return;
       case "stamp": {
         const at = host.pointerCell() ?? gesture.last ?? gesture.start;
         const mapping = gesture.saved ? savedStampPreviewMapping(host.scene?.store, gesture.clip) : gesture.mapping;
@@ -311,7 +353,9 @@ export class OverlayRenderer {
           this.#preview.width = map.tileWidth;
           this.#preview.height = map.tileHeight;
           this.#preview.visible = true;
-        } else this.#drawCellCursor(one);
+        }
+        // The cell frame stays on top of the ghost: visible on any tile, even the same one.
+        this.#drawCellCursor(one);
         return;
       }
       case "eraser":
@@ -468,6 +512,29 @@ export class OverlayRenderer {
     this.#host.requestRender();
   }
 
+  /** The hint label next to where it was asked for (screen space). */
+  #drawHint(): void {
+    this.hint.visible = false;
+    if (performance.now() >= this.#hintUntil) return;
+    const p = this.#hintAt ?? this.#host.pointer?.() ?? null;
+    if (!p) return;
+    const cam = this.#host.camera;
+    const res = cam.resolution;
+    const text = this.#hintText;
+    if (text.resolution !== res) text.resolution = res;
+    const padX = 8;
+    const padY = 4;
+    const w = Math.ceil(text.width) + 2 * padX;
+    const h = Math.ceil(text.height) + 2 * padY;
+    this.#hintBg.clear().roundRect(0, 0, w, h, 5).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.85 });
+    this.#hintBg.roundRect(0, 0, w, h, 5).stroke({ color: this.#host.colors.danger, width: 1, alpha: 0.9, alignment: 1 });
+    text.position.set(padX, padY);
+    const x = Math.max(4, Math.min(p.x + 16, cam.viewW - w - 4));
+    const y = Math.max(4, Math.min(p.y - h - 10, cam.viewH - h - 4));
+    this.hint.position.set(Math.round(x * res) / res, Math.round(y * res) / res);
+    this.hint.visible = true;
+  }
+
   /** Brush size readout next to the pointer (screen space). */
   #drawReadout(): void {
     if (performance.now() >= this.#readoutUntil) return;
@@ -531,7 +598,7 @@ export class OverlayRenderer {
     this.#drawAccentOutline(r);
   }
 
-  /** Crisp outline of the solid areas of the collision overlay (visible cells only). */
+  /** Crisp outlines of the collision overlay (visible cells only): solid areas, and passable exceptions in their colour. */
   #drawCollisionOutline(): void {
     const host = this.#host;
     const overlays = host.gridOverlays;
@@ -541,12 +608,21 @@ export class OverlayRenderer {
     const v = host.visible;
     if (v.width <= 0 || v.height <= 0 || v.width * v.height > OUTLINE_MAX_CELLS) return;
     if (map.tileWidth * cam.camera.zoom * cam.resolution < OUTLINE_MIN_CELL_DEVICE_PX) return;
-    const edges = solidEdges(v.x, v.y, v.x + v.width, v.y + v.height, (x, y) => isSolidCode(overlays.collisionCode(x, y)));
+    const x1 = v.x + v.width;
+    const y1 = v.y + v.height;
+    const solid = solidEdges(v.x, v.y, x1, y1, (x, y) => isSolidCode(overlays.collisionCode(x, y)));
+    this.#drawAreaEdges(solid, host.colors.collisionSolid, CANVAS_COLORS.collisionLineAlpha);
+    const passable = solidEdges(v.x, v.y, x1, y1, (x, y) => overlays.collisionCode(x, y) === COLL_FORCED_PASSABLE);
+    this.#drawAreaEdges(passable, host.colors.collisionPassable, CANVAS_COLORS.collisionLineAlpha);
+  }
+
+  /** Area edges: a dark halo on the outer side (readable over any tile), the `color` line on the inner side. */
+  #drawAreaEdges(edges: readonly Edge[], color: number, alpha: number): void {
     if (edges.length === 0) return;
     const g = this.overlay;
+    const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
-    // Pass 0: dark halo on the passable side (readable over any tile); pass 1: the line on the solid side.
     for (const pass of [0, 1] as const) {
       for (const e of edges) {
         const solidAfter = e.inside === "after";
@@ -559,9 +635,9 @@ export class OverlayRenderer {
           g.rect((a.x0 + offset) * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
         }
       }
-      if (pass === 0) g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.5 });
+      if (pass === 0) g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.55 });
+      else g.fill({ color, alpha });
     }
-    g.fill({ color: host.colors.collisionSolid, alpha: CANVAS_COLORS.collisionLineAlpha });
   }
 
   // ------------------------------------------------------------------ primitives
@@ -578,17 +654,36 @@ export class OverlayRenderer {
     g.fill(this.#host.colors.accent);
   }
 
-  /** Region / marquee: subtle accent fill plus a crisp accent outline. */
+  /**
+   * Selection region / marquee: subtle accent fill and marching ants (white
+   * dashes moving along a dark line, readable on any tile). While a region
+   * is drawn the ants step at ~8 fps; nothing animates without one.
+   */
   #drawRegion(r: CellRegion): void {
     const g = this.overlay;
-    const px = 1 / this.#host.camera.resolution;
-    const b = this.#host.camera.cellBox(r);
+    const cam = this.#host.camera;
+    const px = 1 / cam.resolution;
+    const k = cam.lineWidth();
+    const b = cam.cellBox(r);
     g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px).fill({
       color: this.#host.colors.accent,
       alpha: CANVAS_COLORS.regionFillAlpha,
     });
-    // Dark halo just outside keeps the accent line readable on any tile.
-    this.#drawAccentOutline(r);
+    // Outer dark halo, then the dark base line the dashes run on.
+    rectOutline(g, b.x0 - k, b.y0 - k, b.x1 + k, b.y1 + k, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.35 });
+    rectOutline(g, b.x0, b.y0, b.x1, b.y1, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.9 });
+    const w = b.x1 - b.x0;
+    const h = b.y1 - b.y0;
+    const dash = 4 * k;
+    const phase = Math.floor(performance.now() / ANTS_STEP_MS) * k;
+    for (const [a0, a1] of dashSpans(2 * (w + h), dash, dash, phase)) perimeterSpan(g, b.x0, b.y0, w, h, a0, a1, k, px);
+    g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.95 });
+    this.#antsTimer ??= setTimeout(() => {
+      this.#antsTimer = null;
+      this.#host.requestRender();
+    }, ANTS_STEP_MS);
   }
 
   /** Pick area: static black line with white dashes. */
@@ -619,7 +714,7 @@ export class OverlayRenderer {
     const k = this.#host.camera.lineWidth();
     const { x0, y0, x1, y1 } = this.#host.camera.cellBox(r);
     rectOutline(g, x0 - k, y0 - k, x1 + k, y1 + k, k, px);
-    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.8 });
     rectOutline(g, x0, y0, x1, y1, k, px);
     g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.9 });
   }
@@ -833,4 +928,23 @@ export function rectOutline(g: Graphics, x0: number, y0: number, x1: number, y1:
     .rect(x0 * px, (y1 - k) * px, w * px, k * px)
     .rect(x0 * px, (y0 + k) * px, k * px, (h - 2 * k) * px)
     .rect((x1 - k) * px, (y0 + k) * px, k * px, (h - 2 * k) * px);
+}
+
+/**
+ * Adds the part `[a0, a1)` of a rectangle outline (`k` device px thick,
+ * inside the `w`×`h` box at `x0`, `y0`) to `g`, measured clockwise from the
+ * top-left corner along the perimeter `2 * (w + h)`.
+ */
+function perimeterSpan(g: Graphics, x0: number, y0: number, w: number, h: number, a0: number, a1: number, k: number, px: number): void {
+  const edges: [number, number, (from: number, to: number) => void][] = [
+    [0, w, (f, t) => g.rect((x0 + f) * px, y0 * px, (t - f) * px, k * px)],
+    [w, w + h, (f, t) => g.rect((x0 + w - k) * px, (y0 + f - w) * px, k * px, (t - f) * px)],
+    [w + h, 2 * w + h, (f, t) => g.rect((x0 + 2 * w + h - t) * px, (y0 + h - k) * px, (t - f) * px, k * px)],
+    [2 * w + h, 2 * (w + h), (f, t) => g.rect(x0 * px, (y0 + 2 * (w + h) - t) * px, k * px, (t - f) * px)],
+  ];
+  for (const [start, end, draw] of edges) {
+    const f = Math.max(a0, start);
+    const t = Math.min(a1, end);
+    if (t > f) draw(f, t);
+  }
 }

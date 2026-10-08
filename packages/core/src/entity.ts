@@ -335,7 +335,7 @@ export function entitySize(entity: Entity, map: MapInfo): { width: number; heigh
 }
 
 /** Cell under the entity's top-left corner. */
-export function entityCell(entity: Entity, map: MapInfo): { x: number; y: number } {
+export function entityCell(entity: Entity, map: Pick<MapInfo, "tileWidth" | "tileHeight">): { x: number; y: number } {
   return { x: Math.floor(entity.x / map.tileWidth), y: Math.floor(entity.y / map.tileHeight) };
 }
 

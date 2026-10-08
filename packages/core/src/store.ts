@@ -27,7 +27,13 @@ import {
   type LayerProps,
   type LayerPropValues,
 } from "./layer";
+import { LayerMergeError } from "./ops";
 import type {
+  DuplicateLayerOp,
+  MergeLayerDownOp,
+  MoveTilesetOp,
+  RemoveTilesetOp,
+  SetTilesetMetaOp,
   AddEntityOp,
   DefineEntityTypeOp,
   MoveEntityOp,
@@ -57,7 +63,7 @@ import type {
 import { cellChangesOf, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
 import type { PaletteEntry } from "./palette";
 import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem, terrainSlotTileId, terrainTemplateInfo, type Terrain } from "./terrain";
-import { isValidTileId, tilesetProblem, type Tileset } from "./tileset";
+import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset } from "./tileset";
 import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithGrid } from "./tilesetGrid";
 
 /**
@@ -69,8 +75,9 @@ import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithG
  *   (with all their chunks) for new ids, reorder, re-read properties.
  * - `"map"`: the map was resized. Every layer's content may have moved, so
  *   rebuild all chunks of all layers and re-read `document.map`.
- * - `"tilesets"`: a tileset was appended, or a tileset's metadata (solid
- *   flags, terrains) changed. Re-read `document.tilesets`.
+ * - `"tilesets"`: a tileset was added, removed or moved, or a tileset's
+ *   metadata (name, group, solid flags, terrains, grid) changed. Re-read
+ *   `document.tilesets` (its order is the display order).
  * - `"palette"`: an entry was appended.
  * - `"entities"` (v0.6): entities of some entity layer were added, removed,
  *   moved or edited. Re-read `entities` of the entity layers.
@@ -152,6 +159,16 @@ export interface TilesetHistoryChange {
 }
 
 /**
+ * The tileset list before and after (add, remove, reorder). Tilesets are
+ * frozen, so both sides are cheap shallow copies.
+ */
+export interface TilesetListHistoryChange {
+  readonly kind: "tilesetList";
+  readonly before: readonly Tileset[];
+  readonly after: readonly Tileset[];
+}
+
+/**
  * Palette entries rewritten in place (tileset grid edits remap tile ids).
  * Only the listed indices change; the palette never shrinks.
  */
@@ -185,6 +202,7 @@ export type HistoryChange =
   | LayerPropsHistoryChange
   | MapHistoryChange
   | TilesetHistoryChange
+  | TilesetListHistoryChange
   | PaletteHistoryChange
   | EntitiesHistoryChange
   | EntityTypesHistoryChange;
@@ -508,6 +526,16 @@ export class MapStore {
         return this.#paintCells(op);
       case "addTileset":
         return this.#addTileset(op);
+      case "removeTileset":
+        return this.#removeTileset(op);
+      case "setTilesetMeta":
+        return this.#setTilesetMeta(op);
+      case "moveTileset":
+        return this.#moveTileset(op);
+      case "duplicateLayer":
+        return this.#duplicateLayer(op);
+      case "mergeLayerDown":
+        return this.#mergeLayerDown(op);
       case "addLayer":
         return this.#addLayer(op);
       case "addPaletteEntry":
@@ -586,7 +614,7 @@ export class MapStore {
   /**
    * Reverts every undoable change of the open transaction (all nesting levels)
    * and closes it without creating an undo step. Non-undoable ops
-   * (tilesets, palette entries) stay.
+   * (palette entries, `addTileset` with `undoable: false`) stay.
    *
    * @throws Error when no transaction is open.
    */
@@ -678,14 +706,99 @@ export class MapStore {
     for (const terrain of op.tileset.terrains ?? []) {
       if (this.#doc.getTerrain(terrain.id)) throw new Error(`addTileset: duplicate terrain id ${terrain.id}`);
     }
-    this.#doc._addTileset(op.tileset);
-    this.#emit({ cause: "dispatch", cells: [], structure: ["tilesets"], historyChanged: false });
-    // New terrains may give existing grid values a look: keep derived tiles current.
-    if ((op.tileset.terrains ?? []).length > 0) {
-      const ctx = this.#openOp();
-      this.#deriveAllTerrain(ctx);
-      this.#closeOp(ctx);
+    const hasTerrains = (op.tileset.terrains ?? []).length > 0;
+    if (op.undoable === false) {
+      this.#doc._addTileset(op.tileset);
+      this.#emit({ cause: "dispatch", cells: [], structure: ["tilesets"], historyChanged: false });
+      // New terrains may give existing grid values a look: keep derived tiles current.
+      if (hasTerrains) {
+        const ctx = this.#openOp();
+        this.#deriveAllTerrain(ctx);
+        this.#closeOp(ctx);
+      }
+      return;
     }
+    const ctx = this.#openOp();
+    this.#setTilesetList(ctx, [...this.#doc.tilesets, normalizeTileset(op.tileset)]);
+    if (hasTerrains) this.#deriveAllTerrain(ctx);
+    this.#closeOp(ctx);
+  }
+
+  #removeTileset(op: RemoveTilesetOp): void {
+    const tileset = this.#doc.getTileset(op.tilesetId);
+    if (!tileset) throw new Error(`removeTileset: unknown tileset "${String(op.tilesetId)}"`);
+    const indices = new Set<number>();
+    this.#doc.palette.entries().forEach((entry, i) => {
+      if (entry.tilesetId === tileset.id) indices.add(i + 1);
+    });
+    const terrainIds = new Set((tileset.terrains ?? []).map((t) => t.id));
+    const clears: { layer: TileLayer; x: number; y: number; cell: Cell }[] = [];
+    for (const layer of this.#doc.layers) {
+      let test: ((cell: Cell) => boolean) | null = null;
+      if (isTileLayer(layer) && indices.size > 0) test = (cell) => indices.has(cellPaletteIndex(cell));
+      else if (isGridLayer(layer) && layer.role === "terrain" && terrainIds.size > 0) test = (value) => terrainIds.has(value);
+      if (!test) continue;
+      for (const chunk of layer.chunks()) {
+        const data = chunk.data;
+        for (let i = 0; i < data.length; i++) {
+          const cell = data[i]!;
+          if (cell !== 0 && test(cell)) {
+            clears.push({ layer, x: (chunk.cx << CHUNK_SHIFT) + (i & CHUNK_MASK), y: (chunk.cy << CHUNK_SHIFT) + (i >> CHUNK_SHIFT), cell });
+          }
+        }
+      }
+    }
+    const ctx = this.#openOp();
+    for (const { layer, x, y, cell } of clears) {
+      layer._setCell(x, y, 0);
+      ctx.rec.recordCell(layer.id, x, y, cell, 0);
+      ctx.dirty.add(layer.id, x, y);
+    }
+    this.#setTilesetList(ctx, this.#doc.tilesets.filter((t) => t.id !== tileset.id));
+    if (terrainIds.size > 0) this.#deriveAllTerrain(ctx);
+    this.#closeOp(ctx);
+  }
+
+  #setTilesetMeta(op: SetTilesetMetaOp): void {
+    const tileset = this.#doc.getTileset(op.tilesetId);
+    if (!tileset) throw new Error(`setTilesetMeta: unknown tileset "${String(op.tilesetId)}"`);
+    if (op.name !== undefined && typeof op.name !== "string") throw new TypeError("setTilesetMeta: name must be a string");
+    if (op.group !== undefined && op.group !== null && typeof op.group !== "string") {
+      throw new TypeError("setTilesetMeta: group must be a string or null");
+    }
+    const name = op.name ?? tileset.name;
+    const group = op.group === undefined ? tileset.group : op.group === null || op.group === "" ? undefined : op.group;
+    if (name === tileset.name && group === tileset.group) return;
+    const { group: _old, ...rest } = tileset;
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, { ...rest, name, ...(group !== undefined ? { group } : {}) });
+    this.#closeOp(ctx);
+  }
+
+  #moveTileset(op: MoveTilesetOp): void {
+    const list = this.#doc.tilesets;
+    const from = list.findIndex((t) => t.id === op.tilesetId);
+    if (from < 0) throw new Error(`moveTileset: unknown tileset "${String(op.tilesetId)}"`);
+    const max = list.length - 1;
+    if (!Number.isInteger(op.index) || op.index < 0 || op.index > max) {
+      throw new RangeError(`moveTileset: index must be an integer in [0, ${max}], got ${op.index}`);
+    }
+    if (op.index === from) return;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(op.index, 0, moved!);
+    const ctx = this.#openOp();
+    this.#setTilesetList(ctx, next);
+    this.#closeOp(ctx);
+  }
+
+  /** Replaces the tileset list (add / remove / reorder) and records it. */
+  #setTilesetList(ctx: OpContext, next: readonly Tileset[]): void {
+    const before = Object.freeze([...this.#doc.tilesets]);
+    this.#doc._setTilesets(next);
+    const after = Object.freeze([...this.#doc.tilesets]);
+    ctx.rec.recordStructural(Object.freeze({ kind: "tilesetList", before, after }));
+    ctx.structure.add("tilesets");
   }
 
   #addLayer(op: AddLayerOp): string {
@@ -748,6 +861,101 @@ export class MapStore {
     }
     this.#closeOp(ctx);
     return props.id;
+  }
+
+  #duplicateLayer(op: DuplicateLayerOp): string {
+    const doc = this.#doc;
+    const source = doc.getLayer(op.layerId);
+    if (!source) throw new Error(`duplicateLayer: unknown layer "${String(op.layerId)}"`);
+    const name = op.name ?? source.name;
+    if (typeof name !== "string") throw new TypeError("duplicateLayer: name must be a string");
+    const copyProps = (from: TileLayer, id: string, layerName: string): LayerProps => ({ id, ...from.props(), name: layerName });
+    const ctx = this.#openOp();
+    const insertAbove = (layer: TileLayer, belowId: string): void => {
+      const index = doc.indexOfLayer(belowId) + 1;
+      doc._insertLayer(layer, index);
+      ctx.rec.recordStructural(Object.freeze({ kind: "layer", layer, before: null, after: index }));
+      ctx.structure.add("layers");
+    };
+
+    let result: string;
+    const target = isGridLayer(source) && source.role === "terrain" && source.targetLayerId !== null ? doc.getLayer(source.targetLayerId) : undefined;
+    if (isGridLayer(source) && isTileLayer(target)) {
+      // Terrain pair: copy the derived tile layer first, then the grid deriving into it.
+      const tiles = new TileLayer(copyProps(target, this.#generateLayerId(), target.name));
+      tiles._restore(target._snapshot());
+      insertAbove(tiles, target.id);
+      const grid = new GridLayer(copyProps(source, this.#generateLayerId(), name), "terrain", tiles.id);
+      grid._restore(source._snapshot());
+      insertAbove(grid, source.id);
+      this.#deriveTerrain(ctx, grid, this.#derivableCells(grid));
+      result = grid.id;
+    } else if (isGridLayer(source)) {
+      const grid = new GridLayer(copyProps(source, this.#generateLayerId(), name), source.role, null);
+      grid._restore(source._snapshot());
+      insertAbove(grid, source.id);
+      result = grid.id;
+    } else if (isEntityLayer(source)) {
+      const layer = new EntityLayer(copyProps(source, this.#generateLayerId(), name));
+      const taken = new Set<string>();
+      for (const l of doc.entityLayers()) for (const e of l.entities) taken.add(e.id);
+      let n = taken.size;
+      const entities: Entity[] = [];
+      for (const e of source.entities) {
+        if (e.typeId === SPAWN_TYPE_ID) continue;
+        let id: string;
+        do id = `e${++n}`;
+        while (taken.has(id));
+        taken.add(id);
+        entities.push(normalizeEntity({ ...e, id }));
+      }
+      layer._setEntities(Object.freeze(entities));
+      insertAbove(layer, source.id);
+      result = layer.id;
+    } else {
+      const layer = new TileLayer(copyProps(source, this.#generateLayerId(), name));
+      layer._restore(source._snapshot());
+      insertAbove(layer, source.id);
+      result = layer.id;
+    }
+    this.#closeOp(ctx);
+    return result;
+  }
+
+  #mergeLayerDown(op: MergeLayerDownOp): string {
+    const doc = this.#doc;
+    const upper = doc.getLayer(op.layerId);
+    if (!upper) throw new Error(`mergeLayerDown: unknown layer "${String(op.layerId)}"`);
+    if (!isTileLayer(upper)) throw new LayerMergeError("notTileLayer", op.layerId, `"${op.layerId}" is not a tile layer`);
+    const index = doc.indexOfLayer(upper.id);
+    const lower = index > 0 ? doc.layers[index - 1] : undefined;
+    if (!lower) throw new LayerMergeError("noLayerBelow", upper.id, `"${upper.id}" has no layer below`);
+    if (!isTileLayer(lower)) throw new LayerMergeError("belowNotTileLayer", op.layerId, `layer below "${op.layerId}" is not a tile layer`);
+    if (upper.locked || lower.locked) throw new LayerMergeError("locked", upper.id, `"${upper.locked ? upper.id : lower.id}" is locked`);
+    if (this.#isDerivedLayer(upper.id) || this.#isDerivedLayer(lower.id)) {
+      throw new LayerMergeError("derived", upper.id, `"${this.#isDerivedLayer(upper.id) ? upper.id : lower.id}" is derived from a terrain layer`);
+    }
+    const ctx = this.#openOp();
+    for (const chunk of upper.chunks()) {
+      const x0 = chunk.cx << CHUNK_SHIFT;
+      const y0 = chunk.cy << CHUNK_SHIFT;
+      const data = chunk.data;
+      for (let i = 0; i < data.length; i++) {
+        const cell = data[i]!;
+        if (cell === 0) continue;
+        const x = x0 + (i & CHUNK_MASK);
+        const y = y0 + (i >> CHUNK_SHIFT);
+        const before = lower._setCell(x, y, cell);
+        if (before === cell) continue;
+        ctx.rec.recordCell(lower.id, x, y, before, cell);
+        ctx.dirty.add(lower.id, x, y);
+      }
+    }
+    doc._removeLayerAt(index);
+    ctx.rec.recordStructural(Object.freeze({ kind: "layer", layer: upper, before: index, after: null }));
+    ctx.structure.add("layers");
+    this.#closeOp(ctx);
+    return lower.id;
   }
 
   #removeLayer(op: RemoveLayerOp): void {
@@ -1456,6 +1664,11 @@ export class MapStore {
         if (a.tileWidth !== b.tileWidth || a.tileHeight !== b.tileHeight || a.margin !== b.margin || a.spacing !== b.spacing || a.columns !== b.columns || a.rows !== b.rows) {
           markTileChunksDirty(doc, result.dirty);
         }
+        return;
+      }
+      case "tilesetList": {
+        doc._setTilesets(change[side]);
+        result.structure.add("tilesets");
         return;
       }
       case "palette": {

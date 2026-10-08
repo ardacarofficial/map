@@ -222,6 +222,13 @@ export const browserPlatform: Platform = {
     document.title = title;
   },
 
+  // A tab cannot wait for an answer: `installSession` uses `beforeunload`.
+  onCloseRequested() {
+    return () => undefined;
+  },
+
+  setUnsavedChanges() {},
+
   async readSettings() {
     try {
       return localStorage.getItem(SETTINGS_KEY);

@@ -18,6 +18,12 @@ export interface Tileset {
   readonly id: string;
   /** Display name. */
   readonly name: string;
+  /**
+   * Library group the tileset is shown under (e.g. `"Zindan"`). Missing =
+   * ungrouped. Display only; written to the project file only when set.
+   * Change it with the `setTilesetMeta` op.
+   */
+  readonly group?: string;
   /** Image path relative to the project folder, `/`-separated, e.g. `"tilesets/grass.png"`. */
   readonly imagePath: string;
   readonly tileWidth: number;
@@ -60,6 +66,7 @@ export function normalizeTileset(tileset: Tileset): Tileset {
   const base: Tileset = {
     id: tileset.id,
     name: tileset.name,
+    ...(tileset.group !== undefined && tileset.group !== "" ? { group: tileset.group } : {}),
     imagePath: tileset.imagePath,
     tileWidth: tileset.tileWidth,
     tileHeight: tileset.tileHeight,
@@ -133,6 +140,7 @@ export function gridCount(imageSize: number, tileSize: number, margin = 0, spaci
 export function tilesetProblem(tileset: Tileset): string | null {
   if (typeof tileset.id !== "string" || tileset.id.length === 0) return "id must be a non-empty string";
   if (typeof tileset.name !== "string") return "name must be a string";
+  if (tileset.group !== undefined && typeof tileset.group !== "string") return "group must be a string";
   const pathProblem = relativePathProblem(tileset.imagePath);
   if (pathProblem) return `imagePath ${pathProblem}`;
   for (const key of ["tileWidth", "tileHeight", "columns", "rows"] as const) {

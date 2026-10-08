@@ -1,7 +1,6 @@
 /**
- * "Katı işaretle" drag in the tileset panel. The first tile decides the
- * direction (solid → not solid, or the other way); every tile the pointer
- * crosses afterwards is set to that state. The whole drag is one undo step
+ * "Katı işaretle" drag in the tileset panel: the left button marks every
+ * tile the pointer crosses solid, the right button unmarks them (`solid`). The whole drag is one undo step
  * (a store transaction), and every change shows up live.
  */
 import { isTileSolid, lineCells, type MapStore } from "@smap/core";
@@ -15,13 +14,13 @@ export class SolidStroke {
   #last: { col: number; row: number };
   #open = true;
 
-  /** Starts a stroke on tile (`col`, `row`); opens a transaction. */
-  constructor(store: MapStore, tilesetId: string, col: number, row: number) {
+  /** Starts a stroke on tile (`col`, `row`) that sets tiles to `solid`; opens a transaction. */
+  constructor(store: MapStore, tilesetId: string, col: number, row: number, solid: boolean) {
     const tileset = store.document.getTileset(tilesetId);
     if (!tileset) throw new Error(`unknown tileset ${tilesetId}`);
     this.store = store;
     this.tilesetId = tilesetId;
-    this.solid = !isTileSolid(tileset, row * tileset.columns + col);
+    this.solid = solid;
     this.#last = { col, row };
     store.beginTransaction();
     this.#apply([{ x: col, y: row }]);

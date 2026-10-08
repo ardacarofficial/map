@@ -15,6 +15,7 @@ export { DesktopFsError, TauriFileSystem, joinPath, toProjectPath, type HostErro
 
 export const EVENT_FILE_CHANGED = "smap://file-changed";
 export const EVENT_OPEN_FILE = "smap://open-file";
+export const EVENT_CLOSE_REQUESTED = "smap://close-requested";
 
 export type FileChangeKind = "created" | "modified" | "removed";
 
@@ -174,6 +175,29 @@ export function settingsPath(): Promise<string> {
 
 export function setWindowTitle(title: string): Promise<void> {
   return command("window_set_title", { title });
+}
+
+// ---- pencere kapatma ----------------------------------------------------------
+
+/** Kaydedilmemiş iş var mı: yoksa Rust pencereyi sormadan kapatır. */
+export function setCloseGuard(unsaved: boolean): Promise<void> {
+  return invoke("close_guard_set", { unsaved });
+}
+
+/**
+ * Kaydedilmemiş iş varken X / Alt+F4 / görev çubuğu. Alındığı hemen Rust'a
+ * bildirilir (bildirilmezse sayfa donmuş sayılır, ikinci istek kapatır).
+ */
+export function onCloseRequested(cb: () => void): Promise<UnlistenFn> {
+  return listen(EVENT_CLOSE_REQUESTED, () => {
+    void invoke("close_request_ack").catch(() => undefined);
+    cb();
+  });
+}
+
+/** Pencereyi kapatır (soru sorulmadan; karar verilmiş olmalı). */
+export function closeWindow(): Promise<void> {
+  return invoke("window_close");
 }
 
 /** Kapsamdaki bir yol var mı. */

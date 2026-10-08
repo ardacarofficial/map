@@ -12,14 +12,16 @@ import type { CellPoint, MapInfo } from "@smap/core";
 
 import { useEditorStore } from "../state/editorStore";
 import { classifyWheel } from "./brush";
-import { wheelDeltaPixels, wheelZoomFactor, type Point } from "./camera";
+import { wheelDeltaPixels, wheelZoomFactor, wheelZoomSteps, type Point } from "./camera";
 import type { CameraController } from "./cameraController";
 import { SPRING_HOLD_MS, SPRING_IDLE, springStep, type SpringEvent, type SpringState } from "./springKey";
 import type { ToolController } from "./toolController";
-import { cursorFor } from "./tools";
+import { cursorFor, nudgeOffset } from "./tools";
 
 /** How long a pan gesture "sticks" for following wheel events. */
 const PAN_GESTURE_MS = 250;
+/** Small wheel deltas add up to a zoom step until the wheel pauses this long. */
+const WHEEL_ACC_RESET_MS = 200;
 
 interface Pan {
   readonly pointerId: number;
@@ -51,6 +53,8 @@ export interface InputHost {
   paintable(): boolean;
   /** Entity cursor state (see `CursorInput.entity`). */
   entityCursor(): "over" | "drag" | "blocked" | null;
+  /** Select tool: pointer over the selection / moving it (see `CursorInput.region`). */
+  regionCursor(): "over" | "moving" | null;
   /** Double click at a canvas point (CSS px): portals open their target. */
   doubleClick(p: Point): void;
   requestRender(): void;
@@ -72,6 +76,8 @@ export class PointerInput {
   #springTimer: ReturnType<typeof setTimeout> | null = null;
   #pan: Pan | null = null;
   #lastPanWheel = -Infinity;
+  #wheelAcc = 0;
+  #lastZoomWheel = -Infinity;
   #hover: CellPoint | null = null;
   readonly #canvas: HTMLCanvasElement;
   readonly #host: InputHost;
@@ -83,6 +89,11 @@ export class PointerInput {
 
   get panning(): boolean {
     return this.#pan !== null;
+  }
+
+  /** The hand tool is chosen: a left drag pans (level and world view). */
+  #handTool(): boolean {
+    return useEditorStore.getState().tool === "hand";
   }
 
   /** Shift is held (line preview of brush / eraser). */
@@ -102,7 +113,7 @@ export class PointerInput {
 
   /** Hovered map cell for cursors and previews, or null while panning / off the map. */
   cursorCell(): CellPoint | null {
-    if (!this.pointer || this.#pan || this.#spaceDown) return null;
+    if (!this.pointer || this.#pan || this.#spaceDown || this.#handTool()) return null;
     return this.#hover;
   }
 
@@ -155,6 +166,7 @@ export class PointerInput {
     window.addEventListener("keydown", (e) => this.#onKey(e, true), opts);
     // Capture phase: runs before the global shortcut handler, which skips prevented events.
     window.addEventListener("keydown", (e) => this.#onEscape(e), { signal, capture: true });
+    window.addEventListener("keydown", (e) => this.#onArrow(e), { signal, capture: true });
     window.addEventListener("keyup", (e) => this.#onKey(e, false), opts);
     window.addEventListener("blur", () => {
       this.#spaceDown = false;
@@ -184,7 +196,7 @@ export class PointerInput {
   updateCursor(): void {
     const world = this.#host.world();
     if (world) {
-      const c = this.#pan ? "grabbing" : this.#spaceDown ? "grab" : (world.cursor() ?? "default");
+      const c = this.#pan ? "grabbing" : this.#spaceDown || this.#handTool() ? "grab" : (world.cursor() ?? "default");
       if (this.#canvas.style.cursor !== c) this.#canvas.style.cursor = c;
       return;
     }
@@ -196,6 +208,7 @@ export class PointerInput {
       overMap: this.#hover !== null,
       editable: this.#host.paintable(),
       entity: this.#pan || this.#spaceDown ? null : this.#host.entityCursor(),
+      region: this.#pan || this.#spaceDown ? null : this.#host.regionCursor(),
     });
     if (this.#canvas.style.cursor !== cursor) this.#canvas.style.cursor = cursor;
   }
@@ -326,6 +339,16 @@ export class PointerInput {
     this.#host.tools.cancel();
   }
 
+  /** Arrow keys nudge the selection (select tool, canvas focused); Shift: 10 cells. */
+  #onArrow(e: KeyboardEvent): void {
+    if (e.ctrlKey || e.metaKey || e.altKey || document.activeElement !== this.#canvas || this.#host.world()) return;
+    const off = nudgeOffset(e.key, e.shiftKey);
+    if (!off) return;
+    if (!this.#host.tools.nudgeSelection(off.x, off.y)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   #onPointerDown(e: PointerEvent): void {
     const tools = this.#host.tools;
     this.#canvasRect = null;
@@ -339,8 +362,8 @@ export class PointerInput {
         return;
       }
       if (this.#pan || world.busy) return;
-      // Left drag on empty space pans, like the middle button.
-      const pan = e.button === 1 || (e.button === 0 && (this.#spaceDown || !world.pointerDown(e, this.pointer)));
+      // Left drag on empty space pans, like the middle button (always with the hand tool).
+      const pan = e.button === 1 || (e.button === 0 && (this.#spaceDown || this.#handTool() || !world.pointerDown(e, this.pointer)));
       if (pan) this.#startPan(e);
       this.updateCursor();
       return;
@@ -350,7 +373,7 @@ export class PointerInput {
       return;
     }
     if (this.#pan || tools.gesture) return;
-    if (e.button === 1 || (e.button === 0 && this.#spaceDown)) {
+    if (e.button === 1 || (e.button === 0 && (this.#spaceDown || this.#handTool()))) {
       this.#startPan(e);
       return;
     }
@@ -427,9 +450,19 @@ export class PointerInput {
   #onWheel(e: WheelEvent): void {
     e.preventDefault(); // also blocks the browser's own ctrl+wheel page zoom
     if (this.#pan) return;
-    const cam = this.#host.camera;
     const p = this.toLocal(e);
     this.pointer = p;
+    this.wheel(e, p);
+  }
+
+  /**
+   * Applies a wheel event anchored at `anchor` (canvas CSS px): mouse
+   * notches step through the zoom presets (level view), a pinch zooms
+   * continuously and settles on the nearest preset, two-finger scrolling
+   * pans (see `classifyWheel`). The minimap forwards its wheel here.
+   */
+  wheel(e: WheelEvent, anchor: Point): void {
+    const cam = this.#host.camera;
     const now = performance.now();
     const dx = wheelDeltaPixels(e.deltaX, e.deltaMode);
     const dy = wheelDeltaPixels(e.deltaY, e.deltaMode);
@@ -445,9 +478,15 @@ export class PointerInput {
       const panY = e.shiftKey && dx === 0 ? 0 : dy;
       cam.panBy(-panX, -panY);
     } else if (action === "pinch") {
-      cam.setZoom(cam.zoomTarget * wheelZoomFactor(dy, true), p);
+      cam.pinchZoom(wheelZoomFactor(dy, true), anchor);
+    } else if (!cam.snapSteps) {
+      cam.animateZoomTo(cam.zoomTarget * wheelZoomFactor(dy, false), anchor);
     } else {
-      cam.animateZoomTo(cam.zoomTarget * wheelZoomFactor(dy, false), p);
+      if (now - this.#lastZoomWheel > WHEEL_ACC_RESET_MS) this.#wheelAcc = 0;
+      this.#lastZoomWheel = now;
+      const r = wheelZoomSteps(dy, e.deltaMode, this.#wheelAcc);
+      this.#wheelAcc = r.acc;
+      cam.zoomSteps(r.steps, anchor);
     }
   }
 }

@@ -53,14 +53,118 @@ export interface PaintCellsOp {
 }
 
 /**
- * Adds a tileset to the document. Not undoable itself. When it brings
- * terrains that existing grid values already refer to, the derived tiles
- * are re-derived (recorded like any cell change: own undo step outside a
- * transaction). Throws on duplicate id or invalid metadata.
+ * Appends a tileset to the document (end of the list = bottom of the
+ * library). Undoable since round 3: one step that also holds the derived
+ * tiles re-derived when the tileset brings terrains that existing grid
+ * values already refer to. Palette entries added for it later stay when it
+ * is undone (the palette is append-only). Throws on duplicate id, duplicate
+ * terrain id or invalid metadata.
  */
 export interface AddTilesetOp {
   readonly type: "addTileset";
   readonly tileset: Tileset;
+  /**
+   * `false`: add without an undo step (the pre-round-3 behaviour), e.g. when
+   * syncing project data into another level's store. Defaults to `true`.
+   */
+  readonly undoable?: boolean;
+}
+
+/**
+ * Removes a tileset and everything that depends on it, as one undo step:
+ * - every tile-layer cell whose palette entry points at the tileset is
+ *   cleared (all layers, also locked ones);
+ * - every terrain-grid cell whose value is one of its terrains is cleared;
+ * - its solid flags and terrains go with it, and every terrain layer is
+ *   re-derived (derived tiles of its terrains disappear).
+ * Its palette entries stay (the palette is append-only), unused. Undo
+ * restores the tileset at its position and every cell byte-exactly.
+ * Check `tilesetUsage(doc, id)` first to ask the user. Structure event
+ * `"tilesets"`. Throws on an unknown tileset.
+ */
+export interface RemoveTilesetOp {
+  readonly type: "removeTileset";
+  readonly tilesetId: string;
+}
+
+/**
+ * Changes a tileset's display metadata: `name` (any string), `group`
+ * (`null` or `""` removes it → ungrouped). Omitted fields stay. Undoable;
+ * a no-op when nothing changes. Structure event `"tilesets"`. Throws on an
+ * unknown tileset or a non-string value.
+ */
+export interface SetTilesetMetaOp {
+  readonly type: "setTilesetMeta";
+  readonly tilesetId: string;
+  readonly name?: string;
+  readonly group?: string | null;
+}
+
+/**
+ * Moves a tileset so that it ends up at `index` in `document.tilesets`
+ * (the display order; tile ids and palette entries are unaffected).
+ * Undoable; moving to its current index is a no-op. Structure event
+ * `"tilesets"`. Throws on an unknown tileset or an index outside
+ * `[0, tilesets.length - 1]`.
+ */
+export interface MoveTilesetOp {
+  readonly type: "moveTileset";
+  readonly tilesetId: string;
+  readonly index: number;
+}
+
+/**
+ * Copies a layer (properties, cells or entities) and puts the copy right
+ * above it. Returns the new layer's id. Undoable as one step.
+ *
+ * - Tile / collision grid layer: plain copy.
+ * - Terrain grid layer with a derived tile layer: the **pair** is copied —
+ *   a new tile layer (copy of the target, placed right above the target)
+ *   and a new terrain grid deriving into it (right above the grid). The
+ *   returned id is the new grid's.
+ * - Terrain grid without (or with a dangling) target: copied without target.
+ * - A derived tile layer alone: copied as an ordinary (hand-paintable) tile layer.
+ * - Entity layer: entities get new ids; the spawn point is not copied
+ *   (a level has at most one).
+ *
+ * `name` defaults to the source layer's name (the UI passes a localized
+ * "… copy" name). Throws on an unknown layer.
+ */
+export interface DuplicateLayerOp {
+  readonly type: "duplicateLayer";
+  readonly layerId: string;
+  readonly name?: string;
+}
+
+/**
+ * Merges a tile layer into the tile layer directly below it: every
+ * non-empty cell of the upper layer overwrites the lower one (opacity and
+ * visibility are ignored), then the upper layer is removed. Undoable as
+ * one step. Returns the lower layer's id.
+ *
+ * Throws {@link LayerMergeError} (nothing changes) when the layer is not a
+ * plain tile layer, there is no layer below or it is not a plain tile
+ * layer (grid / entity), either layer is locked, or either is a derived
+ * terrain tile layer. Throws a plain `Error` on an unknown layer.
+ */
+export interface MergeLayerDownOp {
+  readonly type: "mergeLayerDown";
+  readonly layerId: string;
+}
+
+/** Why `mergeLayerDown` refused (see {@link LayerMergeError}). */
+export type LayerMergeRefusal = "notTileLayer" | "noLayerBelow" | "belowNotTileLayer" | "locked" | "derived";
+
+/** Thrown by `mergeLayerDown` when the merge is not possible; nothing was changed. */
+export class LayerMergeError extends Error {
+  readonly reason: LayerMergeRefusal;
+  readonly layerId: string;
+  constructor(reason: LayerMergeRefusal, layerId: string, message: string) {
+    super(`mergeLayerDown: ${message}`);
+    this.name = "LayerMergeError";
+    this.reason = reason;
+    this.layerId = layerId;
+  }
 }
 
 /** Layer properties for `addLayer`; omitted fields get defaults. */
@@ -399,6 +503,11 @@ export interface TilesetRemapResult {
 }
 
 export type Op =
+  | RemoveTilesetOp
+  | SetTilesetMetaOp
+  | MoveTilesetOp
+  | DuplicateLayerOp
+  | MergeLayerDownOp
   | UpdateTilesetGridOp
   | ReplaceTilesetImageOp
   | AddEntityOp
@@ -427,6 +536,13 @@ export interface OpResultMap {
   /** Cells this op actually changed (no-op writes omitted). */
   paintCells: LayerPatch;
   addTileset: void;
+  removeTileset: void;
+  setTilesetMeta: void;
+  moveTileset: void;
+  /** Id of the new layer (for a terrain pair: the new grid layer). */
+  duplicateLayer: string;
+  /** Id of the lower layer that received the cells. */
+  mergeLayerDown: string;
   /** Id of the new layer. */
   addLayer: string;
   /** Palette index of the entry. */

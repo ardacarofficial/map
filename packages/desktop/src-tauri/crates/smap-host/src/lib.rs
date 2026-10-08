@@ -4,6 +4,7 @@
 //! burada GTK/WebView2 yok, her şey `cargo test` ile ekransız denenir.
 
 pub mod atomic;
+pub mod close_guard;
 pub mod host;
 pub mod logfile;
 pub mod recent;

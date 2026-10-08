@@ -140,6 +140,28 @@ export function moveLevel(id: string, index: number): void {
   }
 }
 
+/** The level `step` places after `activeId` in `ids`, wrapping around; null with fewer than two levels. */
+export function cycleLevelId(ids: readonly string[], activeId: string | null, step: 1 | -1): string | null {
+  if (ids.length < 2) return null;
+  const index = activeId === null ? -1 : ids.indexOf(activeId);
+  if (index < 0) return ids[step === 1 ? 0 : ids.length - 1]!;
+  return ids[(index + step + ids.length) % ids.length]!;
+}
+
+/** Ctrl+Tab / Ctrl+Shift+Tab: opens the next / previous level of the list (wraps around). */
+export function openAdjacentLevel(step: 1 | -1): boolean {
+  const ws = getLevelWorkspace();
+  if (!ws || useLevelUi.getState().pick) return false;
+  const id = cycleLevelId(
+    ws.levels.map((l) => l.id),
+    ws.activeId,
+    step,
+  );
+  if (id === null) return false;
+  void openLevel(id);
+  return true;
+}
+
 /** Portals in other levels that point at `id` (reads levels that are not loaded). */
 export async function portalsTo(id: string): Promise<PortalReferences> {
   const ws = getLevelWorkspace();

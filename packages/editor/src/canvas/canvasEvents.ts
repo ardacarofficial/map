@@ -5,7 +5,30 @@
 import type { TileClip } from "@smap/core";
 
 import type { CellRegion, TileSelection } from "../state/editorStore";
-import type { PickResult } from "./tools";
+import type { BlockedReason, PickResult } from "./tools";
+
+export type { BlockedReason } from "./tools";
+
+/**
+ * A left press on the map could not do anything: the active layer
+ * `layerId` is locked, hidden, derived from a terrain (paint the terrain
+ * layer) or of the wrong kind for the tool (e.g. brush on an entity layer).
+ */
+export interface BlockedAction {
+  readonly reason: BlockedReason;
+  readonly layerId: string;
+}
+
+/**
+ * A right click asks for a context menu instead of picking tiles. `x` / `y`
+ * are client (page) coordinates of the click, for positioning the menu.
+ * - `"entity"`: on entity `entityId` of the active entity layer (it is
+ *   already selected);
+ * - `"selection"`: select tool, inside the selection, without a drag.
+ */
+export type CanvasContextRequest =
+  | { readonly kind: "entity"; readonly entityId: string; readonly x: number; readonly y: number }
+  | { readonly kind: "selection"; readonly x: number; readonly y: number };
 
 /**
  * Something was picked from the map (right click / right drag / eyedropper):

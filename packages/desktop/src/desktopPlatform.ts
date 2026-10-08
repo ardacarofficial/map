@@ -28,6 +28,39 @@ function isNotFound(error: unknown): boolean {
   return error instanceof Error && error.name === "FileNotFoundError";
 }
 
+/**
+ * Close requests (only sent while there is unsaved work): asks `shouldClose`,
+ * closes the window when it says so. Requests while one is being answered
+ * are dropped (the dialog is already open).
+ */
+export function listenCloseRequests(shouldClose: () => Promise<boolean>): () => void {
+  let disposed = false;
+  let unlisten: (() => void) | null = null;
+  let asking = false;
+  const onRequest = async () => {
+    if (asking || disposed) return;
+    asking = true;
+    try {
+      if (await shouldClose()) await bridge.closeWindow();
+    } catch (error) {
+      bridge.log("error", `close request: ${String(error)}`);
+    } finally {
+      asking = false;
+    }
+  };
+  void bridge
+    .onCloseRequested(() => void onRequest())
+    .then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    })
+    .catch((error: unknown) => bridge.log("warn", `close requests unavailable: ${String(error)}`));
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
 export function createDesktopPlatform(): Platform {
   /** Root the Rust side currently treats as the project (watcher, scope). */
   let activeRoot: string | null = null;
@@ -148,6 +181,14 @@ export function createDesktopPlatform(): Platform {
     setTitle(title) {
       document.title = title;
       void bridge.setWindowTitle(title).catch(() => undefined);
+    },
+
+    onCloseRequested(shouldClose) {
+      return listenCloseRequests(shouldClose);
+    },
+
+    setUnsavedChanges(unsaved) {
+      void bridge.setCloseGuard(unsaved).catch(() => undefined);
     },
 
     readSettings() {
