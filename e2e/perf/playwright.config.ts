@@ -9,7 +9,8 @@
  * Env:
  * - `PERF_LABEL`     result file name under `perf/results/` (default "latest")
  * - `PERF_RUNS`      repetitions of the start-up scenarios (default 5)
- * - `PERF_NO_BUILD`  reuse `perf/dist` (skip the build)
+ * - `PERF_NO_BUILD`  reuse the build (skip it)
+ * - `PERF_DIST`      build folder relative to packages/editor (default ../../e2e/perf/dist)
  * - `PERF_PROFILE=1` also write `.cpuprofile`s and a top-functions summary
  *                    (use with `PERF_UNMINIFIED=1` for readable names)
  */
@@ -17,7 +18,7 @@ import { defineConfig } from "@playwright/test";
 
 export const PERF_PORT = 5299;
 
-const outDir = "../../e2e/perf/dist";
+const outDir = process.env.PERF_DIST ?? "../../e2e/perf/dist";
 const minify = process.env.PERF_UNMINIFIED === "1" ? " --minify false" : "";
 const build = process.env.PERF_NO_BUILD ? "" : `pnpm --filter @smap/editor exec vite build --outDir ${outDir} --emptyOutDir --logLevel warn${minify} && `;
 

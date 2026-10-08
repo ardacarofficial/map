@@ -38,6 +38,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Start {
   shown: number;
+  /** Project from argv open (log "startup project ms"; older builds: the window). */
+  project: number;
   ready: number;
   why: string;
   marks: string;
@@ -56,10 +58,15 @@ async function coldStart(home: string, args: string[]): Promise<Start> {
       const text = existsSync(log) ? readFileSync(log, "utf8") : "";
       const shown = /^(\S+) INFO\s+\S+: window shown \(([^)]+)\)/m.exec(text);
       if (!shown) continue;
+      const projectAt = /^(\S+) INFO\s+frontend: startup project ms/m.exec(text);
+      // A project from argv: wait for it to be open too. Builds that log no "startup project ms"
+      // (they showed the window only after opening it) count the window as the project.
+      if (args.length > 0 && !projectAt && waited < 6_000) continue;
       const ready = /startup ms: (.*)$/m.exec(text);
       const readyAt = /^(\S+) INFO\s+frontend: startup ms/m.exec(text);
       return {
         shown: Date.parse(shown[1]!) - t0,
+        project: projectAt ? Date.parse(projectAt[1]!) - t0 : Date.parse(shown[1]!) - t0,
         ready: readyAt ? Date.parse(readyAt[1]!) - t0 : NaN,
         why: shown[2]!,
         marks: ready?.[1] ?? "",
@@ -94,7 +101,7 @@ test("desktop cold start", async () => {
       for (let i = 0; i < RUNS; i++) runs.push(await coldStart(home, [...args]));
       const key = `h.desktop ${name} → window shown`;
       results.metrics[key] = { value: median(runs.map((r) => r.shown)), unit: "ms" };
-      results.metrics[`h.desktop ${name} → frontend ready log`] = { value: median(runs.map((r) => r.ready)), unit: "ms" };
+      if (args.length > 0) results.metrics[`h.desktop ${name} → project open`] = { value: median(runs.map((r) => r.project)), unit: "ms" };
       console.log(`${key}: ${runs.map((r) => `${r.shown} (${r.why})`).join(", ")}\n  marks: ${runs.at(-1)!.marks}`);
     }
   } finally {

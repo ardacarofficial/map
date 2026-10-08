@@ -134,7 +134,10 @@ const THUMB_THROTTLE_MS = 150;
 /** ...of at most this long (more passes follow when chunks are left). */
 const THUMB_IDLE_BUDGET_MS = 8;
 /** Per frame while the map is drawn from the thumbnail. */
-const THUMB_LOD_BUDGET_MS = 6;
+const THUMB_LOD_BUDGET_MS = 10;
+
+/** Idle chunk prebuild slice without a real idle period (no `requestIdleCallback` in WebKitGTK, or its timeout). */
+const PREBUILD_FALLBACK_MS = 4;
 
 /** Dev-only `window.__smap` hooks of the live canvases, oldest first. */
 const debugHooks: unknown[] = [];
@@ -147,7 +150,7 @@ const DEBUG_HOOK = import.meta.env.DEV || import.meta.env.VITE_SMAP_DEBUG === "1
 
 /** Perf harness frame log (`window.__smapPerf`, debug builds only). */
 interface PerfLog {
-  frames: { start: number; end: number; revision: number; scene: boolean; lod: boolean }[];
+  frames: { start: number; end: number; revision: number; scene: boolean; lod: boolean; thumbPending: boolean }[];
 }
 
 function perfLog(): PerfLog | null {
@@ -176,6 +179,8 @@ export class MapCanvas {
   #thumb: MapThumbnail | null = null;
   #thumbTexture: Texture | null = null;
   #thumbSizeVersion = -1;
+  /** The thumbnail canvas changed since its texture was last uploaded. */
+  #thumbTextureStale = false;
   #thumbTimer: ReturnType<typeof setTimeout> | null = null;
   readonly #lodSprite = new Sprite();
   #lod = false;
@@ -208,6 +213,7 @@ export class MapCanvas {
   readonly #overlays: OverlayRenderer;
 
   #raf = 0;
+  #prebuildPending = false;
   #lastFrameTime = 0;
   #ro: ResizeObserver | null = null;
   #reportedZoom = NaN;
@@ -264,7 +270,7 @@ export class MapCanvas {
       },
       activeStore: () => this.#scene?.store ?? null,
       activeLevelId: () => this.#activeLevelId(),
-      activeTexture: () => (this.#thumb ? this.#thumbTexture : null),
+      activeTexture: () => (this.#thumb ? this.#uploadedThumbTexture() : null),
       fallbackLevels: () => useProjectLibrary.getState().levels,
       images: (id) => getTilesetImage(id)?.bitmap,
       pointer: () => this.#input.pointer,
@@ -629,6 +635,7 @@ export class MapCanvas {
       this.#retire(this.#thumbTexture);
     }
     this.#thumbTexture = null;
+    this.#thumbTextureStale = false;
     this.#thumbSizeVersion = -1;
     this.#lodSprite.removeFromParent();
     this.#lod = false;
@@ -759,7 +766,7 @@ export class MapCanvas {
     const start = log ? performance.now() : 0;
     this.#frameBody(time);
     if (log) {
-      log.frames.push({ start, end: performance.now(), revision: this.#scene?.store.revision ?? -1, scene: this.#scene !== null, lod: this.#lod });
+      log.frames.push({ start, end: performance.now(), revision: this.#scene?.store.revision ?? -1, scene: this.#scene !== null, lod: this.#lod, thumbPending: this.#thumb?.pending ?? false });
     }
   }
 
@@ -797,9 +804,35 @@ export class MapCanvas {
     this.#flushRetired();
     Ticker.system.update(time);
     this.#reportZoom();
+    this.#schedulePrebuild();
 
     if (animating) this.#requestRender();
     else this.#lastFrameTime = 0;
+  }
+
+  /** Meshes of the chunks just outside the view are built in idle time, so panning finds them ready. */
+  #schedulePrebuild(): void {
+    if (this.#prebuildPending || !this.#scene?.hasPrebuildWork) return;
+    this.#prebuildPending = true;
+    const run = (timeLeft: () => number) => {
+      this.#prebuildPending = false;
+      if (this.#destroyed || this.#view !== "level") return;
+      if (this.#scene?.prebuild(timeLeft)) this.#schedulePrebuild();
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(
+        (deadline) => {
+          const end = performance.now() + PREBUILD_FALLBACK_MS;
+          run(deadline.didTimeout ? () => end - performance.now() : () => deadline.timeRemaining());
+        },
+        { timeout: 500 },
+      );
+    } else {
+      setTimeout(() => {
+        const end = performance.now() + PREBUILD_FALLBACK_MS;
+        run(() => end - performance.now());
+      }, 50);
+    }
   }
 
   /** One frame of the world view: level pictures, links, labels. */
@@ -870,10 +903,24 @@ export class MapCanvas {
         this.#worldView.unbind(old);
         this.#retire(old);
       }
+      this.#thumbTextureStale = false;
     } else {
-      this.#thumbTexture.source.update();
+      // Uploaded only when shown (LOD sprite, world view): a big map's picture is
+      // 4096² px, and re-uploading it after every slice while editing at normal
+      // zoom (where nothing shows it) kept the GPU busy and delayed frames by seconds.
+      this.#thumbTextureStale = true;
     }
     this.#requestRender();
+  }
+
+  /** The thumbnail texture, re-uploaded first if the picture changed since. */
+  #uploadedThumbTexture(): Texture | null {
+    const texture = this.#thumbTexture;
+    if (texture && this.#thumbTextureStale) {
+      this.#thumbTextureStale = false;
+      texture.source.update();
+    }
+    return texture;
   }
 
   /** Switches between chunk meshes and the thumbnail (far zoom), with hysteresis. */
@@ -894,6 +941,7 @@ export class MapCanvas {
       if (!this.#thumbTexture) return; // nothing to show yet: keep the meshes
     }
     else if (thumb.pending && this.#thumbTimer === null) this.#scheduleThumbnail(16);
+    if (lod) this.#uploadedThumbTexture();
     this.#lod = lod;
     scene.setTilesVisible(!lod);
     const sprite = this.#lodSprite;

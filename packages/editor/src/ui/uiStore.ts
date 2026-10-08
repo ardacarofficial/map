@@ -26,6 +26,8 @@ export interface UiState {
   busy: boolean;
   /** True while files are being dragged over the window. */
   draggingFiles: boolean;
+  /** True while the project passed at start-up is opening (the editor frame shows instead of the welcome screen). */
+  startupOpening: boolean;
   tilesetMode: TilesetMode;
   /** Template used by "Arazi tanımla". */
   terrainTemplate: TerrainTemplate;
@@ -41,6 +43,7 @@ export interface UiState {
   setActiveTileset(id: string | null): void;
   setBusy(busy: boolean): void;
   setDraggingFiles(dragging: boolean): void;
+  setStartupOpening(opening: boolean): void;
   /** Sets the mode; setting the current mode again goes back to "pick". */
   toggleTilesetMode(mode: TilesetMode): void;
   setTilesetMode(mode: TilesetMode): void;
@@ -59,6 +62,7 @@ export const useUiStore = create<UiState>()((set) => ({
   activeTilesetId: null,
   busy: false,
   draggingFiles: false,
+  startupOpening: false,
   tilesetMode: "pick",
   terrainTemplate: DEFAULT_TERRAIN_TEMPLATE,
   libraryTab: "tileset",
@@ -73,6 +77,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setActiveTileset: (activeTilesetId) => set({ activeTilesetId }),
   setBusy: (busy) => set({ busy }),
   setDraggingFiles: (draggingFiles) => set({ draggingFiles }),
+  setStartupOpening: (startupOpening) => set({ startupOpening }),
   toggleTilesetMode: (mode) => set((s) => ({ tilesetMode: s.tilesetMode === mode ? "pick" : mode })),
   setTilesetMode: (tilesetMode) => set({ tilesetMode }),
   setTerrainTemplate: (terrainTemplate) => set({ terrainTemplate }),

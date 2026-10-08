@@ -33,7 +33,7 @@
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
-import { cellPaletteIndex, isValidCell } from "./cell";
+import { CELL_INDEX_MASK, cellPaletteIndex, isValidCell } from "./cell";
 import type { ClipLayer, TileClip } from "./clip";
 import {
   entityProblem,
@@ -574,6 +574,11 @@ function readChunks(items: unknown[], path: string, layer: TileLayer, doc: MapDo
       throw new FormatError(`${p}.data`, `expected ${CHUNK_AREA} cells, got ${data.length}`);
     }
     const grid = isGridLayer(layer) ? layer : null;
+    if (!grid && fastChunkValid(data, cx, cy, doc)) {
+      layer._putChunk(cx, cy, data);
+      return;
+    }
+    // Slow path: edge chunks and errors (exact messages).
     for (let j = 0; j < CHUNK_AREA; j++) {
       const cell = data[j]!;
       if (cell === 0) continue;
@@ -593,6 +598,24 @@ function readChunks(items: unknown[], path: string, layer: TileLayer, doc: MapDo
     }
     layer._putChunk(cx, cy, data);
   });
+}
+
+/**
+ * Fast check of a tile chunk fully inside the map: every non-empty cell has a
+ * palette index in `[1, palette size]` (a Uint32 is always an integer in
+ * range, and index 0 with flags is the only other invalid cell). False sends
+ * the chunk through the detailed per-cell check.
+ */
+function fastChunkValid(data: Uint32Array, cx: number, cy: number, doc: MapDocument): boolean {
+  if ((cx + 1) * CHUNK_SIZE > doc.map.width || (cy + 1) * CHUNK_SIZE > doc.map.height) return false;
+  const size = doc.palette.size;
+  for (let j = 0; j < data.length; j++) {
+    const cell = data[j]!;
+    if (cell === 0) continue;
+    const index = cell & CELL_INDEX_MASK;
+    if (index === 0 || index > size) return false;
+  }
+  return true;
 }
 
 function readRoot(text: string, format: string, what: string): Record<string, unknown> {

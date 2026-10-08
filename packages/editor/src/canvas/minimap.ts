@@ -27,6 +27,9 @@ function css(color: number, alpha = 1): string {
   return `rgba(${(color >> 16) & 255}, ${(color >> 8) & 255}, ${color & 255}, ${alpha})`;
 }
 
+/** Shortest interval between two redraws of the scaled-down picture while it changes. */
+const CACHE_REFRESH_MS = 150;
+
 export class Minimap {
   readonly element = document.createElement("div");
   readonly #canvas = document.createElement("canvas");
@@ -37,6 +40,10 @@ export class Minimap {
   #layout: MinimapLayout = { width: 0, height: 0, scale: 0 };
   #cacheKey = "";
   #drawKey = "";
+  /** Thumbnail-independent part of the cache key, and when the cache was last redrawn. */
+  #cacheShape = "";
+  #cacheAt = -Infinity;
+  #refreshTimer: ReturnType<typeof setTimeout> | null = null;
   #drag: number | null = null;
 
   constructor(container: HTMLElement, host: MinimapHost, signal: AbortSignal) {
@@ -91,7 +98,10 @@ export class Minimap {
     c.addEventListener("pointercancel", end, opts);
     c.addEventListener("wheel", (e) => e.preventDefault(), { signal, passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
-    signal.addEventListener("abort", () => el.remove());
+    signal.addEventListener("abort", () => {
+      el.remove();
+      if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
+    });
   }
 
   get visible(): boolean {
@@ -117,9 +127,23 @@ export class Minimap {
     const bw = Math.max(1, Math.round(layout.width * dpr));
     const bh = Math.max(1, Math.round(layout.height * dpr));
     const colors = this.#host.colors();
-    const cacheKey = `${thumb.version}|${bw}x${bh}|${colors.background}|${thumb.canvas.width}x${thumb.canvas.height}`;
+    const shape = `${bw}x${bh}|${colors.background}|${thumb.canvas.width}x${thumb.canvas.height}`;
+    let cacheKey = `${thumb.version}|${shape}`;
+    // While the picture keeps changing (a big edit is recomposited slice by slice), scaling the
+    // whole thumbnail (up to 4096² px) down on every slice is wasted work: refresh at most every
+    // CACHE_REFRESH_MS and once more when it settles.
+    const now = performance.now();
+    if (cacheKey !== this.#cacheKey && shape === this.#cacheShape && now - this.#cacheAt < CACHE_REFRESH_MS) {
+      this.#refreshTimer ??= setTimeout(() => {
+        this.#refreshTimer = null;
+        this.draw();
+      }, CACHE_REFRESH_MS - (now - this.#cacheAt));
+      cacheKey = this.#cacheKey;
+    }
     if (cacheKey !== this.#cacheKey) {
       this.#cacheKey = cacheKey;
+      this.#cacheShape = shape;
+      this.#cacheAt = now;
       this.#drawKey = "";
       const cache = this.#cache;
       cache.width = bw;

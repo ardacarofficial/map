@@ -8,7 +8,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { editorPlugins } from "../editor/vite.plugins.ts";
+import { editorCodeSplitting, editorPlugins } from "../editor/vite.plugins.ts";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
@@ -24,5 +24,7 @@ export default {
     emptyOutDir: true,
     // WebView2 (Chromium) and WebKitGTK of the supported OS versions.
     target: "es2022",
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: { output: { codeSplitting: editorCodeSplitting() } },
   },
 };

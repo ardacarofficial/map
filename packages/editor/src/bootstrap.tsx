@@ -15,15 +15,16 @@ import { registerExportCommands } from "./commands/exportCommands";
 import { installAutoExport } from "./export/exportActions";
 import { t } from "./i18n";
 import { openProjectPath } from "./io/session";
-import { browserPlatform, getPlatform, setPlatform, type Platform } from "./platform";
+import { browserPlatform, setPlatform, type Platform } from "./platform";
 import { installSettingsReload, loadAppSettings, useAppSettings } from "./platform/appSettings";
 import { installErrorLogging } from "./platform/errorLogging";
 import { installFileChangeHandling } from "./platform/fileChanges";
 import { registerSettingsCommands } from "./platform/settingsCommands";
 import { SettingsDialog } from "./platform/SettingsDialog";
 import { useEditorStore } from "./state/editorStore";
+import { useUiStore } from "./ui/uiStore";
 import { App } from "./ui";
-import { getCanvasHandle } from "./ui/canvas/canvasHandle";
+import { preloadCanvas } from "./ui/canvas/loadCanvas";
 
 export interface StartEditorOptions {
   platform?: Platform;
@@ -53,14 +54,6 @@ function nextFrame(): Promise<void> {
   return Promise.race([new Promise<void>((resolve) => requestAnimationFrame(() => resolve())), timeout(50)]);
 }
 
-/** Resolves once the canvas has mounted (or after `limitMs`), plus a frame for its first draw. */
-async function canvasDrawn(limitMs: number): Promise<void> {
-  const start = performance.now();
-  while (!getCanvasHandle() && performance.now() - start < limitMs) await nextFrame();
-  await nextFrame();
-  await nextFrame();
-}
-
 function installTitle(platform: Platform): () => void {
   let last = "";
   const update = () => {
@@ -84,7 +77,9 @@ function installTitle(platform: Platform): () => void {
  * Starts the editor in `rootElement`. Order matters for the desktop's
  * "< 1 s to a usable window": settings (language) first so the first frame is
  * already in the right language, then render, then the startup `.smap` (if
- * the OS passed one), and only then `appReady()` shows the hidden window.
+ * the OS passed one) starts opening behind the editor skeleton, and
+ * `appReady()` shows the hidden window as soon as that first picture is
+ * drawn (the project fills in while the window is already visible).
  */
 export async function startEditor(rootElement: HTMLElement, options: StartEditorOptions = {}): Promise<void> {
   const marks: string[] = [`script ${Math.round(performance.now())}`];
@@ -111,29 +106,37 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   installFileChangeHandling();
   installSettingsReload();
 
-  // A `.smap` from the command line opens before the window appears (no
-  // welcome-screen flash); later requests (second instance) open in place.
-  let startupOpen: Promise<unknown> | null = null;
+  // A `.smap` from the command line: the window shows the editor frame
+  // (skeleton, no welcome-screen flash) right away and the project fills it
+  // in when read; later requests (second instance) open in place.
+  let starting = true;
   try {
     await platform.onOpenFile((path) => {
       platform.log("info", `open request ${path}`);
       const opening = openProjectPath(path);
-      startupOpen ??= opening;
+      if (!starting) return;
+      useUiStore.getState().setStartupOpening(true);
+      void opening.finally(() => {
+        useUiStore.getState().setStartupOpening(false);
+        mark("project open");
+        platform.log("info", `startup project ms: ${marks.join(", ")}`);
+      });
     });
   } catch (error) {
     platform.log("warn", `open requests unavailable: ${String(error)}`);
   }
+  starting = false;
 
   mark("listening");
+  // React has committed by now; one frame (or 50 ms in a hidden window, which gets no
+  // frames) lets the first picture (welcome or skeleton) be painted when the window appears.
   await nextFrame();
-  mark("frame");
-  if (startupOpen) await Promise.race([startupOpen, timeout(2500)]);
-  if (getPlatform().kind === "desktop" && useEditorStore.getState().project) await canvasDrawn(1500);
-  else {
-    await nextFrame();
-  }
   mark("ready");
   // Milliseconds since navigation start; the desktop's "< 1 s" budget.
   platform.log("info", `startup ms: ${marks.join(", ")}`);
   platform.appReady();
+  // The welcome screen does not need the map canvas (PixiJS); fetch and parse it once idle.
+  const idle = (window as { requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+  if (idle) idle(preloadCanvas, { timeout: 2000 });
+  else setTimeout(preloadCanvas, 300);
 }

@@ -23,12 +23,15 @@ import { installWorldActions } from "../commands/worldActions";
 import { NewLevelDialog, RemoveLevelDialog } from "./levels/LevelDialogs";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
+import { EditorSkeleton } from "./layout/EditorSkeleton";
 import { TooltipProvider } from "./primitives/Tooltip";
 import { Toaster } from "./toast/Toaster";
+import { useUiStore } from "./uiStore";
 import { WelcomeScreen } from "./welcome/WelcomeScreen";
 
 export function App() {
   const hasProject = useEditorStore((s) => s.project !== null);
+  const startupOpening = useUiStore((s) => s.startupOpening);
 
   useEffect(() => {
     const uninstallShortcuts = installGlobalShortcuts();
@@ -47,7 +50,7 @@ export function App() {
 
   return (
     <TooltipProvider>
-      {hasProject ? <EditorLayout /> : <WelcomeScreen />}
+      {hasProject ? <EditorLayout /> : startupOpening ? <EditorSkeleton /> : <WelcomeScreen />}
       <FileDropOverlay />
       <CommandPalette />
       <NewProjectDialog />

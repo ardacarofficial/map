@@ -44,6 +44,21 @@ interface LayerView {
   readonly chunks: Map<ChunkKey, ChunkView>;
 }
 
+/** Inclusive chunk index range. */
+interface ChunkRange {
+  readonly cx0: number;
+  readonly cy0: number;
+  readonly cx1: number;
+  readonly cy1: number;
+}
+
+function inRange(r: ChunkRange, cx: number, cy: number): boolean {
+  return cx >= r.cx0 && cx <= r.cx1 && cy >= r.cy0 && cy <= r.cy1;
+}
+
+/** Chunks around the view that {@link MapScene.prebuild} prepares in idle time. */
+const PREBUILD_MARGIN = 2;
+
 export type ImageLookup = (tilesetId: string) => CanvasImageSource | undefined;
 
 export class MapScene {
@@ -62,7 +77,7 @@ export class MapScene {
   /** Chunks whose mesh is missing or out of date, per layer (built when visible). */
   readonly #dirty = new Map<string, Set<ChunkKey>>();
   /** Visible chunk range from the last {@link updateVisibility} (inclusive), or null before the first. */
-  #range: { cx0: number; cy0: number; cx1: number; cy1: number } | null = null;
+  #range: ChunkRange | null = null;
   readonly #images: ImageLookup;
   readonly #unsubscribe: () => void;
   readonly #onChange: () => void;
@@ -124,14 +139,47 @@ export class MapScene {
    * Rebuilds the dirty chunks inside the visible range of visible layers
    * (and drops views of chunks that no longer exist). Call once per frame
    * after {@link updateVisibility}, before rendering. Others stay dirty
-   * until they are scrolled into view; nothing is built while the tile
-   * layers are hidden (far-zoom LOD).
+   * until they are scrolled into view (or {@link prebuild} gets to them);
+   * nothing is built while the tile layers are hidden (far-zoom LOD).
    */
   flush(): void {
-    if (this.#dirty.size === 0 || !this.#layers.visible) return;
     const range = this.#range;
-    if (!range) return;
+    if (range) this.#build(range, null);
+  }
+
+  /** True when chunks just outside the view still wait for a mesh (see {@link prebuild}). */
+  get hasPrebuildWork(): boolean {
+    const range = this.#marginRange();
+    return range !== null && this.#dirty.size > 0 && this.#build(range, null, true);
+  }
+
+  /**
+   * Idle-time work: builds dirty chunks within {@link PREBUILD_MARGIN} chunks
+   * around the view (hidden until they scroll in) until `timeLeft()` runs
+   * out, so panning finds them ready. Returns true when work is left.
+   */
+  prebuild(timeLeft: () => number): boolean {
+    const range = this.#marginRange();
+    if (!range) return false;
+    return this.#build(range, timeLeft);
+  }
+
+  #marginRange(): ChunkRange | null {
+    const r = this.#range;
+    if (!r) return null;
+    const m = PREBUILD_MARGIN;
+    return { cx0: r.cx0 - m, cy0: r.cy0 - m, cx1: r.cx1 + m, cy1: r.cy1 + m };
+  }
+
+  /**
+   * Builds dirty chunks inside `range` (all of them, or while `timeLeft() > 0`).
+   * `probe`: only report whether there is any such work. Returns true when
+   * dirty chunks inside `range` are left.
+   */
+  #build(range: ChunkRange, timeLeft: (() => number) | null, probe = false): boolean {
+    if (this.#dirty.size === 0 || !this.#layers.visible) return false;
     const doc = this.store.document;
+    const visible = this.#range;
     for (const [layerId, keys] of this.#dirty) {
       const layer = doc.getLayer(layerId);
       const view = this.#views.get(layerId);
@@ -140,15 +188,20 @@ export class MapScene {
         this.#dirty.delete(layerId);
         continue;
       }
-      const shown = layer.visible && layer.opacity > 0;
+      if (!layer.visible || layer.opacity <= 0) continue;
       for (const key of keys) {
         const chunk = layer.getChunkByKey(key);
-        if (chunk && !(shown && chunk.cx >= range.cx0 && chunk.cx <= range.cx1 && chunk.cy >= range.cy0 && chunk.cy <= range.cy1)) continue;
+        if (chunk && !inRange(range, chunk.cx, chunk.cy)) continue;
+        if (probe) return true;
+        if (timeLeft && timeLeft() <= 0) return true;
         this.#rebuildChunk(layer, view, key);
         keys.delete(key);
+        const built = view.chunks.get(key);
+        if (built && visible && !inRange(visible, built.cx, built.cy)) built.container.visible = false;
       }
       if (keys.size === 0) this.#dirty.delete(layerId);
     }
+    return false;
   }
 
   /** Syncs layer visibility/opacity and hides chunks outside the visible cell range. */
@@ -218,7 +271,7 @@ export class MapScene {
     const r = this.#range;
     if (!r || !this.#layers.visible || !layer.visible || layer.opacity <= 0) return false;
     const { cx, cy } = parseChunkKey(key);
-    return cx >= r.cx0 && cx <= r.cx1 && cy >= r.cy0 && cy <= r.cy1;
+    return inRange(r, cx, cy);
   }
 
   #markDirty(layerId: string, key: ChunkKey): void {

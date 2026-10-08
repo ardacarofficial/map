@@ -34,6 +34,7 @@ interface Frame {
   revision: number;
   scene: boolean;
   lod: boolean;
+  thumbPending: boolean;
 }
 interface InputRecord {
   type: string;
@@ -106,7 +107,7 @@ async function newPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession;
   await page.addInitScript(initScript);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  if (process.env.PERF_DEBUG) page.on("console", (m) => console.log(`console.${m.type()}: ${m.text()}`));
+  if (process.env.PERF_DEBUG) page.on("console", (m) => console.log(`console.${m.type()}: ${m.text()}`)); // PERF_DEBUG=1: page console
   const cdp = await context.newCDPSession(page);
   return {
     page,
@@ -266,7 +267,8 @@ test("editor perf", async ({ browser }) => {
         const perf = (window as unknown as { __smapPerf: { welcomeAt: number } }).__smapPerf;
         const paint = performance.getEntriesByName("first-contentful-paint")[0];
         const res = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
-        const js = res.filter((r) => r.name.endsWith(".js")).reduce((s, r) => s + r.decodedBodySize, 0);
+        // Scripts needed for the welcome screen (later idle preloads excluded).
+        const js = res.filter((r) => r.name.endsWith(".js") && r.responseEnd <= perf.welcomeAt).reduce((s, r) => s + r.decodedBodySize, 0);
         return { fcp: paint?.startTime ?? NaN, welcome: perf.welcomeAt, js };
       });
       fcp.push(m.fcp);
@@ -278,7 +280,7 @@ test("editor perf", async ({ browser }) => {
     put("a.welcome FCP", median(fcp));
     put("a.welcome visible", median(welcome));
     put("a.welcome interactive (no long task)", median(tti));
-    put("a.JS loaded at start", median(script), "KiB");
+    put("a.JS loaded before welcome", median(script), "KiB");
   }
 
   // ---------------------------------------------------------------- (b) open big project
@@ -319,7 +321,9 @@ test("editor perf", async ({ browser }) => {
           .reduce((m, l) => Math.max(m, l.duration), 0),
       clickAt,
     );
-    return { firstFrame: first.end - clickAt, firstFrameJs: first.end - first.start, busy: lastLong - clickAt, longest };
+    // Complete: meshes are built in-frame; a far-zoom (LOD) picture fills in over frames.
+    const complete = fr.find((f) => f.scene && !(f.lod && f.thumbPending)) ?? fr.at(-1)!;
+    return { firstFrame: first.end - clickAt, complete: complete.end - clickAt, firstFrameJs: first.end - first.start, busy: lastLong - clickAt, longest, lod: first.lod };
   };
 
   if (want("b")) {
@@ -330,7 +334,9 @@ test("editor perf", async ({ browser }) => {
       await close();
     }
     put("b.open → first map frame", median(runs.map((r) => r.firstFrame)));
+    put("b.open → map complete", median(runs.map((r) => r.complete)));
     put("b.first map frame JS", median(runs.map((r) => r.firstFrameJs)));
+    console.log(`  first frame LOD: ${runs[0]!.lod}`);
     put("b.open → main thread quiet", median(runs.map((r) => r.busy)));
     put("b.open longest task", median(runs.map((r) => r.longest)));
   }
@@ -346,7 +352,6 @@ test("editor perf", async ({ browser }) => {
   });
   const canvas = page.locator("canvas[data-perf-main]");
   const box = (await canvas.boundingBox())!;
-  if (process.env.PERF_DEBUG) console.log("box", JSON.stringify(box));
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   const heapOpen = await heapMb(cdp);
@@ -413,15 +418,6 @@ test("editor perf", async ({ browser }) => {
         await page.mouse.up();
         await settle(page, 30);
         const rawInputs = await inputs(page);
-        if (process.env.PERF_DEBUG) {
-          console.log(await page.evaluate(([x, y]) => {
-            const el = document.elementFromPoint(x! - 600, y! - 250);
-            const s = (window as unknown as { __smap: { editor: { getState(): Record<string, unknown> } } }).__smap.editor.getState();
-            const st = (window as unknown as { __smap: { store: { revision: number; inTransaction: boolean; document: { tilesets: { id: string }[]; layers: { id: string; locked: boolean; visible: boolean }[] } } } }).__smap.store;
-            return `${JSON.stringify(st.document.tilesets.map((t) => t.id))} ${JSON.stringify(st.document.layers)} tx=${st.inTransaction} rev=${st.revision} ${el?.tagName} ${el?.getAttribute("aria-label")} tool=${String(s.tool)} layer=${String(s.activeLayerId)} sel=${JSON.stringify(s.selection)}`;
-          }, [cx, cy]));
-          await page.screenshot({ path: `${RESULTS}debug.png` });
-        }
         const l = inputLatencies(rawInputs, await frames(page));
         strokes.latency.push(...l.latency);
         strokes.handler.push(...l.handler);
@@ -495,7 +491,14 @@ test("editor perf", async ({ browser }) => {
 
   // ---------------------------------------------------------------- (g) save
   if (want("g")) {
-    await settle(page, 50);
+    // Wait out a running autosave, then make one edit so there is something to save.
+    await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeVisible({ timeout: 60_000 });
+    await page.evaluate(() => {
+      const hook = (window as unknown as { __smap: { store: { document: { layers: { id: string }[] }; dispatch(op: unknown): unknown } } }).__smap;
+      const layerId = hook.store.document.layers[0]!.id;
+      hook.store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: 1 }] });
+    });
+    await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeHidden();
     await startProfile(cdp);
     const t = await page.evaluate(() => performance.now());
     await page.keyboard.press("Control+s");

@@ -57,4 +57,31 @@ describe("compositeChunk", () => {
     expect(px(compositeChunk([{ data, opacity: 0 }], 1, (i) => blocks.get(i)), 32, 5, 0)).toEqual([0, 0, 0, 0]);
     expect(px(compositeChunk([{ data, opacity: 1 }], 1, (i) => blocks.get(i)), 32, 6, 0)).toEqual([0, 0, 0, 0]);
   });
+
+  it("an opaque tile hides the layers below; a translucent one blends over them", () => {
+    const half = new Uint8ClampedArray([0, 255, 0, 128]);
+    const look = (i: number) => (i === 3 ? half : blocks.get(i));
+    const l0 = new Uint32Array(CHUNK_AREA);
+    const l1 = new Uint32Array(CHUNK_AREA);
+    const l2 = new Uint32Array(CHUNK_AREA);
+    l0[0] = makeCell(1);
+    l1[0] = makeCell(2); // opaque blue covers red
+    l2[0] = makeCell(3); // half green over blue
+    l0[1] = makeCell(1);
+    l2[1] = makeCell(3); // half green over red
+    const layers = [l0, l1, l2].map((data) => ({ data, opacity: 1 }));
+    const out = compositeChunk(layers, 1, look);
+    const over = (base: number[]) => base.map((c, i) => (i === 3 ? 255 : Math.round((([0, 255, 0][i] ?? 0) * 128 + c * 127) / 255)));
+    expect(px(out, 32, 0, 0)).toEqual(over([0, 0, 255, 255]));
+    expect(px(out, 32, 1, 0)).toEqual(over([255, 0, 0, 255]));
+  });
+
+  it("writes into a given buffer, clearing what was there", () => {
+    const data = new Uint32Array(CHUNK_AREA);
+    data[3] = makeCell(2);
+    const out = new Uint8ClampedArray(32 * 32 * 4).fill(7);
+    expect(compositeChunk([{ data, opacity: 1 }], 1, (i) => blocks.get(i), out)).toBe(out);
+    expect(px(out, 32, 3, 0)).toEqual([0, 0, 255, 255]);
+    expect(px(out, 32, 0, 0)).toEqual([0, 0, 0, 0]);
+  });
 });

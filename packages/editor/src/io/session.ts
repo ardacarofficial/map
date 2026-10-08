@@ -21,6 +21,7 @@ import {
   setTilesetImage,
   type TilesetImage,
 } from "../state/tilesetImages";
+import { preloadCanvas } from "../ui/canvas/loadCanvas";
 import { askUnsaved } from "../ui/dialogs/confirmStore";
 import { toast } from "../ui/toast/toastStore";
 import { useUiStore } from "../ui/uiStore";
@@ -496,6 +497,7 @@ export async function openBackup(entry: BackupEntry): Promise<boolean> {
 }
 
 async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<string> {
+  preloadCanvas(); // loads while the files are read
   const loaded = await loadProject(target.fs, decodePng, levelId ? { levelId } : {});
   const store = new MapStore(loaded.document);
   store.clearHistory();

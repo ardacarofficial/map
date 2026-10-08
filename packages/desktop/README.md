@@ -37,6 +37,9 @@ değişiklik varsa önce sorar).
 7. Açılış süresini ölçmek: programı açıp kapatın, log'da
    `startup ms: script …, ready …` satırı ve `window shown (frontend ready)`
    zaman damgası. Bitti ölçütü: süreç başlangıcından pencere görünene < 1 sn.
+   `.smap` ile açılışta pencere hemen editör iskeletiyle görünür, proje
+   okununca dolar (log: `startup project ms`). Linux'ta (Xvfb) otomatik
+   ölçüm: sürüm derlemesinden sonra `pnpm perf -g desktop` (bkz. `e2e/perf`).
 
 İmzasız exe ilk açılışta SmartScreen uyarısı verebilir (kod imzalama
 kapsam dışı, CLAUDE.md › Yapılmayacaklar).
