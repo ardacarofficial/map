@@ -31,6 +31,8 @@ export type CommandId =
   | "map.resize"
   | "view.toggleCollision"
   | "tool.entity"
+  | "brush.smaller"
+  | "brush.larger"
   | "stamp.saveSelection"
   | "layer.addEntity"
   | "entity.editTypes"
@@ -108,6 +110,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "map.resize", keys: [] },
   { command: "view.toggleCollision", keys: ["Ctrl+Shift+C"] },
   { command: "tool.entity", keys: ["O"] },
+  { command: "brush.smaller", keys: ["BracketLeft"] },
+  { command: "brush.larger", keys: ["BracketRight"] },
   { command: "stamp.saveSelection", keys: [] },
   { command: "layer.addEntity", keys: [] },
   { command: "entity.editTypes", keys: [] },
