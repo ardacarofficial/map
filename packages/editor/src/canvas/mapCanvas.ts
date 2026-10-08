@@ -39,6 +39,7 @@ import { useEditorStore, type CellRegion, type EditorState, type OpenProject } f
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
 import { MAX_ZOOM, MIN_ZOOM, snappedOffset, type Camera, type Point } from "./camera";
 import { CameraController } from "./cameraController";
+import type { CanvasPickEvent, StrokeSummary } from "./canvasEvents";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
 import type { EntityColors } from "./entityLogic";
 import { EntityRenderer } from "./entityRenderer";
@@ -55,6 +56,7 @@ import { isPaintable } from "./tools";
 import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
 
 export type { CanvasView, LevelMovedEvent, WorldDataSource, WorldSourceChange } from "./worldView";
+export type { CanvasPickEvent, StrokeSummary, StrokeTool } from "./canvasEvents";
 
 /** Zoom limits of the world view: far enough out for big worlds, no closer than 2× (thumbnails). */
 const WORLD_MIN_ZOOM = 0.002;
@@ -116,6 +118,22 @@ export interface CanvasHandle {
   onLevelMoved(cb: (event: LevelMovedEvent) => void): () => void;
   /** A level was clicked (not dragged) on the world map: the UI opens it and calls `setView("level")`. */
   onOpenLevel(cb: (levelId: string) => void): () => void;
+
+  // ---------------------------------------------------------------- comfort round
+
+  /**
+   * Something was picked from the map (right click, right drag, eyedropper,
+   * Alt + click): a tile (the tileset panel can scroll to it), an area /
+   * flipped cell as a clip, or a grid layer value. The store selection is
+   * already updated and a tile is already in `recentTiles`. Returns an unsubscribe.
+   */
+  onPick(cb: (event: CanvasPickEvent) => void): () => void;
+  /**
+   * An edit gesture finished as one undo step (brush / eraser stroke, stamp
+   * drag, fill, rectangle) and changed `cells` cells (> 0), e.g. for an
+   * undo toast. Returns an unsubscribe.
+   */
+  onStrokeCommitted(cb: (summary: StrokeSummary) => void): () => void;
 }
 
 function gridOverlayColors(c: CanvasColors): GridOverlayColors {
@@ -190,6 +208,8 @@ export class MapCanvas {
   readonly #viewListeners = new Set<(view: CanvasView) => void>();
   readonly #movedListeners = new Set<(event: LevelMovedEvent) => void>();
   readonly #openListeners = new Set<(levelId: string) => void>();
+  readonly #pickListeners = new Set<(event: CanvasPickEvent) => void>();
+  readonly #strokeListeners = new Set<(summary: StrokeSummary) => void>();
   #view: CanvasView = "level";
   readonly #worldView: WorldView;
   /** Level-view camera saved when the world view opens. */
@@ -262,6 +282,10 @@ export class MapCanvas {
       capture: (id) => this.#input.capture(id),
       release: (id) => this.#input.release(id),
       requestRender: () => this.#requestRender(),
+      springActive: () => this.#input.springActive,
+      picked: (event) => void this.#emit(this.#pickListeners, event, "pick"),
+      strokeCommitted: (summary) => void this.#emit(this.#strokeListeners, summary, "stroke"),
+      flash: (region) => this.#overlays.flash(region),
     });
     this.#worldView = new WorldView({
       camera: this.#camera,
@@ -318,6 +342,8 @@ export class MapCanvas {
       cursorCell: () => this.#input.cursorCell(),
       pointerCell: () => this.#input.pointerCell(),
       hoverEntityId: () => this.#hoverEntity,
+      pointer: () => this.#input.pointer,
+      lineAnchor: () => (this.#input.shiftDown && this.#input.cursorCell() ? this.#tools.lineAnchor() : null),
       requestRender: () => this.#requestRender(),
     };
     this.#overlays = new OverlayRenderer(overlayHost);
@@ -363,7 +389,7 @@ export class MapCanvas {
     Ticker.system.stop();
     this.#app.stage.eventMode = "none";
     this.#overlays.setColors(this.#colors);
-    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay, this.#worldView.root);
+    this.#app.stage.addChild(this.#world, this.#entities.root, this.#overlays.grid, this.#overlays.overlay, this.#worldView.root, this.#overlays.readout);
     this.#minimap = new Minimap(
       this.#container,
       {
@@ -504,6 +530,14 @@ export class MapCanvas {
       this.#openListeners.add(cb);
       return () => this.#openListeners.delete(cb);
     },
+    onPick: (cb) => {
+      this.#pickListeners.add(cb);
+      return () => this.#pickListeners.delete(cb);
+    },
+    onStrokeCommitted: (cb) => {
+      this.#strokeListeners.add(cb);
+      return () => this.#strokeListeners.delete(cb);
+    },
   };
 
   /** Calls every listener (errors are logged, not thrown). Returns true when there was one. */
@@ -599,6 +633,8 @@ export class MapCanvas {
     this.#entities.destroy();
     this.#lodSprite.destroy();
     this.#navigateListeners.clear();
+    this.#pickListeners.clear();
+    this.#strokeListeners.clear();
     this.#viewListeners.clear();
     this.#movedListeners.clear();
     this.#openListeners.clear();
@@ -705,8 +741,11 @@ export class MapCanvas {
       s.collisionOverlay !== prev.collisionOverlay ||
       s.randomSet !== prev.randomSet ||
       s.entityTypeId !== prev.entityTypeId ||
-      s.selectedEntityId !== prev.selectedEntityId
+      s.selectedEntityId !== prev.selectedEntityId ||
+      s.brushSize !== prev.brushSize ||
+      s.brushShape !== prev.brushShape
     ) {
+      if ((s.brushSize !== prev.brushSize || s.brushShape !== prev.brushShape) && this.#view === "level") this.#overlays.showSizeReadout();
       this.#input.updateCursor();
       this.#requestRender();
     }

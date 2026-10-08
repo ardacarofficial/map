@@ -3,6 +3,11 @@
  * region, collision outline, tool previews (brush tile, stamp, rectangle,
  * fill highlight, grid-layer footprint) and cell cursors. Screen-space
  * lines are whole device pixels; previews live in world space.
+ *
+ * Brush / eraser previews show the whole brush footprint (tile ghosts for
+ * the brush, an outline for the eraser) and, while Shift is held, the line a
+ * Shift + click would paint. A pick flashes its area; a brush size change
+ * shows a short size readout next to the pointer.
  */
 import {
   COLLISION_PASSABLE,
@@ -18,22 +23,25 @@ import {
   type TileClip,
   type TileLayer,
 } from "@smap/core";
-import { AlphaFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
+import { AlphaFilter, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 
 import { useEditorStore, type CellRegion } from "../state/editorStore";
+import { strokeCells } from "./brush";
+import type { Point } from "./camera";
 import type { CameraController } from "./cameraController";
 import { cellMaskImage, membershipMask, type CellMaskImage } from "./cellMask";
 import type { CellQuad } from "./chunkGeometry";
 import { CANVAS_COLORS, type CanvasColors } from "./colors";
+import { brushFootprint, cellsBounds, footprintCells } from "./footprint";
 import { gridLayout } from "./grid";
 import { gridPaintValue } from "./gridPaint";
-import { isSolidCode, solidEdges } from "./gridRaster";
+import { isSolidCode, solidEdges, type Edge } from "./gridRaster";
 import type { GridOverlays } from "./gridOverlays";
 import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
 import { isRandomBrush, randomTileAt } from "./randomPaint";
-import type { Gesture } from "./toolController";
+import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dragRegion,
   isEditable,
@@ -51,6 +59,12 @@ const RECT_PREVIEW_LIMIT = 20_000;
 /** Fill hover preview: minimum time between two flood fills, and the largest map it runs on. */
 const FILL_PREVIEW_THROTTLE_MS = 40;
 const FILL_PREVIEW_MAX_AREA = 4_000_000;
+/** Most cells a brush footprint / Shift line preview draws. */
+const BRUSH_PREVIEW_LIMIT = 20_000;
+/** Pick flash duration. */
+const FLASH_MS = 450;
+/** How long the brush size readout stays after a change. */
+const READOUT_MS = 900;
 /** Collision outlines are drawn only when a cell is at least this many device pixels wide. */
 const OUTLINE_MIN_CELL_DEVICE_PX = 6;
 /** ...and at most this many cells are on screen. */
@@ -81,6 +95,10 @@ export interface OverlayHost {
   pointerCell(): CellPoint | null;
   /** Entity under the pointer that the current tool would select / drag, or null. */
   hoverEntityId(): string | null;
+  /** Pointer in canvas CSS px, or null when outside. */
+  pointer?(): Point | null;
+  /** Start of the Shift + click line (Shift held, brush / eraser), or null. */
+  lineAnchor?(): CellPoint | null;
   requestRender(): void;
 }
 
@@ -98,6 +116,16 @@ export class OverlayRenderer {
   /** Grid (terrain / collision) layers of a saved stamp, drawn faintly as their overlays. */
   readonly #stampGridPreview = new Graphics();
   #stampGridKey: string | null = null;
+  /** Screen-space brush size readout (shown briefly after `[` / `]`). */
+  readonly readout = new Container();
+  readonly #readoutBg = new Graphics();
+  readonly #readoutText = new Text({
+    text: "",
+    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.cursor },
+  });
+  #readoutUntil = 0;
+  #readoutTimer: ReturnType<typeof setTimeout> | null = null;
+  #flash: { readonly region: CellRegion; readonly start: number } | null = null;
   #fillCache: FillCache | null = null;
   #lastFillAt = -Infinity;
   #fillTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,6 +138,25 @@ export class OverlayRenderer {
     this.grid.filters = [this.#gridFilter];
     this.#stampGridPreview.visible = false;
     this.previews.addChild(this.#fillPreview.sprite, this.#tilePreview.root, this.#stampGridPreview, this.#preview);
+    this.readout.addChild(this.#readoutBg, this.#readoutText);
+    this.readout.visible = false;
+  }
+
+  /** Shows the brush size readout next to the pointer for a moment. */
+  showSizeReadout(): void {
+    this.#readoutUntil = performance.now() + READOUT_MS;
+    if (this.#readoutTimer !== null) clearTimeout(this.#readoutTimer);
+    this.#readoutTimer = setTimeout(() => {
+      this.#readoutTimer = null;
+      this.#host.requestRender();
+    }, READOUT_MS + 20);
+    this.#host.requestRender();
+  }
+
+  /** Briefly outlines `region` (pick feedback); animates for {@link FLASH_MS}. */
+  flash(region: CellRegion): void {
+    this.#flash = { region, start: performance.now() };
+    this.#host.requestRender();
   }
 
   /** Applies theme colours read at mount. */
@@ -129,6 +176,8 @@ export class OverlayRenderer {
 
   destroy(): void {
     if (this.#fillTimer !== null) clearTimeout(this.#fillTimer);
+    if (this.#readoutTimer !== null) clearTimeout(this.#readoutTimer);
+    this.readout.destroy({ children: true });
     this.#tilePreview.destroy();
     this.#fillPreview.destroy();
   }
@@ -145,7 +194,9 @@ export class OverlayRenderer {
     this.#tilePreview.root.visible = false;
     this.#fillPreview.sprite.visible = false;
     this.#stampGridPreview.visible = false;
+    this.readout.visible = false;
     if (!map) return;
+    this.#drawReadout();
     const cam = host.camera;
     const res = cam.resolution;
     const px = 1 / res;
@@ -174,6 +225,7 @@ export class OverlayRenderer {
 
     const gesture = host.gesture;
     if (state.region && gesture?.kind !== "select") this.#drawRegion(state.region);
+    this.#drawFlash();
     const gridActive = isGridLayer(activeLayer(host.scene?.store));
 
     switch (gesture?.kind) {
@@ -183,7 +235,7 @@ export class OverlayRenderer {
         return;
       }
       case "rect": {
-        const r = dragRegion(gesture.start, gesture.end, map);
+        const r = rectGestureRegion(gesture, map);
         if (r) {
           if (gridActive) this.#drawGridFootprint(r);
           else {
@@ -202,6 +254,12 @@ export class OverlayRenderer {
         const at = host.pointerCell() ?? gesture.last ?? gesture.start;
         const mapping = gesture.saved ? savedStampPreviewMapping(host.scene?.store, gesture.clip) : gesture.mapping;
         this.#showStampPreview(gesture.clip, mapping, snapToStampGrid(gesture.start, at, gesture.clip.width, gesture.clip.height));
+        return;
+      }
+      case "paint": {
+        // The footprint outline under the pointer while painting.
+        const at = host.cursorCell();
+        if (at) this.#drawCellsOutline(footprintCells([at], gesture.offsets));
         return;
       }
       case "entity":
@@ -238,6 +296,7 @@ export class OverlayRenderer {
           return;
         }
         if (!editable) return this.#drawCellCursor(one);
+        if (state.brushSize > 1 || host.lineAnchor?.()) return this.#showBrushPreview(cell);
         let sel: { tilesetId: string; tileId: number } | null = state.selection;
         const random = isRandomBrush(state.randomSet) && isTileLayer(active);
         if (random) {
@@ -255,6 +314,9 @@ export class OverlayRenderer {
         } else this.#drawCellCursor(one);
         return;
       }
+      case "eraser":
+        if (!editable) return this.#drawCellCursor(one);
+        return this.#drawCellsOutline(this.#brushCells(cell));
       case "fill":
         if (editable) this.#showFillPreview(cell);
         return this.#drawCellCursor(one);
@@ -264,6 +326,171 @@ export class OverlayRenderer {
       default:
         return this.#drawCellCursor(one);
     }
+  }
+
+  // ------------------------------------------------------------------ brush footprint
+
+  /**
+   * Cells a brush / eraser click at `cell` would paint: the footprint, or
+   * with Shift held the footprint along the line from the last painted cell.
+   * Capped at {@link BRUSH_PREVIEW_LIMIT}.
+   */
+  #brushCells(cell: CellPoint): CellPoint[] {
+    const s = useEditorStore.getState();
+    const offsets = brushFootprint(s.brushSize, s.brushShape);
+    const anchor = this.#host.lineAnchor?.() ?? null;
+    const centers = anchor ? [anchor, ...strokeCells(anchor, [cell])] : [cell];
+    const max = Math.max(1, Math.floor(BRUSH_PREVIEW_LIMIT / offsets.length));
+    return footprintCells(centers.length > max ? centers.slice(centers.length - max) : centers, offsets);
+  }
+
+  /** Brush ghost over the whole footprint / Shift line: tiles (selection or random set) plus the outline. */
+  #showBrushPreview(cell: CellPoint): void {
+    const host = this.#host;
+    const s = useEditorStore.getState();
+    const doc = host.scene?.store.document;
+    if (!doc) return;
+    const cells = this.#brushCells(cell);
+    const random = isRandomBrush(s.randomSet) && isTileLayer(activeLayer(host.scene?.store));
+    const sel = s.selection;
+    const anchor = host.lineAnchor?.() ?? null;
+    const preview: PreviewCell[] = [];
+    let key: string | null = null;
+    if (random) {
+      const ok = (t: { tilesetId: string }) => !!doc.getTileset(t.tilesetId);
+      for (const c of cells) {
+        if (!doc.inBounds(c.x, c.y)) continue;
+        const t = randomTileAt(s.randomSet, doc.seed, c.x, c.y, ok);
+        if (t) preview.push({ x: c.x, y: c.y, entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: 0 });
+      }
+      const setKey = s.randomSet.map((t) => `${t.tilesetId}/${t.tileId}*${t.weight ?? 1}`).join(",");
+      key = `brushR:${doc.seed}:${setKey}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
+    } else if (sel && doc.getTileset(sel.tilesetId)) {
+      const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
+      for (const c of cells) if (doc.inBounds(c.x, c.y)) preview.push({ x: c.x, y: c.y, entry, flags: 0 });
+      key = `brushS:${sel.tilesetId}/${sel.tileId}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
+    }
+    if (key !== null) {
+      if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
+      else this.#setTilePreview(key, preview);
+      this.#tilePreview.root.position.set(0, 0);
+    }
+    if (random) this.#drawDice({ x: cell.x, y: cell.y, width: 1, height: 1 });
+    if (s.brushSize > 1 || anchor) this.#drawCellsOutline(cells);
+    else this.#drawCellCursor({ x: cell.x, y: cell.y, width: 1, height: 1 });
+  }
+
+  /** Crisp outline (white with a dark halo) around the union of `cells`, clipped to the view. */
+  #drawCellsOutline(cells: readonly CellPoint[], fill?: number): void {
+    const bounds = cellsBounds(cells);
+    if (!bounds) return;
+    const v = this.#host.visible;
+    const x0 = Math.max(bounds.x, v.x - 1);
+    const y0 = Math.max(bounds.y, v.y - 1);
+    const x1 = Math.min(bounds.x + bounds.width, v.x + v.width + 1);
+    const y1 = Math.min(bounds.y + bounds.height, v.y + v.height + 1);
+    if (x1 <= x0 || y1 <= y0) return;
+    const w = x1 - x0;
+    const member = new Uint8Array(w * (y1 - y0));
+    for (const c of cells) {
+      if (c.x >= x0 && c.y >= y0 && c.x < x1 && c.y < y1) member[(c.y - y0) * w + (c.x - x0)] = 1;
+    }
+    const inside = (x: number, y: number) => x >= x0 && y >= y0 && x < x1 && y < y1 && member[(y - y0) * w + (x - x0)] === 1;
+    const g = this.overlay;
+    const cam = this.#host.camera;
+    const px = 1 / cam.resolution;
+    if (fill !== undefined) {
+      for (let y = y0; y < y1; y++) {
+        let x = x0;
+        while (x < x1) {
+          if (!inside(x, y)) {
+            x++;
+            continue;
+          }
+          const start = x;
+          while (x < x1 && inside(x, y)) x++;
+          const b = cam.cellBox({ x: start, y, width: x - start, height: 1 });
+          g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px);
+        }
+      }
+      g.fill({ color: fill, alpha: CANVAS_COLORS.gridBrushAlpha });
+    }
+    this.#drawEdges(solidEdges(x0, y0, x1, y1, inside), CANVAS_COLORS.cursor, 0.9);
+  }
+
+  /** Edges of a cell area: dark halo outside, `color` line inside (see `solidEdges`). */
+  #drawEdges(edges: readonly Edge[], color: number, alpha: number): void {
+    if (edges.length === 0) return;
+    const g = this.overlay;
+    const cam = this.#host.camera;
+    const px = 1 / cam.resolution;
+    const k = cam.lineWidth();
+    for (const pass of [0, 1] as const) {
+      for (const e of edges) {
+        const solidAfter = e.inside === "after";
+        const offset = solidAfter === (pass === 1) ? 0 : -k;
+        if (e.horizontal) {
+          const a = cam.cellBox({ x: e.from, y: e.line, width: e.to - e.from, height: 0 });
+          g.rect(a.x0 * px, (a.y0 + offset) * px, (a.x1 - a.x0) * px, k * px);
+        } else {
+          const a = cam.cellBox({ x: e.line, y: e.from, width: 0, height: e.to - e.from });
+          g.rect((a.x0 + offset) * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
+        }
+      }
+      if (pass === 0) g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
+      else g.fill({ color, alpha });
+    }
+  }
+
+  // ------------------------------------------------------------------ feedback
+
+  /** Fading accent outline of the last pick. */
+  #drawFlash(): void {
+    const f = this.#flash;
+    if (!f) return;
+    const t = performance.now() - f.start;
+    if (t >= FLASH_MS) {
+      this.#flash = null;
+      return;
+    }
+    const alpha = 1 - t / FLASH_MS;
+    const g = this.overlay;
+    const cam = this.#host.camera;
+    const px = 1 / cam.resolution;
+    const k = cam.lineWidth();
+    // Grows a little while it fades, so it reads as "taken from here".
+    const grow = Math.round((t / FLASH_MS) * 4 * k) + k;
+    const box = cam.cellBox(f.region);
+    rectOutline(g, box.x0 - grow - k, box.y0 - grow - k, box.x1 + grow + k, box.y1 + grow + k, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.5 * alpha });
+    rectOutline(g, box.x0 - grow, box.y0 - grow, box.x1 + grow, box.y1 + grow, 2 * k, px);
+    g.fill({ color: this.#host.colors.accent, alpha });
+    this.#host.requestRender();
+  }
+
+  /** Brush size readout next to the pointer (screen space). */
+  #drawReadout(): void {
+    if (performance.now() >= this.#readoutUntil) return;
+    const p = this.#host.pointer?.() ?? null;
+    if (!p) return;
+    const s = useEditorStore.getState();
+    const res = this.#host.camera.resolution;
+    const label = `${s.brushShape === "circle" ? "●" : "■"} ${s.brushSize}×${s.brushSize}`;
+    const text = this.#readoutText;
+    if (text.text !== label) text.text = label;
+    if (text.resolution !== res) text.resolution = res;
+    const padX = 6;
+    const padY = 3;
+    const w = Math.ceil(text.width) + 2 * padX;
+    const h = Math.ceil(text.height) + 2 * padY;
+    this.#readoutBg.clear().roundRect(0, 0, w, h, 4).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.8 });
+    text.position.set(padX, padY);
+    // Below-right of the pointer, kept inside the view; whole device pixels.
+    const cam = this.#host.camera;
+    const x = Math.min(p.x + 18, cam.viewW - w - 4);
+    const y = Math.min(p.y + 20, cam.viewH - h - 4);
+    this.readout.position.set(Math.round(x * res) / res, Math.round(y * res) / res);
+    this.readout.visible = true;
   }
 
   // ------------------------------------------------------------------ grid layers
@@ -278,6 +505,10 @@ export class OverlayRenderer {
     if (value === null) return this.#drawCellCursor(one);
     switch (tool) {
       case "brush":
+        // A stamp on a grid layer paints the value like the brush (saved stamps were handled before).
+        return this.#drawCellsOutline(this.#brushCells(cell), this.#host.colors.accent);
+      case "eraser":
+        return this.#drawCellsOutline(this.#brushCells(cell));
       case "rect":
         return this.#drawGridFootprint(one);
       case "fill":

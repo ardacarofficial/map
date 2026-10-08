@@ -14,6 +14,12 @@
  * brush / rectangle / fill pick a tile per cell (`pickRandomTile` with the
  * document seed); on an entity layer the entity tool (and the select tool)
  * adds, selects and drags entities (a drag = one undo step).
+ *
+ * Comfort round: brush / eraser (also on grid layers) paint the store's
+ * brush footprint (size × size square or circle) along the stroke; Shift +
+ * click draws a straight line from the last painted cell; Shift / Alt shape
+ * a rectangle (square / from the centre). Picks and finished strokes are
+ * reported to the host (handle events, recent tiles, a flash on the map).
  */
 import {
   EMPTY_CELL,
@@ -38,12 +44,14 @@ import {
 } from "@smap/core";
 
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
-import { useEditorStore } from "../state/editorStore";
+import { useEditorStore, type CellRegion, type TileSelection } from "../state/editorStore";
 import { cellWrites, strokeCells } from "./brush";
 import type { Point } from "./camera";
+import { gridPickEvent, pickEvent, recentTileOf, strokeSummary, type CanvasPickEvent, type StrokeSummary, type StrokeTool } from "./canvasEvents";
 import type { CameraController } from "./cameraController";
 import { dragPosition, type WorldPoint } from "./entityLogic";
 import type { EntityRenderer } from "./entityRenderer";
+import { brushFootprint, constrainRect, footprintCells, type RectModifiers } from "./footprint";
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
 import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
@@ -62,6 +70,13 @@ export type Gesture =
       readonly grid: boolean;
       /** Random brush: cell per position (overrides `value`), or null. */
       readonly pick: ((x: number, y: number) => number) | null;
+      readonly tool: StrokeTool;
+      /** Brush footprint offsets around each stroke cell. */
+      readonly offsets: readonly CellPoint[];
+      /** Cells the stroke already covered ("x,y"). */
+      readonly seen: Set<string>;
+      /** Cells changed so far. */
+      count: number;
       last: CellPoint | null;
     }
   | {
@@ -74,9 +89,19 @@ export type Gesture =
       readonly saved: boolean;
       readonly start: CellPoint;
       readonly placed: Set<string>;
+      count: number;
       last: CellPoint | null;
     }
-  | { readonly kind: "rect"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint }
+  | {
+      readonly kind: "rect";
+      readonly pointerId: number;
+      readonly start: CellPoint;
+      end: CellPoint;
+      /** Shift: square. */
+      square: boolean;
+      /** Alt: `start` is the centre. */
+      fromCenter: boolean;
+    }
   | { readonly kind: "select"; readonly pointerId: number; readonly start: CellPoint; end: CellPoint; moved: boolean }
   | { readonly kind: "pick"; readonly pointerId: number; readonly button: number; readonly start: CellPoint; end: CellPoint }
   | {
@@ -103,6 +128,31 @@ export interface ToolHost {
   capture(pointerId: number): void;
   release(pointerId: number): void;
   requestRender(): void;
+  /** True while Alt holds the temporary eyedropper (picks do not switch tools). */
+  springActive?(): boolean;
+  /** Something was picked from the map. */
+  picked?(event: CanvasPickEvent): void;
+  /** An edit gesture finished as one undo step. */
+  strokeCommitted?(summary: StrokeSummary): void;
+  /** Briefly outline `region` (pick feedback). */
+  flash?(region: CellRegion): void;
+}
+
+/** Map region of a rectangle gesture (modifiers applied), clipped to the map. */
+export function rectGestureRegion(
+  g: { readonly start: CellPoint; readonly end: CellPoint; readonly square: boolean; readonly fromCenter: boolean },
+  bounds: { readonly width: number; readonly height: number },
+): CellRegion | null {
+  const mods: RectModifiers = { square: g.square, fromCenter: g.fromCenter };
+  const { a, b } = constrainRect(g.start, g.end, mods);
+  return dragRegion(a, b, bounds);
+}
+
+/** Last painted cell of a stroke: Shift + click draws a line from it. */
+interface LastPaint {
+  readonly store: MapStore;
+  readonly layerId: string;
+  readonly cell: CellPoint;
 }
 
 /** `PointerEvent.buttons` bit of a `PointerEvent.button`. */
@@ -117,6 +167,7 @@ export function released(e: PointerEvent, button: number): boolean {
 
 export class ToolController {
   #gesture: Gesture | null = null;
+  #lastPaint: LastPaint | null = null;
   readonly #host: ToolHost;
 
   constructor(host: ToolHost) {
@@ -125,6 +176,37 @@ export class ToolController {
 
   get gesture(): Gesture | null {
     return this.#gesture;
+  }
+
+  /**
+   * Where a Shift + click line would start: the last painted cell when the
+   * current tool paints with a brush footprint on the same layer, else null.
+   */
+  lineAnchor(): CellPoint | null {
+    const lp = this.#lastPaint;
+    if (!lp || this.#gesture) return null;
+    const store = this.#host.scene?.store;
+    const s = useEditorStore.getState();
+    if (!store || store !== lp.store || s.activeLayerId !== lp.layerId) return null;
+    if (!this.#footprintTool()) return null;
+    return lp.cell;
+  }
+
+  /** Shift / Alt changed (keys or pointer events): reshapes a rectangle drag. */
+  setModifiers(shift: boolean, alt: boolean): void {
+    const g = this.#gesture;
+    if (g?.kind !== "rect" || (g.square === shift && g.fromCenter === alt)) return;
+    g.square = shift;
+    g.fromCenter = alt;
+    this.#host.requestRender();
+  }
+
+  /** True when the current tool paints the brush footprint (brush without stamp, eraser) on a paintable layer. */
+  #footprintTool(): boolean {
+    const s = useEditorStore.getState();
+    const grid = isGridLayer(this.#activeLayer());
+    if (s.tool === "eraser") return true;
+    return s.tool === "brush" && !(s.stamp && (savedStamp(s.stamp) || !grid));
   }
 
   /** Left / right button down on a map cell (pan already handled). */
@@ -148,18 +230,18 @@ export class ToolController {
     switch (s.tool) {
       case "brush":
         if (s.stamp && (savedStamp(s.stamp) || !grid)) this.#beginStamp(e, s.stamp, cell);
-        else this.#beginPaint(e);
+        else this.#beginPaint(e, e.shiftKey ? this.lineAnchor() : null);
         break;
       case "eraser":
-        this.#beginPaint(e);
+        this.#beginPaint(e, e.shiftKey ? this.lineAnchor() : null);
         break;
       case "fill":
         this.#fillAt(cell);
         break;
       case "rect": {
         const info = this.#activeInfo();
-        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection)) {
-          this.#start({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell });
+        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || isRandomBrush(s.randomSet))) {
+          this.#start({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell, square: e.shiftKey, fromCenter: e.altKey });
         }
         break;
       }
@@ -188,6 +270,7 @@ export class ToolController {
     } else if (g.kind === "entity") {
       this.#dragEntity(g);
     } else {
+      if (g.kind === "rect") this.setModifiers(e.shiftKey, e.altKey);
       const cell = this.#host.pointerCell();
       if (cell) {
         if (g.kind === "select" && (cell.x !== g.start.x || cell.y !== g.start.y)) g.moved = true;
@@ -205,6 +288,7 @@ export class ToolController {
     if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
     else if (g.kind === "entity") this.#dragEntity(g);
     else {
+      if (g.kind === "rect") this.setModifiers(e.shiftKey, e.altKey);
       const cell = this.#host.pointerCell();
       if (cell) g.end = cell;
     }
@@ -222,7 +306,10 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) g.store.commit();
+    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity") && g.store.inTransaction) {
+      g.store.commit();
+      if (g.kind !== "entity") this.#strokeDone(g);
+    }
     this.#host.release(g.pointerId);
     this.#host.requestRender();
   }
@@ -253,12 +340,20 @@ export class ToolController {
     switch (g.kind) {
       case "paint":
       case "stamp":
+        if (g.store.inTransaction) {
+          g.store.commit();
+          this.#strokeDone(g);
+        }
+        break;
       case "entity":
         if (g.store.inTransaction) g.store.commit();
         break;
-      case "rect":
-        this.#commitRect(g.start, g.end);
+      case "rect": {
+        const map = this.#host.scene?.store.document.map;
+        const r = map ? rectGestureRegion(g, map) : null;
+        if (r) this.#commitRect(r, g.start);
         break;
+      }
       case "select":
         this.#finishSelect(g.start, g.end, g.moved);
         break;
@@ -268,6 +363,32 @@ export class ToolController {
     }
     this.#host.release(g.pointerId);
     this.#host.requestRender();
+  }
+
+  /** After a stroke's commit: remembers the line anchor and reports the edit. */
+  #strokeDone(g: Extract<Gesture, { kind: "paint" | "stamp" }>): void {
+    if (g.kind === "paint" && g.last) this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last };
+    this.#report(g.kind === "stamp" ? "stamp" : g.tool, g.count);
+  }
+
+  #report(tool: StrokeTool, cells: number): void {
+    const summary = strokeSummary(tool, cells);
+    if (summary) this.#host.strokeCommitted?.(summary);
+  }
+
+  /** Adds a painted single tile to the recent-tiles strip (skips a repeat of the newest). */
+  #pushRecent(tile: TileSelection): void {
+    const s = useEditorStore.getState();
+    const head = s.recentTiles[0];
+    if (head && head.tilesetId === tile.tilesetId && head.tileId === tile.tileId) return;
+    s.pushRecentTile({ tilesetId: tile.tilesetId, tileId: tile.tileId });
+  }
+
+  /** The selected single tile when the fill / rectangle tools paint it (no stamp, no random set). */
+  #singleTile(): TileSelection | null {
+    const s = useEditorStore.getState();
+    if (s.stamp || isRandomBrush(s.randomSet) || !s.selection) return null;
+    return s.selection;
   }
 
   // ------------------------------------------------------------------ helpers
@@ -286,10 +407,10 @@ export class ToolController {
     if (!st.dirty) st.setDirty(true);
   }
 
-  /** Runs `fn` as one undo step; rolls back if it throws. */
-  #transact(store: MapStore, fn: () => boolean): void {
+  /** Runs `fn` (returns the changed cell count) as one undo step reported as `tool`; rolls back if it throws. */
+  #transact(store: MapStore, tool: StrokeTool, fn: () => number): void {
     store.beginTransaction();
-    let changed: boolean;
+    let changed: number;
     try {
       changed = fn();
     } catch (error) {
@@ -298,7 +419,10 @@ export class ToolController {
       return;
     }
     store.commit();
-    if (changed) this.#markDirty();
+    if (changed > 0) {
+      this.#markDirty();
+      this.#report(tool, changed);
+    }
   }
 
   /** Active layer when the paint tools may write to it (tile or grid layer). */
@@ -315,10 +439,16 @@ export class ToolController {
     return gridPaintValue(s.tool, s.gridValue, layer.maxValue);
   }
 
-  /** Dispatches grid writes inside the open transaction; true when something changed. */
-  #paintGrid(store: MapStore, layerId: string, cells: GridWrite[]): boolean {
-    if (cells.length === 0) return false;
-    return patchCellCount(store.dispatch({ type: "paintTerrain", layerId, cells })) > 0;
+  /** Dispatches grid writes inside the open transaction; returns the changed cell count. */
+  #paintGrid(store: MapStore, layerId: string, cells: GridWrite[]): number {
+    if (cells.length === 0) return 0;
+    return patchCellCount(store.dispatch({ type: "paintTerrain", layerId, cells }));
+  }
+
+  /** Dispatches tile writes inside the open transaction; returns the changed cell count. */
+  #paintCells(store: MapStore, layerId: string, cells: CellWrite[]): number {
+    if (cells.length === 0) return 0;
+    return patchCellCount(store.dispatch({ type: "paintCells", layerId, cells }));
   }
 
   /**
@@ -380,41 +510,43 @@ export class ToolController {
       const value = this.#gridValue(layer);
       if (value === null) return;
       const writes = gridFillWrites(layer, cell.x, cell.y, value, map);
-      if (writes.length > 0) this.#transact(store, () => this.#paintGrid(store, layer.id, writes));
+      if (writes.length > 0) this.#transact(store, "fill", () => this.#paintGrid(store, layer.id, writes));
       return;
     }
     // The sentinel never equals a cell, so this is the whole same-valued region.
     const points = floodFill(layer, cell.x, cell.y, -1, map);
-    this.#transact(store, () => {
+    const single = this.#singleTile();
+    this.#transact(store, "fill", () => {
+      // Stamps tile by absolute position, so neighbouring fills line up.
       const at = this.#writePattern(store, { x: 0, y: 0 });
-      if (!at) return false;
+      if (!at) return 0;
       const cells: CellWrite[] = [];
       for (const p of points) {
         const v = at(p.x, p.y);
         if (v === EMPTY_CELL || layer.getCell(p.x, p.y) === v) continue;
         cells.push({ x: p.x, y: p.y, cell: v });
       }
-      if (cells.length === 0) return false;
-      return patchCellCount(store.dispatch({ type: "paintCells", layerId: layer.id, cells })) > 0;
+      return this.#paintCells(store, layer.id, cells);
     });
+    if (single) this.#pushRecent(single);
   }
 
-  #commitRect(start: CellPoint, end: CellPoint): void {
+  /** Fills `r` (modifiers already applied); a stamp repeats from the drag start `anchor`. */
+  #commitRect(r: CellRegion, anchor: CellPoint): void {
     const t = this.#editTarget();
     if (!t) return;
     const { store, layer } = t;
-    const r = dragRegion(start, end, store.document.map);
-    if (!r) return;
     if (isGridLayer(layer)) {
       const value = this.#gridValue(layer);
       if (value === null) return;
       const writes = gridRectWrites(r, value, (x, y) => layer.getCell(x, y));
-      if (writes.length > 0) this.#transact(store, () => this.#paintGrid(store, layer.id, writes));
+      if (writes.length > 0) this.#transact(store, "rect", () => this.#paintGrid(store, layer.id, writes));
       return;
     }
-    this.#transact(store, () => {
-      const at = this.#writePattern(store, start);
-      if (!at) return false;
+    const single = this.#singleTile();
+    this.#transact(store, "rect", () => {
+      const at = this.#writePattern(store, anchor);
+      if (!at) return 0;
       const cells: CellWrite[] = [];
       for (let y = r.y; y < r.y + r.height; y++) {
         for (let x = r.x; x < r.x + r.width; x++) {
@@ -423,9 +555,9 @@ export class ToolController {
           cells.push({ x, y, cell: v });
         }
       }
-      if (cells.length === 0) return false;
-      return patchCellCount(store.dispatch({ type: "paintCells", layerId: layer.id, cells })) > 0;
+      return this.#paintCells(store, layer.id, cells);
     });
+    if (single) this.#pushRecent(single);
   }
 
   #finishSelect(start: CellPoint, end: CellPoint, moved: boolean): void {
@@ -446,23 +578,29 @@ export class ToolController {
     const r = dragRegion(start, end, doc.map);
     if (!r) return;
     const s = useEditorStore.getState();
+    // Alt held (temporary eyedropper): releasing Alt brings the previous tool back.
+    const switchTool = () => {
+      if (this.#host.springActive?.()) return;
+      if (s.tool === "eraser" || s.tool === "select" || s.tool === "eyedropper") s.setTool("brush");
+    };
     // On a grid layer a single-cell pick takes the painted value.
     const active = this.#activeLayer();
     if (isGridLayer(active) && r.width === 1 && r.height === 1) {
       const value = active.getCell(r.x, r.y);
       if (value !== 0) {
         s.setGridValue(value);
-        if (s.tool === "eraser" || s.tool === "select" || s.tool === "eyedropper") s.setTool("brush");
+        switchTool();
+        this.#picked(gridPickEvent(value, r));
         return;
       }
     }
     const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i));
     if (result.kind === "none") return;
+    let clip: TileClip | null = null;
     if (result.kind === "tile") {
       s.setStamp(null);
       s.setSelection(result.entry);
     } else {
-      let clip: TileClip;
       try {
         clip = copyRegion(doc, [result.layerId], result.region);
       } catch (error) {
@@ -473,18 +611,30 @@ export class ToolController {
       s.setStamp(clip);
     }
     // Fill and rectangle use the picked tile too; tools that cannot place it switch to the brush.
-    if (s.tool === "eraser" || s.tool === "select" || s.tool === "eyedropper") s.setTool("brush");
+    switchTool();
+    const event = pickEvent(result, clip, r);
+    if (event) this.#picked(event);
+  }
+
+  /** Pick feedback: recent tiles, the handle event and a flash on the map. */
+  #picked(event: CanvasPickEvent): void {
+    const tile = recentTileOf(event);
+    if (tile) this.#pushRecent(tile);
+    this.#host.flash?.(event.region);
+    this.#host.picked?.(event);
   }
 
   // ------------------------------------------------------------------ strokes
 
-  #beginPaint(e: PointerEvent): void {
+  /** Starts a brush / eraser stroke; `from` (Shift + click) joins it to that cell with a line. */
+  #beginPaint(e: PointerEvent, from: CellPoint | null): void {
     const state = useEditorStore.getState();
     const t = this.#editTarget();
     if (!t) return;
     const { store, layer } = t;
     let value: number;
     let pick: ((x: number, y: number) => number) | null = null;
+    let recent: TileSelection | null = null;
     const grid = isGridLayer(layer);
     if (grid) {
       const v = this.#gridValue(layer);
@@ -509,10 +659,17 @@ export class ToolController {
         console.error("[canvas] cannot paint selection", error);
         return;
       }
+      recent = sel;
     }
+    const offsets = brushFootprint(state.brushSize, state.brushShape);
+    const tool: StrokeTool = state.tool === "eraser" ? "eraser" : "brush";
     store.beginTransaction();
-    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, pick, last: null });
+    const seen = new Set<string>();
+    // The line starts after the anchor's footprint, which the previous stroke already painted.
+    if (from) footprintCells([from], offsets, seen);
+    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, pick, tool, offsets, seen, count: 0, last: from });
     this.#paint([e]);
+    if (recent) this.#pushRecent(recent);
   }
 
   #beginStamp(e: PointerEvent, clip: TileClip, start: CellPoint): void {
@@ -522,7 +679,7 @@ export class ToolController {
     const mapping = saved ? {} : mappingFor(store, clip);
     if (!saved && Object.keys(mapping).length === 0) return;
     store.beginTransaction();
-    this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, saved, start, placed: new Set(), last: null });
+    this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, saved, start, placed: new Set(), count: 0, last: null });
     this.#paint([e]);
   }
 
@@ -544,8 +701,13 @@ export class ToolController {
         for (const o of stampOrigins(g.start, cells, g.clip.width, g.clip.height, g.placed)) {
           if (g.saved) {
             const r = placeStamp(g.store, g.clip, o.x, o.y);
+            for (const p of r.patches) g.count += patchCellCount(p);
             if (r.patches.length > 0 || r.createdLayerIds.length > 0) changed = true;
-          } else if (pasteClip(g.store, g.clip, g.mapping, o.x, o.y).length > 0) changed = true;
+          } else {
+            const patches = pasteClip(g.store, g.clip, g.mapping, o.x, o.y);
+            for (const p of patches) g.count += patchCellCount(p);
+            if (patches.length > 0) changed = true;
+          }
         }
       } catch (error) {
         console.error("[canvas] stamp failed", error);
@@ -558,28 +720,30 @@ export class ToolController {
 
     const layer = doc.getLayer(g.layerId);
     if (!layer) return;
+    // Every stroke cell stamps the brush footprint; cells already covered by this stroke are skipped.
+    const covered = footprintCells(cells, g.offsets, g.seen);
     const getCell = (x: number, y: number) => layer.getCell(x, y);
-    let changed: boolean;
+    let changed: number;
     try {
-      if (g.grid) changed = this.#paintGrid(g.store, g.layerId, gridWrites(cells, g.value, doc.map, getCell));
+      if (g.grid) changed = this.#paintGrid(g.store, g.layerId, gridWrites(covered, g.value, doc.map, getCell));
       else if (g.pick) {
         const writes: CellWrite[] = [];
-        for (const { x, y } of cells) {
+        for (const { x, y } of covered) {
           if (!doc.inBounds(x, y)) continue;
           const v = g.pick(x, y);
           if (getCell(x, y) !== v) writes.push({ x, y, cell: v });
         }
-        changed = writes.length > 0 && patchCellCount(g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes })) > 0;
+        changed = this.#paintCells(g.store, g.layerId, writes);
       } else {
-        const writes = cellWrites(cells, g.value, doc.map.width, doc.map.height, getCell);
-        changed = writes.length > 0 && patchCellCount(g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes })) > 0;
+        changed = this.#paintCells(g.store, g.layerId, cellWrites(covered, g.value, doc.map.width, doc.map.height, getCell));
       }
     } catch (error) {
       console.error("[canvas] paint failed", error);
       this.cancel();
       return;
     }
-    if (changed) this.#markDirty();
+    g.count += changed;
+    if (changed > 0) this.#markDirty();
   }
 
   // ------------------------------------------------------------------ entities

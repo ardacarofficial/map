@@ -2,6 +2,11 @@
  * DOM input of the map canvas: pointer events (routed to panning or the
  * tool controller), wheel zoom / pan, Space-to-pan, Esc-to-cancel, the
  * hovered cell (reported to the status bar) and the CSS cursor.
+ *
+ * Modifier keys: holding Alt over the canvas is a temporary eyedropper
+ * (`springKey.ts`; a tap does nothing and never focuses the browser / OS
+ * menu); Shift shows the Shift + click line preview and, with Alt, shapes a
+ * rectangle drag (square / from the centre).
  */
 import type { CellPoint, MapInfo } from "@smap/core";
 
@@ -9,6 +14,7 @@ import { useEditorStore } from "../state/editorStore";
 import { classifyWheel } from "./brush";
 import { wheelDeltaPixels, wheelZoomFactor, type Point } from "./camera";
 import type { CameraController } from "./cameraController";
+import { SPRING_HOLD_MS, SPRING_IDLE, springStep, type SpringEvent, type SpringState } from "./springKey";
 import type { ToolController } from "./toolController";
 import { cursorFor } from "./tools";
 
@@ -60,6 +66,10 @@ export class PointerInput {
   pointer: Point | null = null;
   #canvasRect: DOMRect | null = null;
   #spaceDown = false;
+  #shiftDown = false;
+  #altDown = false;
+  #spring: SpringState = SPRING_IDLE;
+  #springTimer: ReturnType<typeof setTimeout> | null = null;
   #pan: Pan | null = null;
   #lastPanWheel = -Infinity;
   #hover: CellPoint | null = null;
@@ -73,6 +83,16 @@ export class PointerInput {
 
   get panning(): boolean {
     return this.#pan !== null;
+  }
+
+  /** Shift is held (line preview of brush / eraser). */
+  get shiftDown(): boolean {
+    return this.#shiftDown;
+  }
+
+  /** Alt is holding the temporary eyedropper. */
+  get springActive(): boolean {
+    return this.#spring.phase === "active";
   }
 
   /** Hovered map cell (inside the map), updated by {@link updateHover}. */
@@ -138,8 +158,11 @@ export class PointerInput {
     window.addEventListener("keyup", (e) => this.#onKey(e, false), opts);
     window.addEventListener("blur", () => {
       this.#spaceDown = false;
+      this.#setModifiers(false, false);
+      this.#feedSpring({ type: "reset" });
       this.updateCursor();
     }, opts);
+    signal.addEventListener("abort", () => this.#clearSpringTimer());
     window.addEventListener("scroll", () => (this.#canvasRect = null), { signal, capture: true, passive: true });
     this.updateCursor();
   }
@@ -203,14 +226,24 @@ export class PointerInput {
   #onKey(e: KeyboardEvent, down: boolean): void {
     if (e.key === "Alt") {
       const world = this.#host.world();
-      if (world?.busy) {
-        // Keep the browser / OS from taking Alt (menu bar focus) during a drag.
-        e.preventDefault();
-        world.altChanged(down);
-        this.updateCursor();
+      if (world) {
+        if (world.busy) {
+          // Keep the browser / OS from taking Alt (menu bar focus) during a drag.
+          e.preventDefault();
+          world.altChanged(down);
+          this.updateCursor();
+        }
+        return;
       }
+      this.#onAlt(e, down);
       return;
     }
+    if (e.key === "Shift") {
+      this.#setModifiers(down, this.#altDown);
+      return;
+    }
+    // Alt + another key is a shortcut (Alt+Tab, ...), not a held eyedropper.
+    if (down && e.altKey) this.#feedSpring({ type: "otherKey" });
     if (e.code !== "Space") return;
     if (down) {
       if (isEditableTarget(e.target)) return;
@@ -225,6 +258,57 @@ export class PointerInput {
     }
     this.updateCursor();
     this.#host.requestRender();
+  }
+
+  /** Alt over the level view: rectangle "from centre" during a drag, otherwise the temporary eyedropper. */
+  #onAlt(e: KeyboardEvent, down: boolean): void {
+    const hot = !isEditableTarget(e.target) && (this.pointer !== null || document.activeElement === this.#canvas);
+    // A lone Alt would focus the browser / OS menu (Windows) and steal the next keys.
+    if (hot) e.preventDefault();
+    this.#setModifiers(this.#shiftDown, down);
+    if (!down) {
+      this.#feedSpring({ type: "up" });
+      return;
+    }
+    if (!hot || !this.pointer || !this.#host.map()) return;
+    if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now(), busy: this.#host.tools.gesture !== null || this.#pan !== null });
+  }
+
+  #setModifiers(shift: boolean, alt: boolean): void {
+    if (shift === this.#shiftDown && alt === this.#altDown) return;
+    this.#shiftDown = shift;
+    this.#altDown = alt;
+    this.#host.tools.setModifiers(shift, alt);
+    this.#host.requestRender();
+  }
+
+  /** Runs the spring-key reducer and applies its tool change. */
+  #feedSpring(event: SpringEvent): void {
+    const store = useEditorStore.getState();
+    const before = this.#spring;
+    const { state, setTool } = springStep(before, event, store.tool);
+    this.#spring = state;
+    if (state.phase === "pending" && before.phase !== "pending") {
+      this.#clearSpringTimer();
+      const since = state.since;
+      this.#springTimer = setTimeout(() => {
+        this.#springTimer = null;
+        this.#feedSpring({ type: "tick", time: Math.max(performance.now(), since + SPRING_HOLD_MS) });
+      }, SPRING_HOLD_MS);
+    } else if (state.phase !== "pending") this.#clearSpringTimer();
+    if (setTool && setTool !== store.tool) {
+      // A drag of the temporary eyedropper ends with it (the pick still applies).
+      store.setTool(setTool);
+    }
+    if (state !== before) {
+      this.updateCursor();
+      this.#host.requestRender();
+    }
+  }
+
+  #clearSpringTimer(): void {
+    if (this.#springTimer !== null) clearTimeout(this.#springTimer);
+    this.#springTimer = null;
   }
 
   /** Esc cancels the gesture in progress (and is then not a "deselect"). */
@@ -272,6 +356,12 @@ export class PointerInput {
     }
     const cell = this.pointerCell();
     if (!cell) return;
+    this.#syncModifiers(e);
+    // Alt + click picks right away (no need to wait for the hold).
+    if (e.button === 0 && e.altKey) {
+      if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now() });
+      this.#feedSpring({ type: "click" });
+    }
     tools.pointerDown(e, cell);
   }
 
@@ -284,8 +374,16 @@ export class PointerInput {
     this.#host.requestRender();
   }
 
+  /** Modifier state from a pointer event (keys pressed / released while the window had no focus). */
+  #syncModifiers(e: PointerEvent): void {
+    if (this.#host.world()) return;
+    this.#setModifiers(e.shiftKey, e.altKey);
+    if (!e.altKey && this.#spring.phase !== "idle") this.#feedSpring({ type: "up" });
+  }
+
   #onPointerMove(e: PointerEvent): void {
     this.pointer = this.toLocal(e);
+    this.#syncModifiers(e);
     if (this.#pan && e.pointerId === this.#pan.pointerId) {
       const dx = e.clientX - this.#pan.lastX;
       const dy = e.clientY - this.#pan.lastY;
