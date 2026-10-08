@@ -30,11 +30,13 @@ interface Drag {
   active: boolean;
 }
 
-function readCollapsed(): boolean {
+/** The user's choice, or null when they never toggled (then: collapsed while there is only one level). */
+function readCollapsed(): boolean | null {
   try {
-    return localStorage.getItem(COLLAPSED_KEY) === "1";
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    return raw === null ? null : raw === "1";
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -59,12 +61,14 @@ export function LevelsPanel() {
   const picking = useLevelUi((s) => s.pick !== null);
   // v1.2: on the world map the list is the only panel (taller), and a click opens the level in the level view.
   const world = useWorldView((s) => s.view === "world");
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [stored, setStored] = useState(readCollapsed);
+  const count = levels.length;
+  // One level: the list adds nothing, so it starts folded; a second level unfolds it (unless the user chose otherwise).
+  const collapsed = stored ?? (!world && count <= 1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [settling, setSettling] = useState(false);
   const dragRef = useRef<Drag | null>(null);
-  const count = levels.length;
   const dirty = new Set(dirtyIds);
 
   useEffect(() => {
@@ -74,10 +78,8 @@ export function LevelsPanel() {
   }, [settling]);
 
   const toggle = () => {
-    setCollapsed((c) => {
-      writeCollapsed(!c);
-      return !c;
-    });
+    writeCollapsed(!collapsed);
+    setStored(!collapsed);
   };
 
   const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;

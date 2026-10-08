@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { isEntityLayer } from "@smap/core";
 
 import { formatNumber, getLocale, t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
@@ -46,6 +47,8 @@ export function StatusBar() {
   const hover = useEditorStore((s) => s.hoverCell);
   const zoom = useEditorStore((s) => s.zoom);
   const tool = useEditorStore((s) => s.tool);
+  const brushSize = useEditorStore((s) => s.brushSize);
+  const activeLayerId = useEditorStore((s) => s.activeLayerId);
   const world = useWorldView((s) => s.view === "world");
   const levelCount = useProjectLibrary((s) => s.levels.length);
   useStructureVersion(project?.store);
@@ -68,11 +71,31 @@ export function StatusBar() {
     );
   }
 
+  const layer = activeLayerId ? project?.store.document.getLayer(activeLayerId) : undefined;
+  const sized = (tool === "brush" || tool === "eraser") && !isEntityLayer(layer);
   return (
     <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
-      <Item label={t("status.cell")}>
-        <span className="inline-block min-w-[9ch]">{hover ? `${hover.x}, ${hover.y}` : t("status.noCell")}</span>
-      </Item>
+      <div className="flex items-center gap-2 px-2.5 font-mono text-muted tabular" data-status-cell>
+        <span>
+          <span className="text-faint">X </span>
+          <span className="inline-block min-w-[3ch]">{hover ? hover.x : t("status.noCell")}</span>
+        </span>
+        <span>
+          <span className="text-faint">Y </span>
+          <span className="inline-block min-w-[3ch]">{hover ? hover.y : t("status.noCell")}</span>
+        </span>
+      </div>
+      {layer && (
+        <div className="flex min-w-0 items-center gap-1.5 px-2.5" data-status-layer>
+          <span className="text-faint">{t("status.layer")}</span>
+          <span className="max-w-[160px] truncate text-muted">{layer.name}</span>
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 px-2.5">
+        <span className="text-faint">{t("status.tool")}</span>
+        <span className="text-muted">{t(`tools.${tool}`)}</span>
+        {sized && <span className="font-mono text-faint tabular">{t("toolOptions.sizeValue", { size: brushSize })}</span>}
+      </div>
       <Item label={t("status.zoom")}>
         <span className="inline-block min-w-[5ch]">{formatNumber(Math.round(zoom * 100))}%</span>
       </Item>
@@ -82,10 +105,6 @@ export function StatusBar() {
           <span className="text-faint"> · {t("common.px", { value: map.tileWidth })}</span>
         </Item>
       )}
-      <div className="flex items-center gap-1.5 px-2.5">
-        <span className="text-faint">{t("status.tool")}</span>
-        <span className="text-muted">{t(`tools.${tool}`)}</span>
-      </div>
       <SaveState />
     </footer>
   );

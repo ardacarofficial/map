@@ -91,3 +91,80 @@ export function rectCells(x0: number, y0: number, x1: number, y1: number, bounds
   }
   return points;
 }
+
+/** Brush tip shape. */
+export type BrushShape = "square" | "circle";
+
+/** Largest brush size accepted by {@link brushFootprint} (larger sizes are clamped). */
+export const MAX_BRUSH_SIZE = 64;
+
+/**
+ * Cell offsets covered by a brush of `size` × `size` cells, relative to the
+ * cursor cell, row-major. Odd sizes are centred on the cursor; even sizes
+ * have no centre cell and extend one cell further toward the top-left
+ * (size 2 covers the cursor and the cells left / above it: offsets −1..0).
+ *
+ * `"circle"`: cells whose centre lies within the disc of diameter `size`
+ * (a small inset keeps size 3 a plus and size 5 a rounded 21-cell disc,
+ * like pixel-art editors); sizes 1 and 2 are always full squares.
+ * `size` is floored and clamped to `[1, MAX_BRUSH_SIZE]`.
+ */
+export function brushFootprint(size: number, shape: BrushShape = "square"): CellPoint[] {
+  const n = Math.max(1, Math.min(MAX_BRUSH_SIZE, Math.floor(Number.isFinite(size) ? size : 1)));
+  const lo = 0 - Math.floor(n / 2); // not -0
+  const centre = lo + (n - 1) / 2;
+  const r2 = (n / 2) * (n / 2) - 0.5;
+  const out: CellPoint[] = [];
+  for (let dy = lo; dy < lo + n; dy++) {
+    for (let dx = lo; dx < lo + n; dx++) {
+      if (shape === "circle" && n > 2 && (dx - centre) ** 2 + (dy - centre) ** 2 > r2) continue;
+      out.push({ x: dx, y: dy });
+    }
+  }
+  return out;
+}
+
+/**
+ * Every cell a brush covers along `points` (e.g. `lineCells` of a drag),
+ * de-duplicated in first-touched order and clipped to `bounds` when given.
+ */
+export function strokeCells(points: readonly CellPoint[], footprint: readonly CellPoint[], bounds?: CellBounds): CellPoint[] {
+  const seen = new Set<string>();
+  const out: CellPoint[] = [];
+  for (const p of points) {
+    for (const o of footprint) {
+      const x = p.x + o.x;
+      const y = p.y + o.y;
+      if (bounds && (x < 0 || y < 0 || x >= bounds.width || y >= bounds.height)) continue;
+      const key = `${x},${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+/**
+ * Corner `b` moved so that the rectangle from `a` to it is a square (Shift
+ * while dragging): the side is the longer of the two spans and `b` keeps
+ * its direction from `a`. Non-integer inputs are floored.
+ */
+export function squareCorner(a: CellPoint, b: CellPoint): CellPoint {
+  const ax = Math.floor(a.x);
+  const ay = Math.floor(a.y);
+  const dx = Math.floor(b.x) - ax;
+  const dy = Math.floor(b.y) - ay;
+  const side = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: ax + (dx < 0 ? -side : side), y: ay + (dy < 0 ? -side : side) };
+}
+
+/**
+ * Rectangle tool / selection: the rectangle from `a` to `b` (both included),
+ * made square first when `square` is true, then normalized and clipped to
+ * `bounds` like {@link normalizeRect} (so a clipped square may not be square).
+ */
+export function constrainRect(a: CellPoint, b: CellPoint, square: boolean, bounds?: CellBounds): CellRect | null {
+  const end = square ? squareCorner(a, b) : b;
+  return normalizeRect(a.x, a.y, end.x, end.y, bounds);
+}

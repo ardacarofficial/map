@@ -6,21 +6,35 @@ import {
   isGridLayer,
   SPAWN_TYPE_ID,
   isTileSolid,
+  terrainTemplateInfo,
   tilePosition,
   type GridLayer,
   type MapDocument,
+  type TileClip,
   type Tileset,
 } from "@smap/core";
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 import { runCommand } from "../../commands/registry";
-import { activateTerrain, allTerrains, setTilesSolid } from "../../commands/terrainActions";
+import { activeStampId } from "../../commands/stampActions";
+import { setTilesSolid } from "../../commands/terrainActions";
 import { t, type MessageKey } from "../../i18n";
+import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { BrushPreview } from "../layout/inspector/BrushPreview";
+import {
+  inspectorSectionsFor,
+  inspectorVersion,
+  registerInspectorSection,
+  subscribeInspector,
+  type InspectorContext,
+} from "../layout/inspector/registry";
 import { Button } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
+import { Kbd } from "../primitives/Kbd";
 import { TileSwatch } from "../primitives/TileSwatch";
+import { templateShortName } from "../terrain/TemplatePicker";
 import { terrainSwatchTile } from "../terrain/TerrainList";
 import { chooseEntityType } from "../../commands/entityActions";
 import { EntityProperties } from "../entities/EntityProperties";
@@ -36,86 +50,213 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** A sub-heading inside the inspector ("FIRÇA", "HARİTA"). */
+function SubHeading({ children }: { children: ReactNode }) {
+  return <h3 className="px-3 pt-3 pb-1.5 text-2xs font-semibold tracking-wider text-faint uppercase">{children}</h3>;
+}
+
 /**
- * Brush options of the active grid layer (terrain / collision), info about
- * the selected tile (with its "katı" switch), and the map when nothing is
- * selected.
+ * Inspector (right column): what is selected or on the brush (entity,
+ * stamp, random brush, tile, terrain / collision kind) and the map. Built
+ * from inspector sections (`layout/inspector/registry.ts`); later features
+ * add theirs with `registerInspectorSection`.
  */
 export function PropertiesPanel() {
   const store = useEditorStore((s) => s.project?.store);
-  const selection = useEditorStore((s) => s.selection);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
-  useStructureVersion(store);
-  const tileset = selection ? store?.document.getTileset(selection.tilesetId) : undefined;
-  const map = store?.document.map;
-  const activeLayer = activeLayerId ? store?.document.getLayer(activeLayerId) : undefined;
-  const grid = isGridLayer(activeLayer) ? activeLayer : null;
   const selectedEntityId = useEditorStore((s) => s.selectedEntityId);
-  const randomCount = useEditorStore((s) => s.randomSet.length);
-  const found = selectedEntityId ? store?.document.findEntity(selectedEntityId) : undefined;
-
-  if (found && store) {
-    return (
-      <PanelSection title={t("panels.properties")} className="max-h-[50%] shrink-0 overflow-y-auto">
-        <EntityProperties doc={store.document} entity={found.entity} />
-      </PanelSection>
-    );
-  }
-  const entityLayer = isEntityLayer(activeLayer);
-
+  useStructureVersion(store);
+  useSyncExternalStore(subscribeInspector, inspectorVersion);
+  const doc = store?.document;
+  if (!doc) return null;
+  const found = selectedEntityId ? doc.findEntity(selectedEntityId) : undefined;
+  const ctx: InspectorContext = {
+    doc,
+    layer: activeLayerId ? doc.getLayer(activeLayerId) : undefined,
+    entity: found ? { entity: found.entity, layer: found.layer } : undefined,
+  };
+  const sections = inspectorSectionsFor(ctx);
   return (
-    <PanelSection title={t("panels.properties")} className="shrink-0">
-      {grid && store && <GridBrush doc={store.document} layer={grid} />}
-      {randomCount >= 2 && store && !entityLayer && <RandomBrushChip doc={store.document} />}
-      <div className="px-3 pb-3">
-        {selection && tileset && randomCount < 2 && !entityLayer ? (
-          <div className="flex gap-3">
-            <TileSwatch tileset={tileset} tileId={selection.tileId} size={56} className="rounded-md border border-line" />
-            <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start items-center gap-x-3 gap-y-1 text-sm">
-              <Row label={t("properties.tileset")}>{tileset.name}</Row>
-              <Row label={t("properties.tileId")}>
-                <span className="font-mono tabular">{selection.tileId}</span>
-                <span className="ml-2 font-mono text-faint tabular">
-                  ({tilePosition(tileset, selection.tileId).col}, {tilePosition(tileset, selection.tileId).row})
-                </span>
-              </Row>
-              <Row label={t("properties.size")}>
-                <span className="font-mono tabular">
-                  {tileset.tileWidth} × {tileset.tileHeight}
-                </span>
-              </Row>
-              <SolidRow tileset={tileset} tileId={selection.tileId} />
-            </dl>
+    <PanelSection title={t("panels.properties")} className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2" data-inspector>
+        {sections.map(({ id, Component }) => (
+          <div key={id} data-inspector-section={id} className="first:[&>h3]:pt-0.5">
+            <Component ctx={ctx} />
           </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {randomCount < 2 && (
-              <div className="flex flex-col">
-                <span className="text-sm text-muted">{entityLayer ? t("properties.noEntity") : t("properties.noSelection")}</span>
-                <span className="text-xs text-faint">{entityLayer ? t("properties.noEntityHint") : t("properties.noSelectionHint")}</span>
-              </div>
-            )}
-            {map && (
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                <Row label={t("properties.mapSize")}>
-                  <span className="font-mono tabular">{t("common.cells", { width: map.width, height: map.height })}</span>
-                </Row>
-                <Row label={t("properties.tileSize")}>
-                  <span className="font-mono tabular">{t("common.px", { value: map.tileWidth })}</span>
-                </Row>
-              </dl>
-            )}
-            {store && !store.document.spawn() && <SpawnHint />}
-            {map && (
-              <Button className="h-7 self-start px-2.5 text-sm" onClick={() => runCommand("map.resize")}>
-                <Icon name="resize" size={14} />
-                {t("properties.resizeMap")}
-              </Button>
-            )}
-          </div>
-        )}
+        ))}
       </div>
     </PanelSection>
+  );
+}
+
+// ---- Built-in sections
+
+function EntitySection({ ctx }: { ctx: InspectorContext }) {
+  if (!ctx.entity) {
+    return (
+      <div className="flex flex-col px-3 pt-1 pb-2">
+        <span className="text-sm text-muted">{t("properties.noEntity")}</span>
+        <span className="text-xs text-faint">{t("properties.noEntityHint")}</span>
+      </div>
+    );
+  }
+  return <EntityProperties doc={ctx.doc} entity={ctx.entity.entity} />;
+}
+
+/** What the brush paints: a stamp / clip, the random set, or one tile. */
+function BrushSection({ ctx }: { ctx: InspectorContext }) {
+  const stamp = useEditorStore((s) => s.stamp);
+  const selection = useEditorStore((s) => s.selection);
+  const randomCount = useEditorStore((s) => s.randomSet.length);
+  const doc = ctx.doc;
+  let body: ReactNode;
+  if (stamp) body = <ClipCard clip={stamp} doc={doc} />;
+  else if (randomCount >= 2) body = <RandomBrushChip doc={doc} />;
+  else if (selection && doc.getTileset(selection.tilesetId)) {
+    body = <TileCard tileset={doc.getTileset(selection.tilesetId)!} tileId={selection.tileId} />;
+  } else {
+    body = (
+      <div className="flex flex-col px-3">
+        <span className="text-sm text-muted">{t("properties.noSelection")}</span>
+        <span className="text-xs text-faint">{t("properties.noSelectionHint")}</span>
+      </div>
+    );
+  }
+  return (
+    <>
+      <SubHeading>{t("inspector.brush")}</SubHeading>
+      {body}
+    </>
+  );
+}
+
+/** A clip on the brush: preview + "3 × 2 tile · 2 katman", with the stamp's name when it is a saved one. */
+function ClipCard({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
+  const stampId = activeStampId(clip);
+  const saved = useProjectLibrary((s) => (stampId ? s.stamps.find((st) => st.id === stampId) : undefined));
+  const tileLayers = clip.layers.filter((l) => !l.grid).length;
+  const gridLayers = clip.layers.length - tileLayers;
+  return (
+    <div className="flex gap-3 px-3" data-brush-clip>
+      <BrushPreview clip={clip} doc={doc} width={72} height={72} />
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+        <span className="truncate text-md font-medium text-text">{saved?.name ?? t("inspector.clip")}</span>
+        <span className="font-mono text-sm text-muted tabular">{t("inspector.clipSize", { width: clip.width, height: clip.height })}</span>
+        <span className="text-xs text-faint">
+          {t("stamps.layers", { count: clip.layers.length })}
+          {gridLayers > 0 && <Icon name="shield" size={11} className="ml-1 inline text-collision-solid/80" />}
+        </span>
+        <span className="mt-1 flex items-center gap-1 text-2xs text-faint">
+          <Kbd keys="Escape" />
+          {t("inspector.dropClip")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TileCard({ tileset, tileId }: { tileset: Tileset; tileId: number }) {
+  const pos = tilePosition(tileset, tileId);
+  return (
+    <div className="flex gap-3 px-3">
+      <TileSwatch tileset={tileset} tileId={tileId} size={56} className="rounded-md border border-line" />
+      <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start items-center gap-x-3 gap-y-1 text-sm">
+        <Row label={t("properties.tileset")}>{tileset.name}</Row>
+        <Row label={t("properties.tileId")}>
+          <span className="font-mono tabular">{tileId}</span>
+          <span className="ml-2 font-mono text-faint tabular">
+            ({pos.col}, {pos.row})
+          </span>
+        </Row>
+        <Row label={t("properties.size")}>
+          <span className="font-mono tabular">
+            {tileset.tileWidth} × {tileset.tileHeight}
+          </span>
+        </Row>
+        <SolidRow tileset={tileset} tileId={tileId} />
+      </dl>
+    </div>
+  );
+}
+
+/** Terrain layer: the terrain being painted. Collision layer: the exception kind. (Picked in the tool options bar.) */
+function GridLayerSection({ ctx }: { ctx: InspectorContext }) {
+  const layer = ctx.layer as GridLayer;
+  return (
+    <>
+      <SubHeading>{t(layer.role === "terrain" ? "terrain.brush" : "collision.brush")}</SubHeading>
+      {layer.role === "terrain" ? <TerrainCard doc={ctx.doc} /> : <CollisionCard />}
+    </>
+  );
+}
+
+function TerrainCard({ doc }: { doc: MapDocument }) {
+  const value = useEditorStore((s) => s.gridValue);
+  const terrain = doc.getTerrain(value);
+  const tileset = terrain ? doc.getTileset(terrain.tilesetId) : undefined;
+  if (!terrain || !tileset) {
+    return (
+      <div className="flex flex-col px-3">
+        <span className="text-sm text-muted">{t("terrain.none")}</span>
+        <span className="text-xs text-faint">{t("terrain.noneHint")}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex gap-3 px-3" data-inspector-terrain={terrain.id}>
+      <TileSwatch tileset={tileset} tileId={terrainSwatchTile(tileset, terrain)} size={56} className="rounded-md border border-terrain-tint/60" />
+      <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start items-center gap-x-3 gap-y-1 text-sm">
+        <Row label={t("terrain.name")}>{terrain.name}</Row>
+        <Row label={t("properties.tileset")}>{tileset.name}</Row>
+        <Row label={t("terrain.template")}>{templateShortName(terrainTemplateInfo(terrain.template))}</Row>
+      </dl>
+    </div>
+  );
+}
+
+const COLLISION_KINDS: { value: number; label: MessageKey; hint: MessageKey; swatch: string }[] = [
+  { value: COLLISION_SOLID, label: "collision.forceSolid", hint: "collision.forceSolidHint", swatch: "bg-collision-solid" },
+  { value: COLLISION_PASSABLE, label: "collision.forcePass", hint: "collision.forcePassHint", swatch: "bg-collision-pass" },
+];
+
+function CollisionCard() {
+  const value = useEditorStore((s) => s.gridValue);
+  const tool = useEditorStore((s) => s.tool);
+  const kind = COLLISION_KINDS.find((c) => c.value === value);
+  return (
+    <div className="flex flex-col gap-1 px-3">
+      {kind && tool !== "eraser" && (
+        <span className="flex items-center gap-2 text-sm text-text">
+          <span aria-hidden className={`size-2.5 rounded-xs ${kind.swatch}`} />
+          {t(kind.label)}
+        </span>
+      )}
+      <span className="text-xs leading-4 text-faint">{tool === "eraser" ? t("collision.eraserHint") : kind ? t(kind.hint) : null}</span>
+    </div>
+  );
+}
+
+function MapSection({ ctx }: { ctx: InspectorContext }) {
+  const map = ctx.doc.map;
+  return (
+    <>
+      <SubHeading>{t("properties.map")}</SubHeading>
+      <div className="flex flex-col gap-2.5 px-3">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+          <Row label={t("properties.mapSize")}>
+            <span className="font-mono tabular">{t("common.cells", { width: map.width, height: map.height })}</span>
+          </Row>
+          <Row label={t("properties.tileSize")}>
+            <span className="font-mono tabular">{t("common.px", { value: map.tileWidth })}</span>
+          </Row>
+        </dl>
+        <Button className="h-7 self-start px-2.5 text-sm" onClick={() => runCommand("map.resize")}>
+          <Icon name="resize" size={14} />
+          {t("properties.resizeMap")}
+        </Button>
+        {!ctx.doc.spawn() && <SpawnHint />}
+      </div>
+    </>
   );
 }
 
@@ -156,92 +297,14 @@ function SolidRow({ tileset, tileId }: { tileset: Tileset; tileId: number }) {
   );
 }
 
-/** Brush value of the active grid layer: a terrain, or a collision exception kind. */
-function GridBrush({ doc, layer }: { doc: MapDocument; layer: GridLayer }) {
-  return (
-    <div className="mx-3 mb-3 flex flex-col gap-2 border-b border-line-subtle pb-3">
-      <span className="text-xs text-faint">{t(layer.role === "terrain" ? "terrain.brush" : "collision.brush")}</span>
-      {layer.role === "terrain" ? <TerrainChoices doc={doc} /> : <CollisionChoices />}
-    </div>
-  );
-}
+const onEntityLayer = (c: InspectorContext) => c.entity !== undefined || isEntityLayer(c.layer);
 
-function TerrainChoices({ doc }: { doc: MapDocument }) {
-  const value = useEditorStore((s) => s.gridValue);
-  const terrains = allTerrains(doc);
-  if (terrains.length === 0) {
-    return (
-      <div className="flex flex-col">
-        <span className="text-sm text-muted">{t("terrain.none")}</span>
-        <span className="text-xs text-faint">{t("terrain.noneHint")}</span>
-      </div>
-    );
-  }
-  return (
-    <div role="radiogroup" aria-label={t("terrain.brush")} className="flex flex-wrap gap-1.5">
-      {terrains.map((terrain) => {
-        const tileset = doc.getTileset(terrain.tilesetId);
-        const on = terrain.id === value;
-        return (
-          <button
-            key={terrain.id}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            onClick={() => activateTerrain(terrain.id)}
-            className={`flex h-7 max-w-full items-center gap-1.5 rounded-md border pr-2 pl-1 text-sm transition-colors ${
-              on ? "border-terrain-tint bg-terrain-tint/12 text-text" : "border-line text-muted hover:border-line-strong hover:text-text"
-            }`}
-          >
-            {tileset && <TileSwatch tileset={tileset} tileId={terrainSwatchTile(tileset, terrain)} size={18} className="rounded-xs" />}
-            <span className="truncate">{terrain.name}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const COLLISION_CHOICES: { value: number; label: MessageKey; hint: MessageKey; swatch: string }[] = [
-  { value: COLLISION_SOLID, label: "collision.forceSolid", hint: "collision.forceSolidHint", swatch: "bg-collision-solid" },
-  { value: COLLISION_PASSABLE, label: "collision.forcePass", hint: "collision.forcePassHint", swatch: "bg-collision-pass" },
-];
-
-function CollisionChoices() {
-  const value = useEditorStore((s) => s.gridValue);
-  const tool = useEditorStore((s) => s.tool);
-  const setValue = useEditorStore((s) => s.setGridValue);
-  const setTool = useEditorStore((s) => s.setTool);
-  const current = COLLISION_CHOICES.find((c) => c.value === value);
-  return (
-    <>
-      <div role="radiogroup" aria-label={t("collision.brush")} className="grid grid-cols-2 gap-1.5">
-        {COLLISION_CHOICES.map((choice) => {
-          const on = choice.value === value && tool !== "eraser";
-          return (
-            <button
-              key={choice.value}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              title={t(choice.hint)}
-              onClick={() => {
-                setValue(choice.value);
-                if (tool === "eraser" || tool === "select" || tool === "eyedropper") setTool("brush");
-              }}
-              className={`flex h-7 min-w-0 items-center gap-2 rounded-md border px-2 text-sm transition-colors ${
-                on ? "border-accent bg-accent-soft text-text" : "border-line text-muted hover:border-line-strong hover:text-text"
-              }`}
-            >
-              <span aria-hidden className={`size-2.5 shrink-0 rounded-xs ${choice.swatch}`} />
-              <span className="truncate">{t(choice.label)}</span>
-            </button>
-          );
-        })}
-      </div>
-      <span className="text-xs leading-4 text-faint">
-        {tool === "eraser" ? t("collision.eraserHint") : current ? t(current.hint) : null}
-      </span>
-    </>
-  );
-}
+registerInspectorSection({ id: "builtin.entity", order: 10, when: onEntityLayer, Component: EntitySection });
+registerInspectorSection({
+  id: "builtin.brush",
+  order: 20,
+  when: (c) => !onEntityLayer(c) && !isGridLayer(c.layer),
+  Component: BrushSection,
+});
+registerInspectorSection({ id: "builtin.gridLayer", order: 30, when: (c) => !onEntityLayer(c) && isGridLayer(c.layer), Component: GridLayerSection });
+registerInspectorSection({ id: "builtin.map", order: 90, when: (c) => c.entity === undefined, Component: MapSection });

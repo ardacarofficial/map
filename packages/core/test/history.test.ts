@@ -15,6 +15,7 @@ import {
   rectCells,
   serializeLevel,
   serializeProject,
+  terrainCandidates,
   isGridLayer,
   isTileLayer,
   SPAWN_TYPE_ID,
@@ -131,6 +132,20 @@ const W0 = 14;
 const H0 = 12;
 const PALETTE = 5;
 const coord = fc.integer({ min: -2, max: 22 });
+/** [tileWidth, tileHeight, margin, spacing] for `updateTilesetGrid`. */
+const GRID_SPECS: readonly (readonly [number, number, number, number])[] = [
+  [32, 32, 0, 0],
+  [16, 16, 0, 0],
+  [32, 32, 0, 1],
+  [64, 64, 0, 0],
+  [16, 32, 0, 0],
+  [32, 32, 32, 0],
+];
+/** Original image sizes, and image sizes for `replaceTilesetImage` (same, shorter, wider, narrower + taller). */
+const IMAGE_SIZES: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+  grass: [[256, 256], [256, 192], [320, 256], [192, 288]],
+  terrain: [[384, 320], [384, 256], [448, 320], [320, 352]],
+};
 const cellArb = fc.oneof(
   { weight: 1, arbitrary: fc.constant(0) },
   {
@@ -224,6 +239,24 @@ const actionArb = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("defineTerrain" as const), terrain: terrainArb() }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeTerrain" as const), id: fc.constantFrom(1, 2, 3) }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("addGrid" as const), index: pick, target: pick }) },
+  // Tileset grid edits (re-slice / resized PNG): palette, solid flags and terrains are remapped.
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("tilesetGrid" as const),
+      tileset: fc.constantFrom("grass", "terrain"),
+      spec: fc.nat({ max: GRID_SPECS.length - 1 }),
+      withImage: fc.boolean(),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("tilesetImage" as const),
+      tileset: fc.constantFrom("grass", "terrain"),
+      size: fc.nat({ max: 3 }),
+    }),
+  },
   // v0.6 entity ops
   {
     weight: 2,
@@ -428,12 +461,42 @@ function applyEdit(store: MapStore, a: EditAction): void {
       store.commit();
       return;
     }
-    case "solid":
-      store.dispatch({ type: "setTileSolid", tilesetId: a.tileset, tileIds: a.tileIds, solid: a.solid });
+    case "solid": {
+      // Tileset grids may have changed: only ids inside the current grid.
+      const ts = doc.getTileset(a.tileset)!;
+      const tileIds = a.tileIds.filter((id) => id < ts.columns * ts.rows);
+      store.dispatch({ type: "setTileSolid", tilesetId: a.tileset, tileIds, solid: a.solid });
       return;
-    case "defineTerrain":
+    }
+    case "defineTerrain": {
+      // Only on the original grid, and only when every tile of the terrain is
+      // already in the palette (palette growth is not undoable; see setup()).
+      const ts = doc.getTileset("terrain")!;
+      if (ts.columns !== 12 || ts.rows !== 10 || ts.tileWidth !== 32 || ts.tileHeight !== 32 || ts.margin !== 0 || ts.spacing !== 0) return;
+      const tiles = terrainCandidates(ts, a.terrain).flat();
+      if (tiles.some((id) => doc.palette.indexOf("terrain", id) === 0)) return;
       store.dispatch({ type: "defineTerrain", terrain: a.terrain });
       return;
+    }
+    case "tilesetGrid": {
+      const [tileWidth, tileHeight, margin, spacing] = GRID_SPECS[a.spec]!;
+      const [imageWidth, imageHeight] = IMAGE_SIZES[a.tileset]![0]!;
+      store.dispatch({
+        type: "updateTilesetGrid",
+        tilesetId: a.tileset,
+        tileWidth,
+        tileHeight,
+        margin,
+        spacing,
+        ...(a.withImage ? { imageWidth, imageHeight } : {}),
+      });
+      return;
+    }
+    case "tilesetImage": {
+      const [imageWidth, imageHeight] = IMAGE_SIZES[a.tileset]![a.size]!;
+      store.dispatch({ type: "replaceTilesetImage", tilesetId: a.tileset, imageWidth, imageHeight });
+      return;
+    }
     case "removeTerrain":
       if (doc.getTerrain(a.id)) store.dispatch({ type: "removeTerrain", terrainId: a.id });
       return;
@@ -505,7 +568,7 @@ function applyEdit(store: MapStore, a: EditAction): void {
   }
 }
 
-describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terrain definitions, entities, entity types) are fully reversible", () => {
+describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terrain definitions, entities, entity types, tileset grid edits) are fully reversible", () => {
   it("undo all → initial bytes, redo all → final bytes; every state roundtrips; matches a snapshot model", () => {
     fc.assert(
       fc.property(fc.array(stepArb, { maxLength: 60 }).map((steps) => steps.flat().slice(0, 60)), (actions) => {

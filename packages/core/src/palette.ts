@@ -60,6 +60,34 @@ export class Palette {
     this.#lookup.set(key, index);
     return index;
   }
+
+  /**
+   * @internal Rewrites existing entries in place (tileset grid edits remap
+   * the tile ids of one tileset; used by the store and its history). The
+   * palette never shrinks. The caller guarantees that the result has no
+   * duplicate (tileset, tile) pairs.
+   */
+  _rewrite(writes: readonly PaletteSlotWrite[]): void {
+    for (const { index } of writes) {
+      const current = this.#entries[index - 1];
+      if (!current) throw new RangeError(`palette index ${index} does not exist`);
+      const key = lookupKey(current.tilesetId, current.tileId);
+      if (this.#lookup.get(key) === index) this.#lookup.delete(key);
+    }
+    for (const { index, entry } of writes) {
+      const frozen = Object.isFrozen(entry) ? entry : Object.freeze({ tilesetId: entry.tilesetId, tileId: entry.tileId });
+      this.#entries[index - 1] = frozen;
+      const key = lookupKey(entry.tilesetId, entry.tileId);
+      if (this.#lookup.has(key)) throw new Error(`palette rewrite: duplicate entry for tileset "${entry.tilesetId}" tile ${entry.tileId}`);
+      this.#lookup.set(key, index);
+    }
+  }
+}
+
+/** @internal One palette slot rewrite: `index` (1-based) gets `entry`. */
+export interface PaletteSlotWrite {
+  readonly index: number;
+  readonly entry: PaletteEntry;
 }
 
 function lookupKey(tilesetId: string, tileId: number): string {

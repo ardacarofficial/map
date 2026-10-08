@@ -20,7 +20,7 @@ import type { CellWrite, GridWrite, LayerPatch } from "./ops";
 import type { PaletteEntry } from "./palette";
 import { patchCellCount } from "./patch";
 import type { MapStore } from "./store";
-import { isValidTileId } from "./tileset";
+import { isValidTileId, type Tileset } from "./tileset";
 
 /** One layer's cells inside a clip. */
 export interface ClipLayer {
@@ -361,4 +361,104 @@ function assertRect(rect: CellRect, what: string): void {
     rect.width >= 1 &&
     rect.height >= 1;
   if (!ok) throw new RangeError(`${what}: rect must have integer position and positive integer size`);
+}
+
+/** A tileset grid cell (column, row). */
+export interface TilesetCell {
+  readonly col: number;
+  readonly row: number;
+}
+
+/** A rectangle of tileset grid cells: top-left (`x` = column, `y` = row) and size in tiles. */
+export interface TilesetCellRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+export interface ClipFromTilesetOptions {
+  /** Layer id of the single clip layer (the key for `pasteClip`'s layer mapping). Defaults to `"tiles"`. */
+  readonly layerId?: string;
+  /** Tile ids left empty in the clip, e.g. `emptyTileIds(...)` (fully transparent tiles). */
+  readonly skipTileIds?: ReadonlySet<number> | readonly number[];
+}
+
+/**
+ * Cells of the tileset rectangle spanned by two corner cells (any order,
+ * both included), clamped to the tileset grid, row-major. Empty when the
+ * rectangle misses the grid entirely.
+ */
+export function tilesetCellsInRect(tileset: Tileset, a: TilesetCell, b: TilesetCell): TilesetCell[] {
+  const c0 = Math.max(0, Math.min(Math.floor(a.col), Math.floor(b.col)));
+  const c1 = Math.min(tileset.columns - 1, Math.max(Math.floor(a.col), Math.floor(b.col)));
+  const r0 = Math.max(0, Math.min(Math.floor(a.row), Math.floor(b.row)));
+  const r1 = Math.min(tileset.rows - 1, Math.max(Math.floor(a.row), Math.floor(b.row)));
+  const out: TilesetCell[] = [];
+  for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) out.push({ col, row });
+  return out;
+}
+
+/**
+ * A multi-tile stamp from a palette selection: the selected tileset cells
+ * keep their relative layout inside their bounding box; unselected cells
+ * (holes of an arbitrary selection), cells outside the tileset and
+ * `skipTileIds` stay empty. One clip layer (`layerId`), no flip flags.
+ * The clip palette lists tiles row-major. Returns `null` when nothing is
+ * left. Paste it with `pasteClip` (empty cells skip by default).
+ *
+ * The third argument may also be just the layer id.
+ */
+export function clipFromTileset(
+  tileset: Tileset,
+  selection: readonly TilesetCell[] | TilesetCellRect,
+  options: ClipFromTilesetOptions | string = {},
+): TileClip | null {
+  const opts: ClipFromTilesetOptions = typeof options === "string" ? { layerId: options } : options;
+  const skip = new Set(opts.skipTileIds ?? []);
+  const cells: TilesetCell[] = Array.isArray(selection)
+    ? (selection as readonly TilesetCell[]).slice()
+    : rectSelection(selection as TilesetCellRect);
+  const ids = new Map<string, number>();
+  let minCol = Infinity;
+  let minRow = Infinity;
+  let maxCol = -Infinity;
+  let maxRow = -Infinity;
+  for (const { col, row } of cells) {
+    if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= tileset.columns || row >= tileset.rows) continue;
+    const id = row * tileset.columns + col;
+    if (skip.has(id)) continue;
+    ids.set(`${col},${row}`, id);
+    minCol = Math.min(minCol, col);
+    minRow = Math.min(minRow, row);
+    maxCol = Math.max(maxCol, col);
+    maxRow = Math.max(maxRow, row);
+  }
+  if (ids.size === 0) return null;
+  const width = maxCol - minCol + 1;
+  const height = maxRow - minRow + 1;
+  const data = new Uint32Array(width * height);
+  const palette: PaletteEntry[] = [];
+  const local = new Map<number, number>();
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const id = ids.get(`${minCol + x},${minRow + y}`);
+      if (id === undefined) continue;
+      let index = local.get(id);
+      if (index === undefined) {
+        palette.push(Object.freeze({ tilesetId: tileset.id, tileId: id }));
+        index = palette.length;
+        local.set(id, index);
+      }
+      data[y * width + x] = makeCell(index);
+    }
+  }
+  const layer: ClipLayer = Object.freeze({ layerId: opts.layerId ?? "tiles", name: tileset.name, cells: data });
+  return Object.freeze({ width, height, palette: Object.freeze(palette), layers: Object.freeze([layer]) });
+}
+
+function rectSelection(rect: TilesetCellRect): TilesetCell[] {
+  const out: TilesetCell[] = [];
+  for (let row = rect.y; row < rect.y + rect.h; row++) for (let col = rect.x; col < rect.x + rect.w; col++) out.push({ col, row });
+  return out;
 }

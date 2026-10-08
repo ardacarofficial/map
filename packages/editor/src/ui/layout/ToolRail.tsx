@@ -1,32 +1,29 @@
 import { Fragment } from "react";
+
 import { runCommand } from "../../commands/registry";
 import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
-import type { CommandId } from "../../shortcuts/shortcuts";
-import { useEditorStore, type ToolId } from "../../state/editorStore";
+import { useEditorStore } from "../../state/editorStore";
 import { IconButton } from "../primitives/Button";
-import { Icon, type IconName } from "../primitives/Icon";
+import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
-
-const TOOLS: { id: ToolId; icon: IconName; command: CommandId }[] = [
-  { id: "brush", icon: "pencil", command: "tool.brush" },
-  { id: "eraser", icon: "eraser", command: "tool.eraser" },
-  { id: "fill", icon: "fill", command: "tool.fill" },
-  { id: "rect", icon: "rect", command: "tool.rect" },
-  { id: "select", icon: "select", command: "tool.select" },
-  { id: "eyedropper", icon: "eyedropper", command: "tool.eyedropper" },
-  { id: "entity", icon: "pin", command: "tool.entity" },
-];
+import { useLayoutStore } from "./layoutStore";
+import { TOOLS } from "./tools";
 
 /** Drawing tools and picking tools are separated by a divider after this index. */
 const GROUP_BREAK = 3;
 
+/**
+ * The tools (left edge). The button at the bottom shows / hides the library
+ * column, like VS Code's activity bar.
+ */
 export function ToolRail() {
   const tool = useEditorStore((s) => s.tool);
-  const grid = useEditorStore((s) => s.gridVisible);
-  const collision = useEditorStore((s) => s.collisionOverlay);
+  const libraryCollapsed = useLayoutStore((s) => s.libraryCollapsed);
+  const toggleLibrary = useLayoutStore((s) => s.toggleLibrary);
   // v1.2: the world map only pans (drag empty space) and moves levels; map tools are off.
   const world = useWorldView((s) => s.view === "world");
+  const libraryLabel = libraryCollapsed ? t("layout.showLibrary") : t("layout.hideLibrary");
   return (
     <nav
       aria-label={t("status.tool")}
@@ -37,47 +34,27 @@ export function ToolRail() {
         <Fragment key={id}>
           {(index === GROUP_BREAK + 1 || id === "entity") && <div aria-hidden className="my-1 h-px w-5 bg-line" />}
           <Tooltip label={t(`tools.${id}`)} command={command} side="right">
-          <IconButton
-            aria-label={t(`tools.${id}`)}
-            aria-pressed={!world && tool === id}
-            active={!world && tool === id}
-            disabled={world}
-            onClick={() => runCommand(command)}
-          >
-            <Icon name={icon} size={17} />
-          </IconButton>
+            <IconButton
+              aria-label={t(`tools.${id}`)}
+              aria-pressed={!world && tool === id}
+              active={!world && tool === id}
+              disabled={world}
+              onClick={() => runCommand(command)}
+            >
+              <Icon name={icon} size={17} />
+            </IconButton>
           </Tooltip>
         </Fragment>
       ))}
-      <div className="mt-auto flex flex-col items-center gap-1">
-        <Tooltip label={t("commands.view.toggleGrid")} command="view.toggleGrid" side="right">
-          <IconButton
-            aria-label={t("commands.view.toggleGrid")}
-            aria-pressed={grid}
-            active={grid && !world}
-            disabled={world}
-            onClick={() => runCommand("view.toggleGrid")}
-          >
-            <Icon name="grid" size={17} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip label={t("commands.view.toggleCollision")} command="view.toggleCollision" side="right">
-          <IconButton
-            aria-label={t("commands.view.toggleCollision")}
-            aria-pressed={collision}
-            active={collision && !world}
-            disabled={world}
-            onClick={() => runCommand("view.toggleCollision")}
-          >
-            <Icon name="shield" size={17} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip label={t("commands.view.frameMap")} command="view.frameMap" side="right">
-          <IconButton aria-label={t("commands.view.frameMap")} onClick={() => runCommand("view.frameMap")}>
-            <Icon name="frame" size={17} />
-          </IconButton>
-        </Tooltip>
-      </div>
+      {!world && (
+        <div className="mt-auto flex flex-col items-center gap-1">
+          <Tooltip label={libraryLabel} side="right">
+            <IconButton aria-label={libraryLabel} aria-pressed={!libraryCollapsed} active={false} onClick={toggleLibrary} data-library-toggle>
+              <Icon name="panels" size={17} className="-scale-x-100" />
+            </IconButton>
+          </Tooltip>
+        </div>
+      )}
     </nav>
   );
 }

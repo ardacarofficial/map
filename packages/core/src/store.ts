@@ -50,10 +50,15 @@ import type {
   RemoveLayerOp,
   ResizeMapOp,
   SetLayerPropsOp,
+  ReplaceTilesetImageOp,
+  TilesetRemapResult,
+  UpdateTilesetGridOp,
 } from "./ops";
 import { cellChangesOf, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
-import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem } from "./terrain";
+import type { PaletteEntry } from "./palette";
+import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem, terrainSlotTileId, terrainTemplateInfo, type Terrain } from "./terrain";
 import { isValidTileId, tilesetProblem, type Tileset } from "./tileset";
+import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithGrid } from "./tilesetGrid";
 
 /**
  * Structural parts of a document that can change (renderers rebuild these wholesale).
@@ -146,6 +151,15 @@ export interface TilesetHistoryChange {
   readonly after: Tileset;
 }
 
+/**
+ * Palette entries rewritten in place (tileset grid edits remap tile ids).
+ * Only the listed indices change; the palette never shrinks.
+ */
+export interface PaletteHistoryChange {
+  readonly kind: "palette";
+  readonly entries: readonly { readonly index: number; readonly before: PaletteEntry; readonly after: PaletteEntry }[];
+}
+
 /** Entity list of one entity layer before and after (entities are immutable, so these are cheap). */
 export interface EntitiesHistoryChange {
   readonly kind: "entities";
@@ -171,6 +185,7 @@ export type HistoryChange =
   | LayerPropsHistoryChange
   | MapHistoryChange
   | TilesetHistoryChange
+  | PaletteHistoryChange
   | EntitiesHistoryChange
   | EntityTypesHistoryChange;
 
@@ -339,6 +354,45 @@ class ApplyResult {
   readonly structure = new Set<StructureChange>();
 }
 
+/** Marks every chunk of every tile layer dirty (the tiles behind palette indices changed). */
+function markTileChunksDirty(doc: MapDocument, dirty: DirtyTracker): void {
+  for (const layer of doc.layers) {
+    if (!isTileLayer(layer)) continue;
+    for (const chunk of layer.chunks()) dirty.add(layer.id, chunk.cx << CHUNK_SHIFT, chunk.cy << CHUNK_SHIFT);
+  }
+}
+
+function paletteKey(entry: PaletteEntry): string {
+  return `${entry.tileId}:${entry.tilesetId}`;
+}
+
+function assertImageSize(name: string, width: number, height: number): void {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new RangeError(`${name}: image size must be positive integers, got ${String(width)}×${String(height)}`);
+  }
+}
+
+/**
+ * `terrain` moved onto grid `next`, or `null` when its block does not map
+ * onto a block of the same shape (every used slot must land on the slot's
+ * tile of the moved block). Variant tile ids that do not map are dropped.
+ */
+function remapTerrain(current: Tileset, next: Tileset, terrain: Terrain, remap: (id: number) => number | null): Terrain | null {
+  const info = terrainTemplateInfo(terrain.template);
+  const origin = remap(terrain.origin.row * current.columns + terrain.origin.col);
+  if (origin === null) return null;
+  const col = origin % next.columns;
+  const row = Math.floor(origin / next.columns);
+  if (col + info.columns > next.columns || row + info.rows > next.rows) return null;
+  const moved: Terrain = { ...terrain, origin: { col, row } };
+  for (let slot = 0; slot < info.masks.length; slot++) {
+    if (info.masks[slot] === null) continue;
+    if (remap(terrainSlotTileId(current, terrain, slot)) !== terrainSlotTileId(next, moved, slot)) return null;
+  }
+  const variants = (terrain.variants ?? []).map((v) => ({ slot: v.slot, tileIds: v.tileIds.map(remap).filter((id): id is number => id !== null) }));
+  return normalizeTerrain(variants.length > 0 ? { ...moved, variants } : moved);
+}
+
 const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map", "entities", "entityTypes"];
 
 /**
@@ -376,6 +430,8 @@ export class MapStore {
   #revision = 0;
   #depth = 0;
   #pending: ChangeRecorder | null = null;
+  /** Palette entries moved aside by the last application of a palette change (see `#applyPaletteChange`). */
+  readonly #displaced = new WeakMap<PaletteHistoryChange, { index: number; entry: PaletteEntry; from: PaletteEntry }[]>();
 
   constructor(document: MapDocument, options: MapStoreOptions = {}) {
     this.#doc = document;
@@ -467,6 +523,10 @@ export class MapStore {
         return this.#removeEntityType(op);
       case "deriveTerrain":
         return this.#deriveTerrainOp(op);
+      case "updateTilesetGrid":
+        return this.#updateTilesetGrid(op);
+      case "replaceTilesetImage":
+        return this.#replaceTilesetImage(op);
       default: {
         const unknown: never = op;
         throw new TypeError(`Unknown op type: ${String((unknown as { type: unknown }).type)}`);
@@ -867,6 +927,134 @@ export class MapStore {
     this.#closeOp(ctx);
   }
 
+  #updateTilesetGrid(op: UpdateTilesetGridOp): TilesetRemapResult {
+    const current = this.#doc.getTileset(op.tilesetId);
+    if (!current) throw new Error(`updateTilesetGrid: unknown tileset "${op.tilesetId}"`);
+    const spec = { tileWidth: op.tileWidth, tileHeight: op.tileHeight, margin: op.margin, spacing: op.spacing };
+    const problem = tileGridSpecProblem(spec);
+    if (problem) throw new RangeError(`updateTilesetGrid: ${problem}`);
+    const extent = tilesetImageExtent(current);
+    const imageWidth = op.imageWidth ?? extent.width;
+    const imageHeight = op.imageHeight ?? extent.height;
+    assertImageSize("updateTilesetGrid", imageWidth, imageHeight);
+    return this.#regridTileset("updateTilesetGrid", current, tilesetWithGrid(current, spec, imageWidth, imageHeight));
+  }
+
+  #replaceTilesetImage(op: ReplaceTilesetImageOp): TilesetRemapResult {
+    const current = this.#doc.getTileset(op.tilesetId);
+    if (!current) throw new Error(`replaceTilesetImage: unknown tileset "${op.tilesetId}"`);
+    assertImageSize("replaceTilesetImage", op.imageWidth, op.imageHeight);
+    return this.#regridTileset("replaceTilesetImage", current, tilesetWithGrid(current, current, op.imageWidth, op.imageHeight));
+  }
+
+  /**
+   * Shared body of `updateTilesetGrid` / `replaceTilesetImage`: remaps the
+   * palette entries, solid flags and terrains of `current` onto the grid of
+   * `next` by pixel position (see the op docs) as one undo step.
+   */
+  #regridTileset(name: "updateTilesetGrid" | "replaceTilesetImage", current: Tileset, next: Tileset): TilesetRemapResult {
+    const result = { remapped: 0, dropped: 0, outOfRange: 0, clearedCells: 0, droppedSolidTiles: 0, droppedTerrains: [] as number[] };
+    if (next.columns < 1 || next.rows < 1) {
+      throw new RangeError(`${name}: not even one ${next.tileWidth}×${next.tileHeight} tile fits the image`);
+    }
+    if (
+      (["tileWidth", "tileHeight", "margin", "spacing", "columns", "rows"] as const).every((k) => current[k] === next[k])
+    ) {
+      return Object.freeze({ ...result, droppedTerrains: Object.freeze(result.droppedTerrains) });
+    }
+    const keepOutOfRange = name === "replaceTilesetImage";
+    const remap = tilesetGridRemap(current, next);
+    const newCount = next.columns * next.rows;
+
+    // Palette: mapped entries take their new id; the others are parked on a
+    // free id (out of range for replaceTilesetImage, any free id otherwise —
+    // their cells are cleared) so that every (tileset, tile) pair stays unique.
+    const palette = this.#doc.palette;
+    const mine: { index: number; entry: PaletteEntry; to: number | null }[] = [];
+    const taken = new Set<number>();
+    palette.entries().forEach((entry, i) => {
+      if (entry.tilesetId !== current.id) return;
+      const to = remap(entry.tileId);
+      mine.push({ index: i + 1, entry, to });
+      if (to !== null) taken.add(to);
+    });
+    const minParked = keepOutOfRange ? newCount : 0;
+    let nextFree = minParked;
+    const writes: { index: number; before: PaletteEntry; after: PaletteEntry }[] = [];
+    const dropped = new Set<number>();
+    for (const { index, entry, to: mapped } of mine) {
+      let to = mapped;
+      if (to === null) {
+        if (keepOutOfRange) result.outOfRange++;
+        else dropped.add(index);
+        if (entry.tileId >= minParked && !taken.has(entry.tileId)) {
+          to = entry.tileId;
+        } else {
+          while (taken.has(nextFree)) nextFree++;
+          to = nextFree;
+        }
+        taken.add(to);
+      } else if (to !== entry.tileId) {
+        result.remapped++;
+      }
+      if (to !== entry.tileId) writes.push(Object.freeze({ index, before: entry, after: Object.freeze({ tilesetId: entry.tilesetId, tileId: to }) }));
+    }
+    result.dropped = dropped.size;
+
+    // Solid flags and terrains.
+    const solid: number[] = [];
+    for (const id of current.solidTiles ?? []) {
+      const to = remap(id);
+      if (to === null) result.droppedSolidTiles++;
+      else solid.push(to);
+    }
+    const terrains: Terrain[] = [];
+    for (const terrain of current.terrains ?? []) {
+      const moved = remapTerrain(current, next, terrain, remap);
+      if (moved) terrains.push(moved);
+      else result.droppedTerrains.push(terrain.id);
+    }
+    const nextTileset: Tileset = { ...next, solidTiles: solid, terrains };
+    const problem = tilesetProblem(nextTileset);
+    if (problem) throw new Error(`${name}: ${problem}`);
+
+    // Cells that used a dropped palette entry.
+    const clears: { layer: TileLayer; x: number; y: number; cell: Cell }[] = [];
+    if (dropped.size > 0) {
+      for (const layer of this.#doc.layers) {
+        if (!isTileLayer(layer)) continue;
+        for (const chunk of layer.chunks()) {
+          const data = chunk.data;
+          for (let i = 0; i < data.length; i++) {
+            const cell = data[i]!;
+            if (cell !== 0 && dropped.has(cellPaletteIndex(cell))) {
+              clears.push({ layer, x: (chunk.cx << CHUNK_SHIFT) + (i & CHUNK_MASK), y: (chunk.cy << CHUNK_SHIFT) + (i >> CHUNK_SHIFT), cell });
+            }
+          }
+        }
+      }
+    }
+    result.clearedCells = clears.length;
+
+    const ctx = this.#openOp();
+    for (const { layer, x, y, cell } of clears) {
+      layer._setCell(x, y, 0);
+      ctx.rec.recordCell(layer.id, x, y, cell, 0);
+      ctx.dirty.add(layer.id, x, y);
+    }
+    if (writes.length > 0) {
+      palette._rewrite(writes.map(({ index, after }) => ({ index, entry: after })));
+      ctx.rec.recordStructural(Object.freeze({ kind: "palette", entries: Object.freeze(writes) }));
+      ctx.structure.add("palette");
+    }
+    this.#replaceTileset(ctx, nextTileset);
+    // The same palette indices now show other pixels: every tile chunk redraws.
+    markTileChunksDirty(this.#doc, ctx.dirty);
+    this.#deriveAllTerrain(ctx);
+    this.#closeOp(ctx);
+    return Object.freeze({ ...result, droppedTerrains: Object.freeze(result.droppedTerrains) });
+  }
+
   #addPaletteEntry(op: AddPaletteEntryOp): number {
     const tileset = this.#doc.getTileset(op.tilesetId);
     if (!tileset) throw new Error(`addPaletteEntry: unknown tileset "${op.tilesetId}"`);
@@ -1244,6 +1432,17 @@ export class MapStore {
       case "tileset": {
         doc._replaceTileset(change[side]);
         result.structure.add("tilesets");
+        const a = change.before;
+        const b = change.after;
+        if (a.tileWidth !== b.tileWidth || a.tileHeight !== b.tileHeight || a.margin !== b.margin || a.spacing !== b.spacing || a.columns !== b.columns || a.rows !== b.rows) {
+          markTileChunksDirty(doc, result.dirty);
+        }
+        return;
+      }
+      case "palette": {
+        this.#applyPaletteChange(change, side);
+        result.structure.add("palette");
+        markTileChunksDirty(doc, result.dirty);
         return;
       }
       case "entities": {
@@ -1273,6 +1472,48 @@ export class MapStore {
         throw new TypeError(`Unknown history change: ${String((unknown as { kind: unknown }).kind)}`);
       }
     }
+  }
+
+  /**
+   * Rewrites the entries of a palette change. Entries appended after the
+   * change (palette growth is not undoable) may already hold a key the
+   * change claims; such an entry is unused at this point (the cells that
+   * use it belong to later, already undone steps), so it moves to a key the
+   * change frees. The move is remembered so that applying the other side
+   * moves it back exactly (undo → redo → undo stays byte-exact).
+   */
+  #applyPaletteChange(change: PaletteHistoryChange, side: "before" | "after"): void {
+    const palette = this.#doc.palette;
+    const writes = change.entries.map((e) => ({ index: e.index, entry: e[side] }));
+    const writeSet = new Set(writes.map((w) => w.index));
+    const vacated = new Map<string, PaletteEntry>();
+    for (const { index } of writes) {
+      const current = palette.get(index)!;
+      vacated.set(paletteKey(current), current);
+    }
+    const claimed = new Set(writes.map((w) => paletteKey(w.entry)));
+    const displaced: number[] = [];
+    for (const { entry } of writes) {
+      if (vacated.has(paletteKey(entry))) continue;
+      const holder = palette.indexOf(entry.tilesetId, entry.tileId);
+      if (holder !== 0 && !writeSet.has(holder)) displaced.push(holder);
+    }
+    if (displaced.length > 0) {
+      const free = [...vacated].filter(([key]) => !claimed.has(key)).map(([, e]) => e).sort((a, b) => a.tileId - b.tileId);
+      const memo = this.#displaced.get(change) ?? [];
+      const used = new Set<string>();
+      const moves: { index: number; entry: PaletteEntry; from: PaletteEntry }[] = [];
+      displaced.sort((a, b) => a - b);
+      for (const index of displaced) {
+        const back = memo.find((m) => m.index === index && free.some((f) => paletteKey(f) === paletteKey(m.from)) && !used.has(paletteKey(m.from)));
+        const entry = back ? back.from : free.find((f) => !used.has(paletteKey(f)))!;
+        used.add(paletteKey(entry));
+        moves.push({ index, entry, from: palette.get(index)! });
+      }
+      this.#displaced.set(change, moves);
+      writes.push(...moves.map(({ index, entry }) => ({ index, entry })));
+    }
+    palette._rewrite(writes);
   }
 
   /** Event fields for applied changes; dirty chunks of layers no longer in the document are dropped. */

@@ -40,11 +40,11 @@
   --color-inverse: #101012;
 
   /* ---- The single accent color */
-  --color-accent: #6d8cff;
-  --color-accent-hover: #8aa3ff;
-  --color-accent-soft: rgb(109 140 255 / 0.14);
-  --color-accent-line: rgb(109 140 255 / 0.45);
-  --color-on-accent: #0c0f1d;
+  --color-accent: #3dd6b0; /* teal */
+  --color-accent-hover: #62e2c2;
+  --color-accent-soft: rgb(61 214 176 / 0.13);
+  --color-accent-line: rgb(61 214 176 / 0.45);
+  --color-on-accent: #04241c;
 
   /* ---- Status (toasts, validation) */
   --color-danger: #f0707a;
@@ -65,7 +65,7 @@
 
   /* ---- Map overlays (canvas + tileset panel). Opaque hex; alpha is applied where drawn. */
   --color-collision-solid: #ff5468; /* solid tiles / cells: warm red, reads on dark and on grass */
-  --color-collision-pass: #3fe0a0; /* "force passable" exception cells: mint */
+  --color-collision-pass: #5cb2ff; /* "force passable" exception cells: sky blue (≠ teal accent) */
   --color-terrain-tint: #c39bff; /* terrain blocks and painted terrain cells: soft violet (≠ accent) */
 
   /* ---- Type */
@@ -101,10 +101,12 @@
   --spacing: 4px;
 
   /* ---- Layout */
-  --spacing-toolbar: 40px;
+  --spacing-toolbar: 40px; /* menu bar (app bar) */
+  --spacing-optionsbar: 36px; /* tool options bar under the menu bar */
+  --spacing-recentstrip: 40px; /* recent tiles strip under the canvas */
   --spacing-statusbar: 24px;
   --spacing-rail: 44px;
-  --spacing-sidebar: 296px;
+  --spacing-sidebar: 296px; /* skeleton / default column width; live widths: ui/layout/columns.ts */
 
   /* ---- Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);

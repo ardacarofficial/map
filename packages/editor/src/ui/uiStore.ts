@@ -7,8 +7,11 @@ import { create } from "zustand";
  */
 export type TilesetMode = "pick" | "solid" | "terrain" | "random";
 
-/** What the library section of the right column shows. */
-export type LibraryTab = "tileset" | "stamps";
+/**
+ * What the library column shows. Built-in tabs: "tileset", "stamps",
+ * "entities"; more can be added with `registerLibraryTab` (ui/panels/LibraryPanel).
+ */
+export type LibraryTab = "tileset" | "stamps" | "entities" | (string & {});
 
 /**
  * Panel/dialog state that only the React UI cares about (the canvas never

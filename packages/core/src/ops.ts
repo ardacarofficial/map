@@ -334,7 +334,73 @@ export interface RemoveEntityTypeOp {
   readonly typeId: string;
 }
 
+/**
+ * Re-slices a tileset image with a new tile size / margin / spacing (fixes
+ * a wrong guess made at import). Columns and rows are recomputed from
+ * `imageWidth` × `imageHeight` (default: the smallest image the current
+ * grid needs, see `tilesetImageExtent`).
+ *
+ * Remap rule (by pixel position, see `tilesetGridRemap`): an old tile whose
+ * top-left pixel is exactly the top-left pixel of a new tile becomes that
+ * tile. That applies to the palette entries of this tileset (so cells keep
+ * showing the same pixels), solid flags, terrain variants and terrains (a
+ * terrain stays only when its whole block maps onto a block of the same
+ * shape). Everything else is dropped: cells using a dropped palette entry
+ * are cleared (also on locked layers), dropped solid flags / variants /
+ * terrains are removed. Derived terrain tiles are re-derived.
+ *
+ * Undoable as one step (palette rewrites included, byte-exact); a no-op
+ * (no step) when the grid does not change. Throws on an unknown tileset,
+ * an invalid spec, or a grid with no whole tile.
+ */
+export interface UpdateTilesetGridOp {
+  readonly type: "updateTilesetGrid";
+  readonly tilesetId: string;
+  readonly tileWidth: number;
+  readonly tileHeight: number;
+  readonly margin: number;
+  readonly spacing: number;
+  readonly imageWidth?: number;
+  readonly imageHeight?: number;
+}
+
+/**
+ * The tileset PNG changed size (edited and saved elsewhere): same tile size,
+ * margin and spacing, new columns / rows. Tiles keep their pixel position,
+ * so ids are preserved as long as the column count stays the same
+ * ("ekleme sona yapılır"); a wider image moves ids to keep pixels (Tiled
+ * does the same). Tiles that fall outside the new image are **out of
+ * range**: their palette entries and cells are kept (reported and skipped by
+ * exports, like any out-of-range id) so that a temporarily smaller PNG does
+ * not destroy the map; solid flags and terrains that no longer fit are
+ * removed. Undoable as one step; a no-op when columns and rows stay.
+ */
+export interface ReplaceTilesetImageOp {
+  readonly type: "replaceTilesetImage";
+  readonly tilesetId: string;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+}
+
+/** What a tileset grid edit did (for UI messages). Counts are palette entries unless named otherwise. */
+export interface TilesetRemapResult {
+  /** Palette entries whose tile id changed. */
+  readonly remapped: number;
+  /** Palette entries that map onto no new tile (`updateTilesetGrid`); their cells were cleared. */
+  readonly dropped: number;
+  /** Palette entries outside the new image (`replaceTilesetImage`); kept, reported by `paletteWarnings`. */
+  readonly outOfRange: number;
+  /** Cells cleared because their palette entry was dropped. */
+  readonly clearedCells: number;
+  /** Solid flags removed. */
+  readonly droppedSolidTiles: number;
+  /** Ids of terrains removed (their grid cells stay and derive nothing). */
+  readonly droppedTerrains: readonly number[];
+}
+
 export type Op =
+  | UpdateTilesetGridOp
+  | ReplaceTilesetImageOp
   | AddEntityOp
   | RemoveEntityOp
   | MoveEntityOp
@@ -383,6 +449,8 @@ export interface OpResultMap {
   removeEntityType: void;
   /** Derived tile layer cells this op changed (`layerId` = the target tile layer, or the grid when it has none). */
   deriveTerrain: LayerPatch;
+  updateTilesetGrid: TilesetRemapResult;
+  replaceTilesetImage: TilesetRemapResult;
 }
 
 export type OpResult<O extends Op> = OpResultMap[O["type"]];

@@ -173,6 +173,9 @@ export type {
   CellWrite,
   CellChange,
   LayerPatch,
+  UpdateTilesetGridOp,
+  ReplaceTilesetImageOp,
+  TilesetRemapResult,
 } from "./ops";
 
 export { patchCellCount } from "./patch";
@@ -192,6 +195,7 @@ export {
   type LayerPropsHistoryChange,
   type MapHistoryChange,
   type TilesetHistoryChange,
+  type PaletteHistoryChange,
   type EntitiesHistoryChange,
   type EntityTypesHistoryChange,
 } from "./store";
@@ -295,10 +299,36 @@ export {
   lineCells,
   rectCells,
   normalizeRect,
+  brushFootprint,
+  strokeCells,
+  squareCorner,
+  constrainRect,
+  MAX_BRUSH_SIZE,
+  type BrushShape,
   type CellPoint,
   type CellBounds,
   type CellRect,
 } from "./geometry";
+
+export {
+  type TileGridSpec,
+  type TileGrid,
+  type AlphaImage,
+  type TileGridReason,
+  type TileGridSuggestion,
+  type InferTileGridInput,
+  type InferTileGridResult,
+  COMMON_TILE_SIZES,
+  MAX_GRID_SUGGESTIONS,
+  inferTileGrid,
+  tileSizeFromFileName,
+  emptyTileIds,
+  alphaFromRgba,
+  tileGridSpecProblem,
+  tilesetImageExtent,
+  tilesetWithGrid,
+  tilesetGridRemap,
+} from "./tilesetGrid";
 
 export { floodFill, type CellSource } from "./fill";
 
@@ -308,6 +338,11 @@ export {
   cutRegion,
   flipClip,
   clipLayerPoints,
+  clipFromTileset,
+  tilesetCellsInRect,
+  type TilesetCell,
+  type TilesetCellRect,
+  type ClipFromTilesetOptions,
   type TileClip,
   type ClipLayer,
   type LayerMapping,

@@ -7,6 +7,7 @@ import { runCommand } from "../../commands/registry";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { LibraryTabs } from "../panels/LibraryPanel";
 import { PanelSection } from "../panels/PanelSection";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
@@ -49,6 +50,7 @@ export function EntityPalette() {
   return (
     <PanelSection
       title={t("panels.entities")}
+      heading={<LibraryTabs />}
       className="min-h-[160px] flex-1"
       actions={
         <Tooltip label={t("commands.entity.editTypes")}>
