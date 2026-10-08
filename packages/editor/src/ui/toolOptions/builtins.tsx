@@ -34,8 +34,14 @@ const isCollisionLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.la
 function BrushSize() {
   const size = useEditorStore((s) => s.brushSize);
   const setSize = useEditorStore((s) => s.setBrushSize);
+  // A multi-tile selection / stamp is placed as it is: the size does not apply (eraser still uses it).
+  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
   return (
-    <div className="flex items-center gap-1.5" data-tool-option="brush-size">
+    <div
+      className={`flex items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`}
+      data-tool-option="brush-size"
+      title={unused ? t("toolOptions.sizeUnusedStamp") : undefined}
+    >
       <OptionLabel>{t("toolOptions.size")}</OptionLabel>
       <div className="flex h-7 items-center rounded-md border border-line bg-raised">
         <StepButton
@@ -84,8 +90,9 @@ function BrushShape() {
   const shape = useEditorStore((s) => s.brushShape);
   const size = useEditorStore((s) => s.brushSize);
   const setShape = useEditorStore((s) => s.setBrushShape);
+  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
   return (
-    <div className="flex items-center gap-1.5" data-tool-option="brush-shape">
+    <div className={`flex items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`} data-tool-option="brush-shape">
       <OptionLabel>{t("toolOptions.shape")}</OptionLabel>
       <Segmented
         label={t("toolOptions.shape")}

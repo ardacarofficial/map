@@ -36,7 +36,7 @@ export function EntityTypesDialog() {
   const hasProject = useEditorStore((s) => s.project !== null);
   const show = open && hasProject;
   return (
-    <Dialog.Root open={show} onOpenChange={setOpen}>
+    <Dialog.Root open={show} onOpenChange={(next) => setOpen(next)}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup className={`${popupClass} flex h-[min(600px,calc(100vh-48px))] w-[760px] max-w-[calc(100vw-32px)] flex-col`}>
@@ -54,9 +54,14 @@ function TypesEditor() {
   useStructureVersion(store);
   const doc = store.document;
   const all = doc.allEntityTypes();
-  const [selected, setSelected] = useState<string>(() => doc.entityTypes[0]?.id ?? all[0]!.id);
+  const startsNew = useUiStore.getState().entityTypesStartNew;
+  const newDraft = (): TypeDraft => {
+    const n = doc.entityTypes.length;
+    return { id: null, name: t("entities.newTypeName"), color: TYPE_COLORS[n % TYPE_COLORS.length]!, fields: [] };
+  };
+  const [selected, setSelected] = useState<string>(() => (startsNew ? NEW_KEY : (doc.entityTypes[0]?.id ?? all[0]!.id)));
   /** Unsaved edits per type (kept while switching between types; dropped on close). */
-  const [drafts, setDrafts] = useState<Record<string, TypeDraft>>({});
+  const [drafts, setDrafts] = useState<Record<string, TypeDraft>>(() => (startsNew ? { [NEW_KEY]: newDraft() } : {}));
 
   const savedType = selected === NEW_KEY ? undefined : doc.getEntityType(selected);
   const builtin = isBuiltinEntityTypeId(selected);
@@ -73,11 +78,7 @@ function TypesEditor() {
     });
 
   const startNew = () => {
-    const n = doc.entityTypes.length;
-    setDrafts((d) => ({
-      ...d,
-      [NEW_KEY]: d[NEW_KEY] ?? { id: null, name: t("entities.newTypeName"), color: TYPE_COLORS[n % TYPE_COLORS.length]!, fields: [] },
-    }));
+    setDrafts((d) => ({ ...d, [NEW_KEY]: d[NEW_KEY] ?? newDraft() }));
     setSelected(NEW_KEY);
   };
 

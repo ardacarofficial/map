@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { isEntityLayer } from "@smap/core";
 
 import { formatNumber, getLocale, t } from "../../i18n";
@@ -7,6 +7,7 @@ import { useSaveStatus } from "../../io/saveStatus";
 import { useWorldView } from "../../commands/worldActions";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { installPickHint, usePickHint } from "./pickHint";
 
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -42,6 +43,31 @@ function SaveState() {
   );
 }
 
+/**
+ * "Sağ tık: tile al · sağ sürükle: alan al · Alt+tık: damlalık" while a tile
+ * tool is in use, until the first pick from the map (or a click on it).
+ */
+function PickHint() {
+  const seen = usePickHint((s) => s.seen);
+  const dismiss = usePickHint((s) => s.dismiss);
+  useEffect(() => {
+    if (!seen) installPickHint();
+  }, [seen]);
+  if (seen) return null;
+  return (
+    <button
+      type="button"
+      data-status-pick-hint
+      title={t("status.pickHintClose")}
+      onClick={dismiss}
+      className="flex min-w-0 items-center gap-1.5 px-2.5 text-faint hover:text-muted"
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+      <span className="truncate">{t("status.pickHint")}</span>
+    </button>
+  );
+}
+
 export function StatusBar() {
   const project = useEditorStore((s) => s.project);
   const hover = useEditorStore((s) => s.hoverCell);
@@ -73,6 +99,7 @@ export function StatusBar() {
 
   const layer = activeLayerId ? project?.store.document.getLayer(activeLayerId) : undefined;
   const sized = (tool === "brush" || tool === "eraser") && !isEntityLayer(layer);
+  const pickable = (tool === "brush" || tool === "fill" || tool === "rect") && !!layer && !isEntityLayer(layer);
   return (
     <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
       <div className="flex items-center gap-2 px-2.5 font-mono text-muted tabular" data-status-cell>
@@ -105,6 +132,7 @@ export function StatusBar() {
           <span className="text-faint"> · {t("common.px", { value: map.tileWidth })}</span>
         </Item>
       )}
+      {pickable && <PickHint />}
       <SaveState />
     </footer>
   );

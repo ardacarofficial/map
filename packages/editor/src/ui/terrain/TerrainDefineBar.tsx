@@ -44,9 +44,12 @@ export function TerrainDefineBar({
     <div data-terrain-define="" className="mx-2 mb-1 flex shrink-0 flex-col gap-1.5 rounded-md border border-line bg-raised p-1.5">
       <div className="flex items-center gap-1.5">
         <TemplatePicker value={template} onChange={setTemplate} />
-        <Button variant="ghost" className="h-7 shrink-0 px-2 text-sm" onClick={onDone}>
-          {t("tileset.done")}
-        </Button>
+        {/* While naming a placed block, "Tanımla" / "Vazgeç" below are the only exits (no third button). */}
+        {!pending && (
+          <Button variant="ghost" className="h-7 shrink-0 px-2 text-sm" onClick={onDone}>
+            {t("tileset.done")}
+          </Button>
+        )}
       </div>
       {pending ? (
         <TerrainNameForm

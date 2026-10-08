@@ -3,7 +3,7 @@
  * make a stamp the brush, rename, delete. Stamps are flat copies: placing
  * one keeps no link back to the library (CLAUDE.md → Yapılmayacaklar).
  */
-import { createStamp, isEntityLayer, makeStampId, type MapDocument, type Stamp } from "@smap/core";
+import { copyRegion, createStamp, isEntityLayer, makeStampId, type CellRect, type MapDocument, type Stamp } from "@smap/core";
 
 import { t } from "../i18n";
 import { takenStampIds, useProjectLibrary } from "../io/projectLibrary";
@@ -20,6 +20,15 @@ export function stampRegion() {
 /** Layers a stamp saves: every tile and grid layer (collision included), bottom to top. */
 export function stampLayerIds(doc: MapDocument): string[] {
   return doc.layers.filter((l) => !isEntityLayer(l)).map((l) => l.id);
+}
+
+/**
+ * The layers a stamp of `region` keeps: those with at least one non-empty
+ * cell there (empty layers would only add empty layers where it is placed).
+ */
+export function usedStampLayerIds(doc: MapDocument, region: CellRect): string[] {
+  const clip = copyRegion(doc, stampLayerIds(doc), region);
+  return clip.layers.filter((l) => l.cells.some((c) => c !== 0)).map((l) => l.layerId);
 }
 
 /** True when no layer of the stamp has a non-empty cell. */
@@ -46,7 +55,8 @@ export function saveSelectionAsStamp(name: string): Stamp | null {
   const library = useProjectLibrary.getState();
   let stamp: Stamp;
   try {
-    stamp = createStamp(doc, stampLayerIds(doc), region, { id: makeStampId(trimmed, takenStampIds(library)), name: trimmed });
+    const used = usedStampLayerIds(doc, region);
+    stamp = createStamp(doc, used.length > 0 ? used : stampLayerIds(doc), region, { id: makeStampId(trimmed, takenStampIds(library)), name: trimmed });
   } catch (error) {
     console.error(error);
     toast.error(t("toast.stampFailed", { detail: error instanceof Error ? error.message : String(error) }));

@@ -11,6 +11,9 @@ import { downscaleOver, type Pixels } from "./thumbnailRaster";
 /** Largest minimap drawing area, CSS px. */
 const MAX_W = 200;
 const MAX_H = 150;
+/** Below this canvas width (e.g. 1366 px screens) the minimap shrinks so the map keeps the room. */
+const NARROW_VIEW = 1000;
+const NARROW_SCALE = 0.72;
 const MARGIN = 12;
 /** Padding + border around the drawing area, CSS px per side. */
 const FRAME = 4 + 1;
@@ -137,8 +140,14 @@ export class Minimap {
   footprint(): { width: number; height: number } | null {
     const size = this.#host.mapSize();
     if (!this.#visible || !size || size.width <= 0 || size.height <= 0) return null;
-    const layout = minimapLayout(size.width, size.height, MAX_W, MAX_H);
+    const layout = this.#layoutFor(size);
     return { width: layout.width + 2 * FRAME + MARGIN, height: layout.height + 2 * FRAME + MARGIN };
+  }
+
+  /** Drawing area for a map of `size` map px: smaller in a narrow canvas. */
+  #layoutFor(size: { width: number; height: number }): MinimapLayout {
+    const k = this.#host.camera().viewW < NARROW_VIEW ? NARROW_SCALE : 1;
+    return minimapLayout(size.width, size.height, Math.round(MAX_W * k), Math.round(MAX_H * k));
   }
 
   get visible(): boolean {
@@ -159,7 +168,7 @@ export class Minimap {
     this.element.style.display = show ? "block" : "none";
     if (!show) return;
     const dpr = window.devicePixelRatio || 1;
-    const layout = minimapLayout(size.width, size.height, MAX_W, MAX_H);
+    const layout = this.#layoutFor(size);
     this.#layout = layout;
     const bw = Math.max(1, Math.round(layout.width * dpr));
     const bh = Math.max(1, Math.round(layout.height * dpr));

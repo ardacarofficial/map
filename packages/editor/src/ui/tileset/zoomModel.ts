@@ -55,3 +55,18 @@ export function anchoredScroll(pointer: number, contentStart: number, oldScale: 
 export function zoomLabel(scale: number): string {
   return `${Math.round(scale * 100)}%`;
 }
+
+/**
+ * What a wheel event over a scrollable image (tileset panel, import preview)
+ * does — the Tiled / Photoshop convention: plain wheel scrolls vertically,
+ * Shift + wheel scrolls sideways, Ctrl / Cmd + wheel zooms at the cursor
+ * (a trackpad pinch arrives as Ctrl + wheel). Trackpad two-finger swipes
+ * (plain wheel with deltaX) scroll natively too.
+ */
+export type WheelIntent = "zoom" | "scroll-x" | "native";
+
+export function wheelIntent(event: Pick<WheelEvent, "ctrlKey" | "metaKey" | "shiftKey">): WheelIntent {
+  if (event.ctrlKey || event.metaKey) return "zoom";
+  if (event.shiftKey) return "scroll-x";
+  return "native";
+}

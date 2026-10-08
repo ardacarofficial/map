@@ -45,7 +45,7 @@ import {
 import { commitTilesetSelection, highlightedIds, installTilesetPickSync } from "../tileset/tilesetSelect";
 import { TilesetSwitcher } from "../tileset/TilesetSwitcher";
 import { useTilesetView } from "../tileset/tilesetViewStore";
-import { anchoredScroll, fitScale, stepZoom, zoomLabel } from "../tileset/zoomModel";
+import { anchoredScroll, fitScale, stepZoom, wheelIntent, zoomLabel } from "../tileset/zoomModel";
 import { useUiStore } from "../uiStore";
 import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
@@ -340,22 +340,21 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     vp.scrollTop = p.top;
   }, [scale]);
 
-  // Wheel zooms at the cursor (no modifier needed in the panel); Shift + wheel scrolls sideways.
-  // Native listener: React wheel handlers are passive.
+  // Wheel scrolls (tall tilesets), Shift + wheel scrolls sideways, Ctrl / Cmd + wheel zooms at
+  // the cursor (trackpad pinch arrives as Ctrl + wheel). Native listener: React wheel handlers are passive.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     let acc = 0;
     const onWheel = (event: WheelEvent) => {
+      const intent = wheelIntent(event);
+      if (intent === "native") return;
+      event.preventDefault();
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
-      if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
-        event.preventDefault();
+      if (intent === "scroll-x") {
         el.scrollLeft += (event.deltaY || event.deltaX) * unit;
         return;
       }
-      // Sideways trackpad swipes scroll natively.
-      if (!event.ctrlKey && Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-      event.preventDefault();
       acc += event.deltaY * unit;
       if (Math.abs(acc) < WHEEL_STEP) return;
       const direction = acc < 0 ? 1 : -1;

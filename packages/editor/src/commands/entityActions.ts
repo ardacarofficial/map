@@ -58,7 +58,10 @@ export function addEntityLayer(): string | null {
   const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
   const index = activeIndex >= 0 ? activeIndex + 1 : layers.length;
   const id = store.dispatch({ type: "addLayer", layer: { type: "entity", name: uniqueEntityLayerName(store.document) }, index });
-  useEditorStore.getState().setActiveLayer(id);
+  const editor = useEditorStore.getState();
+  editor.setActiveLayer(id);
+  // Tile tools draw nothing on an entity layer: switch to placing entities.
+  if (editor.tool !== "select" && editor.tool !== "entity") editor.setTool("entity");
   return id;
 }
 

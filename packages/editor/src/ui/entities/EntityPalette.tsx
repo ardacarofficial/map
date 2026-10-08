@@ -12,6 +12,7 @@ import { PanelSection } from "../panels/PanelSection";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
+import { useUiStore } from "../uiStore";
 
 /** Icon of an entity type: built-ins have their own, user types a box. */
 export function entityTypeIcon(type: Pick<EntityType, "id" | "icon"> | undefined): IconName {
@@ -73,7 +74,7 @@ export function EntityPalette() {
           {custom.length === 0 && (
             <div className="flex items-center gap-2 rounded-md border border-dashed border-line-strong py-1.5 pr-1.5 pl-2.5">
               <span className="min-w-0 flex-1 text-xs text-faint">{t("entities.noCustom")}</span>
-              <Button className="h-6 shrink-0 px-2 text-sm" onClick={() => runCommand("entity.editTypes")}>
+              <Button className="h-6 shrink-0 px-2 text-sm" onClick={() => useUiStore.getState().setEntityTypesOpen(true, true)}>
                 <Icon name="plus" size={13} />
                 {t("entities.newType")}
               </Button>

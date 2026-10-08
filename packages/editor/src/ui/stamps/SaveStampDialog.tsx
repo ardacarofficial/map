@@ -1,7 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useState, type FormEvent } from "react";
 
-import { defaultStampName, saveSelectionAsStamp, stampLayerIds, stampRegion } from "../../commands/stampActions";
+import { defaultStampName, saveSelectionAsStamp, stampRegion, usedStampLayerIds } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
@@ -32,7 +32,7 @@ function SaveStampForm({ onDone }: { onDone(): void }) {
   const [name, setName] = useState(() => defaultStampName(useProjectLibrary.getState().stamps));
   const region = stampRegion();
   const doc = useEditorStore.getState().project?.store.document;
-  const layerCount = doc ? stampLayerIds(doc).length : 0;
+  const layerCount = doc && region ? usedStampLayerIds(doc, region).length : 0;
   const error = name.trim().length === 0 ? t("stamps.errName") : null;
 
   const submit = (event: FormEvent) => {

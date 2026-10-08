@@ -118,3 +118,40 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
 
   expect(errors).toEqual([]);
 });
+
+test("tileset panel: wheel scrolls, Shift + wheel scrolls sideways, Ctrl + wheel zooms", async ({ page }) => {
+  await page.goto("/");
+  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
+  const grid = page.getByRole("grid", { name: /overworld/i });
+  const image = grid.locator(".checker");
+  await expect(image).toBeVisible();
+  const scale = async () => Number(await image.getAttribute("data-tileset-scale"));
+  const scroll = () => grid.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
+
+  // Zoom in with the footer button until the tileset overflows both ways.
+  for (let i = 0; i < 3; i++) await page.locator("[data-tileset-zoom]").getByRole("button", { name: /^Yakınlaştır/ }).click();
+  const zoomed = await scale();
+  expect(zoomed).toBeGreaterThan(1);
+
+  const box = (await grid.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+  // Plain wheel: vertical scroll, zoom unchanged.
+  await page.mouse.wheel(0, 200);
+  await expect.poll(async () => (await scroll()).top).toBeGreaterThan(0);
+  expect(await scale()).toBe(zoomed);
+
+  // Shift + wheel: horizontal scroll.
+  await page.keyboard.down("Shift");
+  await page.mouse.wheel(0, 200);
+  await page.keyboard.up("Shift");
+  await expect.poll(async () => (await scroll()).left).toBeGreaterThan(0);
+  expect(await scale()).toBe(zoomed);
+
+  // Ctrl + wheel (and a trackpad pinch): zoom at the cursor.
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -120);
+  await page.keyboard.up("Control");
+  await expect.poll(scale).toBeGreaterThan(zoomed);
+});

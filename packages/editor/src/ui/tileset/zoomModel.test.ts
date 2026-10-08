@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { anchoredScroll, fitScale, MAX_FIT_SCALE, stepZoom, zoomLabel } from "./zoomModel";
+import { anchoredScroll, fitScale, MAX_FIT_SCALE, stepZoom, wheelIntent, zoomLabel } from "./zoomModel";
 
 describe("tileset zoom", () => {
   it("fit prefers a whole-number scale", () => {
@@ -47,5 +47,14 @@ describe("tileset zoom", () => {
   it("labels", () => {
     expect(zoomLabel(1)).toBe("100%");
     expect(zoomLabel(57 / 32)).toBe("178%");
+  });
+
+  it("wheel scrolls, Shift + wheel scrolls sideways, Ctrl / Cmd + wheel (and pinch) zooms", () => {
+    const plain = { ctrlKey: false, metaKey: false, shiftKey: false };
+    expect(wheelIntent(plain)).toBe("native");
+    expect(wheelIntent({ ...plain, shiftKey: true })).toBe("scroll-x");
+    expect(wheelIntent({ ...plain, ctrlKey: true })).toBe("zoom");
+    expect(wheelIntent({ ...plain, metaKey: true })).toBe("zoom");
+    expect(wheelIntent({ ...plain, ctrlKey: true, shiftKey: true })).toBe("zoom");
   });
 });

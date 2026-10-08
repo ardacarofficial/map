@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { MapStore, TileClip } from "@smap/core";
+import { isEntityLayer, type MapDocument, type MapStore, type TileClip } from "@smap/core";
 
 /**
  * Shared editor UI state. Tile data never lives here — it lives in the core
@@ -83,7 +83,7 @@ export interface EditorState {
    * v1.0: another level of the same project became active. Unlike
    * `setProject` it keeps the tool, tile selection, random set, stamp and
    * dirty flag; the marquee and the selected entity belong to the old level.
-   * `activeLayerId` defaults to the level's top layer.
+   * `activeLayerId` defaults to the level's top non-entity layer.
    */
   switchLevel(project: OpenProject, activeLayerId?: string | null): void;
   setTool(tool: ToolId): void;
@@ -104,6 +104,15 @@ export interface EditorState {
   setRandomSet(set: { tilesetId: string; tileId: number; weight?: number }[]): void;
   setEntityTypeId(id: string | null): void;
   setSelectedEntity(id: string | null): void;
+}
+
+/**
+ * Layer made active when a level opens: the top layer tiles can be drawn on
+ * (an entity layer on top would leave the default brush doing nothing).
+ */
+function defaultLayerId(doc: MapDocument): string | null {
+  const layers = doc.layers;
+  return (layers.filter((l) => !isEntityLayer(l)).at(-1) ?? layers.at(-1))?.id ?? null;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -129,7 +138,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setProject: (project) =>
     set({
       project,
-      activeLayerId: project?.store.document.layers.at(-1)?.id ?? null,
+      activeLayerId: project ? defaultLayerId(project.store.document) : null,
       selection: null,
       dirty: false,
       region: null,
@@ -144,7 +153,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       activeLayerId:
         activeLayerId && project.store.document.getLayer(activeLayerId)
           ? activeLayerId
-          : (project.store.document.layers.at(-1)?.id ?? null),
+          : defaultLayerId(project.store.document),
       region: null,
       selectedEntityId: null,
       hoverCell: null,

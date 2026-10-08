@@ -39,7 +39,8 @@ export function saveClipAsStamp(doc: MapDocument, clip: TileClip, name: string):
   }
   library.addStamp(stamp);
   pickStamp(stamp.id);
-  toast.withAction(t("toast.stampSaved", { name: stamp.name }), { label: t("stamps.use"), run: () => pickStamp(stamp.id) });
+  // Already on the brush: no "Fırçaya al" action.
+  toast.success(t("toast.stampSaved", { name: stamp.name }));
   return stamp;
 }
 

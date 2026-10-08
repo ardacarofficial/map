@@ -1,7 +1,7 @@
 /**
  * The tileset card: one dialog for every way a tileset comes in (welcome
  * drop, drop on the editor, "+" / menu, pasted image) and for its settings
- * later. Left: the image, crisp and zoomable with the wheel, with the grid
+ * later. Left: the image, crisp and zoomable with Ctrl + wheel, with the grid
  * of the current settings over it and fully transparent tiles dimmed.
  * Right: name, tile size (linked), margin, spacing, suggestion chips, the
  * tile count and a leftover hint. Enter confirms.
@@ -30,6 +30,7 @@ import {
   type GridDraft,
   type GridSummary,
 } from "./importModel";
+import { wheelIntent } from "../tileset/zoomModel";
 import { useTilesetCard, type CardRequest } from "./importStore";
 
 export function TilesetImportDialog() {
@@ -353,17 +354,30 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
     setZoom(fitZoom(width, height, box.clientWidth, box.clientHeight));
   }, [width, height, zoom]);
 
-  // Wheel zoom around the cursor (non-passive: the page must not scroll).
+  // Same wheel convention as the tileset panel: wheel scrolls, Shift + wheel scrolls sideways,
+  // Ctrl / Cmd + wheel (or pinch) zooms around the cursor (non-passive: the page must not zoom).
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
+    let acc = 0;
     const onWheel = (e: WheelEvent) => {
+      const intent = wheelIntent(e);
+      if (intent === "native") return;
       e.preventDefault();
+      if (intent === "scroll-x") {
+        box.scrollLeft += e.deltaY || e.deltaX;
+        return;
+      }
+      // Trackpad pinches send many small deltas: one step per ~40 px.
+      acc += e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
+      if (Math.abs(acc) < 40) return;
+      const zoomIn = acc < 0;
+      acc = 0;
       const img = imageRef.current;
       setZoom((z) => {
         const current = z ?? 1;
         const i = ZOOMS.indexOf(current);
-        const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? 2 : i) + (e.deltaY < 0 ? 1 : -1)))]!;
+        const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? 2 : i) + (zoomIn ? 1 : -1)))]!;
         if (img && next !== current) {
           const r = img.getBoundingClientRect();
           anchor.current = { px: (e.clientX - r.left) / current, py: (e.clientY - r.top) / current, clientX: e.clientX, clientY: e.clientY };

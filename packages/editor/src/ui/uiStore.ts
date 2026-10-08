@@ -37,6 +37,8 @@ export interface UiState {
   libraryTab: LibraryTab;
   saveStampOpen: boolean;
   entityTypesOpen: boolean;
+  /** The entity types dialog opens on a new, unsaved type ("Yeni tür"). */
+  entityTypesStartNew: boolean;
 
   togglePanels(): void;
   setPaletteOpen(open: boolean): void;
@@ -53,7 +55,8 @@ export interface UiState {
   setTerrainTemplate(template: TerrainTemplate): void;
   setLibraryTab(tab: LibraryTab): void;
   setSaveStampOpen(open: boolean): void;
-  setEntityTypesOpen(open: boolean): void;
+  /** Opens / closes the entity types dialog; `startNew` opens it on a new type. */
+  setEntityTypesOpen(open: boolean, startNew?: boolean): void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -71,6 +74,7 @@ export const useUiStore = create<UiState>()((set) => ({
   libraryTab: "tileset",
   saveStampOpen: false,
   entityTypesOpen: false,
+  entityTypesStartNew: false,
 
   togglePanels: () => set((s) => ({ panelsHidden: !s.panelsHidden })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
@@ -86,5 +90,5 @@ export const useUiStore = create<UiState>()((set) => ({
   setTerrainTemplate: (terrainTemplate) => set({ terrainTemplate }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
-  setEntityTypesOpen: (entityTypesOpen) => set({ entityTypesOpen }),
+  setEntityTypesOpen: (entityTypesOpen, startNew = false) => set({ entityTypesOpen, entityTypesStartNew: entityTypesOpen && startNew }),
 }));
