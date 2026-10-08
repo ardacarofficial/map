@@ -46,7 +46,7 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   await expect(canvas).toBeVisible();
 
   const grid = page.getByRole("grid", { name: /overworld/i });
-  const image = grid.locator(".checker");
+  const image = grid.locator("[data-tileset-grid]");
   await expect(image).toBeVisible();
   // The view fills the column width: at least 1× for an 8-column, 32 px tileset.
   expect(Number(await image.getAttribute("data-tileset-scale"))).toBeGreaterThanOrEqual(1);
@@ -119,39 +119,56 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   expect(errors).toEqual([]);
 });
 
-test("tileset panel: wheel scrolls, Shift + wheel scrolls sideways, Ctrl + wheel zooms", async ({ page }) => {
+test("tileset panel: the wheel works like the map (notch zooms at the cursor, Shift scrolls sideways, trackpad pans), Space-drag pans", async ({ page }) => {
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   const grid = page.getByRole("grid", { name: /overworld/i });
-  const image = grid.locator(".checker");
+  const image = grid.locator("[data-tileset-grid]");
   await expect(image).toBeVisible();
   const scale = async () => Number(await image.getAttribute("data-tileset-scale"));
   const scroll = () => grid.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
+  const before = await scale();
 
-  // Zoom in with the footer button until the tileset overflows both ways.
-  for (let i = 0; i < 3; i++) await page.locator("[data-tileset-zoom]").getByRole("button", { name: /^Yakınlaştır/ }).click();
-  const zoomed = await scale();
-  expect(zoomed).toBeGreaterThan(1);
-
+  // A mouse notch over the tiles zooms in at the cursor (like the map), twice.
   const box = (await grid.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2, box.y + 80);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(scale).toBeGreaterThan(before);
+  await page.mouse.wheel(0, -100);
+  const zoomed = await scale();
+  expect(zoomed).toBeGreaterThan(before);
+  // It is this tileset's own zoom: the footer offers a reset.
+  await expect(page.locator("[data-tileset-zoom-override]")).toBeVisible();
 
-  // Plain wheel: vertical scroll, zoom unchanged.
-  await page.mouse.wheel(0, 200);
-  await expect.poll(async () => (await scroll()).top).toBeGreaterThan(0);
-  expect(await scale()).toBe(zoomed);
-
-  // Shift + wheel: horizontal scroll.
+  // Shift + wheel: sideways, zoom unchanged.
   await page.keyboard.down("Shift");
-  await page.mouse.wheel(0, 200);
+  await page.mouse.wheel(0, 100);
   await page.keyboard.up("Shift");
   await expect.poll(async () => (await scroll()).left).toBeGreaterThan(0);
   expect(await scale()).toBe(zoomed);
 
-  // Ctrl + wheel (and a trackpad pinch): zoom at the cursor.
-  await page.keyboard.down("Control");
-  await page.mouse.wheel(0, -120);
-  await page.keyboard.up("Control");
-  await expect.poll(scale).toBeGreaterThan(zoomed);
+  // Trackpad two-finger swipe (small deltas, both axes): pans.
+  const top0 = (await scroll()).top;
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(1, 8);
+  await expect.poll(async () => (await scroll()).top).toBeGreaterThan(top0);
+  expect(await scale()).toBe(zoomed);
+
+  // Space + drag pans without selecting.
+  const selectedBefore = await grid.locator("[data-selected-tiles]").getAttribute("data-selected-tiles").catch(() => null);
+  const s0 = await scroll();
+  await page.mouse.move(box.x + box.width / 2, box.y + 120);
+  await page.keyboard.down("Space");
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 60, box.y + 60, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  const s1 = await scroll();
+  expect(s1.left).toBeGreaterThan(s0.left);
+  expect(s1.top).toBeGreaterThan(s0.top);
+  expect(await grid.locator("[data-selected-tiles]").getAttribute("data-selected-tiles").catch(() => null)).toBe(selectedBefore);
+
+  // Reset the own zoom: back to the global zoom (fit).
+  await page.locator("[data-tileset-zoom-override]").click();
+  await expect.poll(scale).toBe(before);
 });

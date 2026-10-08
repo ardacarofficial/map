@@ -125,8 +125,10 @@ export function rasterImage(raster: Uint8Array, colors: CodeColors): Uint8Clampe
 
 /** Pattern pixels per cell of the collision overlay textures (32 cells × 8 = 256 px per chunk). */
 export const PATTERN_SCALE = 8;
-/** Repeat of the hatch / dot patterns in pattern pixels (divides {@link PATTERN_SCALE}: seamless across cells). */
+/** Repeat of the hatch / dot patterns in pattern pixels (divide {@link PATTERN_SCALE}: seamless across cells). */
 const PATTERN_PERIOD = 4;
+/** The cross hatch repeats twice as far apart (a dense one reads as a checkerboard). */
+const CROSS_PERIOD = 8;
 
 /** How a raster code is drawn: a faint base fill plus `kind` marks at `markAlpha`. */
 export interface CodePattern {
@@ -139,11 +141,10 @@ export interface CodePattern {
 
 /** True where pattern `kind` draws a mark at pattern pixel (`gx`, `gy`) (global, so it runs on across cells). */
 export function patternMark(kind: CodePattern["kind"], gx: number, gy: number): boolean {
-  const p = PATTERN_PERIOD;
-  const fwd = (((gx + gy) % p) + p) % p === 0;
-  if (kind === "/") return fwd;
-  if (kind === "x") return fwd || (((gx - gy) % p) + p) % p === 0;
-  return (((gx % p) + p) % p) === 1 && (((gy % p) + p) % p) === 1;
+  const m = (v: number, p: number) => ((v % p) + p) % p;
+  if (kind === "/") return m(gx + gy, PATTERN_PERIOD) === 0;
+  if (kind === "x") return m(gx + gy, CROSS_PERIOD) === 0 || m(gx - gy, CROSS_PERIOD) === 0;
+  return m(gx, PATTERN_PERIOD) === 1 && m(gy, PATTERN_PERIOD) === 1;
 }
 
 /**

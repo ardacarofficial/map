@@ -279,8 +279,8 @@ function flatImage(colors: CodeColors): ImageFn {
 export function collisionPatterns(c: GridOverlayColors): (CodePattern | null)[] {
   const out: (CodePattern | null)[] = [];
   out[COLL_NONE] = null;
-  out[COLL_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.5, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.6), kind: "/" };
-  out[COLL_FORCED_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.6, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.8), kind: "x" };
+  out[COLL_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.45, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.2), kind: "/" };
+  out[COLL_FORCED_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.8, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.8), kind: "x" };
   out[COLL_FORCED_PASSABLE] = { color: c.collisionPassable, fillAlpha: c.collisionPassableAlpha * 0.4, markAlpha: Math.min(1, c.collisionPassableAlpha * 2), kind: "dots" };
   return out;
 }

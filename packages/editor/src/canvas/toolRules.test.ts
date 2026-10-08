@@ -159,7 +159,8 @@ describe("collision patterns", () => {
     expect(patternMark("/", 0, 0)).toBe(true);
     expect(patternMark("/", 1, 3)).toBe(true);
     expect(patternMark("/", 1, 0)).toBe(false);
-    expect(patternMark("x", 3, 1)).toBe(true); // back diagonal
+    expect(patternMark("x", 9, 1)).toBe(true); // back diagonal
+    expect(patternMark("x", 3, 1)).toBe(false); // sparser than the single hatch
     expect(patternMark("dots", 1, 1)).toBe(true);
     expect(patternMark("dots", 0, 1)).toBe(false);
     expect(patternMark("/", -1, 1)).toBe(true);
