@@ -87,7 +87,9 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
     const store = smap.store!;
     const layerId = store.dispatch({ type: "addLayer", layer: { name: "Entity", type: "entity" } });
     const tile = store.document.map.tileWidth;
-    const id = store.dispatch({ type: "addEntity", layerId, entity: { typeId: "portal", x: 3 * tile, y: 3 * tile } }) as string;
+    // Near the map centre: the opening view centres the map at a working zoom
+    // (not a fit), so cells near the corners can be outside the canvas.
+    const id = store.dispatch({ type: "addEntity", layerId, entity: { typeId: "portal", x: 30 * tile, y: 22 * tile } }) as string;
     smap.editor.getState().setTool("select");
     smap.editor.getState().setSelectedEntity(id);
     return id;
@@ -101,15 +103,15 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   await props.getByRole("button", { name: "Haritada seç" }).click();
   await expect(page.locator("[data-point-pick]")).toBeVisible();
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
-  const target = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(5, 4));
+  const target = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(32, 24));
   await page.mouse.click(target!.x, target!.y);
   await expect(page.locator("[data-point-pick]")).toBeHidden();
   await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
-  await expect(props.getByLabel("Hedef nokta x")).toHaveValue("160");
-  await expect(props.getByLabel("Hedef nokta y")).toHaveValue("128");
+  await expect(props.getByLabel("Hedef nokta x")).toHaveValue("1024");
+  await expect(props.getByLabel("Hedef nokta y")).toHaveValue("768");
 
   // Double-click the portal: Zindan opens.
-  const portal = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(3, 3));
+  const portal = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(30, 22));
   await page.mouse.dblclick(portal!.x, portal!.y);
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
 

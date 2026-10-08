@@ -478,26 +478,29 @@ function ZoomSlider({ value, shown, onChange }: { value: number | null; shown: n
   );
 }
 
-/** "Tümü | Tek" segmented toggle (remembered). */
+/** "Tümü | Tek" segmented toggle (remembered); icons keep the switcher's name readable in a narrow column. */
 function ViewToggle() {
   const view = useTilesetView((s) => s.view);
   const setView = useTilesetView((s) => s.setView);
-  const option = (v: "all" | "single", label: string) => (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={view === v}
-      data-library-view={v}
-      onClick={() => setView(v)}
-      className={`h-6 rounded-sm px-1.5 text-xs font-medium transition-colors ${view === v ? "bg-active text-text shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-faint hover:bg-hover hover:text-muted"}`}
-    >
-      {label}
-    </button>
+  const option = (v: "all" | "single", label: string, icon: "layers" | "image") => (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={view === v}
+        aria-label={label}
+        data-library-view={v}
+        onClick={() => setView(v)}
+        className={`grid size-6 place-items-center rounded-sm transition-colors ${view === v ? "bg-active text-text shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-faint hover:bg-hover hover:text-muted"}`}
+      >
+        <Icon name={icon} size={13} />
+      </button>
+    </Tooltip>
   );
   return (
     <div role="radiogroup" aria-label={t("tilesetLib.view")} className="flex shrink-0 gap-0.5 rounded-md bg-raised p-0.5">
-      {option("all", t("tilesetLib.viewAll"))}
-      {option("single", t("tilesetLib.viewSingle"))}
+      {option("all", t("tilesetLib.viewAllTitle"), "layers")}
+      {option("single", t("tilesetLib.viewSingleTitle"), "image")}
     </div>
   );
 }

@@ -195,7 +195,7 @@ function BulkRowView({
           autoComplete="off"
           data-bulk-size
           onFocus={(e) => e.currentTarget.select()}
-          className={`${inputClass} w-16 text-center font-mono tabular ${row.spec ? inputOk : inputBad}`}
+          className={`${inputClass.replace("w-full ", "")} w-16 text-center font-mono tabular ${row.spec ? inputOk : inputBad}`}
         />
         px
       </label>

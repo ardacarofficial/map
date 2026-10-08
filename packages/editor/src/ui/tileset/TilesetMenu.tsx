@@ -61,7 +61,7 @@ export function TilesetMenuItems({ tileset }: { tileset: Tileset }) {
         </Menu.Portal>
       </Menu.SubmenuRoot>
       <div role="separator" className={menuSeparatorClass} />
-      <Menu.Item className={`${menuItemClass} text-danger`} data-tileset-menu-item="remove" onClick={() => void removeTileset(tileset.id)}>
+      <Menu.Item className={`${menuItemClass} text-danger!`} data-tileset-menu-item="remove" onClick={() => void removeTileset(tileset.id)}>
         <Icon name="trash" size={15} />
         {t("tilesetLib.remove")}
       </Menu.Item>

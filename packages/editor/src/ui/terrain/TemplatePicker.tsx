@@ -43,10 +43,11 @@ export function TemplatePicker({ value, onChange }: { value: TerrainTemplate; on
     <Menu.Root>
       <Menu.Trigger
         aria-label={t("terrain.template")}
-        className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-raised pr-1.5 pl-2 text-sm text-text transition-colors hover:border-line-strong data-popup-open:border-accent"
+        title={`${t("terrain.template")}: ${templateShortName(current)}`}
+        className="flex min-h-7 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-raised py-0.5 pr-1.5 pl-2 text-sm text-text transition-colors hover:border-line-strong data-popup-open:border-accent"
       >
-        <span className="shrink-0 text-faint">{t("terrain.template")}</span>
-        <span className="min-w-0 flex-1 truncate text-left">{templateShortName(current)}</span>
+        {/* Long names ("Blob 47 · Godot 3×3 minimal") wrap to a second line instead of being cut. */}
+        <span className="line-clamp-2 min-w-0 flex-1 text-left leading-tight break-words">{templateShortName(current)}</span>
         <span className="shrink-0 font-mono text-2xs text-faint tabular">
           {current.columns}×{current.rows}
         </span>
