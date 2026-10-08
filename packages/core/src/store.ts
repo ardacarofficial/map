@@ -42,7 +42,6 @@ import type {
   AddLayerOp,
   AddPaletteEntryOp,
   AddTilesetOp,
-  CellChange,
   LayerPatch,
   MoveLayerOp,
   Op,
@@ -52,6 +51,7 @@ import type {
   ResizeMapOp,
   SetLayerPropsOp,
 } from "./ops";
+import { cellChangesOf, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
 import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem } from "./terrain";
 import { isValidTileId, tilesetProblem, type Tileset } from "./tileset";
 
@@ -186,91 +186,6 @@ export interface MapStoreOptions {
   historyLimit?: number;
 }
 
-type MutableChange = { x: number; y: number; before: Cell; after: Cell };
-
-/**
- * Per-layer change list plus an index from cell to its slot in the list.
- * The index is one `Int32Array(CHUNK_AREA)` (4 KB) per touched 32×32 chunk,
- * so memory grows with the touched area, never with the map size (a big
- * fill costs the same per cell as a brush dab; no map-sized buffers).
- */
-class LayerChanges {
-  readonly changes: MutableChange[] = [];
-  /** chunk index (`cy * chunkColumns + cx`) → `local index → slot + 1` (0 = none). */
-  readonly #index = new Map<number, Int32Array>();
-  readonly #chunkColumns: number;
-  #lastKey = -1;
-  #last: Int32Array | null = null;
-
-  constructor(width: number) {
-    this.#chunkColumns = (width + CHUNK_MASK) >> CHUNK_SHIFT;
-  }
-
-  #chunk(x: number, y: number, create: boolean): Int32Array | null {
-    const key = (y >> CHUNK_SHIFT) * this.#chunkColumns + (x >> CHUNK_SHIFT);
-    if (key === this.#lastKey) return this.#last;
-    let chunk = this.#index.get(key) ?? null;
-    if (!chunk) {
-      if (!create) return null;
-      chunk = new Int32Array(CHUNK_AREA);
-      this.#index.set(key, chunk);
-    }
-    this.#lastKey = key;
-    this.#last = chunk;
-    return chunk;
-  }
-
-  /** Slot of cell (`x`, `y`) in `changes`, or `undefined`. */
-  slot(x: number, y: number): number | undefined {
-    const chunk = this.#chunk(x, y, false);
-    const s = chunk ? chunk[localIndex(x & CHUNK_MASK, y & CHUNK_MASK)]! : 0;
-    return s === 0 ? undefined : s - 1;
-  }
-
-  add(x: number, y: number, change: MutableChange): void {
-    this.changes.push(change);
-    this.#chunk(x, y, true)![localIndex(x & CHUNK_MASK, y & CHUNK_MASK)] = this.changes.length;
-  }
-}
-
-/** Collects cell changes, keeping the first `before` and last `after` per cell. */
-class PatchBuilder {
-  readonly #layers = new Map<string, LayerChanges>();
-  readonly #width: number;
-  #lastId: string | null = null;
-  #last: LayerChanges | null = null;
-
-  constructor(map: MapInfo) {
-    this.#width = map.width;
-  }
-
-  record(layerId: string, x: number, y: number, before: Cell, after: Cell): void {
-    let layer = this.#lastId === layerId ? this.#last : this.#layers.get(layerId);
-    if (!layer) {
-      layer = new LayerChanges(this.#width);
-      this.#layers.set(layerId, layer);
-    }
-    this.#lastId = layerId;
-    this.#last = layer;
-    const slot = layer.slot(x, y);
-    if (slot !== undefined) layer.changes[slot]!.after = after;
-    else layer.add(x, y, { x, y, before, after });
-  }
-
-  /** Patches with no-op cells (`before === after`) dropped; layers without changes omitted. */
-  build(): LayerPatch[] {
-    const patches: LayerPatch[] = [];
-    for (const [layerId, layer] of this.#layers) {
-      // The builder is discarded after build(): its change objects are handed out as they are
-      // (readonly by type; freezing each of a big fill's million cells cost ~50 ms).
-      let changes: CellChange[] = layer.changes;
-      if (changes.some((c) => c.before === c.after)) changes = changes.filter((c) => c.before !== c.after);
-      if (changes.length > 0) patches.push(Object.freeze({ layerId, cells: Object.freeze(changes) }));
-    }
-    return patches;
-  }
-}
-
 /** Groups dirty chunk keys per layer, preserving first-seen order. */
 class DirtyTracker {
   readonly #layers = new Map<string, Set<ChunkKey>>();
@@ -308,9 +223,15 @@ class ChangeRecorder {
   readonly #changes: HistoryChange[] = [];
   #cells: PatchBuilder | null = null;
 
-  recordCell(map: MapInfo, layerId: string, x: number, y: number, before: Cell, after: Cell): void {
-    this.#cells ??= new PatchBuilder(map);
+  recordCell(layerId: string, x: number, y: number, before: Cell, after: Cell): void {
+    this.#cells ??= new PatchBuilder();
     this.#cells.record(layerId, x, y, before, after);
+  }
+
+  /** Records an op's already built cell changes (cheaper than recording each cell twice). */
+  mergeCells(layerId: string, changes: CellChangeSet): void {
+    this.#cells ??= new PatchBuilder();
+    this.#cells.merge(layerId, changes);
   }
 
   recordStructural(change: HistoryChange): void {
@@ -334,19 +255,28 @@ class ChangeRecorder {
 
   #flush(): void {
     if (!this.#cells) return;
-    for (const patch of this.#cells.build()) this.#changes.push(cellsChange(patch));
+    for (const { layerId, changes } of this.#cells.build()) this.#changes.push(cellsChange(layerId, changes));
     this.#cells = null;
   }
 }
 
-function cellsChange(patch: LayerPatch): CellsHistoryChange {
-  return Object.freeze({ kind: "cells", layerId: patch.layerId, cells: patch.cells });
+/** History change backed by compact per-chunk arrays (its `cells` list is built only when read). */
+function cellsChange(layerId: string, changes: CellChangeSet): CellsHistoryChange {
+  return withCellChanges({ kind: "cells" as const, layerId }, changes);
+}
+
+/** Op result backed by compact per-chunk arrays. */
+function cellPatch(layerId: string, changes: CellChangeSet): LayerPatch {
+  return withCellChanges({ layerId }, changes);
+}
+
+function emptyPatch(layerId: string): LayerPatch {
+  return Object.freeze({ layerId, cells: Object.freeze([]) });
 }
 
 function makeEntry(changes: readonly HistoryChange[]): HistoryEntry {
-  const patches = changes
-    .filter((c): c is CellsHistoryChange => c.kind === "cells")
-    .map((c): LayerPatch => Object.freeze({ layerId: c.layerId, cells: c.cells }));
+  // Cell changes are LayerPatch-shaped already; `patches` shares them.
+  const patches = changes.filter((c): c is CellsHistoryChange => c.kind === "cells");
   return Object.freeze({ changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
 }
 
@@ -626,38 +556,40 @@ export class MapStore {
     if (isGridLayer(layer)) throw new TypeError(`paintCells: "${op.layerId}" is a grid layer; use paintTerrain`);
     if (isEntityLayer(layer)) throw new TypeError(`paintCells: "${op.layerId}" is an entity layer`);
     const palette = this.#doc.palette;
+    let checked = Number.NaN; // last validated cell value (fills and brushes repeat one value)
     for (const { x, y, cell } of op.cells) {
       if (!Number.isInteger(x) || !Number.isInteger(y)) {
         throw new TypeError(`paintCells: coordinates must be integers, got (${x}, ${y})`);
       }
+      if (cell === checked) continue;
       if (!isValidCell(cell)) throw new RangeError(`paintCells: invalid cell value ${cell} at (${x}, ${y})`);
       if (!palette.has(cellPaletteIndex(cell))) {
         throw new RangeError(`paintCells: palette index ${cellPaletteIndex(cell)} does not exist (at (${x}, ${y}))`);
       }
+      checked = cell;
     }
     // Locked layers and derived tile layers (owned by their terrain grid) take no writes.
-    if (layer.locked || this.#isDerivedLayer(layer.id)) return Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
+    if (layer.locked || this.#isDerivedLayer(layer.id)) return emptyPatch(layer.id);
 
-    const map = this.#doc.map;
-    const opPatch = new PatchBuilder(map);
+    const opPatch = new PatchBuilder();
     const dirty = new DirtyTracker();
     for (const { x, y, cell } of op.cells) {
       if (!this.#doc.inBounds(x, y)) continue;
       const before = layer._setCell(x, y, cell);
       if (before === cell) continue;
       opPatch.record(layer.id, x, y, before, cell);
-      this.#pending?.recordCell(map, layer.id, x, y, before, cell);
       dirty.add(layer.id, x, y);
     }
 
-    const patches = opPatch.build();
-    const patch = patches[0] ?? Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
-    if (patch.cells.length === 0) return patch;
+    const built = opPatch.build()[0];
+    if (!built) return emptyPatch(layer.id);
+    this.#pending?.mergeCells(layer.id, built.changes);
 
     const autoCommit = this.#depth === 0;
-    if (autoCommit) this.#pushUndo(makeEntry(patches.map(cellsChange)));
+    // The op result and the undo step share the same (immutable) arrays.
+    if (autoCommit) this.#pushUndo(makeEntry([cellsChange(layer.id, built.changes)]));
     this.#emit({ cause: "dispatch", cells: dirty.result(), structure: [], historyChanged: autoCommit });
-    return patch;
+    return cellPatch(layer.id, built.changes);
   }
 
   #addTileset(op: AddTilesetOp): void {
@@ -840,36 +772,46 @@ export class MapStore {
         throw new RangeError(`paintTerrain: value must be an integer in [0, ${max}], got ${value} at (${x}, ${y})`);
       }
     }
-    const empty: LayerPatch = Object.freeze({ layerId: layer.id, cells: Object.freeze([]) });
-    if (layer.locked) return empty;
+    if (layer.locked) return emptyPatch(layer.id);
 
     const map = this.#doc.map;
-    const opPatch = new PatchBuilder(map);
+    const opPatch = new PatchBuilder();
     const ctx = this.#openOp();
     for (const { x, y, value } of op.cells) {
       if (!this.#doc.inBounds(x, y)) continue;
       const before = layer._setCell(x, y, value);
       if (before === value) continue;
       opPatch.record(layer.id, x, y, before, value);
-      ctx.rec.recordCell(map, layer.id, x, y, before, value);
       ctx.dirty.add(layer.id, x, y);
     }
-    const patch = opPatch.build()[0] ?? empty;
-    if (patch.cells.length === 0) return patch;
+    const built = opPatch.build()[0];
+    if (!built) {
+      this.#closeOp(ctx);
+      return emptyPatch(layer.id);
+    }
+    ctx.rec.mergeCells(layer.id, built.changes);
 
     if (layer.role === "terrain") {
       // A cell's tile depends on its 3×3 neighbourhood only.
       const { width, height } = map;
       const affected = new Set<number>();
-      for (const c of patch.cells) {
-        for (let y = Math.max(0, c.y - 1); y <= Math.min(height - 1, c.y + 1); y++) {
-          for (let x = Math.max(0, c.x - 1); x <= Math.min(width - 1, c.x + 1); x++) affected.add(y * width + x);
+      for (const chunk of built.changes.chunks) {
+        const x0 = chunk.cx << CHUNK_SHIFT;
+        const y0 = chunk.cy << CHUNK_SHIFT;
+        const indices = chunk.indices;
+        for (let i = 0; i < chunk.before.length; i++) {
+          const index = indices === null ? i : indices[i]!;
+          const cx = x0 | (index & CHUNK_MASK);
+          const cy = y0 | (index >> CHUNK_SHIFT);
+          for (let y = Math.max(0, cy - 1); y <= Math.min(height - 1, cy + 1); y++) {
+            for (let x = Math.max(0, cx - 1); x <= Math.min(width - 1, cx + 1); x++) affected.add(y * width + x);
+          }
         }
       }
       this.#deriveTerrain(ctx, layer, affected);
     }
     this.#closeOp(ctx);
-    return patch;
+    return cellPatch(layer.id, built.changes);
   }
 
   #setTileSolid(op: SetTileSolidOp): void {
@@ -960,14 +902,15 @@ export class MapStore {
     }
     const target = layer.role === "terrain" && layer.targetLayerId !== null ? this.#doc.getLayer(layer.targetLayerId) : undefined;
     const patchLayerId = isTileLayer(target) ? target.id : layer.id;
-    if (!isTileLayer(target) || x0 >= x1 || y0 >= y1) return Object.freeze({ layerId: patchLayerId, cells: Object.freeze([]) });
+    if (!isTileLayer(target) || x0 >= x1 || y0 >= y1) return emptyPatch(patchLayerId);
     const cells: number[] = [];
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) cells.push(y * width + x);
     const ctx = this.#openOp();
-    const opPatch = new PatchBuilder(this.#doc.map);
+    const opPatch = new PatchBuilder();
     this.#deriveTerrain(ctx, layer, cells, opPatch);
     this.#closeOp(ctx);
-    return opPatch.build()[0] ?? Object.freeze({ layerId: patchLayerId, cells: Object.freeze([]) });
+    const built = opPatch.build()[0];
+    return built ? cellPatch(built.layerId, built.changes) : emptyPatch(patchLayerId);
   }
 
   /** True when a terrain grid layer derives its tiles into tile layer `layerId`. */
@@ -1201,7 +1144,7 @@ export class MapStore {
       const cell = slot ? this.#terrainCell(ctx, slot, x, y) : 0;
       const before = target._setCell(x, y, cell);
       if (before === cell) continue;
-      ctx.rec.recordCell(map, target.id, x, y, before, cell);
+      ctx.rec.recordCell(target.id, x, y, before, cell);
       opPatch?.record(target.id, x, y, before, cell);
       ctx.dirty.add(target.id, x, y);
     }
@@ -1268,9 +1211,18 @@ export class MapStore {
       case "cells": {
         const layer = doc.getLayer(change.layerId);
         if (!layer) throw new Error(`history: layer "${change.layerId}" is missing`);
-        for (const c of change.cells) {
-          layer._setCell(c.x, c.y, c[side]);
-          result.dirty.add(layer.id, c.x, c.y);
+        const compact = cellChangesOf(change);
+        if (!compact) {
+          for (const c of change.cells) {
+            layer._setCell(c.x, c.y, c[side]);
+            result.dirty.add(layer.id, c.x, c.y);
+          }
+          return;
+        }
+        // Chunk-wise: write the whole `before` (undo) or `after` (redo) array of each chunk.
+        for (const chunk of compact.chunks) {
+          layer._writeCells(chunk.cx, chunk.cy, chunk.indices, chunk[side]);
+          result.dirty.add(layer.id, chunk.cx << CHUNK_SHIFT, chunk.cy << CHUNK_SHIFT);
         }
         return;
       }

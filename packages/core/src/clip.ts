@@ -18,6 +18,7 @@ import type { CellRect, CellPoint } from "./geometry";
 import { isEntityLayer, isGridLayer, type GridRole } from "./layer";
 import type { CellWrite, GridWrite, LayerPatch } from "./ops";
 import type { PaletteEntry } from "./palette";
+import { patchCellCount } from "./patch";
 import type { MapStore } from "./store";
 import { isValidTileId } from "./tileset";
 
@@ -221,7 +222,7 @@ export function pasteClip(
           }
         }
         const patch = store.dispatch({ type: "paintTerrain", layerId: targetId, cells: writes });
-        if (patch.cells.length > 0) patches.push(patch);
+        if (patchCellCount(patch) > 0) patches.push(patch);
         continue;
       }
       const cells: CellWrite[] = [];
@@ -237,7 +238,7 @@ export function pasteClip(
         }
       }
       const patch = store.dispatch({ type: "paintCells", layerId: targetId, cells });
-      if (patch.cells.length > 0) patches.push(patch);
+      if (patchCellCount(patch) > 0) patches.push(patch);
     }
     patches.push(...rederive(store, derive, rect));
   } finally {
@@ -263,7 +264,7 @@ function rederive(store: MapStore, gridIds: Iterable<string>, rect: CellRect): L
   for (const layerId of gridIds) {
     if (!store.document.getLayer(layerId)) continue;
     const patch = store.dispatch({ type: "deriveTerrain", layerId, rect: border });
-    if (patch.cells.length > 0) out.push(patch);
+    if (patchCellCount(patch) > 0) out.push(patch);
   }
   return out;
 }

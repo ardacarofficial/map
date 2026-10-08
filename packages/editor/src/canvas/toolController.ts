@@ -26,6 +26,7 @@ import {
   isTileLayer,
   makeCell,
   pasteClip,
+  patchCellCount,
   placeStamp,
   type CellPoint,
   type CellWrite,
@@ -317,7 +318,7 @@ export class ToolController {
   /** Dispatches grid writes inside the open transaction; true when something changed. */
   #paintGrid(store: MapStore, layerId: string, cells: GridWrite[]): boolean {
     if (cells.length === 0) return false;
-    return store.dispatch({ type: "paintTerrain", layerId, cells }).cells.length > 0;
+    return patchCellCount(store.dispatch({ type: "paintTerrain", layerId, cells })) > 0;
   }
 
   /**
@@ -394,7 +395,7 @@ export class ToolController {
         cells.push({ x: p.x, y: p.y, cell: v });
       }
       if (cells.length === 0) return false;
-      return store.dispatch({ type: "paintCells", layerId: layer.id, cells }).cells.length > 0;
+      return patchCellCount(store.dispatch({ type: "paintCells", layerId: layer.id, cells })) > 0;
     });
   }
 
@@ -423,7 +424,7 @@ export class ToolController {
         }
       }
       if (cells.length === 0) return false;
-      return store.dispatch({ type: "paintCells", layerId: layer.id, cells }).cells.length > 0;
+      return patchCellCount(store.dispatch({ type: "paintCells", layerId: layer.id, cells })) > 0;
     });
   }
 
@@ -568,10 +569,10 @@ export class ToolController {
           const v = g.pick(x, y);
           if (getCell(x, y) !== v) writes.push({ x, y, cell: v });
         }
-        changed = writes.length > 0 && g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes }).cells.length > 0;
+        changed = writes.length > 0 && patchCellCount(g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes })) > 0;
       } else {
         const writes = cellWrites(cells, g.value, doc.map.width, doc.map.height, getCell);
-        changed = writes.length > 0 && g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes }).cells.length > 0;
+        changed = writes.length > 0 && patchCellCount(g.store.dispatch({ type: "paintCells", layerId: g.layerId, cells: writes })) > 0;
       }
     } catch (error) {
       console.error("[canvas] paint failed", error);

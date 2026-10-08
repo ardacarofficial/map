@@ -175,6 +175,8 @@ export type {
   LayerPatch,
 } from "./ops";
 
+export { patchCellCount } from "./patch";
+
 export {
   MapStore,
   type MapStoreOptions,

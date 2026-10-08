@@ -157,6 +157,38 @@ export class TileLayer implements LayerProps {
     return before;
   }
 
+  /**
+   * @internal Writes many cells of chunk (`cx`, `cy`) at once (no bounds check):
+   * `values[i]` goes to local index `indices[i]`, or to local index `i` when
+   * `indices` is `null` (a whole chunk). Creates / deletes the chunk like `_setCell`.
+   */
+  _writeCells(cx: number, cy: number, indices: Uint16Array | null, values: Uint32Array): void {
+    const key = chunkKey(cx, cy);
+    const existing = this.#chunks.get(key);
+    const chunk = existing ?? new Chunk(cx, cy);
+    const data = chunk.data;
+    let filled = chunk.filled;
+    const n = values.length;
+    for (let i = 0; i < n; i++) {
+      const index = indices === null ? i : indices[i]!;
+      const cell = values[i]!;
+      const before = data[index]!;
+      if (before === cell) continue;
+      data[index] = cell;
+      if (before === EMPTY_CELL) filled++;
+      else if (cell === EMPTY_CELL) filled--;
+    }
+    chunk.filled = filled;
+    if (filled === 0) {
+      if (existing) {
+        this.#chunks.delete(key);
+        this.#lastChunk = null;
+      }
+    } else if (!existing) {
+      this.#chunks.set(key, chunk);
+    }
+  }
+
   /** Current editable properties as a plain object. */
   props(): LayerPropValues {
     return { name: this.#name, visible: this.#visible, locked: this.#locked, opacity: this.#opacity };
@@ -254,6 +286,11 @@ export class EntityLayer extends TileLayer {
   override _setCell(x: number, y: number, cell: Cell): Cell {
     if (cell === EMPTY_CELL) return EMPTY_CELL;
     throw new TypeError(`entity layer "${this.id}" holds no cells (write at (${x}, ${y}))`);
+  }
+
+  /** @internal Entity layers hold no cells. */
+  override _writeCells(cx: number, cy: number, _indices: Uint16Array | null, values: Uint32Array): void {
+    if (values.some((v) => v !== EMPTY_CELL)) throw new TypeError(`entity layer "${this.id}" holds no cells (chunk ${cx}, ${cy})`);
   }
 
   /** @internal Entity layers hold no cells. */
