@@ -192,11 +192,17 @@ export class EntityRenderer {
     for (const p of placed) {
       const id = p.item.entity.id;
       const broken = p.item.look.broken;
-      if (id === selectedId) {
+      if (id === selectedId && broken) {
+        // Red on red would vanish: a separate frame, a dark gap away from the red box.
+        outline(m, p.x0 - 4 * k, p.y0 - 4 * k, p.x1 + 4 * k, p.y1 + 4 * k, 4 * k, px);
+        m.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
+        outline(m, p.x0 - 3 * k, p.y0 - 3 * k, p.x1 + 3 * k, p.y1 + 3 * k, 2 * k, px);
+        m.fill(p.item.look.color);
+      } else if (id === selectedId) {
         outline(m, p.x0 - 2 * k, p.y0 - 2 * k, p.x1 + 2 * k, p.y1 + 2 * k, k, px);
         m.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.55 });
         outline(m, p.x0 - k, p.y0 - k, p.x1 + k, p.y1 + k, 2 * k, px);
-        m.fill(broken ? p.item.look.color : colors.accent);
+        m.fill(colors.accent);
       } else if (id === hoverId) {
         outline(m, p.x0 - k, p.y0 - k, p.x1 + k, p.y1 + k, k, px);
         m.fill(broken ? { color: p.item.look.color, alpha: 1 } : { color: 0xffffff, alpha: 0.85 });

@@ -1,7 +1,7 @@
 import { CHUNK_AREA, FLIP_H, makeCell } from "@smap/core";
 import { describe, expect, it } from "vitest";
 
-import { compositeChunk, tileThumb, type Pixels } from "./thumbnailRaster";
+import { compositeChunk, downscaleOver, tileThumb, type Pixels } from "./thumbnailRaster";
 
 function solid(w: number, h: number, rgba: [number, number, number, number]): Pixels {
   const data = new Uint8ClampedArray(w * h * 4);
@@ -83,5 +83,27 @@ describe("compositeChunk", () => {
     expect(compositeChunk([{ data, opacity: 1 }], 1, (i) => blocks.get(i), out)).toBe(out);
     expect(px(out, 32, 3, 0)).toEqual([0, 0, 255, 255]);
     expect(px(out, 32, 0, 0)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("downscaleOver", () => {
+  it("averages source blocks over the background", () => {
+    // 4×2 source: left 2×2 opaque red, right 2×2 transparent → 2×1 at scale 0.5.
+    const src = solid(4, 2, [255, 0, 0, 255]);
+    for (let y = 0; y < 2; y++) for (let x = 2; x < 4; x++) src.data.set([0, 0, 0, 0], (y * 4 + x) * 4);
+    const out = downscaleOver(src, 0, 0, 4, 2, 0.5, 0.5, 0, 0, 2, 1, 0x0000ff, new Uint8ClampedArray(8));
+    expect(Array.from(out)).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
+  });
+
+  it("half-transparent pixels blend; a sub-region gives the same px as the whole", () => {
+    const src = solid(8, 8, [200, 100, 0, 255]);
+    src.data.set([0, 0, 0, 0], (0 * 8 + 0) * 4); // one transparent px in the first 2×2 block
+    const whole = downscaleOver(src, 0, 0, 8, 8, 0.5, 0.5, 0, 0, 4, 4, 0x000000, new Uint8ClampedArray(64));
+    expect(px(whole, 4, 0, 0)).toEqual([150, 75, 0, 255]);
+    // Destination px (2..3, 2..3) from the source sub-rect (4..7, 4..7) only.
+    const sub = { data: new Uint8ClampedArray(4 * 4 * 4), width: 4, height: 4 };
+    for (let y = 0; y < 4; y++) sub.data.set(src.data.subarray(((y + 4) * 8 + 4) * 4, ((y + 4) * 8 + 8) * 4), y * 16);
+    const part = downscaleOver(sub, 4, 4, 8, 8, 0.5, 0.5, 2, 2, 2, 2, 0x000000, new Uint8ClampedArray(16));
+    expect(px(part, 2, 1, 1)).toEqual(px(whole, 4, 3, 3));
   });
 });

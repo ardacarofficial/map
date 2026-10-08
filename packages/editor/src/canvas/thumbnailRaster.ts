@@ -174,3 +174,81 @@ export function compositeChunk(
   }
   return result;
 }
+
+/**
+ * Scales part of a picture down by box filtering, over an opaque
+ * `background` (0xRRGGBB): destination px (dx, dy) averages the source px
+ * `[floor(dx / sx), floor((dx + 1) / sx))` (at least one) on each axis.
+ * `src` holds the source px starting at (`srcX`, `srcY`) of the full picture
+ * (`fullW`×`fullH`); `sx` / `sy` (< 1) are destination px per source px.
+ * Writes the `dw`×`dh` destination px starting at (`dx0`, `dy0`) into `out`
+ * (opaque RGBA, row-major, `dw` wide). For the minimap: refreshing only the
+ * part of a big thumbnail that changed, which `drawImage` cannot do cheaply
+ * (high-quality scaling filters the whole source).
+ */
+export function downscaleOver(
+  src: Pixels,
+  srcX: number,
+  srcY: number,
+  fullW: number,
+  fullH: number,
+  sx: number,
+  sy: number,
+  dx0: number,
+  dy0: number,
+  dw: number,
+  dh: number,
+  background: number,
+  out: Uint8ClampedArray,
+): Uint8ClampedArray {
+  const bgR = (background >> 16) & 255;
+  const bgG = (background >> 8) & 255;
+  const bgB = background & 255;
+  const d = src.data;
+  const sw = src.width;
+  for (let y = 0; y < dh; y++) {
+    const ty0 = Math.min(fullH - 1, Math.floor((dy0 + y) / sy));
+    const ty1 = Math.min(fullH, Math.max(ty0 + 1, Math.floor((dy0 + y + 1) / sy)));
+    const ry0 = Math.max(0, ty0 - srcY);
+    const ry1 = Math.min(src.height, ty1 - srcY);
+    for (let x = 0; x < dw; x++) {
+      const tx0 = Math.min(fullW - 1, Math.floor((dx0 + x) / sx));
+      const tx1 = Math.min(fullW, Math.max(tx0 + 1, Math.floor((dx0 + x + 1) / sx)));
+      const rx0 = Math.max(0, tx0 - srcX);
+      const rx1 = Math.min(sw, tx1 - srcX);
+      // Premultiplied sums.
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      let n = 0;
+      for (let yy = ry0; yy < ry1; yy++) {
+        let i = (yy * sw + rx0) * 4;
+        for (let xx = rx0; xx < rx1; xx++, i += 4) {
+          const pa = d[i + 3]!;
+          if (pa !== 0) {
+            r += d[i]! * pa;
+            g += d[i + 1]! * pa;
+            b += d[i + 2]! * pa;
+            a += pa;
+          }
+          n++;
+        }
+      }
+      const o = (y * dw + x) * 4;
+      if (n === 0) {
+        out[o] = bgR;
+        out[o + 1] = bgG;
+        out[o + 2] = bgB;
+      } else {
+        const inv = 1 / (255 * n);
+        const keep = 1 - a * inv;
+        out[o] = r * inv + bgR * keep;
+        out[o + 1] = g * inv + bgG * keep;
+        out[o + 2] = b * inv + bgB * keep;
+      }
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}

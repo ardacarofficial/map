@@ -10,6 +10,7 @@ import {
   clampZoom,
   easeZoom,
   fitZoom,
+  frameCamera,
   nextZoomStep,
   quantizeZoom,
   screenToCell,
@@ -146,6 +147,44 @@ describe("zoom", () => {
     expect(cam.y + (2560 * z) / 2).toBe(400);
     // small map: capped at 4×
     expect(fitZoom(1200, 800, 64, 64, 48)).toBe(4);
+  });
+});
+
+describe("frameCamera", () => {
+  const corner = { width: 226, height: 176 };
+  const clearOf = (c: { x: number; y: number; zoom: number }, mw: number, mh: number, vw: number, vh: number) =>
+    c.x + mw * c.zoom <= vw - corner.width || c.y + mh * c.zoom <= vh - corner.height;
+
+  it("centres in the whole view when the corner box is already clear", () => {
+    const cam = frameCamera(1200, 800, 320, 320, 48, corner);
+    expect(cam).toEqual(centeredCamera(1200, 800, 320, 320, fitZoom(1200, 800, 320, 320, 48)));
+  });
+
+  it("moves a map that would run under the box beside or above it", () => {
+    // Square map: centred it would reach under the minimap; fits left of it at the same zoom.
+    expect(clearOf(centeredCamera(1000, 800, 2048, 2048, 1 / 3), 2048, 2048, 1000, 800)).toBe(false);
+    const cam = frameCamera(1000, 800, 2048, 2048, 48, corner);
+    expect(cam.zoom).toBe(1 / 3);
+    expect(clearOf(cam, 2048, 2048, 1000, 800)).toBe(true);
+    expect(cam.y + (2048 * cam.zoom) / 2).toBe(400);
+    // Very wide map: above the minimap.
+    const wide = frameCamera(1200, 800, 4096, 512, 48, corner);
+    expect(clearOf(wide, 4096, 512, 1200, 800)).toBe(true);
+    expect(wide.x + (4096 * wide.zoom) / 2).toBe(600);
+  });
+
+  it("keeps the map clear of the box for any view and map size", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 500, max: 3000 }), fc.integer({ min: 400, max: 2000 }), fc.integer({ min: 1, max: 1024 }), fc.integer({ min: 1, max: 1024 }), (vw, vh, w, h) => {
+        const cam = frameCamera(vw, vh, w * 32, h * 32, 48, corner);
+        // Clear of the box, unless the map cannot get any smaller (smallest zoom).
+        return clearOf(cam, w * 32, h * 32, vw, vh) || cam.zoom <= MIN_ZOOM;
+      }),
+    );
+  });
+
+  it("without a box it is the plain centred fit", () => {
+    expect(frameCamera(1200, 800, 3200, 2560, 48, null)).toEqual(centeredCamera(1200, 800, 3200, 2560, 0.25));
   });
 });
 

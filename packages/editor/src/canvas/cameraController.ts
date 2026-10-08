@@ -8,10 +8,9 @@ import type { CellPoint, MapInfo } from "@smap/core";
 import type { CellRegion } from "../state/editorStore";
 import {
   cameraAnchored,
-  centeredCamera,
   clampZoom,
   easeZoom,
-  fitZoom,
+  frameCamera,
   MAX_ZOOM,
   MIN_ZOOM,
   nextZoomStep,
@@ -20,6 +19,7 @@ import {
   snappedOffset,
   visibleCells,
   type Camera,
+  type CornerBox,
   type Point,
 } from "./camera";
 import { cameraCenteredOn, type Rect } from "./minimapMath";
@@ -59,6 +59,8 @@ export class CameraController {
    * = nothing to frame.
    */
   frameBounds: (() => Rect | null) | null = null;
+  /** Bottom-right box {@link frameMap} keeps clear (the minimap), or null. */
+  frameCorner: (() => CornerBox | null) | null = null;
   #anim: ZoomAnim | null = null;
   #pendingFrameMap = true;
   readonly #map: () => MapInfo | undefined;
@@ -170,8 +172,13 @@ export class CameraController {
     }
     const mw = map.width * map.tileWidth;
     const mh = map.height * map.tileHeight;
-    this.zoomLevel = fitZoom(this.viewW, this.viewH, mw, mh, FRAME_PADDING);
-    this.camera = centeredCamera(this.viewW, this.viewH, mw, mh, this.#quantize(this.zoomLevel));
+    const framed = frameCamera(this.viewW, this.viewH, mw, mh, FRAME_PADDING, this.frameCorner?.() ?? null);
+    this.zoomLevel = framed.zoom;
+    const z = this.#quantize(framed.zoom);
+    // Quantizing may nudge the zoom: keep the framed centre.
+    const cx = framed.x + (mw * framed.zoom) / 2;
+    const cy = framed.y + (mh * framed.zoom) / 2;
+    this.camera = { x: cx - (mw * z) / 2, y: cy - (mh * z) / 2, zoom: z };
     this.#requestRender();
   }
 

@@ -10,6 +10,18 @@ const LOOKUP = (() => {
   return table;
 })();
 
+/**
+ * The engine's own base64 (`Uint8Array.prototype.toBase64` / `Uint8Array.fromBase64`,
+ * ES2026; Chromium 140+, so WebView2 and current browsers), several times faster
+ * than the loops below on a big level. Feature-detected: the loops remain the
+ * fallback (and the reference the tests check against).
+ */
+const nativeToBase64 = (Uint8Array.prototype as { toBase64?: (this: Uint8Array) => string }).toBase64;
+const nativeFromBase64 = (Uint8Array as unknown as { fromBase64?: (text: string, options: { lastChunkHandling: "strict" }) => Uint8Array })
+  .fromBase64;
+/** Whitespace the native decoder would skip but this format rejects. */
+const WHITESPACE = /[\t\n\f\r ]/;
+
 /** Alphabet as character codes (encoding writes codes, then builds the string in blocks). */
 const ALPHABET_CODES = Uint8Array.from(ALPHABET, (c) => c.charCodeAt(0));
 const PAD = 61; // "="
@@ -30,6 +42,12 @@ function codesToString(codes: Uint8Array): string {
 
 /** Encodes bytes as padded base64. */
 export function encodeBase64(bytes: Uint8Array): string {
+  if (nativeToBase64) return nativeToBase64.call(bytes);
+  return encodeBase64Js(bytes);
+}
+
+/** The portable encoder (exported for tests). */
+export function encodeBase64Js(bytes: Uint8Array): string {
   const n = bytes.length;
   const out = new Uint8Array(Math.ceil(n / 3) * 4);
   const A = ALPHABET_CODES;
@@ -76,6 +94,21 @@ function badCharAt(text: string, from: number): number {
  * @throws SyntaxError on malformed input.
  */
 export function decodeBase64(text: string): Uint8Array {
+  // Native strict mode rejects what the loop rejects (bad characters, missing padding,
+  // non-zero trailing bits) except whitespace, checked first. On any error the loop
+  // runs to throw its own, exact message.
+  if (nativeFromBase64 && text.length % 4 === 0 && !WHITESPACE.test(text)) {
+    try {
+      return nativeFromBase64(text, { lastChunkHandling: "strict" });
+    } catch {
+      // reported below
+    }
+  }
+  return decodeBase64Js(text);
+}
+
+/** The portable decoder (exported for tests). */
+export function decodeBase64Js(text: string): Uint8Array {
   if (text.length % 4 !== 0) throw new SyntaxError("base64 length must be a multiple of 4");
   let padding = 0;
   if (text.endsWith("==")) padding = 2;

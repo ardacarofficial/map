@@ -167,6 +167,43 @@ export function centeredCamera(viewW: number, viewH: number, mapW: number, mapH:
   return { x: (viewW - mapW * zoom) / 2, y: (viewH - mapH * zoom) / 2, zoom };
 }
 
+/** A box in the bottom-right corner of the view that framing keeps clear (e.g. the minimap), CSS px from the corner. */
+export interface CornerBox {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Frames a `mapW`×`mapH` px map (see {@link fitZoom}), keeping `corner` clear:
+ * when the map centred in the whole view would run under it, the map is fitted
+ * into the strip left of it or the strip above it, whichever allows the larger
+ * zoom, and centred there.
+ */
+export function frameCamera(
+  viewW: number,
+  viewH: number,
+  mapW: number,
+  mapH: number,
+  padding: number,
+  corner: CornerBox | null = null,
+): Camera {
+  const zoom = fitZoom(viewW, viewH, mapW, mapH, padding);
+  const full = centeredCamera(viewW, viewH, mapW, mapH, zoom);
+  if (!corner || corner.width <= 0 || corner.height <= 0) return full;
+  const clear = (c: Camera, z: number) =>
+    c.x + mapW * z <= viewW - corner.width || c.y + mapH * z <= viewH - corner.height;
+  if (clear(full, zoom)) return full;
+  // The strip's edge next to the box needs no extra padding: the box has its own margin.
+  const leftW = viewW - corner.width + padding;
+  const topH = viewH - corner.height + padding;
+  const zLeft = leftW > padding * 2 ? fitZoom(leftW, viewH, mapW, mapH, padding) : 0;
+  const zTop = topH > padding * 2 ? fitZoom(viewW, topH, mapW, mapH, padding) : 0;
+  if (zLeft <= 0 && zTop <= 0) return full;
+  return zLeft >= zTop
+    ? centeredCamera(leftW, viewH, mapW, mapH, zLeft)
+    : centeredCamera(viewW, topH, mapW, mapH, zTop);
+}
+
 /** Inclusive-exclusive range of cells, clipped to the map. Empty when `x1 <= x0` or `y1 <= y0`. */
 export interface CellRange {
   readonly x0: number;

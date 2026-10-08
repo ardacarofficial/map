@@ -261,8 +261,10 @@ class PatchBuilder {
   build(): LayerPatch[] {
     const patches: LayerPatch[] = [];
     for (const [layerId, layer] of this.#layers) {
-      const changes: CellChange[] = [];
-      for (const c of layer.changes) if (c.before !== c.after) changes.push(Object.freeze(c));
+      // The builder is discarded after build(): its change objects are handed out as they are
+      // (readonly by type; freezing each of a big fill's million cells cost ~50 ms).
+      let changes: CellChange[] = layer.changes;
+      if (changes.some((c) => c.before === c.after)) changes = changes.filter((c) => c.before !== c.after);
       if (changes.length > 0) patches.push(Object.freeze({ layerId, cells: Object.freeze(changes) }));
     }
     return patches;

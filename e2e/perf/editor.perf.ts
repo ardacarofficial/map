@@ -399,6 +399,10 @@ test("editor perf", async ({ browser }) => {
     s.setTool!("brush");
     s.setSelection!({ tilesetId: "overworld", tileId: 9 });
   });
+  // PERF_EXPERIMENT=nominimap: brush without the minimap (isolates its cost).
+  if (process.env.PERF_EXPERIMENT === "nominimap") {
+    await page.evaluate(() => (window as unknown as { __smap: { handle: { setMinimapVisible(v: boolean): void } } }).__smap.handle.setMinimapVisible(false));
+  }
   for (const zoom of want("c") ? [1, 0.25] : []) {
     await setCamera(page, 512, 512, zoom);
     const strokes: { latency: number[]; handler: number[]; coalesced: number[]; js: number[]; queue: number[] } = { latency: [], handler: [], coalesced: [], js: [], queue: [] };
@@ -438,6 +442,7 @@ test("editor perf", async ({ browser }) => {
     put(`c.brush @${zoom * 100}% handler p95`, percentile(strokes.handler, 95));
     put(`c.brush @${zoom * 100}% frame JS p95`, s.p95);
     put(`c.brush @${zoom * 100}% frame JS max`, s.max);
+    put(`c.brush @${zoom * 100}% frame interval p50`, median(fr.slice(1).map((f, i) => f.start - fr[i]!.start).filter((d) => d > 0 && d < 2000)));
     console.log(`  brush @${zoom}: ${strokes.latency.length} painting events, coalesced max ${Math.max(0, ...strokes.coalesced)}`);
   }
   // Let the autosave of the strokes run now, not during (e).

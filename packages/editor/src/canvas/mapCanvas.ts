@@ -367,7 +367,7 @@ export class MapCanvas {
     this.#minimap = new Minimap(
       this.#container,
       {
-        thumbnail: () => (this.#thumb ? { canvas: this.#thumb.canvas, version: this.#thumb.version } : null),
+        thumbnail: () => this.#thumb,
         mapSize: () => {
           const m = this.#map();
           return m ? { width: m.width * m.tileWidth, height: m.height * m.tileHeight } : null;
@@ -379,6 +379,8 @@ export class MapCanvas {
       this.#abort.signal,
     );
     this.#minimap.setVisible(this.#minimapVisible);
+    // "Fit map" keeps the minimap's corner clear (level view only: the world view hides it).
+    this.#camera.frameCorner = () => (this.#minimap?.visible ? this.#minimap.footprint() : null);
 
     this.#observeSize();
     this.#input.attach(this.#abort.signal);

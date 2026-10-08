@@ -6,15 +6,29 @@
  */
 import type { Camera } from "./camera";
 import { minimapLayout, minimapToWorld, viewportRect, type MinimapLayout } from "./minimapMath";
+import { downscaleOver, type Pixels } from "./thumbnailRaster";
 
 /** Largest minimap drawing area, CSS px. */
 const MAX_W = 200;
 const MAX_H = 150;
 const MARGIN = 12;
+/** Padding + border around the drawing area, CSS px per side. */
+const FRAME = 4 + 1;
+/** Resting opacity: the map shows through a little; hovering or dragging makes it opaque. */
+const REST_OPACITY = "0.72";
+
+/** What the minimap needs of `MapThumbnail`. */
+export interface MinimapThumbnail {
+  readonly version: number;
+  /** CPU picture of the whole map (straight-alpha RGBA). */
+  readonly overview: Pixels;
+  /** Overview px redrawn since the last call (x1 / y1 exclusive), "all", or null. */
+  takeDirty(): { x0: number; y0: number; x1: number; y1: number } | "all" | null;
+}
 
 export interface MinimapHost {
-  /** Thumbnail canvas and its version, or null without a map. */
-  thumbnail(): { canvas: HTMLCanvasElement; version: number } | null;
+  /** The map thumbnail (canvas, version, redrawn area), or null without a map. */
+  thumbnail(): MinimapThumbnail | null;
   /** Map size in map px, or null without a map. */
   mapSize(): { width: number; height: number } | null;
   camera(): { camera: Camera; viewW: number; viewH: number };
@@ -43,6 +57,8 @@ export class Minimap {
   /** Thumbnail-independent part of the cache key, and when the cache was last redrawn. */
   #cacheShape = "";
   #cacheAt = -Infinity;
+  /** Thumbnail the cache was drawn from (a new map brings a new one). */
+  #cacheThumb: MinimapThumbnail | null = null;
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
   #drag: number | null = null;
 
@@ -64,12 +80,16 @@ export class Minimap {
       zIndex: "1",
       lineHeight: "0",
       userSelect: "none",
+      opacity: REST_OPACITY,
+      transition: "opacity 120ms ease-out",
     } satisfies Partial<CSSStyleDeclaration>);
     Object.assign(this.#canvas.style, { display: "block", cursor: "pointer", touchAction: "none", borderRadius: "4px" });
     el.appendChild(this.#canvas);
     container.appendChild(el);
     const c = this.#canvas;
     const opts = { signal };
+    el.addEventListener("pointerenter", () => this.#setActive(true), opts);
+    el.addEventListener("pointerleave", () => this.#setActive(this.#drag !== null), opts);
     c.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
@@ -88,6 +108,7 @@ export class Minimap {
     const end = (e: PointerEvent) => {
       if (this.#drag !== e.pointerId) return;
       this.#drag = null;
+      if (!el.matches(":hover")) this.#setActive(false);
       try {
         if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
       } catch {
@@ -102,6 +123,22 @@ export class Minimap {
       el.remove();
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
     });
+  }
+
+  #setActive(active: boolean): void {
+    this.element.style.opacity = active ? "1" : REST_OPACITY;
+  }
+
+  /**
+   * Space the minimap takes from the bottom-right corner of the canvas
+   * (margin included), CSS px, or null when hidden. From the layout math, so
+   * it is known before the first draw (framing a just-opened map).
+   */
+  footprint(): { width: number; height: number } | null {
+    const size = this.#host.mapSize();
+    if (!this.#visible || !size || size.width <= 0 || size.height <= 0) return null;
+    const layout = minimapLayout(size.width, size.height, MAX_W, MAX_H);
+    return { width: layout.width + 2 * FRAME + MARGIN, height: layout.height + 2 * FRAME + MARGIN };
   }
 
   get visible(): boolean {
@@ -127,7 +164,12 @@ export class Minimap {
     const bw = Math.max(1, Math.round(layout.width * dpr));
     const bh = Math.max(1, Math.round(layout.height * dpr));
     const colors = this.#host.colors();
-    const shape = `${bw}x${bh}|${colors.background}|${thumb.canvas.width}x${thumb.canvas.height}`;
+    const shape = `${bw}x${bh}|${colors.background}|${thumb.overview.width}x${thumb.overview.height}`;
+    if (thumb !== this.#cacheThumb) {
+      // Another map: its versions start over, so the key alone cannot tell. Redraw now.
+      this.#cacheKey = "";
+      this.#cacheShape = "";
+    }
     let cacheKey = `${thumb.version}|${shape}`;
     // While the picture keeps changing (a big edit is recomposited slice by slice), scaling the
     // whole thumbnail (up to 4096² px) down on every slice is wasted work: refresh at most every
@@ -141,20 +183,35 @@ export class Minimap {
       cacheKey = this.#cacheKey;
     }
     if (cacheKey !== this.#cacheKey) {
+      const dirty = thumb.takeDirty();
+      const full = dirty === "all" || shape !== this.#cacheShape || thumb !== this.#cacheThumb;
       this.#cacheKey = cacheKey;
       this.#cacheShape = shape;
+      this.#cacheThumb = thumb;
       this.#cacheAt = now;
       this.#drawKey = "";
       const cache = this.#cache;
-      cache.width = bw;
-      cache.height = bh;
+      if (full) {
+        cache.width = bw;
+        cache.height = bh;
+      }
       const ctx = cache.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = css(colors.background);
-        ctx.fillRect(0, 0, bw, bh);
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(thumb.canvas, 0, 0, bw, bh);
+      if (ctx && (full || dirty)) {
+        // Box filter of the CPU overview, only where it changed (see MapThumbnail.overview).
+        const ov = thumb.overview;
+        const sx = bw / ov.width;
+        const sy = bh / ov.height;
+        const r = full || !dirty ? { x0: 0, y0: 0, x1: ov.width, y1: ov.height } : dirty;
+        // Cache px touched by the changed overview px (box filter: no wider reach).
+        const dx0 = Math.max(0, Math.floor(r.x0 * sx));
+        const dy0 = Math.max(0, Math.floor(r.y0 * sy));
+        const dx1 = Math.min(bw, Math.ceil(r.x1 * sx));
+        const dy1 = Math.min(bh, Math.ceil(r.y1 * sy));
+        if (dx1 > dx0 && dy1 > dy0) {
+          const image = new ImageData(dx1 - dx0, dy1 - dy0);
+          downscaleOver(ov, 0, 0, ov.width, ov.height, sx, sy, dx0, dy0, image.width, image.height, colors.background, image.data);
+          ctx.putImageData(image, dx0, dy0);
+        }
       }
     }
     const { camera, viewW, viewH } = this.#host.camera();
