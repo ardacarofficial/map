@@ -421,12 +421,32 @@ export function alphaFromRgba(rgba: ArrayLike<number>, width: number, height: nu
 }
 
 /**
+ * The result of one pass over an image's alpha channel (a summed-area
+ * table), so that many grids can be checked against the same image without
+ * scanning its pixels again: pass it to {@link emptyTileIds} in place of the
+ * image. Opaque; build it with {@link scanAlpha}.
+ */
+export interface AlphaScan {
+  readonly width: number;
+  readonly height: number;
+  /** Opaque pixels in [x0, x1) × [y0, y1) (clipped to the image). */
+  opaque(x0: number, y0: number, x1: number, y1: number): number;
+}
+
+/** Scans `image` once (O(width × height)); see {@link AlphaScan}. */
+export function scanAlpha(image: AlphaImage): AlphaScan {
+  const stats = new AlphaStats(image);
+  return Object.freeze({ width: image.width, height: image.height, opaque: (x0: number, y0: number, x1: number, y1: number) => stats.opaque(x0, y0, x1, y1) });
+}
+
+/**
  * Ids of fully transparent tiles (every pixel alpha 0; pixels outside the
  * image count as transparent). The ids stay in the tileset — the palette
- * only dims or skips them.
+ * only dims or skips them. Pass an {@link AlphaScan} to reuse one scan for
+ * many grids (cost then O(tiles) instead of O(pixels)).
  */
-export function emptyTileIds(grid: TileGrid, image: AlphaImage): Set<number> {
-  const stats = new AlphaStats(image);
+export function emptyTileIds(grid: TileGrid, image: AlphaImage | AlphaScan): Set<number> {
+  const stats = "alpha" in image ? new AlphaStats(image) : image;
   const out = new Set<number>();
   for (let row = 0; row < grid.rows; row++) {
     for (let col = 0; col < grid.columns; col++) {

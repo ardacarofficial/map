@@ -6,6 +6,7 @@ import type { LayerPropsPatch, MapDocument, MapStore } from "@smap/core";
 import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
 import { toast } from "../ui/toast/toastStore";
+import { undoStepAction } from "./undoStepAction";
 
 function current(): { store: MapStore; activeLayerId: string | null } | null {
   const { project, activeLayerId } = useEditorStore.getState();
@@ -47,16 +48,13 @@ export function removeLayer(layerId: string): boolean {
     const next = store.document.layers[Math.min(index, store.document.layers.length - 1)] ?? null;
     useEditorStore.getState().setActiveLayer(next?.id ?? null);
   }
-  const depth = store.undoDepth;
-  toast.withAction(t("toast.layerRemoved", { name: layer.name }), {
-    label: t("common.undo"),
-    run: () => {
-      // Only undo the removal itself, not something done after it.
-      if (useEditorStore.getState().project?.store !== store || store.undoDepth !== depth) return;
-      store.undo();
+  // Only undoes the removal itself, not something done after it.
+  toast.withAction(
+    t("toast.layerRemoved", { name: layer.name }),
+    undoStepAction(store, () => {
       if (store.document.getLayer(layerId)) useEditorStore.getState().setActiveLayer(layerId);
-    },
-  });
+    }),
+  );
   return true;
 }
 

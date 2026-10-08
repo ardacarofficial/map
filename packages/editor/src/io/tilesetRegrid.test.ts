@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LevelWorkspace } from "./levelWorkspace";
 import { MemoryFileSystem } from "./memoryFs";
 import { defaultLevels } from "./projectIo";
-import { gridKey, loadAllLevels, remapBrush, remapStamp, remapStamps, sameGrid, syncLevelGrids } from "./tilesetRegrid";
+import { gridKey, loadAllLevels, recordRegrid, remapBrush, remapStamp, remapStamps, sameGrid, stampKey, syncLevelGrids, syncStampGrid, type StampRegrid } from "./tilesetRegrid";
 import { clipFromTileset } from "@smap/core";
 
 /** 96 × 64 px image cut in 16 px tiles: 6 × 4. */
@@ -128,7 +128,7 @@ describe("project-wide grid edit", () => {
     expect(result.remapped).toBe(1);
     expect(result.clearedCells).toBe(1);
     const sync = syncLevelGrids(ws);
-    expect(sync).toEqual({ levels: [other], clearedCells: 1 });
+    expect(sync).toEqual({ levels: [other], clearedCells: 1, restoredCells: 0, keptCells: 0 });
     expect(ws.isDirty(other)).toBe(true);
     const o = ws.entry(other)!.store;
     expect(tileAt(o, 4, 4)).toBe(1);
@@ -186,6 +186,185 @@ describe("project-wide grid edit", () => {
     const { fs, ws } = await project();
     fs.files.delete("levels/zindan.json");
     expect(await loadAllLevels(ws, fs)).toEqual(["Zindan"]);
+  });
+});
+
+/** Tile id and flip flags at (x, y), or null for an empty cell. */
+function tileWithFlags(store: MapStore, x: number, y: number): [number, number] | null {
+  const cell = store.document.layers.find((l) => l.type === "tile")!.getCell(x, y);
+  if (cell === 0) return null;
+  return [store.document.palette.get(cell & 0x1fffffff)!.tileId, cell >>> 29];
+}
+
+function paintFlipped(store: MapStore, x: number, y: number, tileId: number, flags: number): void {
+  const layer = store.document.layers.find((l) => l.type === "tile")!;
+  const index = store.getOrAddPaletteIndex("dungeon", tileId);
+  store.dispatch({ type: "paintCells", layerId: layer.id, cells: [{ x, y, cell: makeCell(index, flags) }] });
+}
+
+/** Every cell of the 8 × 8 level as tile + flags (palette indices aside: unused entries may stay). */
+function allTiles(store: MapStore): ([number, number] | null)[] {
+  const out: ([number, number] | null)[] = [];
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) out.push(tileWithFlags(store, x, y));
+  return out;
+}
+
+/** The active level's edit as the app runs it: dispatch, record, sync. */
+function editActive(ws: LevelWorkspace) {
+  const before = { ...ws.active.store.document.getTileset("dungeon")! };
+  ws.active.store.dispatch(to32);
+  recordRegrid(ws.active.store, "dungeon", before);
+  return syncLevelGrids(ws);
+}
+
+// Bug: after a grid edit in level A, painting in level B and then undoing the edit in A,
+// B was remapped a second time (16 → 32 → 16 by pixel position): the cells the edit had
+// cleared in B never came back.
+describe("undo of a project-wide grid edit is lossless in the other levels", () => {
+  async function edited() {
+    const p = await project();
+    await loadAllLevels(p.ws, p.fs);
+    const o = p.ws.entry(p.other)!.store;
+    // More cells the 32 px grid has no place for (16 px ids 7 and 9), one flipped.
+    o.beginTransaction();
+    paintFlipped(o, 2, 2, 7, FLIP_H);
+    paint(o, 6, 4, 9);
+    o.commit();
+    const sync = editActive(p.ws);
+    return { ...p, o, sync };
+  }
+
+  it("restores the cleared cells exactly, keeps cells painted since, and redo follows", async () => {
+    const { ws, o, sync } = await edited();
+    expect(sync.clearedCells).toBe(3);
+    expect(tileAt(o, 5, 4)).toBeNull();
+    expect(tileAt(o, 2, 2)).toBeNull();
+    // Paint in B after the edit (32 px ids): over a cleared cell, and a new one.
+    paint(o, 6, 4, 2); // 32 px tile 2 = x 64 = 16 px tile 4
+    paint(o, 0, 7, 4); // 32 px tile 4 = (32, 32) = 16 px tile 14
+    const painted = allTiles(o);
+
+    ws.active.store.undo();
+    const undo = syncLevelGrids(ws);
+    expect(undo.restoredCells).toBe(2);
+    expect(undo.keptCells).toBe(1);
+    expect(sameGrid(o.document.getTileset("dungeon")!, dungeon)).toBe(true);
+    // Untouched cleared cells: back exactly (tile and flip flags).
+    expect(tileWithFlags(o, 5, 4)).toEqual([3, 0]);
+    expect(tileWithFlags(o, 2, 2)).toEqual([7, FLIP_H >>> 29]);
+    expect(tileAt(o, 4, 4)).toBe(2);
+    // Painted since: the new paint stays (same pixels in the old grid).
+    expect(tileAt(o, 6, 4)).toBe(4);
+    expect(tileAt(o, 0, 7)).toBe(14);
+    // B's tileset is the active level's again (no rebuild when it opens).
+    expect(o.document.getTileset("dungeon")).toEqual(ws.active.store.document.getTileset("dungeon"));
+
+    // Redo in A: B goes back to exactly what it was before the undo (its own undo of the restore step).
+    const canRedoBefore = o.redoDepth;
+    ws.active.store.redo();
+    expect(syncLevelGrids(ws).levels).toHaveLength(1);
+    expect(o.redoDepth).toBe(canRedoBefore + 1);
+    expect(allTiles(o)).toEqual(painted);
+    expect(sameGrid(o.document.getTileset("dungeon")!, as32)).toBe(true);
+    // And undo again restores again.
+    ws.active.store.undo();
+    syncLevelGrids(ws);
+    expect(tileWithFlags(o, 5, 4)).toEqual([3, 0]);
+    expect(tileWithFlags(o, 2, 2)).toEqual([7, FLIP_H >>> 29]);
+    expect(tileAt(o, 6, 4)).toBe(4);
+  });
+
+  it("restoring is one undo step in B; painting after the undo still allows the redo", async () => {
+    const { ws, o } = await edited();
+    paint(o, 0, 7, 4);
+    ws.active.store.undo();
+    syncLevelGrids(ws);
+    paint(o, 1, 7, 5); // 16 px tile 5 = x 80: no 32 px tile starts there
+    ws.active.store.redo();
+    const redo = syncLevelGrids(ws);
+    expect(sameGrid(o.document.getTileset("dungeon")!, as32)).toBe(true);
+    // The redo is the edit again: tiles without a place are cleared, the rest moves by pixel position.
+    expect(tileAt(o, 5, 4)).toBeNull();
+    expect(tileAt(o, 1, 7)).toBeNull();
+    expect(redo.clearedCells).toBeGreaterThan(0);
+    expect(tileAt(o, 0, 7)).toBe(4);
+    // Undo again: everything the redo cleared that is untouched comes back.
+    ws.active.store.undo();
+    syncLevelGrids(ws);
+    expect(tileAt(o, 5, 4)).toBe(3);
+    expect(tileAt(o, 1, 7)).toBe(5);
+    expect(tileAt(o, 0, 7)).toBe(14);
+  });
+
+  it("writes into a layer locked since, and leaves it locked", async () => {
+    const { ws, o } = await edited();
+    const layer = o.document.layers.find((l) => l.type === "tile")!;
+    o.dispatch({ type: "setLayerProps", layerId: layer.id, props: { locked: true } });
+    ws.active.store.undo();
+    syncLevelGrids(ws);
+    expect(tileAt(o, 5, 4)).toBe(3);
+    expect(o.document.getLayer(layer.id)!.locked).toBe(true);
+  });
+
+  it("the other level made the edit itself: the active one follows its undo losslessly too", async () => {
+    const { fs, ws, main, other } = await project();
+    await loadAllLevels(ws, fs);
+    await ws.activate(other, fs);
+    const a = ws.entry(main)!.store;
+    editActive(ws);
+    expect(tileAt(a, 1, 0)).toBeNull(); // 16 px tile 3 has no place
+    paint(a, 3, 3, 1);
+    await ws.activate(main, fs);
+    // Undo the edit from B's history while A is open (B is not active: undo it directly, then sync from B).
+    await ws.activate(other, fs);
+    ws.active.store.undo();
+    syncLevelGrids(ws);
+    expect(tileAt(a, 1, 0)).toBe(3);
+    expect(tileAt(a, 0, 0)).toBe(2);
+    expect(tileAt(a, 3, 3)).toBe(2); // painted since: 32 px tile 1 = 16 px tile 2
+  });
+});
+
+describe("syncStampGrid (stamps follow undo / redo losslessly)", () => {
+  const ev: Stamp = {
+    id: "ev",
+    name: "Ev",
+    width: 2,
+    height: 1,
+    palette: [
+      { tilesetId: "dungeon", tileId: 2 },
+      { tilesetId: "dungeon", tileId: 3 },
+    ],
+    layers: [{ layerId: "a", name: "Zemin", cells: Uint32Array.of(makeCell(1), makeCell(2, FLIP_H)) }],
+  };
+  const kule: Stamp = { ...ev, id: "kule", name: "Kule" };
+
+  it("restores stamps that were not edited since, remaps the others", () => {
+    const records: StampRegrid[] = [];
+    const fwd = syncStampGrid([ev, kule], "dungeon", dungeon, as32, records);
+    expect(fwd.changed).toBe(2);
+    records.push(fwd.record!);
+    // Tile 3 had no place: the stamp lost it.
+    expect(fwd.stamps[0]!.palette).toEqual([{ tilesetId: "dungeon", tileId: 1 }]);
+    // Edit "kule" and add a new stamp after the edit.
+    const edited: Stamp = { ...fwd.stamps[1]!, name: "Kule 2" };
+    const added: Stamp = { ...fwd.stamps[0]!, id: "yeni", name: "Yeni" };
+    const back = syncStampGrid([fwd.stamps[0]!, edited, added], "dungeon", as32, dungeon, records);
+    expect(back.kept).toBe(1);
+    // "ev" is exactly what it was (the cleared tile is back).
+    expect(back.stamps[0]).toBe(ev);
+    expect(stampKey(back.stamps[0]!)).toBe(stampKey(ev));
+    // Edited and new stamps were remapped by pixel position (32 px tile 1 → 16 px tile 2).
+    expect(back.stamps[1]!.name).toBe("Kule 2");
+    expect(back.stamps[1]!.palette).toEqual([{ tilesetId: "dungeon", tileId: 2 }]);
+    expect(back.stamps[2]!.palette).toEqual([{ tilesetId: "dungeon", tileId: 2 }]);
+    records.push(back.record!);
+    // Redo: everything the undo changed and nobody touched comes back exactly.
+    const redo = syncStampGrid(back.stamps, "dungeon", dungeon, as32, records);
+    expect(redo.kept).toBe(0);
+    expect(redo.stamps[0]).toBe(fwd.stamps[0]);
+    expect(redo.stamps[1]).toBe(edited);
+    expect(redo.stamps[2]).toBe(added);
   });
 });
 

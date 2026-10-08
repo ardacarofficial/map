@@ -8,6 +8,8 @@ import {
   emptyTileIds,
   gridCount,
   inferTileGrid,
+  scanAlpha,
+  type AlphaScan,
   type TileGridReason,
   type TileGridSpec,
   type TileGridSuggestion,
@@ -38,6 +40,30 @@ export interface CardImageInfo {
   readonly width: number;
   readonly height: number;
   readonly alpha: Uint8Array | null;
+}
+
+/**
+ * One alpha scan per image (keyed by its alpha buffer): the card checks
+ * empty tiles on every field edit, and re-reading every pixel each time
+ * made typing lag on big sheets. The scan is built on first use (when the
+ * card opens) and every later grid only walks the tiles.
+ */
+const scans = new WeakMap<Uint8Array, AlphaScan>();
+
+/** @internal for tests: how many scans were built. */
+export const alphaScanStats = { built: 0 };
+
+/** The cached alpha scan of `image`, or `null` when its alpha channel is unknown. */
+export function alphaScanOf(image: CardImageInfo): AlphaScan | null {
+  const alpha = image.alpha;
+  if (!alpha) return null;
+  let scan = scans.get(alpha);
+  if (!scan || scan.width !== image.width || scan.height !== image.height) {
+    scan = scanAlpha({ width: image.width, height: image.height, alpha });
+    alphaScanStats.built++;
+    scans.set(alpha, scan);
+  }
+  return scan;
 }
 
 export function draftFromSpec(name: string, spec: TileGridSpec): GridDraft {
@@ -156,8 +182,8 @@ export function summarize(spec: TileGridSpec, image: CardImageInfo): GridSummary
   if (columns < 1 || rows < 1) return null;
   const leftoverX = width - 2 * spec.margin - columns * spec.tileWidth - (columns - 1) * spec.spacing;
   const leftoverY = height - 2 * spec.margin - rows * spec.tileHeight - (rows - 1) * spec.spacing;
-  const emptyIds =
-    image.alpha && columns * rows <= MAX_EMPTY_SCAN_TILES ? emptyTileIds({ ...spec, columns, rows }, { width, height, alpha: image.alpha }) : new Set<number>();
+  const scan = columns * rows <= MAX_EMPTY_SCAN_TILES ? alphaScanOf(image) : null;
+  const emptyIds = scan ? emptyTileIds({ ...spec, columns, rows }, scan) : new Set<number>();
   return {
     columns,
     rows,

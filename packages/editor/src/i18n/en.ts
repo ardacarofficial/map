@@ -668,7 +668,7 @@ export const en: Messages = {
     imageSame: "Image has the same size; tiles stayed in place.",
     levelsUnreadable: "These levels could not be read, the grid did not change: {names}",
     failed: "Could not update the tileset: {detail}",
-    undoGone: "This change is no longer the last step; use Ctrl+Z.",
+    keptEdited: "{cells} cells and {stamps} stamps edited since were not restored",
   },
   toast: {
     stampUnreadable: "Could not read stamp file: {path}",

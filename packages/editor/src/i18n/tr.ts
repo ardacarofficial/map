@@ -671,7 +671,7 @@ export const tr = {
     imageSame: "Görsel aynı boyutta; tile'lar yerinde kaldı.",
     levelsUnreadable: "Şu level'lar okunamadı, ızgara değişmedi: {names}",
     failed: "Tileset güncellenemedi: {detail}",
-    undoGone: "Bu değişiklik artık son adım değil; Ctrl+Z ile geri al.",
+    keptEdited: "Sonradan değiştirilen {cells} hücre ve {stamps} stamp eski haline dönmedi",
   },
   toast: {
     stampUnreadable: "Stamp dosyası okunamadı: {path}",

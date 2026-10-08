@@ -33,12 +33,12 @@ export function UndoHud() {
   useEffect(() => {
     storeRef.current = store;
     if (!store) return;
-    labels.current.reset(store.undoDepth, store.redoDepth);
+    labels.current.reset();
     burst.current = null;
     let token = 0;
     return store.subscribe((event) => {
       if (!event.historyChanged) return;
-      const feedback = labels.current.change(event.cause, store.undoDepth, store.redoDepth);
+      const feedback = labels.current.change(event.cause, store);
       if (!feedback) return;
       const b = nextBurst(burst.current, feedback.move, performance.now());
       burst.current = b;
@@ -54,7 +54,7 @@ export function UndoHud() {
       off?.();
       off = handle?.onStrokeCommitted((summary) => {
         const s = storeRef.current;
-        if (s) labels.current.stroke(summary, s.undoDepth);
+        if (s) labels.current.stroke(summary, s);
       });
     });
     return () => {

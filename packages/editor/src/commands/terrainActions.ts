@@ -27,6 +27,7 @@ import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
 import { flashLayer } from "../ui/feedback/layerFlash";
 import { toast } from "../ui/toast/toastStore";
+import { undoStepAction } from "./undoStepAction";
 
 function currentStore(): MapStore | null {
   return useEditorStore.getState().project?.store ?? null;
@@ -197,14 +198,7 @@ export function deleteTerrain(terrainId: number): void {
   const terrain = store?.document.getTerrain(terrainId);
   if (!store || !terrain || store.inTransaction) return;
   store.dispatch({ type: "removeTerrain", terrainId });
-  const depth = store.undoDepth;
-  toast.withAction(t("toast.terrainRemoved", { name: terrain.name }), {
-    label: t("common.undo"),
-    run: () => {
-      if (currentStore() !== store || store.undoDepth !== depth) return;
-      store.undo();
-    },
-  });
+  toast.withAction(t("toast.terrainRemoved", { name: terrain.name }), undoStepAction(store, undefined, () => currentStore() === store));
 }
 
 /** What {@link activateTerrain} did to the layers. */
@@ -385,15 +379,16 @@ export function removeTerrainGroup(terrainLayerId: string): boolean {
     const layers = store.document.layers;
     state.setActiveLayer(layers[Math.min(lowest, layers.length - 1)]?.id ?? null);
   }
-  const depth = store.undoDepth;
-  toast.withAction(t("toast.layerRemoved", { name: head.name }), {
-    label: t("common.undo"),
-    run: () => {
-      if (currentStore() !== store || store.undoDepth !== depth) return;
-      store.undo();
-      if (store.document.getLayer(head.id)) useEditorStore.getState().setActiveLayer(head.id);
-    },
-  });
+  toast.withAction(
+    t("toast.layerRemoved", { name: head.name }),
+    undoStepAction(
+      store,
+      () => {
+        if (store.document.getLayer(head.id)) useEditorStore.getState().setActiveLayer(head.id);
+      },
+      () => currentStore() === store,
+    ),
+  );
   return true;
 }
 

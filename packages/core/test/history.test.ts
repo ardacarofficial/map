@@ -117,6 +117,26 @@ describe("historyLimit", () => {
     expect(store.document.map.width).toBe(16);
   });
 
+  it("steps keep a stable id while the depth shifts at the limit", () => {
+    const { store, idx, layer } = limited(3);
+    const ids: number[] = [];
+    for (let x = 0; x < 3; x++) {
+      store.dispatch({ type: "paintCells", layerId: layer, cells: [{ x, y: 0, cell: makeCell(idx) }] });
+      ids.push(store.peekUndo()!.id);
+    }
+    expect(new Set(ids).size).toBe(3);
+    expect(store.undoDepth).toBe(3);
+    // At the limit a new step keeps the depth at 3: the depth no longer names the step, the id does.
+    store.dispatch({ type: "paintCells", layerId: layer, cells: [{ x: 3, y: 0, cell: makeCell(idx) }] });
+    expect(store.undoDepth).toBe(3);
+    expect(store.peekUndo()!.id).not.toBe(ids[2]);
+    store.undo();
+    expect(store.peekUndo()!.id).toBe(ids[2]);
+    expect(store.peekRedo()!.id).not.toBe(ids[2]);
+    store.redo();
+    expect(store.peekRedo()).toBeUndefined();
+  });
+
   it("historyLimit 0 keeps no steps", () => {
     const { store, idx, layer } = limited(0);
     store.dispatch({ type: "paintCells", layerId: layer, cells: [{ x: 0, y: 0, cell: makeCell(idx) }] });

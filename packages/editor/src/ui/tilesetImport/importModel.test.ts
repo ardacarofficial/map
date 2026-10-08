@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alphaScanStats,
   applySpec,
   draftFromSpec,
   inferDraft,
@@ -158,5 +159,32 @@ describe("pastedImage", () => {
     expect(pastedImage(clip("", [{ type: "image/jpeg", name: "a.jpg" }]))).toBeNull();
     expect(pastedImage(clip("hello", []))).toBeNull();
     expect(pastedImage(null)).toBeNull();
+  });
+});
+
+describe("alpha scan cache", () => {
+  it("scans an image once for any number of field edits", () => {
+    const alpha = alphaWithEmptyTiles(256, 256, 16, [0, 3, 17]);
+    const image = { width: 256, height: 256, alpha };
+    const start = alphaScanStats.built;
+    const specs = [16, 8, 32, 4, 16, 2, 64, 16].map((size) => ({ tileWidth: size, tileHeight: size, margin: 0, spacing: 0 }));
+    const empties = specs.map((spec) => summarize(spec, image)!.empty);
+    expect(alphaScanStats.built - start).toBe(1);
+    expect(empties[0]).toBe(3);
+    expect(empties[4]).toBe(3);
+    // A copy of the info object with the same pixels reuses the scan too.
+    summarize(specs[0]!, { ...image });
+    expect(alphaScanStats.built - start).toBe(1);
+    // Another image is scanned once.
+    const other = { width: 256, height: 256, alpha: alphaWithEmptyTiles(256, 256, 16, []) };
+    summarize(specs[0]!, other);
+    summarize(specs[1]!, other);
+    expect(alphaScanStats.built - start).toBe(2);
+  });
+
+  it("no alpha channel: no scan, no empty tiles", () => {
+    const start = alphaScanStats.built;
+    expect(summarize({ tileWidth: 16, tileHeight: 16, margin: 0, spacing: 0 }, { width: 64, height: 64, alpha: null })!.empty).toBe(0);
+    expect(alphaScanStats.built).toBe(start);
   });
 });

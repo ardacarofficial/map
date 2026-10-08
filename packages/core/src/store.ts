@@ -191,6 +191,13 @@ export type HistoryChange =
 
 /** One undo step: all changes of one transaction, in the order they happened. */
 export interface HistoryEntry {
+  /**
+   * Stable id of this step, unique for the store's lifetime (a counter that
+   * never repeats). Unlike the undo depth it does not shift when old steps
+   * fall off the history limit, so UI that refers to "that step" (undo
+   * labels, a toast's undo button) can check it is still the one on top.
+   */
+  readonly id: number;
   readonly changes: readonly HistoryChange[];
   /** The cell changes among `changes` (kept for v0.1 compatibility). */
   readonly patches: readonly LayerPatch[];
@@ -289,10 +296,12 @@ function emptyPatch(layerId: string): LayerPatch {
   return Object.freeze({ layerId, cells: Object.freeze([]) });
 }
 
+let nextEntryId = 1;
+
 function makeEntry(changes: readonly HistoryChange[]): HistoryEntry {
   // Cell changes are LayerPatch-shaped already; `patches` shares them.
   const patches = changes.filter((c): c is CellsHistoryChange => c.kind === "cells");
-  return Object.freeze({ changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
+  return Object.freeze({ id: nextEntryId++, changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
 }
 
 function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
@@ -471,6 +480,16 @@ export class MapStore {
   /** Number of redo steps available. */
   get redoDepth(): number {
     return this.#redo.length;
+  }
+
+  /** The step `undo()` would undo (its {@link HistoryEntry.id} identifies it), or `undefined`. */
+  peekUndo(): HistoryEntry | undefined {
+    return this.#undo[this.#undo.length - 1];
+  }
+
+  /** The step `redo()` would redo, or `undefined`. */
+  peekRedo(): HistoryEntry | undefined {
+    return this.#redo[this.#redo.length - 1];
   }
 
   /** Registers a change listener. Returns an unsubscribe function. */

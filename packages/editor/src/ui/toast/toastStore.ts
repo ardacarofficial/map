@@ -15,6 +15,10 @@ export interface Toast {
 export interface ToastAction {
   label: string;
   run(): void;
+  /** False when the action no longer applies; the button shows disabled. Default: always enabled. */
+  enabled?(): boolean;
+  /** Calls `onChange` whenever `enabled()` may have changed; returns an unsubscribe. */
+  watch?(onChange: () => void): () => void;
 }
 
 interface ToastState {

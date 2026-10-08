@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   alphaFromRgba,
   emptyTileIds,
+  scanAlpha,
   inferTileGrid,
   tileSizeFromFileName,
   tilesetGridRemap,
@@ -176,6 +177,18 @@ describe("emptyTileIds / alphaFromRgba", () => {
     const img = sheet(16, 4, 3, 1, 2, [0, 5, 11]);
     const grid: TileGrid = { tileWidth: 16, tileHeight: 16, margin: 1, spacing: 2, columns: 4, rows: 3 };
     expect([...emptyTileIds(grid, img)].sort((a, b) => a - b)).toEqual([0, 5, 11]);
+  });
+
+  it("a precomputed scan gives the same answer for any grid", () => {
+    const img = sheet(16, 4, 3, 1, 2, [0, 5, 11]);
+    const scan = scanAlpha(img);
+    for (const grid of [
+      { tileWidth: 16, tileHeight: 16, margin: 1, spacing: 2, columns: 4, rows: 3 },
+      { tileWidth: 8, tileHeight: 8, margin: 0, spacing: 0, columns: 9, rows: 6 },
+      { tileWidth: 32, tileHeight: 16, margin: 1, spacing: 2, columns: 2, rows: 3 },
+    ] as TileGrid[]) {
+      expect([...emptyTileIds(grid, scan)].sort((a, b) => a - b)).toEqual([...emptyTileIds(grid, img)].sort((a, b) => a - b));
+    }
   });
 
   it("tiles reaching past the image count the missing pixels as transparent", () => {

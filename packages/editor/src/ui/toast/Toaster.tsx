@@ -71,6 +71,14 @@ function ToastItem({ toast }: { toast: Toast }) {
   const dismiss = useToastStore((s) => s.dismiss);
   const [paused, setPaused] = useState(false);
   const [shown, setShown] = useState(false);
+  const action = toast.action;
+  const [enabled, setEnabled] = useState(() => action?.enabled?.() ?? true);
+
+  useEffect(() => {
+    if (!action) return;
+    setEnabled(action.enabled?.() ?? true);
+    return action.watch?.(() => setEnabled(action.enabled?.() ?? true));
+  }, [action]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setShown(true));
@@ -94,16 +102,21 @@ function ToastItem({ toast }: { toast: Toast }) {
     >
       <Icon name={ICON[toast.kind]} size={16} className={`mt-0.5 shrink-0 ${ICON_COLOR[toast.kind]}`} />
       <p className="min-w-0 flex-1 py-px break-words select-text">{toast.message}</p>
-      {toast.action && (
+      {action && (
         <button
           type="button"
+          disabled={!enabled}
           onClick={() => {
+            if (action.enabled && !action.enabled()) {
+              setEnabled(false);
+              return;
+            }
             dismiss(toast.id);
-            toast.action?.run();
+            action.run();
           }}
-          className="-my-0.5 h-6 shrink-0 rounded-sm px-2 text-md font-medium text-accent hover:bg-accent-soft"
+          className="-my-0.5 h-6 shrink-0 rounded-sm px-2 text-md font-medium text-accent enabled:hover:bg-accent-soft disabled:cursor-default disabled:text-faint"
         >
-          {toast.action.label}
+          {action.label}
         </button>
       )}
       <button

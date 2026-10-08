@@ -2,6 +2,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { ENTITY_FIELD_TYPES, isBuiltinEntityTypeId, type EntityFieldType, type EntityType, type MapDocument } from "@smap/core";
 import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 
+import { undoStepAction } from "../../commands/undoStepAction";
 import { entityCounts, entityFieldLabel, entityTypeName, removeEntityType, saveEntityType } from "../../commands/entityActions";
 import { t, type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
@@ -281,13 +282,7 @@ function DraftForm({
     const store = useEditorStore.getState().project?.store;
     if (!store || !removeEntityType(saved.id)) return;
     onDeleted();
-    const depth = store.undoDepth;
-    toast.withAction(t("entities.typeRemoved", { name: saved.name }), {
-      label: t("common.undo"),
-      run: () => {
-        if (useEditorStore.getState().project?.store === store && store.undoDepth === depth) store.undo();
-      },
-    });
+    toast.withAction(t("entities.typeRemoved", { name: saved.name }), undoStepAction(store));
   };
 
   return (

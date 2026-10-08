@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { BURST_MS, HistoryLabels, historyMessage, nextBurst } from "./historyLabels";
 
 /** Drives a real store and feeds its events to the label stack, like UndoHud does. */
-function harness() {
-  const store = new MapStore(createDocument({ width: 8, height: 8 }));
+function harness(historyLimit?: number) {
+  const store = new MapStore(createDocument({ width: 8, height: 8 }), historyLimit === undefined ? {} : { historyLimit });
   const layerId = store.dispatch({ type: "addLayer", layer: { name: "L" } });
   store.dispatch({
     type: "addTileset",
@@ -14,11 +14,11 @@ function harness() {
   const cell = store.getOrAddPaletteIndex("t", 0);
   store.clearHistory();
   const labels = new HistoryLabels();
-  labels.reset(store.undoDepth, store.redoDepth);
+  labels.reset();
   const feedback: (ReturnType<HistoryLabels["change"]>)[] = [];
   store.subscribe((e) => {
     if (!e.historyChanged) return;
-    const f = labels.change(e.cause, store.undoDepth, store.redoDepth);
+    const f = labels.change(e.cause, store);
     if (f) feedback.push(f);
   });
   let n = 0;
@@ -28,7 +28,7 @@ function harness() {
     n++;
     store.dispatch({ type: "paintCells", layerId, cells: writes });
     store.commit();
-    labels.stroke({ tool, cells }, store.undoDepth);
+    labels.stroke({ tool, cells }, store);
   };
   return { store, labels, feedback, paint, layerId };
 }
@@ -62,11 +62,36 @@ describe("HistoryLabels", () => {
   it("clearing the history forgets the labels", () => {
     const { store, feedback, paint, labels } = harness();
     paint(4);
+    const id = store.peekUndo()!.id;
+    expect(labels.labelOf(id)).toEqual({ tool: "brush", cells: 4 });
     store.clearHistory();
-    expect(labels.labelAt(0)).toBeNull();
+    expect(store.peekUndo()).toBeUndefined();
     paint(2, "eraser");
     store.undo();
     expect(feedback.at(-1)).toEqual({ move: "undo", summary: { tool: "eraser", cells: 2 } });
+  });
+});
+
+describe("HistoryLabels at the history limit", () => {
+  it("names the right step when the oldest ones fall off (the depth stays the same)", () => {
+    const { store, feedback, paint } = harness(3);
+    paint(1);
+    paint(2, "fill");
+    paint(3, "eraser");
+    paint(4); // drops the first step; depth stays 3
+    paint(5, "fill"); // and the second
+    expect(store.undoDepth).toBe(3);
+    store.undo();
+    store.undo();
+    store.undo();
+    expect(store.canUndo).toBe(false);
+    store.redo();
+    expect(feedback).toEqual([
+      { move: "undo", summary: { tool: "fill", cells: 5 } },
+      { move: "undo", summary: { tool: "brush", cells: 4 } },
+      { move: "undo", summary: { tool: "eraser", cells: 3 } },
+      { move: "redo", summary: { tool: "eraser", cells: 3 } },
+    ]);
   });
 });
 

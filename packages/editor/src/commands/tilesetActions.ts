@@ -18,7 +18,6 @@ import {
   inferTileGrid,
   type MapDocument,
   type MapStore,
-  type Stamp,
   type TileGrid,
   type TileGridSpec,
   type TilesetRemapResult,
@@ -27,18 +26,19 @@ import {
 import { t } from "../i18n";
 import { decodeTilesetFile, addTilesetFiles, createProjectFromTilesets, describeError, getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { gridKey, loadAllLevels, remapBrush, remapStamps, sameGrid, syncLevelGrids } from "../io/tilesetRegrid";
+import { gridCopy, loadAllLevels, recordRegrid, remapBrush, sameGrid, syncLevelGrids, syncStampGrid, type StampRegrid } from "../io/tilesetRegrid";
 import { decodePng } from "../io/projectIo";
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, notifyTilesetImage, setTilesetImage } from "../state/tilesetImages";
 import { pickFiles } from "../ui/pickFiles";
-import { toast, useToastStore } from "../ui/toast/toastStore";
+import { toast, useToastStore, type ToastAction } from "../ui/toast/toastStore";
 import { useUiStore } from "../ui/uiStore";
 import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 import { registerCommands, registerPaletteProvider, type Command } from "./registry";
+import { undoStepAction } from "./undoStepAction";
 
 const activeStore = (): MapStore | null => useEditorStore.getState().project?.store ?? null;
 
@@ -211,14 +211,16 @@ interface RegridOutcome {
   changed: boolean;
   result: TilesetRemapResult;
   store: MapStore;
-  /** Active store revision right after the edit (the undo button checks it). */
-  revision: number;
+  /** "Geri al" for the edit's own history step (checked by its stable id). */
+  undo: ToastAction;
   sync: SyncStats;
 }
 
 interface SyncStats {
   levels: number;
   clearedCells: number;
+  /** Cells painted again since the edit that its undo left alone (other levels). */
+  keptCells: number;
   stamps: number;
 }
 
@@ -240,10 +242,12 @@ async function runProjectRegrid(tilesetId: string, edit: (store: MapStore) => Ti
   // The user may have switched level or project while files were read.
   if (getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tilesetId)) return null;
   const before = store.revision;
+  const grid = gridCopy(store.document.getTileset(tilesetId)!);
   let result: TilesetRemapResult;
   suspended = true;
   try {
     result = edit(store);
+    if (store.revision !== before) recordRegrid(store, tilesetId, grid);
   } catch (error) {
     console.error(error);
     toast.error(t("tilesetImport.failed", { detail: describeError(error) }));
@@ -251,8 +255,9 @@ async function runProjectRegrid(tilesetId: string, edit: (store: MapStore) => Ti
   } finally {
     suspended = false;
   }
+  const undo = undoStepAction(store, undefined, () => activeStore() === store);
   const sync = syncProject();
-  return { changed: store.revision !== before, result, store, revision: store.revision, sync };
+  return { changed: store.revision !== before, result, store, undo, sync };
 }
 
 function describeResult(outcome: RegridOutcome): string {
@@ -273,14 +278,7 @@ function describeResult(outcome: RegridOutcome): string {
 /** Result toast with "Geri al": one undo of the active level (the rest of the project follows). */
 function showResult(message: string, outcome: RegridOutcome): void {
   const lossy = outcome.result.clearedCells + outcome.sync.clearedCells > 0 || outcome.result.droppedTerrains.length > 0;
-  useToastStore.getState().push(lossy ? "warning" : "success", message, 8000, {
-    label: t("common.undo"),
-    run: () => {
-      const store = activeStore();
-      if (store === outcome.store && store.revision === outcome.revision && store.canUndo) store.undo();
-      else toast.info(t("tilesetImport.undoGone"));
-    },
-  });
+  useToastStore.getState().push(lossy ? "warning" : "success", message, 8000, outcome.undo);
 }
 
 
@@ -290,17 +288,9 @@ function showResult(message: string, outcome: RegridOutcome): void {
 const seenGrids = new Map<string, TileGrid>();
 /** Grids the saved stamps currently use, per tileset. */
 const stampGrids = new Map<string, TileGrid>();
-/** Stamp library before / after each remap, so undo / redo restore it exactly. */
-let stampSnapshots: { tilesetId: string; from: string; to: string; before: readonly Stamp[]; after: readonly Stamp[] }[] = [];
-
-const gridOf = (g: TileGrid): TileGrid => ({
-  tileWidth: g.tileWidth,
-  tileHeight: g.tileHeight,
-  margin: g.margin,
-  spacing: g.spacing,
-  columns: g.columns,
-  rows: g.rows,
-});
+/** What each grid change did to the stamps (per stamp before / after), so undo / redo restore them exactly. */
+let stampRecords: StampRegrid[] = [];
+const MAX_STAMP_RECORDS = 32;
 
 /**
  * Brings the project to the active level's tileset grids: canvas atlases,
@@ -308,7 +298,7 @@ const gridOf = (g: TileGrid): TileGrid => ({
  * stamps. Cheap when nothing changed.
  */
 export function syncProject(): SyncStats {
-  const stats: SyncStats = { levels: 0, clearedCells: 0, stamps: 0 };
+  const stats: SyncStats = { levels: 0, clearedCells: 0, keptCells: 0, stamps: 0 };
   const ws = getLevelWorkspace();
   const store = activeStore();
   if (!ws || !store || suspended) return stats;
@@ -319,14 +309,20 @@ export function syncProject(): SyncStats {
     if (seen && !sameGrid(seen, tileset)) {
       followImage(doc, tileset.id);
       notifyTilesetImage(tileset.id);
-      regridded.push({ tilesetId: tileset.id, before: seen, after: gridOf(tileset) });
+      regridded.push({ tilesetId: tileset.id, before: seen, after: gridCopy(tileset) });
     }
-    seenGrids.set(tileset.id, gridOf(tileset));
+    seenGrids.set(tileset.id, gridCopy(tileset));
   }
   const levels = syncLevelGrids(ws);
   stats.levels = levels.levels.length;
   stats.clearedCells = levels.clearedCells;
-  stats.stamps = syncStamps(doc);
+  const stamps = syncStamps(doc);
+  stats.stamps = stamps.changed;
+  stats.keptCells = levels.keptCells;
+  // An undo / redo of a grid edit restores the other levels and stamps exactly, except what was edited since.
+  if (levels.keptCells > 0 || stamps.kept > 0) {
+    toast.info(t("tilesetImport.keptEdited", { cells: levels.keptCells, stamps: stamps.kept }));
+  }
   // The brush, random set and recent strip name tiles by id: they follow the pixels too.
   for (const { tilesetId, before, after } of regridded) followBrush(tilesetId, before, after);
   if (stats.levels > 0) {
@@ -345,53 +341,36 @@ function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void
   if (view.selection?.tilesetId === tilesetId) view.setSelection(null);
 }
 
-/** Remaps (or restores) the stamp library to `doc`'s grids; returns how many stamps changed. */
-function syncStamps(doc: MapDocument): number {
-  let changed = 0;
+/** Remaps (or restores) the stamp library to `doc`'s grids; how many stamps changed, and how many edited ones were remapped instead of restored. */
+function syncStamps(doc: MapDocument): { changed: number; kept: number } {
+  const out = { changed: 0, kept: 0 };
   for (const tileset of doc.tilesets) {
     const have = stampGrids.get(tileset.id);
-    stampGrids.set(tileset.id, gridOf(tileset));
+    stampGrids.set(tileset.id, gridCopy(tileset));
     if (!have || sameGrid(have, tileset)) continue;
     const current = useProjectLibrary.getState().stamps;
-    const from = gridKey(have);
-    const to = gridKey(tileset);
-    const undo = stampSnapshots.find((s) => s.tilesetId === tileset.id && s.to === from && s.from === to && s.after === current);
-    const redo = stampSnapshots.find((s) => s.tilesetId === tileset.id && s.from === from && s.to === to && s.before === current);
-    let next: readonly Stamp[] = current;
-    if (undo) next = undo.before;
-    else if (redo) next = redo.after;
-    else {
-      const remapped = remapStamps(current, tileset.id, have, tileset);
-      if (remapped.changed.length > 0) {
-        next = remapped.stamps;
-        stampSnapshots.push({ tilesetId: tileset.id, from, to, before: current, after: next });
-        if (stampSnapshots.length > 32) stampSnapshots = stampSnapshots.slice(-32);
-      }
-    }
-    if (next === current) continue;
-    changed += next.filter((s, i) => s !== current[i]).length || 1;
-    useProjectLibrary.setState((s) => ({ stamps: [...next], revision: s.revision + 1 }));
-    // The library keeps its own array; remember that identity for the next undo / redo.
-    const stored = useProjectLibrary.getState().stamps;
-    for (const snap of stampSnapshots) {
-      if (snap.before === next) snap.before = stored;
-      if (snap.after === next) snap.after = stored;
-    }
+    const r = syncStampGrid(current, tileset.id, have, tileset, stampRecords);
+    out.kept += r.kept;
+    if (!r.record) continue;
+    stampRecords.push(r.record);
+    if (stampRecords.length > MAX_STAMP_RECORDS) stampRecords = stampRecords.slice(-MAX_STAMP_RECORDS);
+    out.changed += r.changed;
+    useProjectLibrary.setState((s) => ({ stamps: r.stamps, revision: s.revision + 1 }));
   }
-  return changed;
+  return out;
 }
 
 /** Forgets per-project state (a project was opened or closed). */
 function resetSync(): void {
   seenGrids.clear();
   stampGrids.clear();
-  stampSnapshots = [];
+  stampRecords = [];
   imageVersions.clear();
   const doc = activeStore()?.document;
   if (!doc) return;
   for (const tileset of doc.tilesets) {
-    seenGrids.set(tileset.id, gridOf(tileset));
-    stampGrids.set(tileset.id, gridOf(tileset));
+    seenGrids.set(tileset.id, gridCopy(tileset));
+    stampGrids.set(tileset.id, gridCopy(tileset));
   }
 }
 

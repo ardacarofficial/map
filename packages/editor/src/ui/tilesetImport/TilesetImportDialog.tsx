@@ -17,6 +17,7 @@ import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import {
   applySpec,
+  alphaScanOf,
   leftoverMessage,
   parseDraft,
   sameSpec,
@@ -56,6 +57,8 @@ function TilesetCard({ request }: { request: CardRequest }) {
   const [draft, setDraft] = useState<GridDraft>(request.initial);
   const parsed = parseDraft(draft);
   const image = useMemo(() => ({ width: request.width, height: request.height, alpha: request.alpha }), [request]);
+  // Scan the alpha channel once when the card opens; every field edit reuses it (see importModel).
+  useMemo(() => alphaScanOf(image), [image]);
   const specKey = parsed.spec ? `${parsed.spec.tileWidth},${parsed.spec.tileHeight},${parsed.spec.margin},${parsed.spec.spacing}` : "";
   // Recomputed only when the grid changes (empty tiles scan the alpha channel).
   const summary = useMemo(() => (parsed.spec ? summarize(parsed.spec, image) : null), [specKey, image]); // eslint-disable-line react-hooks/exhaustive-deps

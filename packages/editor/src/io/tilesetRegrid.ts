@@ -18,6 +18,9 @@
 import {
   cellFlags,
   cellPaletteIndex,
+  isGridLayer,
+  isTileLayer,
+  isValidTileId,
   makeCell,
   tilesetGridRemap,
   tilesetImageExtent,
@@ -40,6 +43,16 @@ import type { LevelWorkspace } from "./levelWorkspace";
 export type RegridMode = "grid" | "image";
 
 const GRID_KEYS = ["tileWidth", "tileHeight", "margin", "spacing", "columns", "rows"] as const;
+
+/** The grid fields of a tileset (a plain copy). */
+export const gridCopy = (g: TileGrid): TileGrid => ({
+  tileWidth: g.tileWidth,
+  tileHeight: g.tileHeight,
+  margin: g.margin,
+  spacing: g.spacing,
+  columns: g.columns,
+  rows: g.rows,
+});
 
 /** True when both grids slice the image the same way. */
 export function sameGrid(a: TileGrid, b: TileGrid): boolean {
@@ -165,6 +178,65 @@ export function remapStamps(stamps: readonly Stamp[], tilesetId: string, before:
   return { stamps: out, changed, clearedCells };
 }
 
+/** A canonical text of a stamp (typed arrays as plain lists), to tell whether it changed. */
+export function stampKey(stamp: TileClip): string {
+  return JSON.stringify({ ...stamp, layers: stamp.layers.map((l) => ({ ...l, cells: Array.from(l.cells) })) });
+}
+
+/** What one grid change did to the stamp library: each changed stamp before and after. */
+export interface StampRegrid {
+  readonly tilesetId: string;
+  readonly from: TileGrid;
+  readonly to: TileGrid;
+  readonly stamps: readonly { readonly id: string; readonly before: Stamp; readonly afterKey: string }[];
+}
+
+export interface StampGridSync {
+  stamps: Stamp[];
+  /** Stamps that changed. */
+  changed: number;
+  /** Stamps the reverted change had changed but that were edited since: remapped instead of restored. */
+  kept: number;
+  /** The record of this change (append it to the list), or `null` when nothing changed. */
+  record: StampRegrid | null;
+}
+
+/**
+ * The stamp library moved from grid `have` to grid `want` of `tilesetId`.
+ * When `records` holds the change that led from `want` to `have` (an undo
+ * or redo of a grid edit), every stamp it changed and that is still exactly
+ * as it left it gets its earlier version back (lossless); stamps edited or
+ * added since are remapped by pixel position like the edit itself.
+ */
+export function syncStampGrid(
+  stamps: readonly Stamp[],
+  tilesetId: string,
+  have: TileGrid,
+  want: TileGrid,
+  records: readonly StampRegrid[],
+): StampGridSync {
+  const out: StampGridSync = { stamps: [...stamps], changed: 0, kept: 0, record: null };
+  if (sameGrid(have, want)) return out;
+  const revert = [...records].reverse().find((r) => r.tilesetId === tilesetId && sameGrid(r.to, have) && sameGrid(r.from, want));
+  const mode = regridMode(have, want);
+  const changes: { id: string; before: Stamp; afterKey: string }[] = [];
+  out.stamps = stamps.map((stamp) => {
+    const saved = revert?.stamps.find((s) => s.id === stamp.id);
+    let next: Stamp;
+    if (saved && stampKey(stamp) === saved.afterKey) {
+      next = saved.before;
+    } else {
+      if (saved) out.kept++;
+      next = remapStamp(stamp, tilesetId, have, want, mode).stamp;
+    }
+    if (next !== stamp) changes.push({ id: stamp.id, before: stamp, afterKey: stampKey(next) });
+    return next;
+  });
+  out.changed = changes.length;
+  if (changes.length > 0) out.record = { tilesetId, from: gridCopy(have), to: gridCopy(want), stamps: changes };
+  return out;
+}
+
 /** The brush state that names tiles of a tileset by id (editor store fields). */
 export interface BrushRefs {
   selection: TileSelection | null;
@@ -282,8 +354,84 @@ export async function loadAllLevels(ws: LevelWorkspace, fs: ProjectFileSystem | 
 export interface LevelSync {
   /** Ids of levels whose grid was brought to the active level's. */
   levels: string[];
-  /** Cells cleared in those levels (only when remapped, not by undo / redo). */
+  /** Cells cleared in those levels (tiles with no place in the new grid). */
   clearedCells: number;
+  /** Cells an earlier grid edit cleared (or changed) that came back exactly. */
+  restoredCells: number;
+  /**
+   * Cells an earlier grid edit changed that were painted again since: an
+   * undo of that edit leaves them as they are (the new paint wins).
+   */
+  keptCells: number;
+}
+
+/** A cell a grid edit changed in a level: raw values plus the tile it held before. */
+interface RegridCell {
+  readonly layerId: string;
+  readonly x: number;
+  readonly y: number;
+  /** Raw cell after the edit ("untouched since" = still this value). */
+  readonly after: number;
+  /** What the cell showed before the edit (`null` = empty). */
+  readonly before: { readonly tilesetId: string; readonly tileId: number; readonly flags: number } | null;
+}
+
+/**
+ * What one grid change did to one level, recorded right after it: the
+ * exact cell patch (before as tiles, after as raw values), the tileset on
+ * both sides, and the level's own history step for it. Lets the change be
+ * reverted later without loss although the level was edited in between
+ * (see {@link followGrid}).
+ */
+interface LevelRegrid {
+  readonly tilesetId: string;
+  readonly from: TileGrid;
+  readonly to: TileGrid;
+  readonly cells: readonly RegridCell[];
+  /** The level's history step that made the change (`HistoryEntry.id`), if any. */
+  readonly entryId: number | undefined;
+}
+
+/** Recorded grid changes per level store (newest last). */
+const levelRecords = new WeakMap<MapStore, LevelRegrid[]>();
+/** Records kept per store (each grid edit adds one). */
+const MAX_RECORDS = 64;
+
+/**
+ * Records the grid change of `tilesetId` that `store` just committed as its
+ * top history step (`before` = the tileset before it). Called for the
+ * active level's own edit and for every level that followed it, so that
+ * whichever level is open later, the others can revert it losslessly.
+ */
+export function recordRegrid(store: MapStore, tilesetId: string, before: TileGrid): void {
+  const after = store.document.getTileset(tilesetId);
+  if (!after || sameGrid(before, after)) return;
+  const entry = store.peekUndo();
+  const doc = store.document;
+  const cells: RegridCell[] = [];
+  if (entry) {
+    // Palette indices the step rewrote: the tile they named before it.
+    const rewritten = new Map<number, PaletteEntry>();
+    for (const change of entry.changes) {
+      if (change.kind === "palette") for (const e of change.entries) if (!rewritten.has(e.index)) rewritten.set(e.index, e.before);
+    }
+    for (const patch of entry.patches) {
+      if (!isTileLayer(doc.getLayer(patch.layerId))) continue;
+      for (const c of patch.cells) {
+        let tile: RegridCell["before"] = null;
+        if (c.before !== 0) {
+          const index = cellPaletteIndex(c.before);
+          const named = rewritten.get(index) ?? doc.palette.get(index);
+          if (named) tile = { tilesetId: named.tilesetId, tileId: named.tileId, flags: cellFlags(c.before) };
+        }
+        cells.push({ layerId: patch.layerId, x: c.x, y: c.y, after: c.after, before: tile });
+      }
+    }
+  }
+  const list = levelRecords.get(store) ?? [];
+  list.push({ tilesetId, from: gridCopy(before), to: gridCopy(after), cells, entryId: entry?.id });
+  if (list.length > MAX_RECORDS) list.splice(0, list.length - MAX_RECORDS);
+  levelRecords.set(store, list);
 }
 
 /**
@@ -292,7 +440,7 @@ export interface LevelSync {
  */
 export function syncLevelGrids(ws: LevelWorkspace): LevelSync {
   const active = ws.active.store.document;
-  const out: LevelSync = { levels: [], clearedCells: 0 };
+  const out: LevelSync = { levels: [], clearedCells: 0, restoredCells: 0, keptCells: 0 };
   for (const id of ws.cachedIds()) {
     if (id === ws.activeId) continue;
     const entry = ws.entry(id)!;
@@ -301,7 +449,10 @@ export function syncLevelGrids(ws: LevelWorkspace): LevelSync {
       const have = entry.store.document.getTileset(want.id);
       if (!have || sameGrid(have, want)) continue;
       touched = true;
-      out.clearedCells += followGrid(entry.store, want);
+      const r = followGrid(entry.store, want);
+      out.clearedCells += r.cleared;
+      out.restoredCells += r.restored;
+      out.keptCells += r.kept;
     }
     if (touched) {
       ws.markDirty(id);
@@ -311,38 +462,163 @@ export function syncLevelGrids(ws: LevelWorkspace): LevelSync {
   return out;
 }
 
-/** Moves `store`'s copy of `want` to its grid; returns the cells cleared. */
-function followGrid(store: MapStore, want: Tileset): number {
-  const matches = () => {
-    const ts = store.document.getTileset(want.id);
-    return !!ts && sameGrid(ts, want);
-  };
+interface FollowResult {
+  cleared: number;
+  restored: number;
+  kept: number;
+}
+
+/**
+ * Moves `store`'s copy of `want` to its grid:
+ *
+ * 1. When the level's own undo (or redo) step is exactly the recorded
+ *    change, it is undone (redone): byte for byte.
+ * 2. Otherwise, when a recorded change led from `want`'s grid to the
+ *    current one (the level was edited since), the grid goes back with the
+ *    core op and every cell that change touched comes back to the tile it
+ *    held, as long as the cell still holds what the change left there
+ *    (cells painted since keep the new paint and are counted as kept).
+ *    Solid flags and terrains are set to `want`'s. One undo step.
+ * 3. Otherwise the core op remaps by pixel position (the edit itself).
+ *
+ * Every change made here is recorded too, so the next undo / redo of the
+ * edit finds its way back the same way.
+ */
+function followGrid(store: MapStore, want: Tileset): FollowResult {
+  const out: FollowResult = { cleared: 0, restored: 0, kept: 0 };
+  const records = levelRecords.get(store) ?? [];
+  const current = () => store.document.getTileset(want.id)!;
+  const matches = () => sameGrid(current(), want);
   if (store.inTransaction) store.commit();
-  // The level's own history first: mirrors an undo / redo byte for byte.
-  if (store.canUndo) {
+  const have = gridCopy(current());
+
+  // 1. The level's own step for this very change.
+  const top = store.peekUndo();
+  if (top && records.some((r) => r.entryId === top.id && r.tilesetId === want.id && sameGrid(r.to, have) && sameGrid(r.from, want))) {
     store.undo();
-    if (matches()) return 0;
+    if (matches()) return out;
     store.redo();
   }
-  if (store.canRedo) {
+  const next = store.peekRedo();
+  if (next && records.some((r) => r.entryId === next.id && r.tilesetId === want.id && sameGrid(r.from, have) && sameGrid(r.to, want))) {
     store.redo();
-    if (matches()) return 0;
+    if (matches()) return out;
     store.undo();
   }
-  const have = store.document.getTileset(want.id)!;
+  // Unrecorded history (the level made the edit itself before records existed): try its top steps.
+  if (store.canUndo && !records.some((r) => r.entryId === store.peekUndo()?.id)) {
+    store.undo();
+    if (matches()) return out;
+    store.redo();
+  }
+  if (store.canRedo && !records.some((r) => r.entryId === store.peekRedo()?.id)) {
+    store.redo();
+    if (matches()) return out;
+    store.undo();
+  }
+
+  // 2. / 3. One undo step: the core op, then the exact cells of the change it reverts.
+  const revert = [...records].reverse().find((r) => r.tilesetId === want.id && sameGrid(r.to, have) && sameGrid(r.from, want));
+  const doc = store.document;
+  const back: RegridCell[] = [];
+  if (revert) {
+    for (const cell of revert.cells) {
+      const layer = doc.getLayer(cell.layerId);
+      if (isTileLayer(layer) && doc.inBounds(cell.x, cell.y) && layer.getCell(cell.x, cell.y) === cell.after) back.push(cell);
+      else out.kept++;
+    }
+  }
   const extent = tilesetImageExtent(want);
-  const result =
-    regridMode(have, want) === "image"
-      ? store.dispatch({ type: "replaceTilesetImage", tilesetId: want.id, imageWidth: extent.width, imageHeight: extent.height })
-      : store.dispatch({
-          type: "updateTilesetGrid",
-          tilesetId: want.id,
-          tileWidth: want.tileWidth,
-          tileHeight: want.tileHeight,
-          margin: want.margin,
-          spacing: want.spacing,
-          imageWidth: extent.width,
-          imageHeight: extent.height,
-        });
-  return result.clearedCells;
+  store.beginTransaction();
+  try {
+    const result =
+      regridMode(have, want) === "image"
+        ? store.dispatch({ type: "replaceTilesetImage", tilesetId: want.id, imageWidth: extent.width, imageHeight: extent.height })
+        : store.dispatch({
+            type: "updateTilesetGrid",
+            tilesetId: want.id,
+            tileWidth: want.tileWidth,
+            tileHeight: want.tileHeight,
+            margin: want.margin,
+            spacing: want.spacing,
+            imageWidth: extent.width,
+            imageHeight: extent.height,
+          });
+    out.cleared = result.clearedCells;
+    out.restored = restoreCells(store, back);
+    out.kept += back.length - out.restored;
+    matchMetadata(store, want);
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+  recordRegrid(store, want.id, have);
+  return out;
+}
+
+/** Writes each cell's `before` tile (layer by layer, unlocking a locked layer for the write); returns how many were written. */
+function restoreCells(store: MapStore, cells: readonly RegridCell[]): number {
+  if (cells.length === 0) return 0;
+  const doc = store.document;
+  const derived = new Set<string>();
+  for (const layer of doc.layers) if (isGridLayer(layer) && layer.targetLayerId) derived.add(layer.targetLayerId);
+  const byLayer = new Map<string, { x: number; y: number; cell: number }[]>();
+  let written = 0;
+  for (const c of cells) {
+    let value = 0;
+    if (c.before) {
+      const tileset = doc.getTileset(c.before.tilesetId);
+      if (!tileset || !isValidTileId(tileset, c.before.tileId)) continue;
+      value = makeCell(store.getOrAddPaletteIndex(c.before.tilesetId, c.before.tileId), c.before.flags);
+    }
+    // Derived layers are rebuilt from their terrain grid (matchMetadata re-derives); count them as restored.
+    if (derived.has(c.layerId)) {
+      written++;
+      continue;
+    }
+    let list = byLayer.get(c.layerId);
+    if (!list) byLayer.set(c.layerId, (list = []));
+    list.push({ x: c.x, y: c.y, cell: value });
+  }
+  for (const [layerId, list] of byLayer) {
+    const layer = doc.getLayer(layerId);
+    if (!isTileLayer(layer)) continue;
+    const locked = layer.locked;
+    if (locked) store.dispatch({ type: "setLayerProps", layerId, props: { locked: false } });
+    store.dispatch({ type: "paintCells", layerId, cells: list });
+    if (locked) store.dispatch({ type: "setLayerProps", layerId, props: { locked: true } });
+    written += list.length;
+  }
+  return written;
+}
+
+/**
+ * Solid flags and terrains of `store`'s copy of `want` set to `want`'s: a
+ * remap back by pixel position may lose some that the exact tileset (the
+ * active level's) still has. Keeps the levels' project data equal, so a
+ * level opened later does not have to be rebuilt.
+ */
+function matchMetadata(store: MapStore, want: Tileset): void {
+  const have = store.document.getTileset(want.id);
+  if (!have || !sameGrid(have, want)) return;
+  const haveSolid = new Set(have.solidTiles ?? []);
+  const wantSolid = new Set(want.solidTiles ?? []);
+  const add = [...wantSolid].filter((id) => !haveSolid.has(id) && isValidTileId(have, id));
+  const remove = [...haveSolid].filter((id) => !wantSolid.has(id));
+  if (add.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: add, solid: true });
+  if (remove.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: remove, solid: false });
+  const wantTerrains = want.terrains ?? [];
+  for (const terrain of have.terrains ?? []) {
+    if (!wantTerrains.some((t) => t.id === terrain.id)) store.dispatch({ type: "removeTerrain", terrainId: terrain.id });
+  }
+  for (const terrain of wantTerrains) {
+    const now = store.document.getTerrain(terrain.id);
+    if (now && JSON.stringify(now) === JSON.stringify(terrain)) continue;
+    try {
+      store.dispatch({ type: "defineTerrain", terrain });
+    } catch {
+      // A terrain that does not fit this level's copy: the level is rebuilt from its text when opened (withProjectData).
+    }
+  }
 }
