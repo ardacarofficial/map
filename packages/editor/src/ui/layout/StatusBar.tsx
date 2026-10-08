@@ -82,7 +82,7 @@ export function StatusBar() {
 
   if (world) {
     return (
-      <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
+      <footer aria-label={t("layout.statusBar")} className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
         <div data-status-world="" className="flex items-center px-2.5 whitespace-pre">
           <span className="text-accent">{t("world.status")}</span>
           <span className="text-faint">{" · "}</span>
@@ -101,7 +101,7 @@ export function StatusBar() {
   const sized = (tool === "brush" || tool === "eraser") && !isEntityLayer(layer);
   const pickable = (tool === "brush" || tool === "fill" || tool === "rect") && !!layer && !isEntityLayer(layer);
   return (
-    <footer className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
+    <footer aria-label={t("layout.statusBar")} className="flex h-statusbar items-center border-t border-line bg-panel px-1 text-xs [&>*+*]:border-l [&>*+*]:border-line-subtle">
       <div className="flex items-center gap-2 px-2.5 font-mono text-muted tabular" data-status-cell>
         <span>
           <span className="text-faint">X </span>

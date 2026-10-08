@@ -10,7 +10,7 @@ import { Icon } from "../primitives/Icon";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Tooltip } from "../primitives/Tooltip";
 import { stampThumbnail } from "../stamps/stampThumb";
-import { pickRecentStamp, pickRecentTile } from "./recentTiles";
+import { pickRecentStamp, pickRecentTile, recentStampLabel } from "./recentTiles";
 
 /** Height of a strip item (CSS px). */
 const ITEM = 26;
@@ -25,7 +25,7 @@ function usable(doc: MapDocument, item: RecentItem): boolean {
 /**
  * Slim strip under the canvas: the most recently used tiles and multi-tile
  * stamps (newest left). Click one to paint with it again; hover for its
- * tileset · id (or the stamp's name and size). Empty: a quiet one-line hint.
+ * tileset · id (or the stamp's name, or its anchor tileset · size @ id). Empty: a quiet one-line hint.
  */
 export function RecentTilesStrip() {
   const recent = useEditorStore((s) => s.recentTiles);
@@ -56,11 +56,7 @@ export function RecentTilesStrip() {
           {items.map((item) => {
             if (isRecentStamp(item)) {
               const on = stamp === item.stamp;
-              const name = (item.stamp as { name?: unknown }).name;
-              const label =
-                typeof name === "string"
-                  ? t("recent.savedStamp", { name, width: item.stamp.width, height: item.stamp.height })
-                  : t("recent.stamp", { width: item.stamp.width, height: item.stamp.height });
+              const label = recentStampLabel(doc, item.stamp);
               return (
                 <Item key={recentKey(item)} label={label} on={on} data={`stamp:${item.key}`} onClick={() => pickRecentStamp(item.stamp)}>
                   <StampMini doc={doc!} clip={item.stamp} />

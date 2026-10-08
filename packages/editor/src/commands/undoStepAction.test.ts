@@ -90,4 +90,40 @@ describe("undoStepAction (toast 'Geri al' for one step)", () => {
     action.run(); // now the removal is on top again
     expect(store.document.getLayer(layer)).toBeDefined();
   });
+
+  it("is spent once its step is undone some other way (Ctrl+Z), not when a later step covers it", () => {
+    store.dispatch({ type: "addLayer", layer: { name: "Üst" } });
+    const action = undoStepAction(store);
+    expect(action.spent!()).toBe(false);
+    paint(5);
+    expect(action.spent!()).toBe(false);
+    store.undo(); // the paint
+    expect(action.spent!()).toBe(false);
+    store.undo(); // the step itself
+    expect(action.spent!()).toBe(true);
+    expect(action.enabled!()).toBe(false);
+  });
+
+  it("is spent once another document is open", () => {
+    store.dispatch({ type: "addLayer", layer: { name: "Üst" } });
+    const action = undoStepAction(store);
+    useEditorStore.getState().setProject({ name: "y", store: new MapStore(createDocument({ width: 4, height: 4 })), levelPath: "levels/main.json" });
+    expect(action.spent!()).toBe(true);
+  });
+
+  it("the toast goes away when its step is undone elsewhere, and stays while a later step only covers it", () => {
+    const layer = store.dispatch({ type: "addLayer", layer: { name: "Üst" } });
+    expect(removeLayer(layer)).toBe(true);
+    const toastId = useToastStore.getState().toasts.at(-1)!.id;
+    const shown = () => useToastStore.getState().toasts.some((t) => t.id === toastId);
+    paint(5);
+    expect(shown()).toBe(true);
+    store.undo(); // the paint
+    expect(shown()).toBe(true);
+    store.undo(); // the removal (Ctrl+Z)
+    expect(store.document.getLayer(layer)).toBeDefined();
+    expect(shown()).toBe(false);
+    store.redo(); // dismissed for good: no stale button comes back
+    expect(shown()).toBe(false);
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
+  compensateViewShift,
   MAX_ZOOM,
   MIN_ZOOM,
   ZOOM_STEPS,
@@ -225,5 +226,38 @@ describe("visibleCells", () => {
     expect(r).toEqual({ x0: 0, y0: 0, x1: 4, y1: 2 });
     const off = visibleCells({ x: 5000, y: 0, zoom: 1 }, 100, 50, 32, 32, 10, 10, 1);
     expect(off.x1).toBeLessThanOrEqual(off.x0);
+  });
+});
+
+describe("compensateViewShift (side column changed width)", () => {
+  it("keeps content where it was on screen", () => {
+    // Map edge far off to the left: pure compensation.
+    expect(compensateViewShift(-500, 127, -500)).toBe(-627);
+    // Column narrowed (or panels hidden): content stays, nothing to protect.
+    expect(compensateViewShift(40, -127, 40)).toBe(167);
+    // No map edge (world view).
+    expect(compensateViewShift(30, 127, null)).toBe(-97);
+  });
+
+  it("never hides a map edge that was in view", () => {
+    // Edge well inside: stable while it stays at least `pad` in.
+    expect(compensateViewShift(200, 127, 200, 16)).toBe(73);
+    // Edge would end up under the column: kept `pad` from the new edge.
+    expect(compensateViewShift(100, 127, 100, 16)).toBe(16);
+    // Edge was closer than `pad`: kept at the same distance.
+    expect(compensateViewShift(7, 127, 7, 16)).toBe(7);
+    // Edge just outside the view (the user works at the map's start): keeps its distance too.
+    expect(compensateViewShift(-8, 127, -8, 16, 64)).toBe(-8);
+    expect(compensateViewShift(-80, 127, -80, 16, 64)).toBe(-207);
+  });
+
+  it("a map edge in or near the view never gets hidden further (property)", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: -64, max: 2000 }), fc.integer({ min: 1, max: 600 }), (x, shift) => {
+        const next = compensateViewShift(x, shift, x, 16, 64);
+        expect(next).toBeGreaterThanOrEqual(Math.min(0, x));
+        expect(next).toBeLessThanOrEqual(x);
+      }),
+    );
   });
 });

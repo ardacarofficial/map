@@ -6,7 +6,9 @@
  * undo depth: at the history limit the depth stays the same while old steps
  * fall off, so a depth check could undo the wrong step. The button undoes
  * only while that step is still on top of the store that is still open;
- * otherwise it does nothing and shows as disabled.
+ * otherwise it does nothing and shows as disabled. Once the step itself has
+ * been undone (Ctrl+Z, menu) or its document is closed, the action is spent
+ * and the toast goes away instead of offering a stale button.
  */
 import type { MapStore } from "@smap/core";
 
@@ -27,9 +29,12 @@ export function undoStepAction(
 ): ToastAction {
   const id = store.peekUndo()?.id;
   const enabled = (): boolean => id !== undefined && isOpen() && store.canUndo && store.peekUndo()?.id === id;
+  // Undone elsewhere: the step now sits on the redo side; a closed document never comes back.
+  const spent = (): boolean => id === undefined || !isOpen() || store.peekRedo()?.id === id;
   return {
     label: t("common.undo"),
     enabled,
+    spent,
     watch: (onChange) => {
       const offStore = store.subscribe((event) => {
         if (event.historyChanged) onChange();

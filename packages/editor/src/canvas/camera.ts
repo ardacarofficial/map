@@ -248,3 +248,20 @@ export function visibleCells(
     y1: Math.min(mapH, Math.ceil(b.y / tileH)),
   };
 }
+
+/**
+ * Camera x after the view's left edge moved right by `shift` CSS px (a side
+ * column widened; negative = it narrowed): the content keeps its place on
+ * screen (`x - shift` in the new view's coordinates). Exception: when the
+ * content's left edge (`contentLeft`, view px; null = no such edge) was in
+ * view or just outside it (within `near` px), it keeps its distance to the
+ * view edge (at most `pad` px in), so a widening column never hides the
+ * start of the map the user is working at.
+ */
+export function compensateViewShift(x: number, shift: number, contentLeft: number | null, pad = 16, near = 64): number {
+  const stable = x - shift;
+  if (!(shift > 0) || contentLeft === null || contentLeft < -near) return stable;
+  const edge = contentLeft - shift;
+  const keep = Math.min(contentLeft, pad);
+  return edge >= keep ? stable : stable + (keep - edge);
+}

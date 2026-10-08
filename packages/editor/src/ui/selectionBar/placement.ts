@@ -36,10 +36,18 @@ export interface BarPlacement {
   readonly x: number;
   readonly y: number;
   readonly side: BarSide;
+  /** Present (true) when the compact (icon-only) bar is used, see {@link placeSelectionBarFitted}. */
+  readonly compact?: true;
 }
 
 /** Space between the selection and the bar. */
-export const BAR_GAP = 8;
+export const BAR_GAP = 6;
+/**
+ * How far (px) the full bar may slide off-centre (pushed by the view edge or
+ * the minimap) before the compact bar is tried, so the bar stays next to
+ * the selection instead of reaching over unrelated tiles.
+ */
+export const COMPACT_SHIFT = 24;
 /** Minimum distance between the bar and the canvas edge. */
 export const BAR_MARGIN = 8;
 
@@ -110,4 +118,39 @@ function placeAroundSelection(sel: Rect | null, bar: Size, view: Size, gap: numb
   const roomBelow = view.height - (sel.y + sel.height);
   const roomAbove = sel.y;
   return { x, y: Math.round(roomBelow >= roomAbove ? maxY : margin), side: "overlap" };
+}
+
+/** Horizontal distance between the bar's centre and the visible selection's centre. */
+export function barShift(p: BarPlacement, sel: Rect | null, bar: Size, view: Size): number {
+  if (!sel) return 0;
+  const left = clamp(sel.x, 0, view.width);
+  const right = clamp(sel.x + sel.width, 0, view.width);
+  const center = left < right ? (left + right) / 2 : sel.x + sel.width / 2;
+  if (p.side === "right" || p.side === "left") return 0;
+  return Math.abs(p.x + bar.width / 2 - center);
+}
+
+/**
+ * Like {@link placeSelectionBar}, with a compact (icon-only) bar to fall back
+ * on: when the full bar has to slide more than {@link COMPACT_SHIFT} off the
+ * selection's centre and the compact one sits closer, the compact one is
+ * used (`compact: true`). The decision only depends on the two sizes, so it
+ * does not flip back and forth as the bar changes width.
+ */
+export function placeSelectionBarFitted(
+  sel: Rect | null,
+  full: Size,
+  compact: Size | null,
+  view: Size,
+  gap = BAR_GAP,
+  margin = BAR_MARGIN,
+  corner: Size | null = null,
+): BarPlacement {
+  const p = placeSelectionBar(sel, full, view, gap, margin, corner);
+  if (!compact || !sel || p.side === "fallback") return p;
+  const shift = barShift(p, sel, full, view);
+  if (shift <= COMPACT_SHIFT && p.side !== "overlap") return p;
+  const c = placeSelectionBar(sel, compact, view, gap, margin, corner);
+  const better = barShift(c, sel, compact, view) < shift || (p.side === "overlap" && c.side !== "overlap");
+  return better ? { ...c, compact: true } : p;
 }

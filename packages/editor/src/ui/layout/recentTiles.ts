@@ -1,4 +1,6 @@
-import type { TileClip } from "@smap/core";
+import { cellPaletteIndex, type MapDocument, type TileClip } from "@smap/core";
+
+import { t } from "../../i18n";
 
 import { useEditorStore, type TileSelection } from "../../state/editorStore";
 import { useUiStore } from "../uiStore";
@@ -33,4 +35,35 @@ export function pickRecentStamp(stamp: TileClip): boolean {
   editor.setRegion(null);
   editor.setTool("brush");
   return true;
+}
+
+/**
+ * The stamp's anchor tile: the first non-empty tile cell in row-major order
+ * (top-left first), searching the tile layers bottom to top. Null when the
+ * stamp holds no tiles (grid layers only).
+ */
+export function stampAnchorTile(clip: TileClip): { tilesetId: string; tileId: number } | null {
+  for (const layer of clip.layers) {
+    if (layer.grid) continue;
+    for (const cell of layer.cells) {
+      const index = cellPaletteIndex(cell);
+      const entry = index > 0 ? clip.palette[index - 1] : undefined;
+      if (entry) return entry;
+    }
+  }
+  return null;
+}
+
+/**
+ * Strip label for a recent stamp. Saved stamps use their name; ad-hoc ones
+ * name their anchor tile ("overworld-32 · 3×3 @ 12"), so two same-sized
+ * selections never read the same.
+ */
+export function recentStampLabel(doc: MapDocument | undefined, clip: TileClip & { name?: unknown }): string {
+  const size = { width: clip.width, height: clip.height };
+  if (typeof clip.name === "string") return t("recent.savedStamp", { name: clip.name, ...size });
+  const anchor = stampAnchorTile(clip);
+  const tileset = anchor ? doc?.getTileset(anchor.tilesetId) : undefined;
+  if (!anchor || !tileset) return t("recent.stamp", size);
+  return t("recent.stampFrom", { tileset: tileset.name, id: anchor.tileId, ...size });
 }

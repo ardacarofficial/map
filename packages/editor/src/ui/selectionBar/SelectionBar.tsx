@@ -10,13 +10,26 @@ import { useStructureVersion } from "../hooks";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import { fillBlocker } from "./fillCheck";
-import { BAR_GAP, BAR_MARGIN, placeSelectionBar, type BarPlacement } from "./placement";
+import { BAR_GAP, BAR_MARGIN, placeSelectionBarFitted, type BarPlacement, type Size } from "./placement";
 import { registerSelectionBarCommands, useSelectionBarPrefs } from "./selectionBarStore";
 
 registerSelectionBarCommands();
 
 function samePlacement(a: BarPlacement | null, b: BarPlacement): boolean {
-  return !!a && a.x === b.x && a.y === b.y && a.side === b.side;
+  return !!a && a.x === b.x && a.y === b.y && a.side === b.side && a.compact === b.compact;
+}
+
+/** Icon-only button width (`w-7`) and the label's padding (`px-2` + `gap-1.5` + icon) it saves. */
+const ICON_BUTTON = 28;
+
+/**
+ * Compact width guess before the compact bar was ever shown: the full bar
+ * minus what the text labels add (each labelled button becomes `w-7`).
+ */
+function estimateCompact(el: HTMLElement): Size {
+  let width = el.offsetWidth;
+  for (const button of el.querySelectorAll<HTMLElement>("[data-bar-labelled]")) width -= button.offsetWidth - ICON_BUTTON;
+  return { width, height: el.offsetHeight };
 }
 
 /**
@@ -24,7 +37,9 @@ function samePlacement(a: BarPlacement | null, b: BarPlacement): boolean {
  * Kopyala, Kes, Stamp olarak kaydet, Seçimi kaldır — each runs the existing
  * command (or the canvas' region fill). It sits below the selection, flips
  * above near the bottom edge, goes beside a very tall selection, never covers
- * the selection or (when it can move) the minimap, and follows pan / zoom. Esc clears the
+ * the selection or (when it can move) the minimap, and follows pan / zoom.
+ * When the view edge would push it far off the selection it turns icon-only
+ * so it stays right next to the selection. Esc clears the
  * selection and with it the bar; View → "Seçim çubuğu" hides it for good.
  * Mount inside the (relative) canvas container.
  */
@@ -41,6 +56,8 @@ function Bar({ region }: { region: CellRegion }) {
   const ref = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<BarPlacement | null>(null);
   const placementRef = useRef<BarPlacement | null>(null);
+  // Last measured size of each variant (the one not on screen is remembered or estimated).
+  const sizes = useRef<{ full: Size | null; compact: Size | null }>({ full: null, compact: null });
   const store = useEditorStore((s) => s.project?.store);
   useStructureVersion(store);
   // Re-render when the brush / layer changes (fill and command enablement).
@@ -61,9 +78,16 @@ function Bar({ region }: { region: CellRegion }) {
       if (!el || !view) return;
       const handle = getCanvasHandle();
       const sel = handle?.cellRectToScreen(region) ?? null;
-      const next = placeSelectionBar(
+      const measured = { width: el.offsetWidth, height: el.offsetHeight };
+      if (placementRef.current?.compact) sizes.current.compact = measured;
+      else {
+        sizes.current.full = measured;
+        sizes.current.compact = estimateCompact(el);
+      }
+      const next = placeSelectionBarFitted(
         sel,
-        { width: el.offsetWidth, height: el.offsetHeight },
+        sizes.current.full ?? measured,
+        sizes.current.compact,
         { width: view.clientWidth, height: view.clientHeight },
         BAR_GAP,
         BAR_MARGIN,
@@ -76,6 +100,13 @@ function Bar({ region }: { region: CellRegion }) {
     place();
     return () => cancelAnimationFrame(frame);
   }, [region]);
+  // A new size label (other region) changes both widths: measure the full bar again.
+  useEffect(() => {
+    sizes.current = { full: null, compact: null };
+    placementRef.current = null;
+    setPlacement(null);
+  }, [region.width, region.height]);
+  const compact = placement?.compact === true;
 
   const fill = () => {
     if (blocker) return;
@@ -88,6 +119,7 @@ function Bar({ region }: { region: CellRegion }) {
       role="toolbar"
       aria-label={t("selectionBar.label")}
       data-selection-bar={placement?.side ?? "measuring"}
+      data-compact={compact || undefined}
       // Keep keyboard focus on the canvas (Esc, Ctrl+C keep working after a click).
       onPointerDown={(e) => e.preventDefault()}
       style={{ transform: placement ? `translate(${placement.x}px, ${placement.y}px)` : undefined }}
@@ -95,16 +127,16 @@ function Bar({ region }: { region: CellRegion }) {
         placement ? "opacity-100" : "opacity-0"
       }`}
     >
-      <span className="px-1.5 font-mono text-2xs text-faint tabular" aria-label={t("selectionBar.size", { width: region.width, height: region.height })}>
+      <span data-selection-size className="px-1.5 font-mono text-2xs font-medium text-muted tabular" aria-label={t("selectionBar.size", { width: region.width, height: region.height })}>
         {formatNumber(region.width)}×{formatNumber(region.height)}
       </span>
       <Divider />
-      <BarButton icon="fill" label={t("selectionBar.fill")} onClick={fill} disabledReason={blocker ? t(blocker) : null} primary />
-      <CommandButton command="edit.delete" icon="trash" label={t("selectionBar.erase")} />
+      <BarButton icon="fill" label={t("selectionBar.fill")} onClick={fill} disabledReason={blocker ? t(blocker) : null} primary iconOnly={compact} />
+      <CommandButton command="edit.delete" icon="trash" label={t("selectionBar.erase")} iconOnly={compact} />
       <Divider />
-      <CommandButton command="edit.copy" icon="copy" label={t("selectionBar.copy")} />
-      <CommandButton command="edit.cut" glyph={<ScissorsGlyph />} label={t("selectionBar.cut")} />
-      <CommandButton command="stamp.saveSelection" icon="stamp" label={t("selectionBar.saveStamp")} />
+      <CommandButton command="edit.copy" icon="copy" label={t("selectionBar.copy")} iconOnly={compact} />
+      <CommandButton command="edit.cut" glyph={<ScissorsGlyph />} label={t("selectionBar.cut")} iconOnly={compact} />
+      <CommandButton command="stamp.saveSelection" icon="stamp" label={t("selectionBar.saveStamp")} iconOnly={compact} />
       <Divider />
       <CommandButton command="edit.deselect" icon="x" label={t("selectionBar.deselect")} iconOnly />
     </div>
@@ -171,6 +203,7 @@ function BarButton({
         aria-label={label}
         aria-disabled={disabled || undefined}
         data-action={command ?? "fill"}
+        data-bar-labelled={iconOnly ? undefined : ""}
         onClick={() => {
           if (!disabled) onClick();
         }}

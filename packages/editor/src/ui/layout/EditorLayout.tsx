@@ -70,7 +70,7 @@ export function EditorLayout() {
           <ResizeHandle column="library" edge="right" width={widths.library} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="relative min-h-0 min-w-0 flex-1">
+          <main aria-label={t("layout.canvas")} className="relative min-h-0 min-w-0 flex-1">
             <CanvasHost />
             <SelectionBar />
             <UndoHud />
@@ -81,6 +81,7 @@ export function EditorLayout() {
           </div>
         </div>
         <aside
+          aria-label={t("layout.inspector")}
           style={{ width: widths.right }}
           className={`relative shrink-0 flex-col border-l border-line bg-panel ${showRight ? "flex" : "hidden"}`}
         >

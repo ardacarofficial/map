@@ -22,7 +22,7 @@ export function AppBar() {
   const saveLabel = dirty ? t("toolbar.unsaved") : t("toolbar.saved");
 
   return (
-    <header className="grid h-toolbar grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-line bg-panel pr-2 pl-1">
+    <header aria-label={t("layout.appBar")} className="grid h-toolbar grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-line bg-panel pr-2 pl-1">
       <div className="flex min-w-0 items-center gap-1">
         <div className="grid size-8 shrink-0 place-items-center text-accent">
           <Icon name="logo" size={18} />

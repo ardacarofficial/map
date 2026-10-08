@@ -243,6 +243,11 @@ export const tr = {
   },
   layout: {
     library: "Kütüphane",
+    appBar: "Uygulama çubuğu",
+    toolRail: "Araçlar",
+    canvas: "Tuval",
+    inspector: "Denetçi",
+    statusBar: "Durum çubuğu",
     resize: "Sütun genişliği",
     resizeHint: "Sürükle: genişlik · çift tık: varsayılana dön",
     showLibrary: "Kütüphaneyi göster",
@@ -259,6 +264,7 @@ export const tr = {
     empty: "Boyadığın tile ve stamp'ler burada görünür",
     tile: "{tileset} · {id}",
     stamp: "Stamp · {width}×{height}",
+    stampFrom: "{tileset} · {width}×{height} @ {id}",
     savedStamp: "{name} · {width}×{height}",
   },
   palette: {

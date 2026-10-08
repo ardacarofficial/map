@@ -258,6 +258,8 @@ export class MapCanvas {
   #prebuildPending = false;
   #lastFrameTime = 0;
   #ro: ResizeObserver | null = null;
+  /** Screen x of the canvas' left edge at the last resize (null before the first). */
+  #viewLeft: number | null = null;
   #reportedZoom = NaN;
   #unsubs: (() => void)[] = [];
 
@@ -379,6 +381,7 @@ export class MapCanvas {
     this.#container.appendChild(this.#canvas);
     this.#colors = readThemeColors(this.#container);
     const rect = this.#canvas.getBoundingClientRect();
+    this.#viewLeft = rect.left;
     const cam = this.#camera;
     cam.resolution = window.devicePixelRatio || 1;
     cam.viewW = Math.max(1, rect.width);
@@ -821,6 +824,12 @@ export class MapCanvas {
     this.#app.renderer.resize(viewW, viewH, resolution);
     this.#input.invalidateRect();
     this.#camera.resize(viewW, viewH, resolution);
+    // A side column changed width (e.g. the library auto-widening for a wide
+    // tileset): the canvas' left edge moved, so pan by the same amount to keep
+    // the map where it was on screen (its left edge stays in view if it was).
+    const left = this.#canvas.getBoundingClientRect().left;
+    if (this.#viewLeft !== null) this.#camera.shiftView(left - this.#viewLeft, this.#view === "level");
+    this.#viewLeft = left;
     this.#requestRender();
   }
 

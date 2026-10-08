@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { BAR_GAP, BAR_MARGIN, placeSelectionBar, type Rect } from "./placement";
+import { BAR_GAP, BAR_MARGIN, barShift, COMPACT_SHIFT, placeSelectionBar, placeSelectionBarFitted, type Rect } from "./placement";
 
 const bar = { width: 200, height: 36 };
 const view = { width: 800, height: 600 };
@@ -102,6 +102,47 @@ describe("placeSelectionBar", () => {
           expect(overlaps(barRect(p), sel)).toBe(false);
         },
       ),
+    );
+  });
+
+  it("turns compact near the view edge so the bar stays next to the selection", () => {
+    const full = { width: 520, height: 36 };
+    const compact = { width: 260, height: 36 };
+    const sel = { x: 640, y: 60, width: 44, height: 33 };
+    const wide = placeSelectionBar(sel, full, view);
+    expect(barShift(wide, sel, full, view)).toBeGreaterThan(COMPACT_SHIFT);
+    const p = placeSelectionBarFitted(sel, full, compact, view);
+    expect(p.compact).toBe(true);
+    expect(p.side).toBe("below");
+    expect(p.y).toBe(sel.y + sel.height + BAR_GAP);
+    expect(barShift(p, sel, compact, view)).toBeLessThan(barShift(wide, sel, full, view));
+    // The compact bar still spans the selection horizontally (adjacent, not off to the side).
+    expect(p.x).toBeLessThanOrEqual(sel.x);
+    expect(p.x + compact.width).toBeGreaterThanOrEqual(sel.x + sel.width);
+  });
+
+  it("keeps the full bar when it fits centred", () => {
+    const full = { width: 520, height: 36 };
+    const sel = { x: 380, y: 60, width: 40, height: 30 };
+    expect(placeSelectionBarFitted(sel, full, { width: 260, height: 36 }, view)).toEqual(placeSelectionBar(sel, full, view));
+  });
+
+  it("the fitted bar is always adjacent: a small gap from the selection, never on it while there is room", () => {
+    const full = { width: 520, height: 36 };
+    const compact = { width: 260, height: 36 };
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 760 }), fc.integer({ min: 0, max: 560 }), fc.integer({ min: 4, max: 200 }), fc.integer({ min: 4, max: 200 }), (x, y, w, h) => {
+        const sel = { x, y, width: Math.min(w, view.width - x), height: Math.min(h, view.height - y) };
+        const p = placeSelectionBarFitted(sel, full, compact, view);
+        const size = p.compact ? compact : full;
+        const r = { x: p.x, y: p.y, width: size.width, height: size.height };
+        if (p.side === "overlap") return;
+        expect(overlaps(r, sel)).toBe(false);
+        // Distance between the two rects is the gap (they touch through it).
+        const dx = Math.max(0, sel.x - (r.x + r.width), r.x - (sel.x + sel.width));
+        const dy = Math.max(0, sel.y - (r.y + r.height), r.y - (sel.y + sel.height));
+        expect(Math.max(dx, dy)).toBeLessThanOrEqual(BAR_GAP);
+      }),
     );
   });
 });

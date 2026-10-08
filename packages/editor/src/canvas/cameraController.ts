@@ -9,6 +9,7 @@ import type { CellRegion } from "../state/editorStore";
 import {
   cameraAnchored,
   clampZoom,
+  compensateViewShift,
   easeZoom,
   frameCamera,
   MAX_ZOOM,
@@ -99,6 +100,23 @@ export class CameraController {
     this.viewH = viewH;
     if (this.#pendingFrameMap || this.#framed) this.frameMap();
     else if (resChanged) this.setZoom(this.zoomLevel, this.viewCenter());
+  }
+
+  /**
+   * The view's left edge moved right by `shift` CSS px on screen (a side
+   * column changed width): keep the content where it was on screen, but keep
+   * the map's left edge in view if it was (see {@link compensateViewShift}).
+   * A view that still follows "frame the map" re-frames on resize instead.
+   * `keepMapEdge` false (world view): no map edge to keep.
+   */
+  shiftView(shift: number, keepMapEdge = true): void {
+    if (shift === 0 || this.#pendingFrameMap || this.#framed) return;
+    const x = compensateViewShift(this.camera.x, shift, keepMapEdge ? this.camera.x : null);
+    const dx = x - this.camera.x;
+    if (dx === 0) return;
+    this.camera = { ...this.camera, x };
+    if (this.#anim) this.#anim = { ...this.#anim, anchorScreen: { x: this.#anim.anchorScreen.x + dx, y: this.#anim.anchorScreen.y } };
+    this.#requestRender();
   }
 
   /** Frames the map as soon as the view has a size (new project). */

@@ -238,29 +238,38 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
   }
 
   const editTarget = chosen && custom.some((ty) => ty.id === chosen) ? chosen : null;
+  const empty = custom.length === 0;
   return (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        data-new-entity-type-button
-        onClick={start}
-        className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-dashed pr-2 pl-1.5 text-sm transition-colors ${
-          custom.length === 0 ? "border-line-strong text-muted hover:border-accent-line hover:text-text" : "border-line text-faint hover:border-line-strong hover:text-text"
-        }`}
-      >
-        <span aria-hidden className="grid size-[18px] shrink-0 place-items-center">
-          <Icon name="plus" size={14} />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left">{t("entities.newType")}</span>
-        {custom.length === 0 && <span className="shrink-0 truncate text-2xs text-faint">{t("entities.noCustom")}</span>}
-      </button>
-      <button
-        type="button"
-        onClick={() => useUiStore.getState().setEntityTypesOpen(true, false, editTarget)}
-        className="h-8 shrink-0 rounded-md px-2 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
-      >
-        {t("entities.editType")}
-      </button>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          data-new-entity-type-button
+          aria-describedby={empty ? "entity-no-custom-hint" : undefined}
+          onClick={start}
+          className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-dashed pr-2 pl-1.5 text-sm transition-colors ${
+            empty ? "border-line-strong text-muted hover:border-accent-line hover:text-text" : "border-line text-faint hover:border-line-strong hover:text-text"
+          }`}
+        >
+          <span aria-hidden className="grid size-[18px] shrink-0 place-items-center">
+            <Icon name="plus" size={14} />
+          </span>
+          {/* The label never truncates; the empty-state hint gets its own wrapping line below. */}
+          <span className="flex-1 text-left whitespace-nowrap">{t("entities.newType")}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => useUiStore.getState().setEntityTypesOpen(true, false, editTarget)}
+          className="h-8 shrink-0 rounded-md px-2 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+        >
+          {t("entities.editType")}
+        </button>
+      </div>
+      {empty && (
+        <p id="entity-no-custom-hint" className="px-1.5 text-2xs text-faint">
+          {t("entities.noCustom")}
+        </p>
+      )}
     </div>
   );
 }

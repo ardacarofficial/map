@@ -26,7 +26,7 @@ export function ToolRail() {
   const libraryLabel = libraryCollapsed ? t("layout.showLibrary") : t("layout.hideLibrary");
   return (
     <nav
-      aria-label={t("status.tool")}
+      aria-label={t("layout.toolRail")}
       title={world ? t("world.toolsDisabled") : undefined}
       className="flex w-rail shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2"
     >

@@ -240,6 +240,11 @@ export const en: Messages = {
   },
   layout: {
     library: "Library",
+    appBar: "App bar",
+    toolRail: "Tools",
+    canvas: "Canvas",
+    inspector: "Inspector",
+    statusBar: "Status bar",
     resize: "Column width",
     resizeHint: "Drag: width · double-click: default",
     showLibrary: "Show library",
@@ -256,6 +261,7 @@ export const en: Messages = {
     empty: "Tiles and stamps you paint with show up here",
     tile: "{tileset} · {id}",
     stamp: "Stamp · {width}×{height}",
+    stampFrom: "{tileset} · {width}×{height} @ {id}",
     savedStamp: "{name} · {width}×{height}",
   },
   palette: {

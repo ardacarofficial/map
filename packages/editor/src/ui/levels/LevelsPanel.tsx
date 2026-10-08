@@ -70,6 +70,7 @@ export function LevelsPanel() {
   const [settling, setSettling] = useState(false);
   const dragRef = useRef<Drag | null>(null);
   const dirty = new Set(dirtyIds);
+  const activeName = levels.find((level) => level.id === activeId)?.name ?? null;
 
   useEffect(() => {
     if (!settling) return;
@@ -134,11 +135,23 @@ export function LevelsPanel() {
           onClick={toggle}
           aria-expanded={!collapsed}
           aria-label={collapsed ? t("levels.expand") : t("levels.collapse")}
-          className="-ml-1 flex h-6 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-wide text-muted hover:bg-hover hover:text-text"
+          title={collapsed && activeName !== null ? activeName : undefined}
+          className="-ml-1 flex h-6 min-w-0 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-wide text-muted hover:bg-hover hover:text-text"
         >
-          <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={13} className="text-faint" />
-          {t("levels.title")}
-          <span className="font-mono font-normal text-faint tabular">{count}</span>
+          <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={13} className="shrink-0 text-faint" />
+          <span className="shrink-0">{t("levels.title")}</span>
+          <span className="shrink-0 font-mono font-normal text-faint tabular">{count}</span>
+          {collapsed && activeName !== null && (
+            // Folded list: still say which level is open ("Level'lar 1 · Ana harita").
+            <>
+              <span aria-hidden className="shrink-0 font-normal text-faint">
+                ·
+              </span>
+              <span data-levels-active-name="" className="min-w-0 truncate font-normal tracking-normal text-text">
+                {activeName}
+              </span>
+            </>
+          )}
         </button>
       }
       actions={
