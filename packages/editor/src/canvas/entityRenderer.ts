@@ -8,7 +8,8 @@
  * What each entity looks like (colour, label, link status) is resolved once
  * per change — store "entities" / "entityTypes" / "layers" events (undo /
  * redo included) and level list changes — and cached; frames only lay the
- * cached items out. Label `Text` objects are pooled per label string.
+ * cached items out. Label `Text` objects are pooled per label string and
+ * colour (a broken link's label is red).
  */
 import {
   isEntityLayer,
@@ -54,6 +55,19 @@ const LABEL_STYLE = new TextStyle({
   fill: 0xffffff,
   stroke: { color: 0x000000, width: 3, join: "round" },
 });
+
+/** Label styles by fill colour (white, or the danger colour of a broken link). */
+const labelStyles = new Map<number, TextStyle>([[0xffffff, LABEL_STYLE]]);
+
+function labelStyle(fill: number): TextStyle {
+  let style = labelStyles.get(fill);
+  if (!style) {
+    style = LABEL_STYLE.clone();
+    style.fill = fill;
+    labelStyles.set(fill, style);
+  }
+  return style;
+}
 
 export class EntityRenderer {
   /** Screen-space root; add above the world container. */
@@ -172,18 +186,20 @@ export class EntityRenderer {
       }
     }
 
-    // Hover and selection marks (above every layer).
+    // Hover and selection marks (above every layer). A broken link keeps its
+    // red in every state: its marks are drawn in the danger colour.
     const m = this.#marks;
     for (const p of placed) {
       const id = p.item.entity.id;
+      const broken = p.item.look.broken;
       if (id === selectedId) {
         outline(m, p.x0 - 2 * k, p.y0 - 2 * k, p.x1 + 2 * k, p.y1 + 2 * k, k, px);
         m.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.55 });
         outline(m, p.x0 - k, p.y0 - k, p.x1 + k, p.y1 + k, 2 * k, px);
-        m.fill(colors.accent);
+        m.fill(broken ? p.item.look.color : colors.accent);
       } else if (id === hoverId) {
         outline(m, p.x0 - k, p.y0 - k, p.x1 + k, p.y1 + k, k, px);
-        m.fill({ color: 0xffffff, alpha: 0.85 });
+        m.fill(broken ? { color: p.item.look.color, alpha: 1 } : { color: 0xffffff, alpha: 0.85 });
       }
     }
 
@@ -193,9 +209,11 @@ export class EntityRenderer {
     for (const p of placed) {
       const label = p.item.look.label;
       if (!label) continue;
-      const n = used.get(label) ?? 0;
-      used.set(label, n + 1);
-      const t = this.#label(label, n, res);
+      const fill = p.item.look.broken ? p.item.look.color : 0xffffff;
+      const key = `${fill}|${label}`;
+      const n = used.get(key) ?? 0;
+      used.set(key, n + 1);
+      const t = this.#label(label, fill, n, res);
       t.visible = true;
       t.alpha = p.alpha;
       t.position.set(((p.x0 + p.x1) / 2) * px, (p.y1 + 2 * k) * px);
@@ -255,12 +273,13 @@ export class EntityRenderer {
     return g;
   }
 
-  #label(text: string, n: number, resolution: number): Text {
-    let list = this.#pool.get(text);
-    if (!list) this.#pool.set(text, (list = []));
+  #label(text: string, fill: number, n: number, resolution: number): Text {
+    const key = `${fill}|${text}`;
+    let list = this.#pool.get(key);
+    if (!list) this.#pool.set(key, (list = []));
     let t = list[n];
     if (!t) {
-      t = new Text({ text, style: LABEL_STYLE, resolution });
+      t = new Text({ text, style: labelStyle(fill), resolution });
       t.anchor.set(0.5, 0);
       list.push(t);
       this.#labels.addChild(t);
@@ -287,8 +306,8 @@ function drawEntity(g: Graphics, look: EntityLook, x0: number, y0: number, x1: n
   const line = w >= 20 * k && h >= 20 * k ? 2 * k : k;
   // Dark halo outside keeps the box readable on any tile.
   g.roundRect(bx, by, bw, bh, radius).stroke({ color: CANVAS_COLORS.cursorShadow, width: k * px, alpha: 0.45, alignment: 0 });
-  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.55 : 0.42 });
-  if (look.broken) dashed(g, x0 + inset, y0 + inset, x1 - inset, y1 - inset, line, px, look.color);
+  g.roundRect(bx, by, bw, bh, radius).fill({ color: look.color, alpha: look.broken ? 0.7 : 0.42 });
+  if (look.broken) dashed(g, x0 + inset, y0 + inset, x1 - inset, y1 - inset, Math.max(line, 2 * k), px, look.color);
   else g.roundRect(bx, by, bw, bh, radius).stroke({ color: look.color, width: line * px, alignment: 1 });
 
   const cx = (x0 + x1) / 2;
