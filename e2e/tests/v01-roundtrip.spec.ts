@@ -1,4 +1,4 @@
-import { dropFile, expect, pixelDiffRatio, readOpfsText, sampleBytes, test } from "../support/fixtures";
+import { dropFile, expect, pixelDiffRatio, readOpfsText, sampleBytes, test, confirmTilesetCard } from "../support/fixtures";
 
 // CLAUDE.md v0.1 "Bitti": tileset dropped, map drawn, saved, program closed and
 // reopened -> the same map comes back.
@@ -11,6 +11,7 @@ test("v0.1: drop tileset, draw, save, reload, open -> same map", async ({ page }
 
   // Drop the tileset on the welcome drop zone.
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
 
   const canvas = page.locator("canvas[aria-label='map canvas']").first(); // main canvas (the tileset preview shares the label)
   await expect(canvas).toBeVisible();

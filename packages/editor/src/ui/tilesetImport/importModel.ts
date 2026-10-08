@@ -132,6 +132,8 @@ export interface GridSummary {
   count: number;
   /** Fully transparent tiles (0 when the alpha channel is unknown). */
   empty: number;
+  /** Their ids. */
+  emptyIds: ReadonlySet<number>;
   /** Pixels on the right / bottom that no tile uses. */
   leftoverX: number;
   leftoverY: number;
@@ -147,12 +149,13 @@ export function summarize(spec: TileGridSpec, image: CardImageInfo): GridSummary
   if (columns < 1 || rows < 1) return null;
   const leftoverX = width - 2 * spec.margin - columns * spec.tileWidth - (columns - 1) * spec.spacing;
   const leftoverY = height - 2 * spec.margin - rows * spec.tileHeight - (rows - 1) * spec.spacing;
-  const empty = image.alpha ? emptyTileIds({ ...spec, columns, rows }, { width, height, alpha: image.alpha }).size : 0;
+  const emptyIds = image.alpha ? emptyTileIds({ ...spec, columns, rows }, { width, height, alpha: image.alpha }) : new Set<number>();
   return {
     columns,
     rows,
     count: columns * rows,
-    empty,
+    empty: emptyIds.size,
+    emptyIds,
     leftoverX,
     leftoverY,
     fix: leftoverX > 0 || leftoverY > 0 ? leftoverFix(spec, width, height) : null,
@@ -163,26 +166,27 @@ export function summarize(spec: TileGridSpec, image: CardImageInfo): GridSummary
 const FIX_MAX = 8;
 
 /**
- * Margin and spacing (same tile size) that slice the image with no pixels
- * left over and at least as many tiles in each direction as one tile needs;
- * the smallest total gap wins (spacing before margin on ties). `null` when
- * none up to 8 px works.
+ * Margin and spacing (same tile size, same number of columns and rows)
+ * that slice the image with no pixels left over: the leftover is explained
+ * by gaps the current settings miss. The smallest total gap wins (spacing
+ * before margin on ties). `null` when none up to 8 px works.
  */
 export function leftoverFix(spec: TileGridSpec, width: number, height: number): TileGridSpec | null {
-  let best: TileGridSpec | null = null;
-  for (let total = 0; total <= 2 * FIX_MAX && !best; total++) {
-    for (let spacing = Math.min(total, FIX_MAX); spacing >= 0 && !best; spacing--) {
+  const columns = gridCount(width, spec.tileWidth, spec.margin, spec.spacing);
+  const rows = gridCount(height, spec.tileHeight, spec.margin, spec.spacing);
+  if (columns < 1 || rows < 1) return null;
+  const fits = (size: number, tile: number, n: number, margin: number, spacing: number) =>
+    2 * margin + n * tile + (n - 1) * spacing === size;
+  for (let total = 0; total <= 2 * FIX_MAX; total++) {
+    for (let spacing = Math.min(total, FIX_MAX); spacing >= 0; spacing--) {
       const margin = total - spacing;
-      if (margin > FIX_MAX) continue;
-      if (margin === spec.margin && spacing === spec.spacing) continue;
-      const fits = (size: number, tile: number) => {
-        const n = gridCount(size, tile, margin, spacing);
-        return n >= 1 && size - 2 * margin - n * tile - (n - 1) * spacing === 0;
-      };
-      if (fits(width, spec.tileWidth) && fits(height, spec.tileHeight)) best = { ...spec, margin, spacing };
+      if (margin > FIX_MAX || (margin === spec.margin && spacing === spec.spacing)) continue;
+      if (fits(width, spec.tileWidth, columns, margin, spacing) && fits(height, spec.tileHeight, rows, margin, spacing)) {
+        return { ...spec, margin, spacing };
+      }
     }
   }
-  return best;
+  return null;
 }
 
 const REASON_KEYS: Record<TileGridReason, MessageKey> = {
@@ -208,13 +212,21 @@ export interface SuggestionChip {
   reason: string;
 }
 
+/** Reasons worth naming on a chip first ("dosya adından" says more than "tam bölünüyor"). */
+const REASON_ORDER: readonly TileGridReason[] = ["fileName", "gutters", "hint", "seams", "divisible", "common"];
+
+/** The most telling reason of a suggestion. */
+export function chipReason(s: Pick<TileGridSuggestion, "reason" | "reasons">): TileGridReason {
+  return REASON_ORDER.find((r) => s.reasons.includes(r)) ?? s.reason;
+}
+
 /** Up to `max` chips, best first (suggestions are already unique specs). */
 export function suggestionChips(suggestions: readonly TileGridSuggestion[], max = 4): SuggestionChip[] {
   return suggestions.slice(0, max).map((s) => ({
     key: `${s.tileWidth}x${s.tileHeight}+${s.margin}+${s.spacing}`,
     spec: { tileWidth: s.tileWidth, tileHeight: s.tileHeight, margin: s.margin, spacing: s.spacing },
     size: `${s.tileWidth}×${s.tileHeight}${s.margin || s.spacing ? ` · ${s.margin}/${s.spacing}` : ""}`,
-    reason: reasonLabel(s.reason),
+    reason: reasonLabel(chipReason(s)),
   }));
 }
 
@@ -302,7 +314,7 @@ export function pastedImage<F extends { readonly type: string; readonly name: st
   try {
     text = data.getData("text/plain");
   } catch {
-    text = "";
+    // Unreadable text: treat as no clip.
   }
   if (text.includes("smap-clip")) return null;
   const files = data.files ? Array.from(data.files) : [];

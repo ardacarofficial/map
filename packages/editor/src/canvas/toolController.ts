@@ -532,7 +532,18 @@ export class ToolController {
   }
 
   /** Fills `r` (modifiers already applied); a stamp repeats from the drag start `anchor`. */
-  #commitRect(r: CellRegion, anchor: CellPoint): void {
+  /**
+   * Fills `r` with the current brush (tile, stamp pattern, random set or
+   * grid value) as one undo step reported as "fill" — the selection bar's
+   * "Doldur". No-op when the active layer takes no paint.
+   */
+  fillRegion(r: CellRegion): void {
+    if (this.#gesture) return;
+    this.#commitRect(r, { x: r.x, y: r.y }, "fill");
+    this.#host.requestRender();
+  }
+
+  #commitRect(r: CellRegion, anchor: CellPoint, tool: StrokeTool = "rect"): void {
     const t = this.#editTarget();
     if (!t) return;
     const { store, layer } = t;
@@ -540,11 +551,11 @@ export class ToolController {
       const value = this.#gridValue(layer);
       if (value === null) return;
       const writes = gridRectWrites(r, value, (x, y) => layer.getCell(x, y));
-      if (writes.length > 0) this.#transact(store, "rect", () => this.#paintGrid(store, layer.id, writes));
+      if (writes.length > 0) this.#transact(store, tool, () => this.#paintGrid(store, layer.id, writes));
       return;
     }
     const single = this.#singleTile();
-    this.#transact(store, "rect", () => {
+    this.#transact(store, tool, () => {
       const at = this.#writePattern(store, anchor);
       if (!at) return 0;
       const cells: CellWrite[] = [];

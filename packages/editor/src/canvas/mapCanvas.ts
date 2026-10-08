@@ -134,6 +134,26 @@ export interface CanvasHandle {
    * undo toast. Returns an unsubscribe.
    */
   onStrokeCommitted(cb: (summary: StrokeSummary) => void): () => void;
+  /**
+   * Where cells (`region`) are on screen right now: CSS px relative to the
+   * canvas' top-left corner. `null` in the world view or without a map.
+   * Read it per frame (it follows pan / zoom, no event).
+   */
+  cellRectToScreen(region: { x: number; y: number; width: number; height: number }): ScreenRect | null;
+  /**
+   * Fills `region` on the active layer with the current brush (tile, stamp
+   * pattern, random set or terrain / collision value) as one undo step,
+   * reported by {@link onStrokeCommitted} as "fill". No-op mid-gesture.
+   */
+  fillRegion(region: { x: number; y: number; width: number; height: number }): void;
+}
+
+/** A rectangle in CSS pixels relative to the canvas' top-left corner. */
+export interface ScreenRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 function gridOverlayColors(c: CanvasColors): GridOverlayColors {
@@ -537,6 +557,18 @@ export class MapCanvas {
     onStrokeCommitted: (cb) => {
       this.#strokeListeners.add(cb);
       return () => this.#strokeListeners.delete(cb);
+    },
+    cellRectToScreen: (region) => {
+      const map = this.#map();
+      if (!map || this.#view !== "level" || this.#destroyed) return null;
+      const c = this.#camera.camera;
+      const tw = map.tileWidth * c.zoom;
+      const th = map.tileHeight * c.zoom;
+      return { x: c.x + region.x * tw, y: c.y + region.y * th, width: region.width * tw, height: region.height * th };
+    },
+    fillRegion: (region) => {
+      if (this.#view !== "level" || this.#destroyed) return;
+      this.#tools.fillRegion({ x: region.x, y: region.y, width: region.width, height: region.height });
     },
   };
 

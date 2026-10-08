@@ -86,3 +86,11 @@ export async function pixelDiffRatio(page: Page, a: Buffer, b: Buffer): Promise<
     { a: [...a], b: [...b] },
   );
 }
+
+/** Confirms the tileset import card (opened by a tileset drop / paste) with its inferred settings. */
+export async function confirmTilesetCard(page: Page): Promise<void> {
+  const card = page.getByTestId("tileset-card");
+  await expect(card).toBeVisible();
+  await card.locator("button[type=submit]").click();
+  await expect(card).toBeHidden();
+}

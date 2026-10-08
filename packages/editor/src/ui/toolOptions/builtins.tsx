@@ -20,6 +20,13 @@ import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel, Segmented, StepButton, triggerClass } from "./parts";
 
 const isTerrainLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "terrain";
+/**
+ * The terrain picker also sits next to a tile layer once terrains exist:
+ * picking one there moves to (or creates) its terrain layer, with a toast
+ * and the layer row flashed (see `activateTerrain`).
+ */
+const showsTerrainPicker = (c: ToolOptionsContext) =>
+  isTerrainLayer(c) || (isTileLayer(c.layer) && !!c.doc && c.doc.tilesets.some((ts) => (ts.terrains?.length ?? 0) > 0));
 const isCollisionLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "collision";
 
 // ---- Brush size / shape
@@ -99,6 +106,10 @@ function BrushShape() {
 function TerrainPicker() {
   const store = useEditorStore((s) => s.project?.store);
   const value = useEditorStore((s) => s.gridValue);
+  const onTerrainLayer = useEditorStore((s) => {
+    const layer = s.activeLayerId ? s.project?.store.document.getLayer(s.activeLayerId) : undefined;
+    return isGridLayer(layer) && layer.role === "terrain";
+  });
   useStructureVersion(store);
   const doc = store?.document;
   if (!doc) return null;
@@ -111,7 +122,8 @@ function TerrainPicker() {
       </div>
     );
   }
-  const current = terrains.find((tr) => tr.id === value);
+  // On a tile layer nothing is "current": the trigger invites a pick.
+  const current = onTerrainLayer ? terrains.find((tr) => tr.id === value) : undefined;
   const swatch = (terrain: Terrain, size: number) => {
     const tileset = doc.getTileset(terrain.tilesetId);
     return tileset ? <TileSwatch tileset={tileset} tileId={terrainSwatchTile(tileset, terrain)} size={size} className="rounded-xs" /> : null;
@@ -142,7 +154,7 @@ function TerrainPicker() {
                     <Menu.Item key={terrain.id} className={`${menuItemClass} py-1 text-sm`} onClick={() => activateTerrain(terrain.id)}>
                       {swatch(terrain, 18)}
                       <span className="min-w-0 flex-1 truncate">{terrain.name}</span>
-                      {terrain.id === value && <Icon name="check" size={13} className="text-accent" />}
+                      {terrain.id === current?.id && <Icon name="check" size={13} className="text-accent" />}
                     </Menu.Item>
                   ))}
                 </Menu.Group>
@@ -224,7 +236,7 @@ export function registerBuiltinToolOptions(): void {
   const notEntity = (c: ToolOptionsContext) => !isEntityLayer(c.layer);
   registerToolOptions(["brush", "eraser"], BrushSize, { id: "builtin.brushSize", order: 10, when: notEntity });
   registerToolOptions(["brush", "eraser"], BrushShape, { id: "builtin.brushShape", order: 20, when: notEntity });
-  registerToolOptions(["brush", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: isTerrainLayer });
+  registerToolOptions(["brush", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
   registerToolOptions(["brush", "rect", "fill", "eraser"], CollisionKind, { id: "builtin.collision", order: 30, when: isCollisionLayer });
   registerToolOptions(["fill", "rect", "select", "eyedropper", "entity"], ToolHint, {
     id: "builtin.hint",

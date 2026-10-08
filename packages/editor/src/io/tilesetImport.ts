@@ -1,5 +1,5 @@
 /** Turning a dropped PNG file into core tileset metadata (pure helpers). */
-import { DEFAULT_TILE_SIZE, gridCount, type Tileset } from "@smap/core";
+import { DEFAULT_TILE_SIZE, gridCount, type TileGridSpec, type Tileset } from "@smap/core";
 
 const TURKISH: Record<string, string> = { ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u", İ: "i" };
 
@@ -92,5 +92,35 @@ export function planTileset(
       spacing: 0,
     },
     uneven: imageWidth % tileSize !== 0 || imageHeight % tileSize !== 0,
+  };
+}
+
+/**
+ * Tileset metadata for an image sliced with `spec` (tile size, margin,
+ * spacing). Returns `null` when not even one tile fits. Leftover pixels on
+ * the right / bottom are allowed (the import card shows them).
+ */
+export function planTilesetGrid(
+  name: string,
+  fileName: string,
+  imageWidth: number,
+  imageHeight: number,
+  spec: TileGridSpec,
+  takenIds: ReadonlySet<string>,
+): Tileset | null {
+  const columns = gridCount(imageWidth, spec.tileWidth, spec.margin, spec.spacing);
+  const rows = gridCount(imageHeight, spec.tileHeight, spec.margin, spec.spacing);
+  if (columns < 1 || rows < 1) return null;
+  const id = uniqueId(slugify(fileName), takenIds);
+  return {
+    id,
+    name: name.trim() || baseName(fileName),
+    imagePath: `tilesets/${id}.png`,
+    tileWidth: spec.tileWidth,
+    tileHeight: spec.tileHeight,
+    columns,
+    rows,
+    margin: spec.margin,
+    spacing: spec.spacing,
   };
 }

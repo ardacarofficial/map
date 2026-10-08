@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { dropFile, expect, readOpfsText, sampleBytes, test } from "../support/fixtures";
+import { dropFile, expect, readOpfsText, sampleBytes, test, confirmTilesetCard } from "../support/fixtures";
 
 // CLAUDE.md v1.0 (several levels, level list in a side panel) and v1.1
 // (portal: target level by id, double-click opens it at the target point).
@@ -35,6 +35,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
 
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
   const tileGrid = page.getByRole("grid", { name: /overworld/i });
   await expect(tileGrid).toBeVisible();
   const image = tileGrid.locator(".checker");

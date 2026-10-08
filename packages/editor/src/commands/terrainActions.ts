@@ -3,9 +3,10 @@
  * properties panels. Everything goes through core ops, so all are undoable.
  *
  * The user never writes rules: they mark a block as a terrain with a
- * standard template, then pick the terrain to paint. Picking a terrain makes
- * sure a terrain layer exists (reuses one, or creates the tile layer + its
- * terrain grid in one undo step and says so in a toast).
+ * standard template and can paint right away (defining activates it). Picking
+ * a terrain makes sure a terrain layer exists (reuses one, or creates the tile
+ * layer + its terrain grid in one undo step) and, when that moves the user to
+ * another layer, says so in a toast and flashes the layer row.
  */
 import {
   isGridLayer,
@@ -20,9 +21,11 @@ import {
   type TerrainTemplate,
   type Tileset,
   type TileLayer,
+  type LayerPropsPatch,
 } from "@smap/core";
 import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
+import { flashLayer } from "../ui/feedback/layerFlash";
 import { toast } from "../ui/toast/toastStore";
 
 function currentStore(): MapStore | null {
@@ -70,18 +73,26 @@ export type TerrainLayerPlan =
 /**
  * Decides where a picked terrain is painted:
  * 1. the active layer, if it is a terrain layer with an existing tile layer;
- * 2. else the topmost such terrain layer;
- * 3. else a new pair, inserted right above the active layer.
+ * 2. the terrain layer owning the active layer, if that is a derived tile layer;
+ * 3. else the topmost linked terrain layer;
+ * 4. else a new pair, inserted right above the active layer.
  */
 export function planTerrainLayer(doc: MapDocument, activeLayerId: string | null): TerrainLayerPlan {
   const active = activeLayerId ? doc.getLayer(activeLayerId) : undefined;
   if (active && isLinkedTerrainLayer(doc, active)) return { kind: "use", layerId: active.id };
+  const owner = active ? terrainOwnerOf(doc, active.id) : undefined;
+  if (owner) return { kind: "use", layerId: owner.id };
   const layers = doc.layers;
   for (let i = layers.length - 1; i >= 0; i--) {
     if (isLinkedTerrainLayer(doc, layers[i])) return { kind: "use", layerId: layers[i]!.id };
   }
   const activeIndex = active ? doc.indexOfLayer(active.id) : -1;
   return { kind: "create", index: activeIndex >= 0 ? activeIndex + 1 : layers.length };
+}
+
+/** The terrain layer that writes into tile layer `layerId` (its derived tiles), if any. */
+export function terrainOwnerOf(doc: MapDocument, layerId: string): TileLayer | undefined {
+  return doc.layers.find((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layerId);
 }
 
 /** Ids of tile layers that a terrain layer writes into (derived, not for hand painting). */
@@ -194,15 +205,35 @@ export function deleteTerrain(terrainId: number): void {
   });
 }
 
+/** What {@link activateTerrain} did to the layers. */
+export interface TerrainActivation {
+  /** The terrain layer now active. */
+  readonly layerId: string;
+  /** True when the tile + terrain layer pair was created. */
+  readonly created: boolean;
+  /** True when the active layer changed (created, or an existing terrain layer). */
+  readonly switched: boolean;
+}
+
+/**
+ * How the activation is announced:
+ * - "pick" (default): picked from a list / the options bar. A toast and a
+ *   row flash only when the user is moved to another layer.
+ * - "define": right after "Arazi tanımla"; always says the terrain is ready.
+ * - "silent": no toast (tests, scripted flows).
+ */
+export type TerrainAnnounce = "pick" | "define" | "silent";
+
 /**
  * Makes `terrainId` the brush: finds or creates its terrain layer (see
- * {@link planTerrainLayer}), activates it, sets the grid value and the brush.
+ * {@link planTerrainLayer}), activates it, sets the grid value and the
+ * brush tool. Returns what happened, or null when nothing could be done.
  */
-export function activateTerrain(terrainId: number): void {
+export function activateTerrain(terrainId: number, announce: TerrainAnnounce = "pick"): TerrainActivation | null {
   const state = useEditorStore.getState();
   const store = state.project?.store;
   const terrain = store?.document.getTerrain(terrainId);
-  if (!store || !terrain || store.inTransaction) return;
+  if (!store || !terrain || store.inTransaction) return null;
   const plan = planTerrainLayer(store.document, state.activeLayerId);
   let layerId: string;
   if (plan.kind === "use") {
@@ -226,12 +257,126 @@ export function activateTerrain(terrainId: number): void {
       store.rollback();
       throw error;
     }
-      toast.success(t("toast.terrainLayerCreated"));
   }
+  const result: TerrainActivation = {
+    layerId,
+    created: plan.kind === "create",
+    switched: state.activeLayerId !== layerId,
+  };
   state.setActiveLayer(layerId);
   state.setGridValue(terrain.id);
   state.setStamp(null);
   state.setTool("brush");
+  announceActivation(terrain, store.document.getLayer(layerId)?.name ?? "", result, announce);
+  return result;
+}
+
+function announceActivation(terrain: Terrain, layerName: string, result: TerrainActivation, announce: TerrainAnnounce): void {
+  if (announce === "silent") return;
+  if (result.switched) flashLayer(result.layerId);
+  if (announce === "define") {
+    toast.success(t("toast.terrainReady", { name: terrain.name }));
+  } else if (result.created) {
+    toast.info(t("toast.terrainLayerAdded", { layer: layerName }));
+  } else if (result.switched) {
+    toast.info(t("toast.terrainLayerSwitched", { layer: layerName }));
+  }
+}
+
+/**
+ * "Arazi tanımla" → ready to paint: defines the terrain, then activates it
+ * (layer pair, grid value, brush) with a "ready" toast. Null when the block
+ * is invalid (nothing changes).
+ */
+export function defineAndActivateTerrain(
+  tilesetId: string,
+  template: TerrainTemplate,
+  origin: { col: number; row: number },
+  name: string,
+): Terrain | null {
+  const terrain = defineTerrain(tilesetId, template, origin, name);
+  if (!terrain) return null;
+  activateTerrain(terrain.id, "define");
+  return terrain;
+}
+
+// ------------------------------------------------------------------ layer groups
+
+/**
+ * Reorders the layers to `order` (layer ids, bottom first; must be a
+ * permutation of the current ids) as one undo step. Used to move a terrain
+ * layer together with its derived tile layer.
+ */
+export function applyLayerOrder(order: readonly string[]): void {
+  const store = currentStore();
+  if (!store || store.inTransaction) return;
+  const ids = store.document.layers.map((l) => l.id);
+  if (order.length !== ids.length || !ids.every((id) => order.includes(id))) return;
+  if (ids.every((id, i) => order[i] === id)) return;
+  store.beginTransaction();
+  try {
+    for (let i = 0; i < order.length; i++) {
+      if (store.document.layers[i]?.id !== order[i]) store.dispatch({ type: "moveLayer", layerId: order[i]!, index: i });
+    }
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+}
+
+/** Same props on several layers (e.g. hide a terrain layer and its tiles) as one undo step. */
+export function setLayersProps(layerIds: readonly string[], props: LayerPropsPatch): void {
+  const store = currentStore();
+  if (!store || store.inTransaction) return;
+  const ids = layerIds.filter((id) => store.document.getLayer(id));
+  if (ids.length === 0) return;
+  store.beginTransaction();
+  try {
+    for (const layerId of ids) store.dispatch({ type: "setLayerProps", layerId, props });
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+}
+
+/**
+ * Removes a terrain layer together with its derived tile layer (one undo
+ * step, "Geri al" in the toast). Returns false when nothing was removed
+ * (unknown layer, or it would leave the map without layers).
+ */
+export function removeTerrainGroup(terrainLayerId: string): boolean {
+  const state = useEditorStore.getState();
+  const store = state.project?.store;
+  const head = store?.document.getLayer(terrainLayerId);
+  if (!store || !head || store.inTransaction) return false;
+  const child = isGridLayer(head) && head.targetLayerId ? store.document.getLayer(head.targetLayerId) : undefined;
+  const ids = child ? [head.id, child.id] : [head.id];
+  if (store.document.layers.length <= ids.length) return false;
+  const lowest = Math.min(...ids.map((id) => store.document.indexOfLayer(id)));
+  store.beginTransaction();
+  try {
+    for (const layerId of ids) store.dispatch({ type: "removeLayer", layerId });
+    store.commit();
+  } catch (error) {
+    store.rollback();
+    throw error;
+  }
+  if (state.activeLayerId && ids.includes(state.activeLayerId)) {
+    const layers = store.document.layers;
+    state.setActiveLayer(layers[Math.min(lowest, layers.length - 1)]?.id ?? null);
+  }
+  const depth = store.undoDepth;
+  toast.withAction(t("toast.layerRemoved", { name: head.name }), {
+    label: t("common.undo"),
+    run: () => {
+      if (currentStore() !== store || store.undoDepth !== depth) return;
+      store.undo();
+      if (store.document.getLayer(head.id)) useEditorStore.getState().setActiveLayer(head.id);
+    },
+  });
+  return true;
 }
 
 /** "Collision" / "Collision 2" ... */

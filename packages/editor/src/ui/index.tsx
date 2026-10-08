@@ -20,6 +20,8 @@ import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
 import { installLevelActions } from "../commands/levelActions";
 import { installWorldActions } from "../commands/worldActions";
+import { installTilesetActions } from "../commands/tilesetActions";
+import { TilesetImportDialog } from "./tilesetImport/TilesetImportDialog";
 import { NewLevelDialog, RemoveLevelDialog } from "./levels/LevelDialogs";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -39,12 +41,14 @@ export function App() {
     const uninstallLayerSync = installLayerSync();
     const uninstallLevelActions = installLevelActions();
     const uninstallWorldActions = installWorldActions();
+    const uninstallTilesetActions = installTilesetActions();
     return () => {
       uninstallShortcuts();
       uninstallSession();
       uninstallLayerSync();
       uninstallLevelActions();
       uninstallWorldActions();
+      uninstallTilesetActions();
     };
   }, []);
 
@@ -63,6 +67,7 @@ export function App() {
       <EntityTypesDialog />
       <NewLevelDialog />
       <RemoveLevelDialog />
+      <TilesetImportDialog />
       <Toaster />
     </TooltipProvider>
   );

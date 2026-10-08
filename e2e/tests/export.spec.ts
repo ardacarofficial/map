@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
-import { dropFile, expect, readOpfsText, sampleBytes, test } from "../support/fixtures";
+import { dropFile, expect, readOpfsText, sampleBytes, test, confirmTilesetCard } from "../support/fixtures";
 
 const UNITY_DIR = "unity-maps";
 
@@ -55,6 +55,7 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
 
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
   await expect(canvas).toBeVisible();
   const image = page.getByRole("grid", { name: /overworld/i }).locator(".checker");

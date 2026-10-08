@@ -15,6 +15,8 @@
 import { CANVAS_HOST_ATTR } from "../ui/canvas/canvasHandle";
 import { useEditorStore } from "../state/editorStore";
 import { pasteText } from "./clipboard";
+import { pastedImage } from "../ui/tilesetImport/importModel";
+import { importTilesetFiles } from "./tilesetActions";
 import { getCommand, commandForEvent, isEnabled, runCommand } from "./registry";
 import type { CommandId } from "../shortcuts/shortcuts";
 import { modalOpen } from "./modal";
@@ -95,6 +97,13 @@ function onPaste(event: ClipboardEvent): void {
   if (event.defaultPrevented || isTypingTarget(event.target) || modalOpen()) return;
   if (performance.now() - pasteKeyAt > 1000) return;
   pasteKeyAt = -Infinity;
+  // A PNG on the clipboard (and no copied cells) → the tileset import card.
+  const image = pastedImage(event.clipboardData);
+  if (image) {
+    event.preventDefault();
+    void importTilesetFiles([image]);
+    return;
+  }
   const command = getCommand("edit.paste");
   if (!command || !isEnabled(command) || !useEditorStore.getState().project) return;
   event.preventDefault();

@@ -11,6 +11,7 @@ import {
   type MapDocument,
   type ProjectLevel,
   type Stamp,
+  type TileGridSpec,
 } from "@smap/core";
 
 import { t } from "../i18n";
@@ -34,7 +35,10 @@ import { useProjectLibrary } from "./projectLibrary";
 import { LevelWorkspace, paletteProblems, type SavedLevel } from "./levelWorkspace";
 import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
-import { hasPngSignature, inferTileSize, looksLikePng, planTileset, baseName } from "./tilesetImport";
+import { hasPngSignature, looksLikePng, planTilesetGrid, baseName } from "./tilesetImport";
+import { inferDraft, readLastSpec, rememberSpec } from "../ui/tilesetImport/importModel";
+import { openTilesetCard, type CardMode } from "../ui/tilesetImport/importStore";
+import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 
 /** Default map size for a project created by dropping a tileset. */
 export const DEFAULT_MAP_WIDTH = 64;
@@ -94,6 +98,8 @@ export interface NewProjectOptions {
   width: number;
   height: number;
   tileSize: number;
+  /** Tile height when it differs from the width (default: `tileSize`). */
+  tileHeight?: number;
 }
 
 /** A fresh document with one empty tile layer. */
@@ -102,7 +108,7 @@ export function createProjectDocument(options: NewProjectOptions): OpenProject {
     width: options.width,
     height: options.height,
     tileWidth: options.tileSize,
-    tileHeight: options.tileSize,
+    tileHeight: options.tileHeight ?? options.tileSize,
   });
   const store = new MapStore(document);
   store.dispatch({ type: "addLayer", layer: { name: t("layers.defaultName") } });
@@ -193,13 +199,14 @@ export function closeProject(): void {
   useProjectLibrary.getState().load({ stamps: [], levels: [] });
 }
 
-interface DecodedPng {
+export interface DecodedPng {
   file: File;
   bytes: Uint8Array;
   bitmap: ImageBitmap;
 }
 
-async function decodeTilesetFile(file: File): Promise<DecodedPng | null> {
+/** Reads and decodes a PNG file; toasts and returns `null` when it is not a readable PNG. */
+export async function decodeTilesetFile(file: File): Promise<DecodedPng | null> {
   if (!looksLikePng(file)) {
     toast.error(t("toast.notPng", { name: file.name }));
     return null;
@@ -217,56 +224,108 @@ async function decodeTilesetFile(file: File): Promise<DecodedPng | null> {
   }
 }
 
-function addDecodedTileset(store: MapStore, png: DecodedPng): boolean {
-  const doc: MapDocument = store.document;
-  const tileSize = doc.map.tileWidth;
+/** True for the generic names pasted images get ("image.png"). */
+function genericImageName(fileName: string): boolean {
+  const base = baseName(fileName).trim().toLowerCase();
+  return base === "" || base === "image";
+}
+
+/** Display name of an imported image (a pasted "image.png" gets a friendlier one). */
+function tilesetDisplayName(fileName: string): string {
+  return genericImageName(fileName) ? t("tilesetImport.pastedName") : baseName(fileName);
+}
+
+/**
+ * Shows the import card for a decoded PNG, prefilled from `inferTileGrid`
+ * (alpha, file name; the last used size — or the map's — as a hint).
+ * Resolves with the confirmed name and grid, or `null` when cancelled.
+ */
+async function promptTilesetGrid(png: DecodedPng, mode: CardMode, mapTile: { tileWidth: number; tileHeight: number } | null) {
   const { width, height } = png.bitmap;
-  const plan = planTileset(png.file.name, width, height, tileSize, new Set(doc.tilesets.map((ts) => ts.id)));
-  if (!plan) {
+  const alpha = readAlpha(png.bitmap);
+  const last = readLastSpec();
+  const hintSize = last && last.tileWidth === last.tileHeight ? last.tileWidth : mapTile?.tileWidth === mapTile?.tileHeight ? mapTile?.tileWidth : null;
+  const name = tilesetDisplayName(png.file.name);
+  const { draft, suggestions } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null });
+  const result = await openTilesetCard({
+    mode,
+    fileName: png.file.name,
+    bitmap: png.bitmap,
+    width,
+    height,
+    alpha,
+    initial: draft,
+    suggestions,
+    mapTile,
+  });
+  return result?.kind === "confirm" ? result : null;
+}
+
+function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec): boolean {
+  const doc: MapDocument = store.document;
+  const { width, height } = png.bitmap;
+  // The id / file name comes from the file name, or from the typed name for a pasted "image.png".
+  const fileName = genericImageName(png.file.name) ? `${name}.png` : png.file.name;
+  const tileset = planTilesetGrid(name, fileName, width, height, spec, new Set(doc.tilesets.map((ts) => ts.id)));
+  if (!tileset) {
     png.bitmap.close();
-    toast.error(t("toast.imageTooSmall", { name: png.file.name, tile: tileSize }));
+    toast.error(t("toast.imageTooSmall", { name: png.file.name, tile: spec.tileWidth }));
     return false;
   }
   // Register the image first so the canvas finds it when the tileset appears.
-  setTilesetImage({ tilesetId: plan.tileset.id, bitmap: png.bitmap, bytes: png.bytes });
-  store.dispatch({ type: "addTileset", tileset: plan.tileset });
-  useUiStore.getState().setActiveTileset(plan.tileset.id);
-  if (plan.uneven) {
-    toast.warning(t("toast.tileSizeMismatch", { name: png.file.name, width, height, tile: tileSize }));
-  } else {
-    toast.success(
-      t("toast.tilesetAdded", { name: plan.tileset.name, count: plan.tileset.columns * plan.tileset.rows }),
-    );
-  }
+  setTilesetImage({ tilesetId: tileset.id, bitmap: png.bitmap, bytes: png.bytes });
+  store.dispatch({ type: "addTileset", tileset });
+  useUiStore.getState().setActiveTileset(tileset.id);
+  rememberSpec(spec);
+  toast.success(t("tilesetImport.added", { name: tileset.name, count: tileset.columns * tileset.rows }));
   return true;
 }
 
-/** Adds PNG files as tilesets to the open project (drag-drop, + button). */
+/**
+ * Adds PNG files as tilesets to the open project (drag-drop, "+", menu,
+ * paste): one import card per file, one after another.
+ */
 export async function addTilesetFiles(files: readonly File[]): Promise<void> {
   for (const file of files) {
-    const store = useEditorStore.getState().project?.store;
-    if (!store) return;
+    if (!useEditorStore.getState().project) return;
     const png = await decodeTilesetFile(file);
-    if (png) addDecodedTileset(store, png);
+    if (!png) continue;
+    const map = useEditorStore.getState().project?.store.document.map;
+    const choice = map ? await promptTilesetGrid(png, { kind: "add" }, { tileWidth: map.tileWidth, tileHeight: map.tileHeight }) : null;
+    const store = useEditorStore.getState().project?.store;
+    if (!choice || !store) {
+      png.bitmap.close();
+      continue;
+    }
+    addDecodedTileset(store, png, choice.name, choice.spec);
   }
 }
 
-/** Welcome-screen drop: a new 64×48 project around the first PNG, then the rest. */
+/**
+ * Welcome-screen drop (or paste): the import card for the first PNG; its
+ * tile size becomes the new 64×48 project's. The other files follow as
+ * ordinary imports.
+ */
 export async function createProjectFromTilesets(files: readonly File[]): Promise<void> {
   const [first, ...rest] = files;
   if (!first) return;
   if (!(await confirmDiscard())) return;
   const png = await decodeTilesetFile(first);
   if (!png) return;
-  const tileSize = inferTileSize(png.bitmap.width, png.bitmap.height, first.name);
+  const choice = await promptTilesetGrid(png, { kind: "new", mapWidth: DEFAULT_MAP_WIDTH, mapHeight: DEFAULT_MAP_HEIGHT }, null);
+  if (!choice) {
+    png.bitmap.close();
+    return;
+  }
   const project = createProjectDocument({
-    name: baseName(first.name),
+    name: genericImageName(first.name) ? choice.name : baseName(first.name),
     width: DEFAULT_MAP_WIDTH,
     height: DEFAULT_MAP_HEIGHT,
-    tileSize,
+    tileSize: choice.spec.tileWidth,
+    tileHeight: choice.spec.tileHeight,
   });
   activate(project, [], null);
-  addDecodedTileset(project.store, png);
+  addDecodedTileset(project.store, png, choice.name, choice.spec);
   await addTilesetFiles(rest);
 }
 

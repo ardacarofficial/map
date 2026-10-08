@@ -4,6 +4,7 @@ import { useConfirmStore } from "../ui/dialogs/confirmStore";
 import { useExportStore } from "../export/exportStore";
 import { useLevelUi } from "./levelActions";
 import { useAppSettings } from "../platform/appSettings";
+import { tilesetCardOpen } from "../ui/tilesetImport/importStore";
 
 /** True while any modal dialog (palette, new project, resize, backups, confirm, disk changed) is open. */
 export function modalOpen(): boolean {
@@ -18,6 +19,7 @@ export function modalOpen(): boolean {
     useLevelUi.getState().newLevelOpen ||
     useLevelUi.getState().removeLevelId !== null ||
     useSaveStatus.getState().diskConflict !== null ||
-    useAppSettings.getState().dialogOpen
+    useAppSettings.getState().dialogOpen ||
+    tilesetCardOpen()
   );
 }

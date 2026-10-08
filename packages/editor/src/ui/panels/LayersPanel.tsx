@@ -2,11 +2,12 @@ import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
 import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { addLayer, opacityDrag, moveLayer, removeLayer, renameLayer, setLayerProps } from "../../commands/layerActions";
-import { addCollisionLayer } from "../../commands/terrainActions";
+import { addLayer, opacityDrag, removeLayer, renameLayer } from "../../commands/layerActions";
+import { addCollisionLayer, applyLayerOrder, removeTerrainGroup, setLayersProps } from "../../commands/terrainActions";
 import { addEntityLayer } from "../../commands/entityActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
+import { flashLayer, useLayerFlash } from "../feedback/layerFlash";
 import { useStructureVersion } from "../hooks";
 import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
@@ -14,7 +15,9 @@ import { CommandKbd } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
-import { displayToCore, dropIndex, rowShift } from "./layerOrder";
+import { layerRows, layerUnits, moveUnitOrder, unitIndexOf, type LayerRow } from "../terrain/layerGroups";
+import { toast } from "../toast/toastStore";
+import { dropIndex, rowShift } from "./layerOrder";
 import { PanelSection } from "./PanelSection";
 
 /** Row height in px (keep in sync with `h-8`). */
@@ -24,28 +27,39 @@ const DRAG_THRESHOLD = 4;
 
 interface Drag {
   layerId: string;
+  /** Top-first index of the dragged unit (a layer, or a terrain group as a whole). */
   from: number;
   startY: number;
   dy: number;
   active: boolean;
 }
 
+const NO_EXPANDED: ReadonlySet<string> = new Set();
+
 /**
  * Layers, top layer first: select, rename (double-click), show/hide, lock,
- * drag to reorder, opacity. Every change is a core op, so all are undoable.
+ * drag to reorder, opacity. A terrain layer and the tile layer it writes
+ * into show as one group ("Çimen (arazi)", derived tiles nested and
+ * collapsed); the group moves, hides and locks as a whole. Every change is
+ * a core op, so all are undoable.
  */
 export function LayersPanel() {
   const store = useEditorStore((s) => s.project?.store);
   const activeId = useEditorStore((s) => s.activeLayerId);
   const setActive = useEditorStore((s) => s.setActiveLayer);
   useStructureVersion(store);
-  const layers = [...(store?.document.layers ?? [])].reverse(); // top layer first
-  const count = layers.length;
+  const doc = store?.document;
+  const units = doc ? layerUnits(doc) : [];
+  const count = units.length;
+  const layerCount = doc?.layers.length ?? 0;
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const [settling, setSettling] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(NO_EXPANDED);
   const dragRef = useRef<Drag | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const flash = useLayerFlash();
 
   // After a drop the DOM order changes; skip the slide-back animation for one frame.
   useEffect(() => {
@@ -54,20 +68,40 @@ export function LayersPanel() {
     return () => cancelAnimationFrame(frame);
   }, [settling]);
 
-  const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;
-  const active = layers.find((l) => l.id === activeId);
+  // A flashed row (layer switched / created for the user) scrolls into view.
+  useEffect(() => {
+    if (!flash.layerId) return;
+    const row = listRef.current?.querySelector(`[data-layer-id="${CSS.escape(flash.layerId)}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [flash.layerId, flash.token]);
 
-  const onPointerDown = (event: ReactPointerEvent<HTMLLIElement>, layer: TileLayer, index: number) => {
-    if (event.button !== 0 || editingId === layer.id) return;
+  // While dragging, groups render collapsed so every unit is one row.
+  const rows = layerRows(units, drag?.active ? NO_EXPANDED : expanded);
+  const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;
+  const activeUnit = units[unitIndexOf(units, activeId)];
+  const active = activeId ? doc?.getLayer(activeId) : undefined;
+  // The opacity row follows what is visible: a terrain group's tiles.
+  const opacityLayer = activeUnit?.child && activeUnit.head.id === activeId ? activeUnit.child : active;
+
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLLIElement>, row: LayerRow) => {
+    if (event.button !== 0 || editingId === row.layer.id) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    const next = { layerId: layer.id, from: index, startY: event.clientY, dy: 0, active: false };
+    const next = { layerId: row.layer.id, from: row.unit, startY: event.clientY, dy: 0, active: false };
     dragRef.current = next;
     setDrag(next);
   };
-  const onPointerMove = (event: ReactPointerEvent<HTMLLIElement>) => {
+  const onPointerMove = (event: ReactPointerEvent<HTMLLIElement>, row: LayerRow) => {
     const current = dragRef.current;
-    if (!current) return;
+    if (!current || row.kind === "derived") return; // derived tiles move with their group
     const raw = event.clientY - current.startY;
     if (!current.active && Math.abs(raw) < DRAG_THRESHOLD) return;
     // Keep the row inside the list.
@@ -76,19 +110,26 @@ export function LayersPanel() {
     dragRef.current = next;
     setDrag(next);
   };
-  const onPointerUp = (layer: TileLayer) => {
+  const onPointerUp = (row: LayerRow) => {
     const current = dragRef.current;
     dragRef.current = null;
     setDrag(null);
     if (!current) return;
     if (!current.active) {
-      setActive(layer.id);
+      if (row.kind === "derived") {
+        // Auto-generated tiles cannot be painted by hand: select the terrain that makes them, and say why.
+        setActive(row.parent.id);
+        flashLayer(row.parent.id);
+        toast.info(t("layers.derivedPicked", { name: row.parent.name }));
+      } else {
+        setActive(row.layer.id);
+      }
       return;
     }
     const target = dropIndex(current.from, current.dy, ROW, count);
     if (target !== current.from) {
       setSettling(true);
-      moveLayer(current.layerId, displayToCore(target, count));
+      applyLayerOrder(moveUnitOrder(units, current.from, target));
     }
     setActive(current.layerId);
   };
@@ -96,6 +137,13 @@ export function LayersPanel() {
     dragRef.current = null;
     setDrag(null);
   };
+
+  const removeActive = () => {
+    if (!active) return;
+    if (activeUnit?.child && activeUnit.head.id === active.id) removeTerrainGroup(active.id);
+    else removeLayer(active.id);
+  };
+  const removeDisabled = !active || layerCount <= (activeUnit?.child && activeUnit.head.id === active.id ? 2 : 1);
 
   return (
     <PanelSection
@@ -105,12 +153,7 @@ export function LayersPanel() {
         <>
           <AddLayerMenu />
           <Tooltip label={t("layers.remove")}>
-            <IconButton
-              aria-label={t("layers.remove")}
-              className="size-7"
-              disabled={count <= 1 || !active}
-              onClick={() => active && removeLayer(active.id)}
-            >
+            <IconButton aria-label={t("layers.remove")} className="size-7" disabled={removeDisabled} onClick={removeActive}>
               <Icon name="trash" size={14} />
             </IconButton>
           </Tooltip>
@@ -118,42 +161,77 @@ export function LayersPanel() {
       }
     >
       <ul
+        ref={listRef}
         role="listbox"
         aria-label={t("panels.layers")}
         className="relative flex max-h-[232px] flex-col overflow-y-auto px-1.5 pb-1.5"
       >
-        {layers.map((layer, index) => {
-          const isActive = layer.id === activeId;
-          const dragged = drag?.active && drag.layerId === layer.id;
-          const shift = drag?.active && to !== null ? rowShift(index, drag.from, to, ROW) : 0;
+        {rows.map((row) => {
+          const { layer } = row;
+          const isActive =
+            layer.id === activeId || (row.kind === "group" && row.child.id === activeId);
+          const dragged = drag?.active && drag.from === row.unit;
+          const shift = drag?.active && to !== null ? rowShift(row.unit, drag.from, to, ROW) : 0;
           const y = dragged ? drag.dy : shift;
-          return (
+          const flashed =
+            flash.layerId !== null && (flash.layerId === layer.id || (row.kind === "group" && flash.layerId === row.child.id));
+          const groupLayers = row.kind === "group" ? [layer, row.child] : [layer];
+          const visible = groupLayers.some((l) => l.visible);
+          const locked = groupLayers.every((l) => l.locked);
+          const item = (
             <li
               key={layer.id}
               role="option"
               aria-selected={isActive}
+              aria-expanded={row.kind === "group" ? row.expanded : undefined}
               data-layer-id={layer.id}
-              onPointerDown={(e) => onPointerDown(e, layer, index)}
-              onPointerMove={onPointerMove}
-              onPointerUp={() => onPointerUp(layer)}
+              data-layer-row={row.kind}
+              data-flash={flashed ? "" : undefined}
+              onPointerDown={(e) => onPointerDown(e, row)}
+              onPointerMove={(e) => onPointerMove(e, row)}
+              onPointerUp={() => onPointerUp(row)}
               onPointerCancel={onPointerCancel}
               onDoubleClick={(e) => {
-                if (!(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
+                if (row.kind !== "derived" && !(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
               }}
               style={{ transform: y ? `translateY(${y}px)` : undefined }}
-              className={`group relative flex h-8 shrink-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-md ${
+              className={`group relative flex h-8 shrink-0 items-center gap-1.5 rounded-md pr-1 text-md ${
+                row.kind === "derived" ? "pl-7" : row.kind === "group" ? "pl-0.5" : "pl-2"
+              } ${
                 dragged
                   ? "z-10 cursor-grabbing bg-active shadow-popup"
                   : settling
                     ? ""
-                    : "transition-transform duration-150 ease-(--ease-out)"
-              } ${isActive ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                    : "transition-[transform,background-color,box-shadow] duration-150 ease-(--ease-out)"
+              } ${
+                flashed
+                  ? "bg-accent-soft text-text shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
+                  : isActive && row.kind !== "derived"
+                    ? "bg-active text-text"
+                    : "text-muted hover:bg-hover hover:text-text"
+              }`}
             >
-              {isActive && <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
+              {isActive && row.kind !== "derived" && (
+                <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />
+              )}
+              {row.kind === "derived" && (
+                <span aria-hidden className="absolute top-0 bottom-1/2 left-[13px] w-2.5 rounded-bl-[4px] border-b border-l border-line-strong" />
+              )}
+              {row.kind === "group" && (
+                <button
+                  type="button"
+                  aria-label={row.expanded ? t("layers.collapseGroup") : t("layers.expandGroup")}
+                  title={row.expanded ? t("layers.collapseGroup") : t("layers.expandGroup")}
+                  onClick={() => toggleExpanded(layer.id)}
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
+                >
+                  <Icon name="chevronRight" size={12} className={`transition-transform duration-100 ${row.expanded ? "rotate-90" : ""}`} />
+                </button>
+              )}
               <Icon
-                name={layerIcon(layer)}
+                name={row.kind === "derived" ? "layers" : layerIcon(layer)}
                 size={14}
-                className={`shrink-0 ${isActive ? (isGridLayer(layer) ? roleTint(layer) : isEntityLayer(layer) ? "text-warning" : "text-accent") : "text-faint"}`}
+                className={`shrink-0 ${row.kind === "derived" ? "text-faint" : layerTint(layer, isActive)}`}
               />
               {editingId === layer.id ? (
                 <RenameInput
@@ -164,55 +242,77 @@ export function LayersPanel() {
                     if (name !== null) renameLayer(layer.id, name);
                   }}
                 />
+              ) : row.kind === "derived" ? (
+                <span className={`flex min-w-0 flex-1 flex-col leading-tight ${layer.visible ? "" : "text-faint line-through decoration-line-strong"}`}>
+                  <span className="truncate text-sm">{layer.name}</span>
+                  <span className="truncate text-2xs text-faint no-underline">{t("layers.derivedNote")}</span>
+                </span>
               ) : (
                 <span
                   title={t("layers.renameHint")}
-                  className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${layer.visible ? "" : "text-faint line-through decoration-line-strong"}`}
+                  className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${visible ? "" : "text-faint line-through decoration-line-strong"}`}
                 >
                   <span className="min-w-0 shrink truncate">{layer.name}</span>
-                  <LayerLink doc={store!.document} layer={layer} />
+                  {row.kind === "layer" && doc && <LayerLink doc={doc} layer={layer} />}
                 </span>
               )}
-              {layer.opacity < 1 && editingId !== layer.id && (
-                <span className="font-mono text-2xs text-faint tabular">{Math.round(layer.opacity * 100)}%</span>
+              {(row.kind === "group" ? row.child : layer).opacity < 1 && editingId !== layer.id && (
+                <span className="font-mono text-2xs text-faint tabular">
+                  {Math.round((row.kind === "group" ? row.child : layer).opacity * 100)}%
+                </span>
+              )}
+              {row.kind !== "derived" && (
+                <RowToggle
+                  on={locked}
+                  label={locked ? t("layers.unlock") : t("layers.lock")}
+                  icon={locked ? "lock" : "unlock"}
+                  onClick={() => setLayersProps(groupLayers.map((l) => l.id), { locked: !locked })}
+                  persistent={locked}
+                />
               )}
               <RowToggle
-                on={layer.locked}
-                label={layer.locked ? t("layers.unlock") : t("layers.lock")}
-                icon={layer.locked ? "lock" : "unlock"}
-                onClick={() => setLayerProps(layer.id, { locked: !layer.locked })}
-                persistent={layer.locked}
-              />
-              <RowToggle
-                on={!layer.visible}
-                label={layer.visible ? t("layers.hide") : t("layers.show")}
-                icon={layer.visible ? "eye" : "eyeOff"}
-                onClick={() => setLayerProps(layer.id, { visible: !layer.visible })}
-                persistent={!layer.visible}
+                on={!visible}
+                label={visible ? t("layers.hide") : t("layers.show")}
+                icon={visible ? "eye" : "eyeOff"}
+                onClick={() => setLayersProps(groupLayers.map((l) => l.id), { visible: !visible })}
+                persistent={!visible}
               />
             </li>
           );
+          return row.kind === "derived" ? (
+            <Tooltip key={layer.id} side="left" label={t("layers.derivedTooltip", { name: row.parent.name })}>
+              {item}
+            </Tooltip>
+          ) : (
+            item
+          );
         })}
       </ul>
-      {active && <OpacityRow layer={active} />}
+      {opacityLayer && <OpacityRow layer={opacityLayer} />}
     </PanelSection>
   );
 }
 
 function layerIcon(layer: TileLayer): IconName {
-  if (isEntityLayer(layer)) return "pin";
+  if (isEntityLayer(layer)) return "box";
   if (!isGridLayer(layer)) return "layers";
   return layer.role === "terrain" ? "terrain" : "shield";
 }
 
-function roleTint(layer: TileLayer): string {
-  return isGridLayer(layer) && layer.role === "collision" ? "text-collision-solid" : "text-terrain-tint";
+/** Role colour of the row icon: full when active, dimmed otherwise; plain tile layers stay neutral until active. */
+function layerTint(layer: TileLayer, active: boolean): string {
+  if (isGridLayer(layer)) {
+    const tint = layer.role === "collision" ? "text-collision-solid" : "text-terrain-tint";
+    return active ? tint : `${tint} opacity-70`;
+  }
+  if (isEntityLayer(layer)) return active ? "text-warning" : "text-warning opacity-70";
+  return active ? "text-accent" : "text-faint";
 }
 
 /**
- * The terrain ↔ tile layer link, as a faint note after the name:
- * a terrain layer shows "→ Çimen" (the tile layer it writes into); that tile
- * layer shows a small terrain mark ("derived").
+ * The terrain ↔ tile layer link of a pair that is NOT grouped (pulled
+ * apart), as a faint note after the name: a terrain layer shows "→ Çimen"
+ * (the tile layer it writes into); that tile layer shows a small terrain mark.
  */
 function LayerLink({ doc, layer }: { doc: MapDocument; layer: TileLayer }) {
   if (isGridLayer(layer)) {
@@ -270,7 +370,7 @@ function AddLayerMenu() {
               </span>
             </Menu.Item>
             <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addEntityLayer()}>
-              <Icon name="pin" size={15} className="mt-0.5 shrink-0 text-warning" />
+              <Icon name="box" size={15} className="mt-0.5 shrink-0 text-warning" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span>{t("layers.addEntity")}</span>
                 <span className="text-xs text-faint">{t("layers.addEntityHint")}</span>

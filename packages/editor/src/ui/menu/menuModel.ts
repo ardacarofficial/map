@@ -59,6 +59,7 @@ export const MENUS: readonly MenuDef[] = [
       "view.toggleGrid",
       "view.toggleCollision",
       "view.toggleMinimap",
+      "view.toggleSelectionBar",
       "view.togglePanels",
       "-",
       "view.world",

@@ -6,9 +6,11 @@ import { CanvasHost } from "../canvas/CanvasHost";
 import { LevelsPanel } from "../levels/LevelsPanel";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
 import { WorldHint } from "../levels/WorldHint";
+import { UndoHud } from "../feedback/UndoHud";
 import { LayersPanel } from "../panels/LayersPanel";
 import { LibraryPanel } from "../panels/LibraryPanel";
 import { PropertiesPanel } from "../panels/PropertiesPanel";
+import { SelectionBar } from "../selectionBar/SelectionBar";
 import { ToolOptionsBar } from "../toolOptions/ToolOptionsBar";
 import { useUiStore } from "../uiStore";
 import { AppBar } from "./AppBar";
@@ -70,6 +72,8 @@ export function EditorLayout() {
         <div className="flex min-w-0 flex-1 flex-col">
           <main className="relative min-h-0 min-w-0 flex-1">
             <CanvasHost />
+            <SelectionBar />
+            <UndoHud />
             <PointPickOverlay />
           </main>
           <div className={hidden || world ? "hidden" : "contents"}>

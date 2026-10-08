@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { dropFile, expect, readOpfsText, sampleBytes, test } from "../support/fixtures";
+import { dropFile, expect, readOpfsText, sampleBytes, test, confirmTilesetCard } from "../support/fixtures";
 
 // CLAUDE.md v1.2: the world map is a second view of the same canvas; levels
 // are dragged (snapping to the grid) and their positions are saved.
@@ -37,6 +37,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
 
   await page.goto("/");
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
   // A single level: the list starts folded (unfolds by itself once there are two).
   await expect(levelRow(page, "main")).toHaveCount(0);

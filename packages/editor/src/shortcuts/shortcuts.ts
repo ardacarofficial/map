@@ -39,6 +39,7 @@ export type CommandId =
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.toggleMinimap"
+  | "view.toggleSelectionBar"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
@@ -122,6 +123,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.addCollision", keys: [] },
   { command: "tileset.markSolid", keys: [] },
   { command: "tileset.defineTerrain", keys: [] },
+  { command: "view.toggleSelectionBar", keys: [] },
   { command: "settings.language", keys: [] },
   { command: "settings.editShortcuts", keys: [] },
 ];

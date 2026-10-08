@@ -18,7 +18,7 @@
  */
 import { MapCanvas, type CanvasHandle } from "./mapCanvas";
 
-export type { CanvasHandle } from "./mapCanvas";
+export type { CanvasHandle, ScreenRect } from "./mapCanvas";
 
 export async function mountCanvas(container: HTMLElement): Promise<CanvasHandle> {
   const canvas = new MapCanvas(container);
