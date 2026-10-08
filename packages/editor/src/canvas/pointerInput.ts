@@ -341,12 +341,18 @@ export class PointerInput {
 
   /** Arrow keys nudge the selection (select tool, canvas focused); Shift: 10 cells. */
   #onArrow(e: KeyboardEvent): void {
-    if (e.ctrlKey || e.metaKey || e.altKey || document.activeElement !== this.#canvas || this.#host.world()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || !this.#canvasFocused() || this.#host.world()) return;
     const off = nudgeOffset(e.key, e.shiftKey);
     if (!off) return;
     if (!this.#host.tools.nudgeSelection(off.x, off.y)) return;
     e.preventDefault();
     e.stopPropagation();
+  }
+
+  /** Focus is on the canvas or on the element hosting it (not on a panel, input or the page body). */
+  #canvasFocused(): boolean {
+    const a = document.activeElement;
+    return a === this.#canvas || (a instanceof HTMLElement && a !== document.body && a.contains(this.#canvas));
   }
 
   #onPointerDown(e: PointerEvent): void {

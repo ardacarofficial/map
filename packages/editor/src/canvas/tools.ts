@@ -352,12 +352,15 @@ export function movedRegion(region: CellRegion, dx: number, dy: number, bounds: 
 
 /**
  * Offset of a selection drag grabbed at cell `grab` with the pointer now at
- * `cell`, limited so at least one cell of `region` stays on the map.
+ * `cell`, limited so the moved region stays on the map (moving never drops
+ * content over the edge). A region already sticking out cannot move further out.
  */
 export function moveOffset(region: CellRegion, grab: CellPoint, cell: CellPoint, bounds: CellBounds): CellPoint {
-  const dx = Math.min(bounds.width - 1 - region.x, Math.max(-(region.x + region.width - 1), cell.x - grab.x));
-  const dy = Math.min(bounds.height - 1 - region.y, Math.max(-(region.y + region.height - 1), cell.y - grab.y));
-  return { x: dx, y: dy };
+  const clamp = (d: number, lo: number, hi: number) => Math.min(Math.max(d, Math.min(lo, 0)), Math.max(hi, 0));
+  return {
+    x: clamp(cell.x - grab.x, -region.x, bounds.width - region.x - region.width),
+    y: clamp(cell.y - grab.y, -region.y, bounds.height - region.y - region.height),
+  };
 }
 
 /** Arrow key → nudge offset (Shift: 10 cells), or null for other keys. */

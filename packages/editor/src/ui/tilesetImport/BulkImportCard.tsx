@@ -163,7 +163,7 @@ function BulkRowView({
   mapTile: { tileWidth: number; tileHeight: number } | null;
   onSize(text: string): void;
   onOpen(): void;
-  onRemove?: () => void;
+  onRemove: (() => void) | undefined;
 }) {
   const verdict = rowVerdict(row, mapTile);
   const tone = verdict.kind === "ok" ? "text-success" : verdict.kind === "warn" ? "text-warning" : "text-danger";

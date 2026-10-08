@@ -112,3 +112,26 @@ describe("messages", () => {
     expect(nextBurst(b, "undo", 200 + BURST_MS).count).toBe(1);
   });
 });
+
+describe("structural step labels", () => {
+  it("names layer, props, resize and pasted-cell steps for the undo HUD", async () => {
+    const { describeEntry } = await import("./historyLabels");
+    const store = new MapStore(createDocument({ width: 8, height: 8 }));
+    const a = store.dispatch({ type: "addLayer", layer: { name: "A" } });
+    expect(describeEntry(store.peekUndo())).toBe("Katman eklendi");
+    store.dispatch({ type: "addLayer", layer: { name: "B" } });
+    store.dispatch({ type: "moveLayer", layerId: a, index: 1 });
+    expect(describeEntry(store.peekUndo())).toBe("Katman taşındı");
+    store.dispatch({ type: "setLayerProps", layerId: a, props: { visible: false } });
+    expect(describeEntry(store.peekUndo())).toBe("Katman gizlendi");
+    store.dispatch({ type: "setLayerProps", layerId: a, props: { name: "Z" } });
+    expect(describeEntry(store.peekUndo())).toBe("Katman adı");
+    store.dispatch({ type: "removeLayer", layerId: a });
+    expect(describeEntry(store.peekUndo())).toBe("Katman silindi");
+    // Undo puts the step on the redo side; the HUD reads it there.
+    store.undo();
+    expect(historyMessage("undo", null, 1, describeEntry(store.peekRedo()))).toBe("Geri alındı: Katman silindi");
+    expect(historyMessage("undo", null, 1, null)).toBe("Geri alındı");
+    expect(describeEntry(undefined)).toBeNull();
+  });
+});

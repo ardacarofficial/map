@@ -1,8 +1,8 @@
-import { entityCell, isEntityLayer, SPAWN_TYPE_ID, type Entity, type EntityType, type MapDocument } from "@smap/core";
+import { entityCell, isBuiltinEntityTypeId, isEntityLayer, SPAWN_TYPE_ID, type Entity, type EntityType, type MapDocument } from "@smap/core";
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { chooseEntityType, entityCounts, entityTypeName, saveEntityType } from "../../commands/entityActions";
+import { chooseEntityType, entityCounts, entityTypeName, removeEntityType, saveEntityType } from "../../commands/entityActions";
 import { runCommand } from "../../commands/registry";
 import { t, type MessageKey } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -14,6 +14,9 @@ import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
+import { getCanvasHandle } from "../canvas/canvasHandle";
+import { RowContextMenu } from "../contextMenus/RowContextMenu";
+import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import { TYPE_COLORS, typeFromDraft } from "./fieldValues";
 
 /** Icon of an entity type: built-ins have their own, user types a box. */
@@ -98,21 +101,72 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 function TypeChip({ type, count }: { type: EntityType; count: number }) {
   const on = useEditorStore((s) => s.tool === "entity" && s.entityTypeId === type.id);
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={on}
-      data-entity-type={type.id}
-      onClick={() => chooseEntityType(type.id)}
-      className={`flex h-8 min-w-0 items-center gap-2 rounded-md border pr-2 pl-1.5 text-sm transition-colors ${
-        on ? "border-accent bg-accent-soft text-text" : "border-line text-muted hover:border-line-strong hover:text-text"
-      }`}
+    <RowContextMenu
+      items={() => typeChipItems(type, count)}
+      render={
+        <button
+          type="button"
+          role="radio"
+          aria-checked={on}
+          data-entity-type={type.id}
+          onClick={() => chooseEntityType(type.id)}
+          className={`flex h-8 min-w-0 items-center gap-2 rounded-md border pr-2 pl-1.5 text-sm transition-colors ${
+            on ? "border-accent bg-accent-soft text-text" : "border-line text-muted hover:border-line-strong hover:text-text"
+          }`}
+        />
+      }
     >
       <TypeMark type={type} />
       <span className="min-w-0 flex-1 truncate text-left">{entityTypeName(type)}</span>
       {count > 0 && <span className="shrink-0 font-mono text-2xs text-faint tabular">{count}</span>}
-    </button>
+    </RowContextMenu>
   );
+}
+
+/**
+ * "Haritada bul": selects the next entity of `typeId` on the open level
+ * (after the selected one, wrapping) and centres the view on it. Selection
+ * holds one entity, so repeated use steps through them.
+ */
+export function selectNextOfType(typeId: string): boolean {
+  const state = useEditorStore.getState();
+  const doc = state.project?.store.document;
+  if (!doc) return false;
+  const all = doc.entityLayers().flatMap((layer) => layer.entities.filter((e) => e.typeId === typeId).map((entity) => ({ entity, layer })));
+  if (all.length === 0) return false;
+  const at = all.findIndex((x) => x.entity.id === state.selectedEntityId);
+  const next = all[(at + 1) % all.length]!;
+  state.setActiveLayer(next.layer.id);
+  state.setSelectedEntity(next.entity.id);
+  const cell = entityCell(next.entity, doc.map);
+  getCanvasHandle()?.centerOn(cell.x, cell.y);
+  return true;
+}
+
+/** Right-click on a type chip. Built-in types cannot be edited or deleted. */
+function typeChipItems(type: EntityType, count: number): ContextEntry[] {
+  const builtin = isBuiltinEntityTypeId(type.id);
+  return [
+    { type: "item", id: "select", label: t("contextMenu.typeSelect"), icon: "pin", run: () => chooseEntityType(type.id) },
+    {
+      type: "item",
+      id: "edit",
+      label: t("contextMenu.typeEdit"),
+      icon: "pencilLine",
+      disabled: builtin,
+      run: () => useUiStore.getState().setEntityTypesOpen(true, false, type.id),
+    },
+    {
+      type: "item",
+      id: "find",
+      label: count > 0 ? t("contextMenu.typeFind", { count }) : t("contextMenu.typeFindNone"),
+      icon: "crosshair",
+      disabled: count === 0,
+      run: () => void selectNextOfType(type.id),
+    },
+    SEPARATOR,
+    { type: "item", id: "delete", label: t("contextMenu.typeDelete"), icon: "trash", danger: true, disabled: builtin, run: () => void removeEntityType(type.id) },
+  ];
 }
 
 function EntityList({ doc, entities }: { doc: MapDocument; entities: readonly Entity[] }) {

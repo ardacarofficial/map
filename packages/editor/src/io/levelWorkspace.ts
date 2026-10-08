@@ -559,7 +559,7 @@ export function withProjectData(store: MapStore, source: MapDocument): MapStore 
     const have = doc.tilesets;
     const want = source.tilesets;
     if (have.length <= want.length && have.every((ts, i) => same(ts, want[i]))) {
-      for (const tileset of want.slice(have.length)) store.dispatch({ type: "addTileset", tileset });
+      for (const tileset of want.slice(have.length)) store.dispatch({ type: "addTileset", tileset, undoable: false });
       return store;
     }
   }

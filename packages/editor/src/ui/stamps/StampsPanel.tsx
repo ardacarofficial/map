@@ -1,9 +1,8 @@
-import { ContextMenu } from "@base-ui/react/context-menu";
 import type { Stamp } from "@smap/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { runCommand } from "../../commands/registry";
-import { activeStampId, deleteStamp, pickStamp, renameStamp, stampRegion } from "../../commands/stampActions";
+import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, stampRegion } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
@@ -13,7 +12,8 @@ import { LibraryTabs } from "../panels/LibraryPanel";
 import { PanelSection } from "../panels/PanelSection";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
-import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { RowContextMenu } from "../contextMenus/RowContextMenu";
+import { SEPARATOR } from "../contextMenus/contextItems";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { stampLayerCounts, stampThumbnail } from "./stampThumb";
@@ -121,8 +121,15 @@ function StampCard({
 }) {
   const counts = stampLayerCounts(stamp);
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger
+    <RowContextMenu
+      disabled={editing}
+      items={() => [
+        { type: "item", id: "use", label: t("stamps.use"), icon: "pencil", run: () => pickStamp(stamp.id) },
+        { type: "item", id: "rename", label: t("stamps.rename"), icon: "pencilLine", run: () => onEdit(true) },
+        { type: "item", id: "duplicate", label: t("contextMenu.duplicate"), icon: "copy", run: () => void duplicateStamp(stamp.id) },
+        SEPARATOR,
+        { type: "item", id: "delete", label: t("stamps.delete"), icon: "trash", danger: true, run: () => deleteStamp(stamp.id) },
+      ]}
         render={
           <li
             role="option"
@@ -155,7 +162,7 @@ function StampCard({
             }`}
           />
         }
-      >
+    >
         <StampThumb stamp={stamp} />
         <div className="flex min-w-0 flex-col px-0.5 pb-0.5">
           {editing ? (
@@ -183,27 +190,7 @@ function StampCard({
             {t("stamps.active")}
           </span>
         )}
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Positioner className={menuPositionerClass}>
-          <ContextMenu.Popup className={menuPopupClass}>
-            <ContextMenu.Item className={menuItemClass} onClick={() => pickStamp(stamp.id)}>
-              <Icon name="pencil" size={15} className="text-muted" />
-              {t("stamps.use")}
-            </ContextMenu.Item>
-            <ContextMenu.Item className={menuItemClass} onClick={() => onEdit(true)}>
-              <Icon name="pencilLine" size={15} className="text-muted" />
-              {t("stamps.rename")}
-            </ContextMenu.Item>
-            <ContextMenu.Separator className={menuSeparatorClass} />
-            <ContextMenu.Item className={`${menuItemClass} text-danger`} onClick={() => deleteStamp(stamp.id)}>
-              <Icon name="trash" size={15} />
-              {t("stamps.delete")}
-            </ContextMenu.Item>
-          </ContextMenu.Popup>
-        </ContextMenu.Positioner>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+    </RowContextMenu>
   );
 }
 

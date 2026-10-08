@@ -11,6 +11,7 @@ export const TOOLS: readonly { id: ToolId; icon: IconName; command: CommandId }[
   { id: "select", icon: "select", command: "tool.select" },
   { id: "eyedropper", icon: "eyedropper", command: "tool.eyedropper" },
   { id: "entity", icon: "pin", command: "tool.entity" },
+  { id: "hand", icon: "hand", command: "tool.hand" },
 ];
 
 export function toolIcon(id: ToolId): IconName {

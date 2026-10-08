@@ -114,7 +114,13 @@ export function planTilesetMove(tilesets: readonly Pick<Tileset, "id" | "group">
   }
   const oldGroup = groupOf(tilesets[from]!);
   const group = target.group === oldGroup ? undefined : target.group === UNGROUPED ? null : target.group;
-  if (index === from && group === undefined) return null;
+  if (group === undefined) {
+    // Same group: nothing to do when the library shows the same order afterwards.
+    const after = [...rest];
+    after.splice(index, 0, tilesets[from]!);
+    const shown = (list: readonly Pick<Tileset, "id" | "group">[]) => groupTilesets(list).flatMap((g) => g.tilesets.map((ts) => ts.id)).join("\u0000");
+    if (index === from || shown(after) === shown(tilesets)) return null;
+  }
   return { index, group };
 }
 
@@ -133,7 +139,7 @@ export function effectiveZoom(override: number | null | undefined, global: numbe
 /** `tilesetUsage` of one level (core). */
 export interface LevelUsage {
   readonly cells: number;
-  readonly layers: number;
+  readonly layers: readonly string[];
   readonly terrains: number;
   readonly terrainCells: number;
 }

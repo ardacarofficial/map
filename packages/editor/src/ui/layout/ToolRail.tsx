@@ -32,7 +32,7 @@ export function ToolRail() {
     >
       {TOOLS.map(({ id, icon, command }, index) => (
         <Fragment key={id}>
-          {(index === GROUP_BREAK + 1 || id === "entity") && <div aria-hidden className="my-1 h-px w-5 bg-line" />}
+          {(index === GROUP_BREAK + 1 || id === "entity" || id === "hand") && <div aria-hidden className="my-1 h-px w-5 bg-line" />}
           <Tooltip label={t(`tools.${id}`)} command={command} side="right">
             <IconButton
               aria-label={t(`tools.${id}`)}

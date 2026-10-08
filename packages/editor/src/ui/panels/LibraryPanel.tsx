@@ -8,6 +8,10 @@ import { EntityPalette } from "../entities/EntityPalette";
 import { useStructureVersion } from "../hooks";
 import { StampsPanel } from "../stamps/StampsPanel";
 import { useUiStore, type LibraryTab } from "../uiStore";
+import { useLayoutStore } from "../layout/layoutStore";
+import { IconButton } from "../primitives/Button";
+import { Icon } from "../primitives/Icon";
+import { Tooltip } from "../primitives/Tooltip";
 import { TilesetPanel } from "./TilesetPanel";
 
 /** What a tab's `visible` / `auto` sees. */
@@ -150,26 +154,38 @@ export function LibraryTabs() {
   const setTab = useUiStore((s) => s.setLibraryTab);
   const current = resolveLibraryTab(selected, listed)?.id;
   return (
-    <div role="tablist" aria-label={t("layout.library")} className="-ml-1.5 flex min-w-0 items-center gap-0.5 overflow-x-auto">
-      {listed.map(({ id, label, useBadge }) => {
-        const on = id === current;
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            data-library-tab-button={id}
-            onClick={() => setTab(id)}
-            className={`relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-semibold tracking-wide transition-colors ${
-              on ? "bg-active text-text" : "text-faint hover:bg-hover hover:text-muted"
-            }`}
-          >
-            {t(label)}
-            {useBadge && <Badge useCount={useBadge} on={on} />}
-          </button>
-        );
-      })}
+    <div className="-ml-1.5 flex min-w-0 flex-1 items-center gap-1">
+      <div role="tablist" aria-label={t("layout.library")} className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+        {listed.map(({ id, label, useBadge }) => {
+          const on = id === current;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              data-library-tab-button={id}
+              onClick={() => setTab(id)}
+              className={`relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-semibold tracking-wide transition-colors ${
+                on ? "bg-active text-text" : "text-faint hover:bg-hover hover:text-muted"
+              }`}
+            >
+              {t(label)}
+              {useBadge && <Badge useCount={useBadge} on={on} />}
+            </button>
+          );
+        })}
+      </div>
+      <Tooltip label={t("layout.hideLibrary")} command="view.toggleLibrary">
+        <IconButton
+          aria-label={t("layout.hideLibrary")}
+          data-library-hide=""
+          className="ml-auto size-7"
+          onClick={() => useLayoutStore.getState().setLibraryCollapsed(true)}
+        >
+          <Icon name="panels" size={14} className="-scale-x-100" />
+        </IconButton>
+      </Tooltip>
     </div>
   );
 }

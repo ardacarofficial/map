@@ -77,6 +77,12 @@ export function pickStamp(id: string): void {
   const stamp = useProjectLibrary.getState().stamps.find((s) => s.id === id);
   const editor = useEditorStore.getState();
   if (!stamp || !editor.project) return;
+  // A stamp saved with a tileset that was removed since cannot be placed.
+  const doc = editor.project.store.document;
+  if (stamp.palette.some((e) => !doc.getTileset(e.tilesetId))) {
+    toast.error(t("tilesetLib.stampRemovedTileset", { name: stamp.name }));
+    return;
+  }
   editor.setRandomSet([]);
   editor.setStamp(stamp);
   editor.setRegion(null);
@@ -111,4 +117,18 @@ export function deleteStamp(id: string): void {
       if (!useProjectLibrary.getState().stamps.some((s) => s.id === id)) useProjectLibrary.getState().addStamp(removed);
     },
   });
+}
+
+/** "Çoğalt": a copy of a library stamp under a new id and "<ad> kopya" name, right after it in the list. */
+export function duplicateStamp(id: string): Stamp | null {
+  const library = useProjectLibrary.getState();
+  const stamp = library.stamps.find((s) => s.id === id);
+  if (!stamp) return null;
+  const names = new Set(library.stamps.map((s) => s.name));
+  let name = t("contextMenu.stampCopyName", { name: stamp.name });
+  for (let n = 2; names.has(name); n++) name = `${t("contextMenu.stampCopyName", { name: stamp.name })} ${n}`;
+  const copy = Object.freeze({ ...stamp, id: makeStampId(name, takenStampIds(library)), name }) as Stamp;
+  library.addStamp(copy);
+  toast.success(t("toast.stampDuplicated", { name }));
+  return copy;
 }

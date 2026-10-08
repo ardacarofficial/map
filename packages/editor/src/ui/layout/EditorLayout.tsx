@@ -5,6 +5,7 @@ import { t } from "../../i18n";
 import { CanvasHost } from "../canvas/CanvasHost";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
 import { UndoHud } from "../feedback/UndoHud";
+import { BlockedActionFeedback } from "../feedback/BlockedActionFeedback";
 import { CanvasContextMenu } from "../contextMenus/CanvasContextMenu";
 import { LibraryPanel } from "../panels/LibraryPanel";
 import { SelectionBar } from "../selectionBar/SelectionBar";
@@ -80,6 +81,7 @@ export function EditorLayout() {
             <UndoHud />
             <PointPickOverlay />
             <CanvasContextMenu />
+            <BlockedActionFeedback />
           </main>
           <div className={hidden || world || recentHidden ? "hidden" : "contents"}>
             <RecentTilesStrip />

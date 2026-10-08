@@ -16,13 +16,16 @@ export interface MenuDef {
   id: "file" | "edit" | "view" | "layer" | "map" | "help";
   label: MessageKey;
   entries: readonly MenuEntry[];
+  /** A submenu that is not a command (e.g. "Son açılanlar ▸"), shown right after `after`. */
+  submenu?: { readonly id: "recentProjects"; readonly after: CommandId };
 }
 
 export const MENUS: readonly MenuDef[] = [
   {
     id: "file",
     label: "menu.file",
-    entries: ["file.new", "file.open", "-", "file.save", "file.saveAs", "file.openBackup", "-", "tileset.add", "file.export", "-", "file.close"],
+    entries: ["file.new", "file.open", "-", "file.save", "file.saveAs", "file.openBackup", "-", "project.rename", "tileset.add", "file.export", "-", "file.close"],
+    submenu: { id: "recentProjects", after: "file.open" },
   },
   {
     id: "edit",
@@ -38,6 +41,7 @@ export const MENUS: readonly MenuDef[] = [
       "-",
       "edit.selectAll",
       "edit.deselect",
+      "edit.invertSelection",
       "-",
       "edit.flipX",
       "edit.flipY",
@@ -58,9 +62,18 @@ export const MENUS: readonly MenuDef[] = [
       "-",
       "view.toggleGrid",
       "view.toggleCollision",
+      "-",
+      "view.toggleLibrary",
+      "view.toggleInspector",
+      "view.toggleLevels",
+      "view.toggleProperties",
+      "view.toggleLayers",
+      "view.toggleRecent",
       "view.toggleMinimap",
       "view.toggleSelectionBar",
+      "-",
       "view.togglePanels",
+      "view.resetLayout",
       "-",
       "view.world",
     ],
@@ -68,12 +81,27 @@ export const MENUS: readonly MenuDef[] = [
   {
     id: "layer",
     label: "menu.layer",
-    entries: ["layer.add", "layer.addCollision", "layer.addEntity", "-", "layer.remove", "-", "entity.editTypes"],
+    entries: [
+      "layer.add",
+      "layer.addCollision",
+      "layer.addEntity",
+      "-",
+      "layer.rename",
+      "layer.duplicate",
+      "layer.mergeDown",
+      "-",
+      "layer.moveUp",
+      "layer.moveDown",
+      "-",
+      "layer.remove",
+      "-",
+      "entity.editTypes",
+    ],
   },
   {
     id: "map",
     label: "menu.map",
-    entries: ["map.resize", "-", "tileset.markSolid", "tileset.defineTerrain", "-", "level.new", "level.duplicate", "level.remove"],
+    entries: ["map.resize", "-", "tileset.markSolid", "tileset.defineTerrain", "-", "level.new", "level.duplicate", "level.next", "level.previous", "level.remove"],
   },
   {
     id: "help",
@@ -90,13 +118,15 @@ export interface ResolvedItem {
   enabled: boolean;
   /** First key of the command (settings overrides applied), or null. */
   shortcut: string | null;
+  /** On / off of a toggle command (shown as a check mark); undefined for plain commands. */
+  checked?: boolean;
 }
 
 export type ResolvedEntry = ResolvedItem | { kind: "separator" };
 
 export interface CommandLookup {
   /** Title and enabled state of a registered command; undefined when it is not registered. */
-  command(id: CommandId): { title: MessageKey; enabled: boolean } | undefined;
+  command(id: CommandId): { title: MessageKey; enabled: boolean; checked?: boolean } | undefined;
   keys(id: CommandId): readonly string[];
 }
 
@@ -117,7 +147,9 @@ export function resolveMenu(menu: MenuDef, lookup: CommandLookup): ResolvedEntry
     if (!command) continue;
     if (pendingSeparator) out.push({ kind: "separator" });
     pendingSeparator = false;
-    out.push({ kind: "item", command: entry, title: command.title, enabled: command.enabled, shortcut: lookup.keys(entry)[0] ?? null });
+    const item: ResolvedItem = { kind: "item", command: entry, title: command.title, enabled: command.enabled, shortcut: lookup.keys(entry)[0] ?? null };
+    if (command.checked !== undefined) item.checked = command.checked;
+    out.push(item);
   }
   return out;
 }

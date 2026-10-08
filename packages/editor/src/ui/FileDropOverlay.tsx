@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { t } from "../i18n";
 import { addTilesetFiles, createProjectFromTilesets } from "../io/session";
@@ -18,6 +18,8 @@ function hasFiles(event: DragEvent): boolean {
 export function FileDropOverlay() {
   const dragging = useUiStore((s) => s.draggingFiles);
   const hasProject = useEditorStore((s) => s.project !== null);
+  /** Files being dragged (browsers report the count while dragging; 0 = unknown). */
+  const [count, setCount] = useState(0);
 
   useEffect(() => {
     let depth = 0;
@@ -26,6 +28,7 @@ export function FileDropOverlay() {
       if (!hasFiles(e)) return;
       e.preventDefault();
       depth++;
+      setCount([...(e.dataTransfer?.items ?? [])].filter((item) => item.kind === "file").length);
       set(true);
     };
     const onOver = (e: DragEvent) => {
@@ -67,8 +70,8 @@ export function FileDropOverlay() {
         <div className="grid size-12 place-items-center rounded-full bg-raised text-accent shadow-popup">
           <Icon name="upload" size={22} />
         </div>
-        <div className="text-lg font-medium text-text">{t("drop.overlay")}</div>
-        <div className="text-md text-muted">{t("drop.overlayHint")}</div>
+        <div className="text-lg font-medium text-text">{count > 1 ? t("drop.overlayMany", { count }) : t("drop.overlay")}</div>
+        <div className="text-md text-muted">{count > 1 ? t("drop.overlayHintMany") : t("drop.overlayHint")}</div>
       </div>
     </div>
   );

@@ -16,6 +16,8 @@ import { Tooltip } from "../primitives/Tooltip";
 import { dropIndex, rowShift } from "../panels/layerOrder";
 import { PanelSection } from "../panels/PanelSection";
 import type { SectionPanelProps } from "../layout/RightColumn";
+import { RowContextMenu } from "../contextMenus/RowContextMenu";
+import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 
 /** Row height in px (keep in sync with `h-8`). */
 const ROW = 32;
@@ -152,28 +154,34 @@ export function LevelsPanel({ collapsed, onToggleCollapsed, extra }: SectionPane
             const y = dragged ? drag.dy : shift;
             const unsaved = dirty.has(level.id);
             return (
-              <li
+              <RowContextMenu
                 key={level.id}
-                role="option"
-                aria-selected={isActive}
-                data-level-id={level.id}
-                title={t("levels.rowHint")}
-                onPointerDown={(e) => onPointerDown(e, level, index)}
-                onPointerMove={onPointerMove}
-                onPointerUp={() => onPointerUp(level)}
-                onPointerCancel={onPointerCancel}
-                onDoubleClick={(e) => {
-                  if (!e.currentTarget.contains(e.target as Node)) return;
-                  if (!picking && !(e.target as HTMLElement).closest("button")) setEditingId(level.id);
-                }}
-                style={{ transform: y ? `translateY(${y}px)` : undefined }}
-                className={`group relative flex h-8 shrink-0 items-center gap-2 rounded-md pr-1 pl-2 text-md select-none ${
-                  dragged
-                    ? "z-10 cursor-grabbing bg-active shadow-popup"
-                    : settling
-                      ? ""
-                      : "transition-transform duration-150 ease-(--ease-out)"
-                } ${isActive ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                disabled={picking || editingId === level.id}
+                items={() => levelRowItems(level, count > 1, () => setEditingId(level.id))}
+                render={
+                  <li
+                    role="option"
+                    aria-selected={isActive}
+                    data-level-id={level.id}
+                    title={t("levels.rowHint")}
+                    onPointerDown={(e) => onPointerDown(e, level, index)}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={() => onPointerUp(level)}
+                    onPointerCancel={onPointerCancel}
+                    onDoubleClick={(e) => {
+                      if (!e.currentTarget.contains(e.target as Node)) return;
+                      if (!picking && !(e.target as HTMLElement).closest("button")) setEditingId(level.id);
+                    }}
+                    style={{ transform: y ? `translateY(${y}px)` : undefined }}
+                    className={`group relative flex h-8 shrink-0 items-center gap-2 rounded-md pr-1 pl-2 text-md select-none ${
+                      dragged
+                        ? "z-10 cursor-grabbing bg-active shadow-popup"
+                        : settling
+                          ? ""
+                          : "transition-transform duration-150 ease-(--ease-out)"
+                    } ${isActive ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                  />
+                }
               >
                 {isActive && <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
                 <Icon name="map" size={14} className={`shrink-0 ${isActive ? "text-accent" : "text-faint"}`} />
@@ -206,13 +214,23 @@ export function LevelsPanel({ collapsed, onToggleCollapsed, extra }: SectionPane
                     onRename={() => setEditingId(level.id)}
                   />
                 )}
-              </li>
+              </RowContextMenu>
             );
           })}
         </ul>
       )}
     </PanelSection>
   );
+}
+
+/** Right-click on a level row: the same actions as its "…" menu. */
+function levelRowItems(level: ProjectLevel, canRemove: boolean, onRename: () => void): ContextEntry[] {
+  return [
+    { type: "item", id: "rename", label: t("levels.rename"), icon: "pencilLine", run: onRename },
+    { type: "item", id: "duplicate", label: t("levels.duplicate"), icon: "copy", run: () => void duplicateLevel(level.id) },
+    SEPARATOR,
+    { type: "item", id: "remove", label: t("levels.remove"), icon: "trash", danger: true, disabled: !canRemove, run: () => askRemoveLevel(level.id) },
+  ];
 }
 
 /** "…" on a row: rename, duplicate, delete. */

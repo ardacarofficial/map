@@ -55,6 +55,7 @@ import { groupNames, planTilesetMove, summarizeUsage, uniqueGroupName, type Drop
 import { askRemoveTileset } from "../ui/tileset/RemoveTilesetDialog";
 import { askText } from "../ui/tileset/TextPrompt";
 import { registerCommands, registerPaletteProvider, type Command } from "./registry";
+import { dropMemoryClipUnless } from "./clipboard";
 import { undoStepAction } from "./undoStepAction";
 
 const activeStore = (): MapStore | null => useEditorStore.getState().project?.store ?? null;
@@ -364,6 +365,7 @@ function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void
 function dropMissingTilesets(doc: MapDocument): void {
   const exists = (id: string) => doc.getTileset(id) !== undefined;
   const editor = useEditorStore.getState();
+  dropMemoryClipUnless(exists);
   const changes = dropTilesetRefs(editor, exists);
   if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
   const view = useTilesetView.getState();

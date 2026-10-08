@@ -34,6 +34,11 @@ export function getMemoryClip(): TileClip | null {
   return memoryClip;
 }
 
+/** Forgets the in-memory clip when it uses a tileset that no longer exists (a tileset was removed). */
+export function dropMemoryClipUnless(exists: (tilesetId: string) => boolean): void {
+  if (memoryClip && memoryClip.palette.some((e) => !exists(e.tilesetId))) memoryClip = null;
+}
+
 function writeSystemClipboard(text: string): void {
   // Best effort: may be unavailable (insecure context, permissions).
   void navigator.clipboard?.writeText(text).catch(() => undefined);
@@ -107,7 +112,9 @@ function startPlacing(clip: TileClip): boolean {
   if (!doc) return false;
   const problem = clipProblem(doc, clip);
   if (problem) {
-    toast.error(t("toast.pasteFailed", { detail: problem }));
+    // A clip copied before its tileset was removed (memory or system clipboard).
+    const gone = clip.palette.some((e) => !doc.getTileset(e.tilesetId));
+    toast.error(gone ? t("tilesetLib.pasteRemovedTileset") : t("toast.pasteFailed", { detail: problem }));
     return false;
   }
   state.setRegion(null);

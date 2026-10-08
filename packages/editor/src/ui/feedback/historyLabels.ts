@@ -7,10 +7,10 @@
  * falls off, so a depth would name the wrong step. The canvas'
  * `onStrokeCommitted` summary — reported right after the step's commit —
  * names the step on top. Steps the canvas did not report (layer changes,
- * terrain definitions...) keep no label and fall back to a bare
- * "Geri alındı".
+ * terrain definitions...) are described from their changes
+ * ({@link describeEntry}: "Geri alındı: Katman eklendi").
  */
-import type { ChangeCause, MapStore } from "@smap/core";
+import { patchCellCount, type ChangeCause, type HistoryEntry, type MapStore } from "@smap/core";
 
 import type { StrokeSummary } from "../../canvas/canvasEvents";
 import { formatNumber, t } from "../../i18n";
@@ -86,10 +86,46 @@ export function strokeToolLabel(summary: StrokeSummary): string {
   return summary.tool === "stamp" ? t("feedback.stamp") : t(`tools.${summary.tool}`);
 }
 
-/** "Geri alındı: Kalem (12 hücre)" / "Yinelendi: 5 adım" / "Geri alındı". */
-export function historyMessage(move: HistoryMove, summary: StrokeSummary | null, count = 1): string {
+/**
+ * What a history step did, read from its changes, for steps the canvas did
+ * not name (layer add / remove / move / props, resize, tileset and entity
+ * edits, pasted cells): "Katman eklendi", "Katman gizlendi", "40 hücre"...
+ * Null when there is nothing to say.
+ */
+export function describeEntry(entry: HistoryEntry | undefined): string | null {
+  if (!entry || entry.changes.length === 0) return null;
+  const changes = entry.changes;
+  const layers = changes.filter((c) => c.kind === "layer");
+  if (layers.length > 0) {
+    if (layers.every((c) => c.before === null)) return t("feedback.layerAdded");
+    if (layers.every((c) => c.after === null)) return t("feedback.layerRemoved");
+    if (layers.every((c) => c.before !== null && c.after !== null)) return t("feedback.layerMoved");
+    return t("feedback.layersChanged");
+  }
+  const props = changes.filter((c) => c.kind === "layerProps");
+  if (props.length > 0) {
+    const first = props[0]!;
+    if (first.before.name !== first.after.name) return t("feedback.layerRenamed");
+    if (first.before.visible !== first.after.visible) return t(first.after.visible ? "feedback.layerShown" : "feedback.layerHidden");
+    if (first.before.locked !== first.after.locked) return t(first.after.locked ? "feedback.layerLocked" : "feedback.layerUnlocked");
+    if (first.before.opacity !== first.after.opacity) return t("feedback.layerOpacity");
+    return t("feedback.layersChanged");
+  }
+  if (changes.some((c) => c.kind === "map")) return t("feedback.mapResized");
+  if (changes.some((c) => c.kind === "tileset" || c.kind === "palette")) return t("feedback.tileset");
+  if (changes.some((c) => c.kind === "entityTypes")) return t("feedback.entityTypes");
+  if (changes.some((c) => c.kind === "entities")) return t("feedback.entities");
+  const cells = entry.patches.reduce((n, p) => n + patchCellCount(p), 0);
+  return cells > 0 ? t("feedback.cells", { count: formatNumber(cells) }) : null;
+}
+
+/**
+ * "Geri alındı: Kalem (12 hücre)" / "Yinelendi: 5 adım" / "Geri alındı".
+ * `fallback` names a step the canvas did not report (see {@link describeEntry}).
+ */
+export function historyMessage(move: HistoryMove, summary: StrokeSummary | null, count = 1, fallback: string | null = null): string {
   const key = move === "undo" ? "feedback.undone" : "feedback.redone";
   if (count > 1) return t(key, { what: t("feedback.steps", { count: formatNumber(count) }) });
-  if (!summary) return t(move === "undo" ? "feedback.undoneBare" : "feedback.redoneBare");
+  if (!summary) return fallback ? t(key, { what: fallback }) : t(move === "undo" ? "feedback.undoneBare" : "feedback.redoneBare");
   return t(key, { what: t("feedback.stroke", { tool: strokeToolLabel(summary), count: formatNumber(summary.cells) }) });
 }

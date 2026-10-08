@@ -5,7 +5,7 @@ import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { Icon } from "../primitives/Icon";
 import { useToastStore } from "../toast/toastStore";
-import { HistoryLabels, historyMessage, nextBurst, type Burst, type HistoryMove } from "./historyLabels";
+import { describeEntry, HistoryLabels, historyMessage, nextBurst, type Burst, type HistoryMove } from "./historyLabels";
 import { hudBottom } from "./hudStack";
 
 /** How long the pill stays after the last undo / redo (ms). */
@@ -49,7 +49,9 @@ export function UndoHud() {
       if (!feedback) return;
       const b = nextBurst(burst.current, feedback.move, performance.now());
       burst.current = b;
-      setShown({ move: feedback.move, message: historyMessage(feedback.move, feedback.summary, b.count), token: ++token });
+      // The step just moved: undone → top of redo, redone → top of undo.
+      const fallback = feedback.summary ? null : describeEntry(feedback.move === "undo" ? store.peekRedo() : store.peekUndo());
+      setShown({ move: feedback.move, message: historyMessage(feedback.move, feedback.summary, b.count, fallback), token: ++token });
       setVisible(true);
     });
   }, [store]);

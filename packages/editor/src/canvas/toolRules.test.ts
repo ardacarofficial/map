@@ -93,14 +93,15 @@ describe("selection move", () => {
     expect(movedRegion(r, 20, 0, map)).toBeNull();
   });
 
-  it("offset follows the pointer but keeps a cell of the region on the map", () => {
+  it("offset follows the pointer but keeps the whole region on the map", () => {
     expect(moveOffset(r, { x: 3, y: 2 }, { x: 5, y: 4 }, map)).toEqual({ x: 2, y: 2 });
+    expect(moveOffset(r, { x: 3, y: 2 }, { x: -20, y: 40 }, map)).toEqual({ x: -2, y: 4 });
     fc.assert(
       fc.property(fc.integer({ min: -50, max: 50 }), fc.integer({ min: -50, max: 50 }), (px, py) => {
         const off = moveOffset(r, { x: 3, y: 3 }, { x: px, y: py }, map);
-        expect(movedRegion(r, off.x, off.y, map)).not.toBeNull();
+        expect(movedRegion(r, off.x, off.y, map)).toEqual({ ...r, x: r.x + off.x, y: r.y + off.y });
         // Inside the allowed range the offset is exactly the pointer delta.
-        if (px - 3 >= -4 && px - 3 <= 7) expect(off.x).toBe(px - 3);
+        if (px - 3 >= -2 && px - 3 <= 5) expect(off.x).toBe(px - 3);
       }),
     );
   });

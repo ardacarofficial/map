@@ -1,12 +1,15 @@
 import { runCommand } from "../../commands/registry";
 import { ExportIcon } from "../../export/ExportDialog";
 import { t } from "../../i18n";
+import { endProjectRename, startProjectRename, useProjectRename } from "../../io/projectRename";
 import { useSaveIndicator } from "../../io/saveIndicator";
+import { renameProject } from "../../io/session";
 import { useEditorStore } from "../../state/editorStore";
 import { useHistoryState } from "../hooks";
 import { MenuBar } from "../menu/MenuBar";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
+import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { ViewToggle } from "./ViewToggle";
 
@@ -21,6 +24,7 @@ export function AppBar() {
   const store = useEditorStore((s) => s.project?.store);
   const { canUndo, canRedo } = useHistoryState(store);
   const saveLabel = dirty ? t("toolbar.unsaved") : t("toolbar.saved");
+  const renaming = useProjectRename((s) => s.editing);
 
   return (
     <header aria-label={t("layout.appBar")} className="grid h-toolbar grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-line bg-panel pr-2 pl-1">
@@ -32,7 +36,26 @@ export function AppBar() {
       </div>
 
       <div className="flex min-w-0 items-center justify-center gap-2">
-        <h1 className="min-w-0 truncate text-md font-medium text-text">{name}</h1>
+        {renaming ? (
+          <RenameInput
+            initial={name}
+            label={t("appBar.projectName")}
+            className="h-7 w-[min(320px,40vw)] text-center text-md font-medium"
+            onDone={(next) => {
+              endProjectRename();
+              if (next !== null) renameProject(next);
+            }}
+          />
+        ) : (
+          <h1
+            title={t("appBar.renameHint")}
+            data-project-name=""
+            onDoubleClick={startProjectRename}
+            className="min-w-0 cursor-default truncate rounded-sm px-1 text-md font-medium text-text hover:bg-hover"
+          >
+            {name}
+          </h1>
+        )}
         <Tooltip label={saveLabel}>
           <span role="status" aria-label={saveLabel} className="grid size-4 shrink-0 place-items-center">
             <span className={`size-1.5 rounded-full transition-colors duration-200 ${dirty ? "bg-warning" : "bg-line-strong"}`} />

@@ -9,6 +9,8 @@ import { useImageVersion, useStructureVersion } from "../hooks";
 import { Icon } from "../primitives/Icon";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Tooltip } from "../primitives/Tooltip";
+import { RowContextMenu } from "../contextMenus/RowContextMenu";
+import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import { stampThumbnail } from "../stamps/stampThumb";
 import { pickRecentStamp, pickRecentTile, recentStampLabel } from "./recentTiles";
 
@@ -58,7 +60,7 @@ export function RecentTilesStrip() {
               const on = stamp === item.stamp;
               const label = recentStampLabel(doc, item.stamp);
               return (
-                <Item key={recentKey(item)} label={label} on={on} data={`stamp:${item.key}`} onClick={() => pickRecentStamp(item.stamp)}>
+                <Item key={recentKey(item)} itemKey={recentKey(item)} label={label} on={on} data={`stamp:${item.key}`} onClick={() => pickRecentStamp(item.stamp)}>
                   <StampMini doc={doc!} clip={item.stamp} />
                 </Item>
               );
@@ -68,6 +70,7 @@ export function RecentTilesStrip() {
             return (
               <Item
                 key={recentKey(item)}
+                itemKey={recentKey(item)}
                 label={t("recent.tile", { id: item.tileId, tileset: tileset.name })}
                 on={on}
                 data={`${item.tilesetId}:${item.tileId}`}
@@ -83,7 +86,46 @@ export function RecentTilesStrip() {
   );
 }
 
-function Item({ label, on, data, onClick, children }: { label: string; on: boolean; data: string; onClick(): void; children: ReactNode }) {
+/** Right-click on a strip item: take it off the list, or clear the list. */
+function recentItemMenu(key: string): ContextEntry[] {
+  return [
+    {
+      type: "item",
+      id: "remove",
+      label: t("contextMenu.recentRemove"),
+      icon: "x",
+      run: () => useEditorStore.setState((s) => ({ recentTiles: s.recentTiles.filter((item) => recentKey(item) !== key) })),
+    },
+    SEPARATOR,
+    { type: "item", id: "clear", label: t("contextMenu.recentClear"), icon: "trash", danger: true, run: () => useEditorStore.setState({ recentTiles: [] }) },
+  ];
+}
+
+function Item({
+  label,
+  on,
+  data,
+  itemKey,
+  onClick,
+  children,
+}: {
+  label: string;
+  on: boolean;
+  data: string;
+  itemKey: string;
+  onClick(): void;
+  children: ReactNode;
+}) {
+  return (
+    <RowContextMenu items={() => recentItemMenu(itemKey)} render={<span className="flex shrink-0" />}>
+      <ItemButton label={label} on={on} data={data} onClick={onClick}>
+        {children}
+      </ItemButton>
+    </RowContextMenu>
+  );
+}
+
+function ItemButton({ label, on, data, onClick, children }: { label: string; on: boolean; data: string; onClick(): void; children: ReactNode }) {
   return (
     <Tooltip label={label} side="top">
       <button
