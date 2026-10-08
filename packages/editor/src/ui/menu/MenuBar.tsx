@@ -4,7 +4,7 @@ import { Menubar } from "@base-ui/react/menubar";
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { t } from "../../i18n";
 import { openRecentProject } from "../../io/session";
-import { useRecentProjects } from "../../platform/recentProjects";
+import { forgetRecentProject, useRecentProjects } from "../../platform/recentProjects";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { Icon } from "../primitives/Icon";
 import { Kbd } from "../primitives/Kbd";
@@ -135,8 +135,27 @@ function RecentProjectsSubmenu() {
                   className={`${menuItemClass} flex-col items-start gap-0 py-1 text-sm ${entry.exists ? "" : "opacity-60"}`}
                   onClick={() => void openRecentProject(entry)}
                 >
-                  <span className="max-w-full truncate">{entry.name}</span>
-                  <span className="max-w-full truncate text-2xs text-faint">{entry.location}</span>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="max-w-full truncate">{entry.name}</span>
+                      <span className="max-w-full truncate text-2xs text-faint">{entry.location}</span>
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={t("contextMenu.recentRemove")}
+                      title={t("contextMenu.recentRemove")}
+                      data-recent-forget=""
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        void forgetRecentProject(entry);
+                      }}
+                      className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-active hover:text-text"
+                    >
+                      <Icon name="x" size={12} />
+                    </span>
+                  </span>
                 </Menu.Item>
               ))
             )}
