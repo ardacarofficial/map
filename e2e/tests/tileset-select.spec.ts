@@ -136,6 +136,8 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   await page.mouse.wheel(0, -100);
   await expect.poll(scale).toBeGreaterThan(before);
   await page.mouse.wheel(0, -100);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(300);
   const zoomed = await scale();
   expect(zoomed).toBeGreaterThan(before);
   // It is this tileset's own zoom: the footer offers a reset.
@@ -155,7 +157,8 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   expect(await scale()).toBe(zoomed);
 
   // Space + drag pans without selecting.
-  const selectedBefore = await grid.locator("[data-selected-tiles]").getAttribute("data-selected-tiles").catch(() => null);
+  const selectedNow = () => grid.evaluate((el) => el.querySelector("[data-selected-tiles]")?.getAttribute("data-selected-tiles") ?? null);
+  const selectedBefore = await selectedNow();
   const s0 = await scroll();
   await page.mouse.move(box.x + box.width / 2, box.y + 120);
   await page.keyboard.down("Space");
@@ -166,7 +169,7 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   const s1 = await scroll();
   expect(s1.left).toBeGreaterThan(s0.left);
   expect(s1.top).toBeGreaterThan(s0.top);
-  expect(await grid.locator("[data-selected-tiles]").getAttribute("data-selected-tiles").catch(() => null)).toBe(selectedBefore);
+  expect(await selectedNow()).toBe(selectedBefore);
 
   // Reset the own zoom: back to the global zoom (fit).
   await page.locator("[data-tileset-zoom-override]").click();

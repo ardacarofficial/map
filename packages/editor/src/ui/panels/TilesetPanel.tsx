@@ -400,7 +400,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
               )}
             </>
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-0.5" data-tileset-zoom>
+          <div className="ml-auto flex shrink-0 items-center gap-1" data-tileset-zoom>
             {override !== null && (
               <Tooltip label={t("tilesetLib.zoomOverrideReset")} side="top">
                 <button
@@ -426,17 +426,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip label={t("tilesetPanel.zoomOut")} side="top">
-              <IconButton aria-label={t("tilesetPanel.zoomOut")} className="size-6" onClick={() => zoomGlobal(stepZoom(shownScale, -1))}>
-                <Icon name="minus" size={13} />
-              </IconButton>
-            </Tooltip>
             <ZoomSlider value={override ?? globalZoom} shown={shownScale} onChange={zoomGlobal} />
-            <Tooltip label={t("tilesetPanel.zoomIn")} side="top">
-              <IconButton aria-label={t("tilesetPanel.zoomIn")} className="size-6" onClick={() => zoomGlobal(stepZoom(shownScale, 1))}>
-                <Icon name="plus" size={13} />
-              </IconButton>
-            </Tooltip>
             <Tooltip label={t("tilesetPanel.zoomActual")} side="top">
               <button
                 type="button"
