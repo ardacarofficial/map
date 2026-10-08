@@ -17,6 +17,7 @@ import { terrainBlockProblem } from "../../commands/terrainActions";
 import { openTilesetImport } from "../../commands/tilesetActions";
 import { t } from "../../i18n";
 import { useEditorStore, type TileSelection } from "../../state/editorStore";
+import { onTilesetImage } from "../../state/tilesetImages";
 import { useStructureVersion, useTilesetImage } from "../hooks";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
@@ -248,6 +249,9 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
   const template = useUiStore((s) => s.terrainTemplate);
   const activeTerrainId = useActiveTerrainId();
   const empty = useEmptyTiles(tileset, image?.bitmap);
+  // Redraw when the image is re-registered or its grid is re-cut (`notifyTilesetImage` after a settings change).
+  const [imageVersion, setImageVersion] = useState(0);
+  useEffect(() => onTilesetImage((id) => id === tileset.id && setImageVersion((v) => v + 1)), [tileset.id]);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -369,11 +373,11 @@ function TilesetView({ tileset }: { tileset: Tileset }) {
     const canvas = canvasRef.current;
     if (canvas && image) drawTiles(canvas, tileset, image.bitmap);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw only when the image or the grid changes
-  }, [image, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
+  }, [image, imageVersion, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
 
   useEffect(() => {
     if (marksRef.current) drawMarks(marksRef.current, tileset, empty, cellW, cellH, cssW, cssH, mode === "solid");
-  }, [tileset, empty, cellW, cellH, cssW, cssH, mode, image]);
+  }, [tileset, empty, cellW, cellH, cssW, cssH, mode, image, imageVersion]);
 
   // ---- hit testing
 
