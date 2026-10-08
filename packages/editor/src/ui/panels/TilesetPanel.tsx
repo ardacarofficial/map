@@ -298,7 +298,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
   // ---- footer state
 
   const override = !stack ? (zoomMap[active.id] ?? null) : null;
-  const shownScale = stack ? (globalZoom ?? 1) : scaleOf(active);
+  const shownScale = stack ? (globalZoom ?? scaleOf(active)) : scaleOf(active);
   const contentW = active.columns * active.tileWidth;
   const widenExtra = !stack && zoomMap[active.id] == null && globalZoom === null && availWidth > 0 && contentW > availWidth ? contentW - availWidth : 0;
   const canWiden = useLayoutStore(
