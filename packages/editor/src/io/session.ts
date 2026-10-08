@@ -370,7 +370,7 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
       if (workspace !== ws) return true;
       settleDirty(libRevision);
       useSaveStatus.setState({ diskConflict: null });
-      toast.success(t("toast.saved", { name: target.fs.name }));
+      toast.success(t("toast.saved", { name: project.name || target.fs.name }));
       void getPlatform().recents.add(target, project.name).catch((error: unknown) => console.warn(error));
       return true;
     } catch (error) {

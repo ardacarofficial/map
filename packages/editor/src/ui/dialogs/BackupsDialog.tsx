@@ -94,7 +94,7 @@ function BackupList({ onDone }: { onDone(): void }) {
               </span>
             )}
             <span className="text-sm text-faint tabular">{relative(entry.date, now)}</span>
-            <span className="text-sm font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <span className="text-sm font-medium text-muted transition-colors group-hover:text-accent group-focus-visible:text-accent">
               {t("backups.open")}
             </span>
           </button>

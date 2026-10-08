@@ -18,13 +18,13 @@ const ICON_COLOR: Record<ToastKind, string> = {
   error: "text-danger",
 };
 
-/** Bottom-right stack of auto-dismissing notifications. */
+/** Bottom-left stack of the canvas area (the minimap owns its bottom-right corner) of auto-dismissing notifications. */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed right-4 bottom-[calc(var(--spacing-statusbar)+12px)] z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col items-end gap-2"
+      className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+12px)] left-[calc(var(--spacing-rail)+16px)] z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col items-start gap-2"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />
