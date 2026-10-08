@@ -8,7 +8,7 @@ import { pushRecent, type RecentItem } from "./recentItems";
  * `MapStore`. Canvas (`src/canvas`) and panels (`src/ui`) both read this store.
  */
 
-export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity";
+export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity" | "hand";
 
 /** Rectangular region in cell coordinates (inclusive x/y, width/height ≥ 1). */
 export interface CellRegion {

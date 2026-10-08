@@ -42,7 +42,8 @@ describe("keymap", () => {
     expect(commandForEvent(ev("KeyP", { ctrl: true, shift: true }))).toBe("palette.open");
     expect(commandForEvent(ev("KeyS", { ctrl: true }))).toBe("file.save");
     expect(commandForEvent(ev("KeyS", { ctrl: true, shift: true }))).toBe("file.saveAs");
-    expect(commandForEvent(ev("KeyB", { ctrl: true }))).toBeNull();
+    expect(commandForEvent(ev("KeyB", { ctrl: true }))).toBe("view.toggleLibrary");
+    expect(commandForEvent(ev("KeyQ", { ctrl: true }))).toBeNull();
   });
 
   it("has no duplicate bindings", () => {

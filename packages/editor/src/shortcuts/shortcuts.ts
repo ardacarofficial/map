@@ -33,6 +33,21 @@ export type CommandId =
   | "tool.entity"
   | "brush.smaller"
   | "brush.larger"
+  | "tool.hand"
+  | "view.toggleLibrary"
+  | "view.toggleInspector"
+  | "view.resetLayout"
+  | "layer.duplicate"
+  | "layer.mergeDown"
+  | "layer.rename"
+  | "layer.moveUp"
+  | "layer.moveDown"
+  | "edit.invertSelection"
+  | "level.next"
+  | "level.previous"
+  | "tileset.goto"
+  | "tileset.remove"
+  | "project.rename"
   | "stamp.saveSelection"
   | "layer.addEntity"
   | "entity.editTypes"
@@ -84,7 +99,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "edit.paste", keys: ["Ctrl+V"] },
   { command: "edit.delete", keys: ["Delete", "Backspace"] },
   { command: "edit.selectAll", keys: ["Ctrl+A"] },
-  { command: "edit.deselect", keys: ["Escape"] },
+  { command: "edit.deselect", keys: ["Escape", "Ctrl+D"] },
   /** Flip the selected tile / stamp (Tiled habit). */
   { command: "edit.flipX", keys: ["X"] },
   { command: "edit.flipY", keys: ["Y"] },
@@ -117,6 +132,21 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "tool.entity", keys: ["O"] },
   { command: "brush.smaller", keys: ["BracketLeft"] },
   { command: "brush.larger", keys: ["BracketRight"] },
+  { command: "tool.hand", keys: ["H"] },
+  { command: "view.toggleLibrary", keys: ["Ctrl+B"] },
+  { command: "view.toggleInspector", keys: ["Ctrl+Alt+B"] },
+  { command: "view.resetLayout", keys: [] },
+  { command: "layer.duplicate", keys: ["Ctrl+J"] },
+  { command: "layer.mergeDown", keys: [] },
+  { command: "layer.rename", keys: ["F2"] },
+  { command: "layer.moveUp", keys: ["Ctrl+BracketRight"] },
+  { command: "layer.moveDown", keys: ["Ctrl+BracketLeft"] },
+  { command: "edit.invertSelection", keys: ["Ctrl+Shift+I"] },
+  { command: "level.next", keys: ["Ctrl+Tab"] },
+  { command: "level.previous", keys: ["Ctrl+Shift+Tab"] },
+  { command: "tileset.goto", keys: [] },
+  { command: "tileset.remove", keys: [] },
+  { command: "project.rename", keys: [] },
   { command: "stamp.saveSelection", keys: [] },
   { command: "layer.addEntity", keys: [] },
   { command: "entity.editTypes", keys: [] },
