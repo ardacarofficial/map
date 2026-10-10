@@ -8,25 +8,13 @@
  *
  * Cells are kept sorted (y, x) so the saved JSON is byte-stable.
  */
-import { makeCell, type PaletteEntry, type TileClip } from "@smap/core";
+import { makeCell, type Collection, type CollectionCell, type PaletteEntry, type TileClip } from "@smap/core";
 
-/** One filled slot. */
-export interface PaletteSlot {
-  readonly x: number;
-  readonly y: number;
-  readonly tilesetId: string;
-  readonly tileId: number;
-  /** Flip / rotate flags (core cell flag bits, already shifted); omitted when 0. */
-  readonly flags?: number;
-}
+/** One filled slot: core's `CollectionCell`. */
+export type PaletteSlot = CollectionCell;
 
-/** Shape of core's `Collection` (structural, so the model does not depend on its exact export). */
-export interface PaletteData {
-  readonly id: string;
-  readonly name: string;
-  readonly columns: number;
-  readonly cells: readonly PaletteSlot[];
-}
+/** A palette: core's `Collection` (project data, changed with the undoable `setCollection` / `removeCollection` ops). */
+export type PaletteData = Collection;
 
 /** A tile carried by a drag / clipboard, at offset (`dx`, `dy`) from the block's top-left. */
 export interface PaletteItem {

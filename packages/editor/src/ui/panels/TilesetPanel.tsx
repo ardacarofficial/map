@@ -48,7 +48,6 @@ import { MAX_PALETTE_COLUMNS, MIN_PALETTE_COLUMNS } from "../palettes/paletteMod
 import { usePaletteStore } from "../palettes/paletteStore";
 import { bestMatch, effectiveZoom, filterTilesets, groupTilesets, UNGROUPED, type DropTarget } from "../tileset/libraryModel";
 import { isEditMode, MODE_HINT } from "../tileset/modeModel";
-import { registerSelectionSection } from "../tileset/SelectionSection";
 import { GridHostContext, TilesetGrid, type GridHost, type PendingBlock } from "../tileset/TilesetGrid";
 import { ModeBar } from "../tileset/TilesetOverlays";
 import { installTilesetPickSync } from "../tileset/tilesetSelect";
@@ -63,9 +62,8 @@ import { registerDockTab } from "../layout/dock/registry";
 import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
 
-// Map picks reveal their tiles here, and the inspector shows the selection, even while another tab is open.
+// Map picks reveal their tiles here, even while another tab is open.
 installTilesetPickSync();
-registerSelectionSection();
 
 /** Space around a tileset inside the scroll area (CSS px). */
 const PADDING = 10;
@@ -452,7 +450,7 @@ function TilesetLibrary({
   ) : (
     <span className="min-w-0 truncate font-mono tabular" data-tileset-meta>
       {t("tilesetDock.tileSize", { width: active.tileWidth, height: active.tileHeight })}
-      <span className="text-faint/80"> · {active.columns}×{active.rows}</span>
+      {!dock && <span className="text-faint/80"> · {active.columns}×{active.rows}</span>}
     </span>
   );
 

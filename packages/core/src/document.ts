@@ -6,8 +6,12 @@ import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomS
 import type { Terrain } from "./terrain";
 import { normalizeTileset, type Tileset } from "./tileset";
 
-/** The single file-format version number for project and level files. */
-export const DOCUMENT_FORMAT_VERSION = 1;
+/**
+ * The single file-format version number for project and level files.
+ * 2 (October 2026): terrain sets as tile tags, legacy terrain grid layers
+ * migrated away (see `serialize.ts`). Version-1 files are still read.
+ */
+export const DOCUMENT_FORMAT_VERSION = 2;
 /** Default tile size in pixels. */
 export const DEFAULT_TILE_SIZE = 32;
 /**
@@ -85,6 +89,7 @@ export class MapDocument {
   #collections: readonly Collection[] = Object.freeze([]);
   #props: MapProps = Object.freeze({ background: null, name: "" });
   readonly #seed: number;
+  #migrations: readonly string[] = Object.freeze([]);
   /** terrain id → terrain (rebuilt lazily after tileset changes). */
   #terrains: Map<number, Terrain> | null = null;
 
@@ -102,6 +107,20 @@ export class MapDocument {
    */
   get seed(): number {
     return this.#seed;
+  }
+
+  /**
+   * What `parseLevel` converted from an older format (e.g. legacy terrain
+   * grid layers removed), in a fixed order; empty for a current file. When
+   * non-empty the level should be saved to write the new form.
+   */
+  get migrations(): readonly string[] {
+    return this.#migrations;
+  }
+
+  /** @internal Set by the parser. */
+  _setMigrations(notes: readonly string[]): void {
+    this.#migrations = Object.freeze([...notes]);
   }
 
   /** Map dimensions. Replaced (never mutated) by a `resizeMap` op. */

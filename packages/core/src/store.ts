@@ -50,7 +50,10 @@ import type {
   DefineTerrainOp,
   DeriveTerrainOp,
   PaintTerrainOp,
+  PaintTerrainBrushOp,
   RemoveTerrainOp,
+  RemoveTerrainSetOp,
+  SetTerrainSetOp,
   SetTileSolidOp,
   AddLayerOp,
   AddPaletteEntryOp,
@@ -71,6 +74,8 @@ import { cellChangesOf, patchCellCount, PatchBuilder, withCellChanges, type Cell
 import type { PaletteEntry } from "./palette";
 import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem, terrainSlotTileId, terrainTemplateInfo, type Terrain } from "./terrain";
 import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset } from "./tileset";
+import { terrainErase, terrainFill, terrainPaint, type TerrainTileWrite } from "./terrainBrush";
+import { getTerrainSet, normalizeTerrainSet, remapTerrainSet, terrainSetProblem, withoutTerrainSet, withTerrainSet } from "./terrainSet";
 import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithGrid } from "./tilesetGrid";
 
 /**
@@ -643,6 +648,12 @@ export class MapStore {
     switch (op.type) {
       case "paintCells":
         return this.#paintCells(op);
+      case "setTerrainSet":
+        return this.#setTerrainSet(op);
+      case "removeTerrainSet":
+        return this.#removeTerrainSet(op);
+      case "paintTerrainBrush":
+        return this.#paintTerrainBrush(op);
       case "setRandomSet":
         return this.#setRandomSet(op);
       case "removeRandomSet":
@@ -1265,6 +1276,48 @@ export class MapStore {
     this.#closeOp(ctx);
   }
 
+  #setTerrainSet(op: SetTerrainSetOp): void {
+    const tileset = this.#doc.getTileset(op.tilesetId);
+    if (!tileset) throw new Error(`setTerrainSet: unknown tileset "${String(op.tilesetId)}"`);
+    const problem = terrainSetProblem(tileset, op.set);
+    if (problem) throw new Error(`setTerrainSet: ${problem}`);
+    const normalized = normalizeTerrainSet(op.set);
+    const existing = getTerrainSet(tileset, op.set.id);
+    if (existing && JSON.stringify(existing) === JSON.stringify(normalized)) return;
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, withTerrainSet(tileset, normalized));
+    this.#closeOp(ctx);
+  }
+
+  #removeTerrainSet(op: RemoveTerrainSetOp): void {
+    const tileset = this.#doc.getTileset(op.tilesetId);
+    if (!tileset) throw new Error(`removeTerrainSet: unknown tileset "${String(op.tilesetId)}"`);
+    if (!getTerrainSet(tileset, op.setId)) throw new Error(`removeTerrainSet: unknown terrain set "${String(op.setId)}"`);
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, withoutTerrainSet(tileset, op.setId));
+    this.#closeOp(ctx);
+  }
+
+  #paintTerrainBrush(op: PaintTerrainBrushOp): LayerPatch {
+    const layer = this.#doc.getLayer(op.layerId);
+    if (!layer) throw new Error(`paintTerrainBrush: unknown layer "${op.layerId}"`);
+    if (!isTileLayer(layer)) throw new TypeError(`paintTerrainBrush: "${op.layerId}" is not a tile layer`);
+    const brush = { tilesetId: op.tilesetId, setId: op.setId, terrainId: op.terrainId };
+    const options = op.maxExpand !== undefined ? { maxExpand: op.maxExpand } : {};
+    let writes: TerrainTileWrite[];
+    if (op.fill) {
+      const start = op.cells[0];
+      writes = start ? terrainFill(this.#doc, op.layerId, start.x, start.y, op.erase ? { ...brush, terrainId: getTerrainSet(this.#doc.getTileset(op.tilesetId), op.setId)?.background ?? 0 } : brush, options) : [];
+    } else if (op.erase) {
+      writes = terrainErase(this.#doc, op.layerId, op.cells, brush, options);
+    } else {
+      writes = terrainPaint(this.#doc, op.layerId, op.cells, brush, options);
+    }
+    if (layer.locked || this.#isDerivedLayer(layer.id) || writes.length === 0) return emptyPatch(layer.id);
+    const cells = writes.map(({ x, y, tile }) => ({ x, y, cell: tile ? makeCell(this.getOrAddPaletteIndex(tile.tilesetId, tile.tileId)) : 0 }));
+    return this.#paintCells({ type: "paintCells", layerId: op.layerId, cells });
+  }
+
   #defineTerrain(op: DefineTerrainOp): void {
     const terrain = op.terrain;
     const tileset = this.#doc.getTileset(terrain?.tilesetId);
@@ -1386,7 +1439,8 @@ export class MapStore {
       if (moved) terrains.push(moved);
       else result.droppedTerrains.push(terrain.id);
     }
-    const nextTileset: Tileset = { ...next, solidTiles: solid, terrains };
+    const terrainSets = (current.terrainSets ?? []).map((set) => remapTerrainSet(set, remap));
+    const nextTileset: Tileset = { ...next, solidTiles: solid, terrains, terrainSets };
     const problem = tilesetProblem(nextTileset);
     if (problem) throw new Error(`${name}: ${problem}`);
 

@@ -35,7 +35,13 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
   }
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType];
   if (!channels) throw new Error(`color type ${colorType}`);
-  const raw = inflateSync(Buffer.concat(idat));
+  const joined = new Uint8Array(idat.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of idat) {
+    joined.set(c, at);
+    at += c.length;
+  }
+  const raw = inflateSync(joined);
   const stride = width * channels;
   const pixels = new Uint8Array(stride * height);
   let prev = new Uint8Array(stride);
@@ -86,7 +92,9 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
 
 /** Decodes `samples/tilesets/<name>` of the repository. */
 export function loadSample(name: string): RgbaImage {
-  return decodePng(readFileSync(new URL(`../../../samples/tilesets/${name}`, import.meta.url)));
+  let dir = decodeURIComponent(import.meta.url.replace(/^file:\/\//, "")).replace(/\/[^/]*$/, "");
+  if (/^\/[A-Za-z]:/.test(dir)) dir = dir.slice(1);
+  return decodePng(readFileSync(`${dir}/../../../samples/tilesets/${name}`));
 }
 
 /**

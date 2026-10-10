@@ -9,6 +9,7 @@ import type { EntityFieldValue, EntityType } from "./entity";
 import type { CellRect } from "./geometry";
 import type { GridRole } from "./layer";
 import type { Terrain } from "./terrain";
+import type { TerrainSet } from "./terrainSet";
 import type { Tileset } from "./tileset";
 
 /** One cell write inside a `paintCells` op. */
@@ -566,7 +567,53 @@ export interface SetMapPropsOp {
   readonly name?: string;
 }
 
+/**
+ * Adds terrain set `set` to tileset `tilesetId`, or replaces the set with
+ * the same id (tags included; build it with `tagBlockWithTemplate`,
+ * `withTerrainSet` ...). Undoable; a no-op when nothing changes. Tiles
+ * already on layers are not touched (the tags only steer the brush).
+ * Structure event `"tilesets"`. Throws on an unknown tileset or an invalid set.
+ */
+export interface SetTerrainSetOp {
+  readonly type: "setTerrainSet";
+  readonly tilesetId: string;
+  readonly set: TerrainSet;
+}
+
+/** Removes terrain set `setId` from tileset `tilesetId`. Undoable. Tiles on layers stay. Throws on an unknown tileset / set. */
+export interface RemoveTerrainSetOp {
+  readonly type: "removeTerrainSet";
+  readonly tilesetId: string;
+  readonly setId: string;
+}
+
+/**
+ * Terrain brush on an ordinary tile layer (see `terrainBrush.ts`): solves
+ * the tiles with `terrainPaint` (or `terrainErase` when `erase`, or
+ * `terrainFill` from `cells[0]` when `fill`) and writes them with
+ * `paintCells` — one undo step outside a transaction, same patch format,
+ * so export and collision see ordinary tiles. Palette entries for new
+ * tiles are added (not undoable, like `addPaletteEntry`). A locked layer
+ * is skipped. Throws like `terrainPaint`.
+ */
+export interface PaintTerrainBrushOp {
+  readonly type: "paintTerrainBrush";
+  readonly layerId: string;
+  readonly cells: readonly { readonly x: number; readonly y: number }[];
+  readonly tilesetId: string;
+  readonly setId: string;
+  /** Ignored when `erase` is set. */
+  readonly terrainId: number;
+  readonly erase?: boolean;
+  readonly fill?: boolean;
+  /** Corner sets: see `TerrainSolveOptions.maxExpand`. */
+  readonly maxExpand?: number;
+}
+
 export type Op =
+  | SetTerrainSetOp
+  | RemoveTerrainSetOp
+  | PaintTerrainBrushOp
   | SetRandomSetOp
   | RemoveRandomSetOp
   | SetCollectionOp
@@ -602,6 +649,10 @@ export type OpType = Op["type"];
 
 /** What `dispatch` returns for each op type. */
 export interface OpResultMap {
+  setTerrainSet: void;
+  removeTerrainSet: void;
+  /** Cells the brush changed. */
+  paintTerrainBrush: LayerPatch;
   setRandomSet: void;
   removeRandomSet: void;
   setCollection: void;

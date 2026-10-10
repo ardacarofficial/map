@@ -1,10 +1,11 @@
 /**
  * Built-in tool options (registered once by `registerBuiltinToolOptions`):
- * the terrain picker on terrain layers. Brush size / shape and the
- * collision kind are in the Denetçi cards (ui/inspector).
+ * the shared collapsed "Boyut 1 ▾" chip for brush / eraser and the terrain
+ * picker on terrain layers. The collision kind is on the Denetçi's
+ * collision card; tool hints are in the tool tooltips.
  */
 import { Menu } from "@base-ui/react/menu";
-import { isGridLayer, type Terrain } from "@smap/core";
+import { isEntityLayer, isGridLayer, type Terrain } from "@smap/core";
 
 import { activateTerrain, allTerrains } from "../../commands/terrainActions";
 import { t } from "../../i18n";
@@ -14,6 +15,7 @@ import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { terrainSwatchTile } from "../terrain/TerrainList";
+import { BrushSizeChip } from "../inspector/BrushSizeChip";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel, triggerClass } from "./parts";
 
@@ -89,14 +91,10 @@ function TerrainPicker() {
 
 let registered = false;
 
-/**
- * Registers the built-in entries (idempotent). Round 4: brush size / shape
- * and the collision kind live in the Denetçi's brush / collision cards, and
- * tool hints moved to tooltips, so the tool bar only carries the terrain
- * picker on terrain layers (plus whatever features register).
- */
+/** Registers the built-in entries (idempotent). */
 export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
+  registerToolOptions(["brush", "eraser"], BrushSizeChip, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }

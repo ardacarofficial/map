@@ -34,7 +34,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   page.on("pageerror", (e) => errors.push(e.message));
 
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, "body", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   const tileGrid = page.getByRole("grid", { name: /overworld/i });
   await expect(tileGrid).toBeVisible();
@@ -94,7 +94,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   });
   const props = page.locator(`[data-entity-properties='${entityId}']`);
   await expect(props).toBeVisible();
-  await props.getByLabel("Hedef level").selectOption({ label: "Zindan" });
+  await props.getByLabel("Hedef harita").selectOption({ label: "Zindan" });
   await expect(props.locator("[data-portal-status='ok']")).toBeVisible();
 
   // "Haritada seç": Zindan opens, a click there sets the point, back in main.

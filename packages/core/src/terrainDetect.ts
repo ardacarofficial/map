@@ -109,12 +109,12 @@ function quadrantState(info: TerrainTemplateInfo, mask: number, q: number): numb
     const bit = [CORNER_NW, CORNER_NE, CORNER_SE, CORNER_SW][q]!;
     return (mask & bit) !== 0 ? 1 : 0;
   }
-  const [e1, e2, c] = [
+  const [e1, e2, c] = ([
     [BLOB_N, BLOB_W, BLOB_NW],
     [BLOB_N, BLOB_E, BLOB_NE],
     [BLOB_S, BLOB_E, BLOB_SE],
     [BLOB_S, BLOB_W, BLOB_SW],
-  ][q]!;
+  ] as const)[q]!;
   const h = (mask & e1) !== 0;
   const v = (mask & e2) !== 0;
   if (h && v) return (mask & c) !== 0 ? 4 : 3;

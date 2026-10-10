@@ -40,6 +40,20 @@
  * - stamp `category`, `tags`, `favorite`, after `name`, only when set;
  * - cells / clips / collections may carry `FLIP_D` (rotation).
  *
+ * Version 2 (October 2026, terrain as a brush — CLAUDE.md › Autotile):
+ * - tileset `terrainSets` (written only when non-empty, after `solidTiles`):
+ *   `{ id, name, kind, terrains: [{ id, name, color }], background?, tiles }`,
+ *   each tile `{ tileId, corners: [nw, ne, se, sw] }` (corner sets) or
+ *   `{ tileId, terrainId, mask }` (blob sets), sorted by tile id;
+ * - legacy tileset `terrains` are no longer written; when read (any
+ *   version) they are converted to terrain sets with the template macros
+ *   (`migrateLegacyTerrains`) and kept in memory for the deprecated API;
+ * - level grid layers with `role: "terrain"` are dropped on load (after
+ *   re-deriving their tiles once when the legacy terrains are known); the
+ *   derived tiles are ordinary tiles on their tile layer, so the level looks
+ *   exactly as before. `MapDocument.migrations` lists what was converted.
+ * Version-1 files are read forever.
+ *
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
@@ -79,6 +93,7 @@ import {
 import { isTerrainTemplate, type Terrain, type TerrainVariant } from "./terrain";
 import { isValidTileId, normalizeTileset, relativePathProblem, tileCount, tilesetProblem, type Tileset } from "./tileset";
 import { rederiveTerrainInPlace } from "./autotile";
+import { migrateLegacyTerrains, type TerrainSet, type TerrainTileTag } from "./terrainSet";
 
 /** `format` field of a project file. */
 export const PROJECT_FORMAT = "smap-project";
@@ -251,7 +266,7 @@ function valueJson(v: EntityFieldValue): unknown {
 }
 
 function tilesetJson(tileset: Tileset): Record<string, unknown> {
-  const t = normalizeTileset(tileset);
+  const t = normalizeTileset(migrateLegacyTerrains(tileset));
   return {
     id: t.id,
     name: t.name,
@@ -264,18 +279,21 @@ function tilesetJson(tileset: Tileset): Record<string, unknown> {
     margin: t.margin,
     spacing: t.spacing,
     ...(t.solidTiles ? { solidTiles: t.solidTiles } : {}),
-    ...(t.terrains ? { terrains: t.terrains.map(terrainJson) } : {}),
+    ...(t.terrainSets ? { terrainSets: t.terrainSets.map(terrainSetJson) } : {}),
   };
 }
 
-/** A terrain inside its tileset entry (`tilesetId` is implied by the owner). */
-function terrainJson(t: Terrain): Record<string, unknown> {
+/** A terrain set inside its tileset entry (fixed key order). */
+function terrainSetJson(set: TerrainSet): Record<string, unknown> {
   return {
-    id: t.id,
-    name: t.name,
-    template: t.template,
-    origin: { col: t.origin.col, row: t.origin.row },
-    ...(t.variants ? { variants: t.variants.map((v) => ({ slot: v.slot, tileIds: v.tileIds })) } : {}),
+    id: set.id,
+    name: set.name,
+    kind: set.kind,
+    terrains: set.terrains.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    ...(set.background ? { background: set.background } : {}),
+    tiles: set.tiles.map((tag) =>
+      set.kind === "corner" ? { tileId: tag.tileId, corners: [...tag.corners!] } : { tileId: tag.tileId, terrainId: tag.terrainId, mask: tag.mask },
+    ),
   };
 }
 
@@ -526,8 +544,26 @@ export function parseLevel(
   }
 
   if (options.deriveTerrain ?? tilesets.length > 0) rederiveTerrainInPlace(doc);
+  migrateTerrainLayers(doc);
   if (options.warnings) options.warnings.push(...paletteWarnings(doc));
   return doc;
+}
+
+/**
+ * Format 1 → 2: drops legacy terrain grid layers (`role: "terrain"`). Their
+ * derived tiles are already ordinary cells of the target tile layer (and
+ * were just re-derived when the legacy terrains are known), so nothing
+ * visible changes. Recorded in `doc.migrations`.
+ */
+function migrateTerrainLayers(doc: MapDocument): void {
+  const notes: string[] = [];
+  for (let i = doc.layers.length - 1; i >= 0; i--) {
+    const layer = doc.layers[i]!;
+    if (!isGridLayer(layer) || layer.role !== "terrain") continue;
+    doc._removeLayerAt(i);
+    notes.unshift(`terrain grid layer "${layer.id}" removed; its tiles stay on ${layer.targetLayerId === null ? "no layer" : `layer "${layer.targetLayerId}"`}`);
+  }
+  if (notes.length > 0) doc._setMigrations([...doc.migrations, ...notes]);
 }
 
 /**
@@ -756,6 +792,10 @@ function readTileset(item: unknown, path: string): Tileset {
       if (terrains[i]!.id <= terrains[i - 1]!.id) throw new FormatError(`${path}.terrains`, "must be sorted by ascending id without duplicates");
     }
   }
+  let terrainSets: TerrainSet[] | undefined;
+  if (t["terrainSets"] !== undefined) {
+    terrainSets = arr(t, "terrainSets", path).map((item, i) => readTerrainSet(item, `${path}.terrainSets[${i}]`));
+  }
   let group: string | undefined;
   if (t["group"] !== undefined) {
     group = str(t, "group", path);
@@ -766,10 +806,59 @@ function readTileset(item: unknown, path: string): Tileset {
     ...(group !== undefined ? { group } : {}),
     ...(solidTiles && solidTiles.length > 0 ? { solidTiles } : {}),
     ...(terrains && terrains.length > 0 ? { terrains } : {}),
+    ...(terrainSets && terrainSets.length > 0 ? { terrainSets } : {}),
   };
   const problem = tilesetProblem(full);
   if (problem) throw new FormatError(path, problem);
-  return full;
+  // Legacy terrains become tags (kept in memory for the deprecated API, never written again).
+  return migrateLegacyTerrains(full);
+}
+
+function readTerrainSet(item: unknown, path: string): TerrainSet {
+  const o = obj(item, path);
+  const kind = str(o, "kind", path);
+  if (kind !== "corner" && kind !== "blob") throw new FormatError(`${path}.kind`, `unknown terrain set kind "${kind}"`);
+  const terrains = arr(o, "terrains", path).map((v, i) => {
+    const tp = `${path}.terrains[${i}]`;
+    const to = obj(v, tp);
+    return { id: int(to, "id", tp), name: str(to, "name", tp), color: str(to, "color", tp) };
+  });
+  const tiles = arr(o, "tiles", path).map((v, i): TerrainTileTag => {
+    const tp = `${path}.tiles[${i}]`;
+    const to = obj(v, tp);
+    const tileId = int(to, "tileId", tp);
+    if (kind === "corner") {
+      const corners = arr(to, "corners", tp).map((c, j) => intValue(c, `${tp}.corners[${j}]`));
+      if (corners.length !== 4) throw new FormatError(`${tp}.corners`, "must have four entries");
+      return { tileId, corners: corners as unknown as readonly [number, number, number, number] };
+    }
+    return { tileId, terrainId: int(to, "terrainId", tp), mask: int(to, "mask", tp) };
+  });
+  for (let i = 1; i < tiles.length; i++) {
+    if (tiles[i]!.tileId <= tiles[i - 1]!.tileId) throw new FormatError(`${path}.tiles`, "must be sorted by ascending tile id without duplicates");
+  }
+  return {
+    id: str(o, "id", path),
+    name: str(o, "name", path),
+    kind,
+    terrains,
+    tiles,
+    ...(o["background"] !== undefined ? { background: int(o, "background", path) } : {}),
+  };
+}
+
+/**
+ * `documentFormatVersion` of a project / level / stamp / clip file text, or
+ * `null` when it cannot be read. A file older than
+ * `DOCUMENT_FORMAT_VERSION` is migrated when parsed; save it to write the new form.
+ */
+export function fileFormatVersion(text: string): number | null {
+  try {
+    const v = (JSON.parse(text) as { documentFormatVersion?: unknown } | null)?.documentFormatVersion;
+    return typeof v === "number" && Number.isInteger(v) ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 function readTerrain(item: unknown, path: string, tilesetId: string): Terrain {

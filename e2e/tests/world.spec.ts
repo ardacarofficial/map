@@ -36,7 +36,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   page.on("pageerror", (e) => errors.push(e.message));
 
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, "body", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
   // The PROJE tree lists the single map, active.

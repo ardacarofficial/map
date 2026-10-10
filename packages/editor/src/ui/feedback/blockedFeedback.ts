@@ -49,8 +49,6 @@ export function blockedToast(doc: MapDocument, blocked: BlockedAction, tool: Too
         };
       }
       return { message: tool === "entity" ? t("toast.blockedEntityTool") : t("toast.blockedOther"), action: null };
-    case "noBrush":
-      return { message: t("toast.blockedNoBrush"), action: null };
     default:
       return { message: t("toast.blockedOther"), action: null };
   }
