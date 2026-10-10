@@ -216,7 +216,7 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
 
   let preview: ReactNode;
   let title: ReactNode;
-  let subtitle: ReactNode = null;
+  let subtitle: ReactNode;
   if (eraser) {
     preview = <PreviewBox><Icon name="eraser" size={28} className="text-muted" /></PreviewBox>;
     title = t("inspector.eraser");

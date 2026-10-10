@@ -10,13 +10,10 @@ import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { useLayoutStore } from "./layoutStore";
 
-/** The canvas handle's rulers switch (optional: older canvases have none). */
-interface RulersCapable {
-  setRulersVisible?(visible: boolean): void;
-}
+import type { CanvasHandle } from "../../canvas";
 
-function apply(handle: unknown, visible: boolean): void {
-  (handle as RulersCapable | null)?.setRulersVisible?.(visible);
+function apply(handle: CanvasHandle | null, visible: boolean): void {
+  if (handle && handle.areRulersVisible() !== visible) handle.setRulersVisible(visible);
 }
 
 /** Keeps the mounted canvas' rulers in step with the stored choice. */

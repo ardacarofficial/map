@@ -68,11 +68,13 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
 
   // ---- Unity export (Ctrl+E; Unity is the default target)
   await page.keyboard.press("Control+e");
-  const dialog = page.getByRole("dialog", { name: "Dışa aktar" });
+  // Titled "Unity'ye aktar" on the Unity target, "Dışa aktar" on the others.
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("radio", { name: /Unity/ })).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByText("main.smapmap")).toBeVisible();
-  await dialog.getByRole("button", { name: "Unity'ye aktar" }).click();
+  await expect(dialog.getByText(/main\.smapmap/)).toBeVisible();
+  await expect(dialog.getByTestId("export-checks").locator("li")).toHaveCount(3);
+  await dialog.getByTestId("export-submit").click();
   await expect(page.getByText(/Unity'ye aktarıldı · \d\d:\d\d/)).toBeVisible();
   await expect(dialog).toBeHidden();
 
@@ -106,7 +108,7 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
   await dialog.getByRole("radio", { name: /^2×/ }).click();
   await expect(dialog.getByTestId("png-size")).toHaveText("4096 × 3072 px");
   const downloadPromise = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "PNG indir" }).click();
+  await dialog.getByTestId("export-submit").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("main.png");
   const bytes = new Uint8Array(readFileSync((await download.path())!));

@@ -15,15 +15,15 @@ import { startPointPick } from "../../commands/levelActions";
 import { deleteEntity, entityFieldLabel, entityTypeName, moveEntityToCell, setEntityField } from "../../commands/entityActions";
 import { t, type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
+import { Kbd } from "../primitives/Kbd";
 import { Tooltip } from "../primitives/Tooltip";
 import { TypeMark } from "./EntityPalette";
 import { FieldValueEditor } from "./FieldValueEditor";
 import { parseIntText } from "./fieldValues";
 
 /**
- * Özellik for the selected entity: type, id, position in cells and a typed
+ * Denetçi card of the selected entity: type, id, position in cells and a typed
  * form for its fields. Each committed edit is one undo step (core ops).
  */
 export function EntityProperties({ doc, entity }: { doc: MapDocument; entity: Entity }) {
@@ -33,37 +33,36 @@ export function EntityProperties({ doc, entity }: { doc: MapDocument; entity: En
   const fields = resolveEntityFields(entity, type);
 
   return (
-    <div className="flex flex-col gap-3 px-3 pb-3" data-entity-properties={entity.id}>
-      <div className="flex items-center gap-2.5">
-        <TypeMark type={type} size={28} />
+    <div className="flex flex-col pb-3" data-entity-properties={entity.id}>
+      <div className="flex items-center gap-3 px-3 pt-3 pb-1">
+        <TypeMark type={type} size={40} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-md text-text">{type ? entityTypeName(type) : t("entities.unknownType", { id: entity.typeId })}</span>
-          <span className="truncate font-mono text-2xs text-faint" title={t("entities.id")}>
+          <span className="truncate text-[16px] leading-[22px] font-semibold text-text" data-inspector-title>
+            {type ? entityTypeName(type) : t("entities.unknownType", { id: entity.typeId })}
+          </span>
+          <span className="truncate font-mono text-xs text-faint" title={t("entities.id")}>
             {entity.id}
           </span>
         </div>
-        <Tooltip label={t("entities.delete")}>
-          <IconButton aria-label={t("entities.delete")} className="size-7 hover:text-danger" onClick={() => deleteEntity(entity.id)}>
-            <Icon name="trash" size={14} />
-          </IconButton>
-        </Tooltip>
       </div>
 
-      <dl className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-sm">
-        <dt className="text-faint">{t("entities.position")}</dt>
-        <dd className="flex min-w-0 items-center gap-1.5">
+      <Heading>{t("inspector.transform")}</Heading>
+      <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-2 gap-y-2 px-3 py-1.5 text-md">
+        <span className="text-muted">{t("entities.position")}</span>
+        <div className="flex min-w-0 items-center gap-1.5">
           <CellInput axis="x" value={cell.x} max={doc.map.width - 1} onCommit={(x) => moveEntityToCell(entity.id, x, cell.y)} />
           <CellInput axis="y" value={cell.y} max={doc.map.height - 1} onCommit={(y) => moveEntityToCell(entity.id, cell.x, y)} />
-          <span className="shrink-0 text-2xs text-faint">{t("entities.cellUnit")}</span>
-        </dd>
+        </div>
         {entity.typeId === PORTAL_TYPE_ID && (
           <>
-            <dt className="text-faint">{t("entities.portalStatus")}</dt>
-            <dd>
-              <PortalBadge status={portalStatus({ name: "", levels, tilesets: [] }, entity)} target={portalTarget(entity)} levels={levels} />
-            </dd>
+            <span className="text-muted">{t("entities.portalStatus")}</span>
+            <PortalBadge status={portalStatus({ name: "", levels, tilesets: [] }, entity)} target={portalTarget(entity)} levels={levels} />
           </>
         )}
+      </div>
+
+      {fields.length > 0 && <Heading>{t("inspector.fields")}</Heading>}
+      <dl className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-1.5 text-sm">
         {fields.map((field) => {
           const def = type?.fields.find((f) => f.name === field.name);
           if (!def) return null;
@@ -91,6 +90,27 @@ export function EntityProperties({ doc, entity }: { doc: MapDocument; entity: En
           {t("entities.unknownTypeHint")}
         </div>
       )}
+
+      <div className="px-3 pt-2">
+        <button
+          type="button"
+          data-action="entity.delete"
+          onClick={() => deleteEntity(entity.id)}
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-sm border border-line bg-raised text-md text-danger transition-colors hover:border-danger/60 hover:bg-danger-soft"
+        >
+          <Icon name="trash" size={14} />
+          {t("inspector.deleteEntity")}
+          <Kbd keys="Delete" className="ml-1 opacity-70" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Heading({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-8 items-center px-3 pt-2">
+      <h3 className="truncate text-xs font-semibold tracking-[0.06em] text-muted uppercase">{children}</h3>
     </div>
   );
 }
@@ -177,7 +197,7 @@ function CellInput({ axis, value, max, onCommit }: { axis: "x" | "y"; value: num
   };
   return (
     <label
-      className={`flex min-w-0 flex-1 items-center rounded-md border bg-panel pl-2 transition-colors focus-within:border-accent ${
+      className={`flex min-w-0 flex-1 items-center rounded-md border bg-raised pl-2 transition-colors focus-within:border-accent ${
         valid ? "border-line hover:border-line-strong" : "border-danger"
       }`}
     >

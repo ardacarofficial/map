@@ -1,14 +1,24 @@
 /**
- * The tileset library: one tileset at a time ("Tek") or every tileset
- * stacked in one scroll with sticky group / tileset headers ("Tümü").
+ * The tileset view: one tileset or palette at a time ("Tek") or every
+ * palette and tileset stacked in one scroll with sticky headers ("Tümü").
+ *
+ * It lives in the bottom dock (tab "Tileset", round 4: a wide strip with
+ * the name ▾, "16 × 16 px", the view / edit toggles and zoom on the left,
+ * the grid on the right) and — until the dock registers it, or as a
+ * fallback — in the library column (`variant="column"`).
+ *
+ * Seç is the default: a click picks the brush. Tagging tiles (Katı, Arazi)
+ * sits behind the header's ⚙ "Düzenle" toggle; the random brush comes from
+ * the brush card ("Rastgele yap") or Alt + drag (no "Rastgele" mode).
  *
  * The scroll viewport is the host of the grids (see `TilesetGrid`): it
  * owns zoom ("Tek": the map's wheel model at the cursor; "Tümü": the wheel
- * scrolls, Ctrl / pinch zooms; a global zoom in the footer plus a
- * per-tileset override), hand panning (Space / middle drag),
- * keyboard routing and the placed terrain block.
+ * scrolls, Ctrl / pinch zooms; a global zoom plus a per-source override),
+ * hand panning (Space / middle drag), keyboard routing and the placed
+ * terrain block.
  */
-import type { Tileset } from "@smap/core";
+import { ContextMenu } from "@base-ui/react/context-menu";
+import type { Collection, Tileset } from "@smap/core";
 import {
   useCallback,
   useEffect,
@@ -18,7 +28,9 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { dropTileset, gotoTileset, openTilesetImport, renameTilesetGroup } from "../../commands/tilesetActions";
 import { t } from "../../i18n";
@@ -30,9 +42,12 @@ import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { TerrainDefineBar } from "../terrain/TerrainDefineBar";
 import { TerrainSets } from "../terrain/TerrainList";
+import { PaletteGrid, paletteKey } from "../palettes/PaletteGrid";
+import { createPalette, setPaletteColumnCount, showPalette } from "../palettes/paletteActions";
+import { MAX_PALETTE_COLUMNS, MIN_PALETTE_COLUMNS } from "../palettes/paletteModel";
+import { usePaletteStore } from "../palettes/paletteStore";
 import { bestMatch, effectiveZoom, filterTilesets, groupTilesets, UNGROUPED, type DropTarget } from "../tileset/libraryModel";
-import { MODE_HINT } from "../tileset/modeModel";
-import { ModeTabs } from "../tileset/ModeTabs";
+import { isEditMode, MODE_HINT } from "../tileset/modeModel";
 import { registerSelectionSection } from "../tileset/SelectionSection";
 import { GridHostContext, TilesetGrid, type GridHost, type PendingBlock } from "../tileset/TilesetGrid";
 import { ModeBar } from "../tileset/TilesetOverlays";
@@ -41,14 +56,14 @@ import { TilesetContextMenu, TilesetSwitcher, TilesetThumb } from "../tileset/Ti
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { usePanDrag } from "../tileset/usePanDrag";
 import { accumulateWheelZoom, fitScale, MAX_ZOOM, MIN_ZOOM, PAN_GESTURE_MS, stackWheel, stepZoom, tilesetWheel, ZOOM_STEPS, zoomLabel } from "../tileset/zoomModel";
-import { useUiStore } from "../uiStore";
+import { useUiStore, type TilesetMode } from "../uiStore";
 import { widenLibraryTarget } from "../layout/columns";
 import { useLayoutStore, wantedLibraryWidth } from "../layout/layoutStore";
-import { ContextMenu } from "@base-ui/react/context-menu";
+import { registerDockTab } from "../layout/dock/registry";
 import { LibraryTabs } from "./LibraryPanel";
 import { PanelSection } from "./PanelSection";
 
-// Map picks reveal their tiles here, and the inspector shows the selection, even while another library tab is open.
+// Map picks reveal their tiles here, and the inspector shows the selection, even while another tab is open.
 installTilesetPickSync();
 registerSelectionSection();
 
@@ -57,14 +72,26 @@ const PADDING = 10;
 /** Height of a sticky group / tileset header in "Tümü" (CSS px). */
 const HEADER_H = 28;
 const DRAG_TYPE = "application/x-smap-tileset";
+/** Collapse key of the palettes section in "Tümü" (cannot clash with a group name). */
+const PALETTE_GROUP = "\u0000palettes";
 
+export type TilesetViewVariant = "dock" | "column";
+
+/** What the view shows in "Tek" (or one section of "Tümü"): a tileset or a palette. */
+interface Source {
+  /** Zoom / grid key: the tileset id, or `palette:<id>`. */
+  readonly key: string;
+  /** Natural content width (px at zoom 1) and tile size. */
+  readonly width: number;
+  readonly tileW: number;
+  readonly tileH: number;
+}
+
+const tilesetSource = (ts: Tileset): Source => ({ key: ts.id, width: ts.columns * ts.tileWidth, tileW: ts.tileWidth, tileH: ts.tileHeight });
+const paletteSource = (p: Collection, tileW: number, tileH: number): Source => ({ key: paletteKey(p.id), width: p.columns * tileW, tileW, tileH });
+
+/** The library column tab (fallback while the bottom dock does not host the tileset view). */
 export function TilesetPanel() {
-  const store = useEditorStore((s) => s.project?.store);
-  const activeId = useUiStore((s) => s.activeTilesetId);
-  useStructureVersion(store);
-  const tilesets = store?.document.tilesets ?? [];
-  const active = tilesets.find((ts) => ts.id === activeId) ?? tilesets[0];
-
   return (
     <PanelSection
       title={t("panels.tileset")}
@@ -78,9 +105,32 @@ export function TilesetPanel() {
         </Tooltip>
       }
     >
-      {active ? <TilesetLibrary tilesets={tilesets} active={active} /> : <EmptyTilesets />}
+      <TilesetView variant="column" />
     </PanelSection>
   );
+}
+
+/** The dock tab "Tileset". */
+export function TilesetDockTab() {
+  return (
+    <div className="flex min-h-0 flex-1" data-tileset-dock>
+      <TilesetView variant="dock" />
+    </div>
+  );
+}
+
+/** The tileset / palette view in either place. */
+export function TilesetView({ variant }: { variant: TilesetViewVariant }) {
+  const store = useEditorStore((s) => s.project?.store);
+  const activeId = useUiStore((s) => s.activeTilesetId);
+  const activePaletteId = usePaletteStore((s) => s.activePaletteId);
+  useStructureVersion(store);
+  const tilesets = store?.document.tilesets ?? [];
+  const palettes = store?.document.collections ?? [];
+  const active = tilesets.find((ts) => ts.id === activeId) ?? tilesets[0];
+  const palette = activePaletteId ? palettes.find((p) => p.id === activePaletteId) : undefined;
+  if (!active) return <EmptyTilesets />;
+  return <TilesetLibrary tilesets={tilesets} palettes={palettes} active={active} palette={palette ?? null} variant={variant} />;
 }
 
 function EmptyTilesets() {
@@ -88,7 +138,8 @@ function EmptyTilesets() {
     <button
       type="button"
       onClick={() => void openTilesetImport()}
-      className="mx-3 mb-3 flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-4 text-center transition-colors hover:border-accent-line hover:bg-accent-soft/40"
+      data-tileset-empty
+      className="m-3 flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-4 text-center transition-colors hover:border-accent-line hover:bg-accent-soft/40"
     >
       <Icon name="image" size={22} className="text-faint" />
       <span className="text-md text-muted">{t("tileset.empty")}</span>
@@ -97,7 +148,21 @@ function EmptyTilesets() {
   );
 }
 
-function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; active: Tileset }) {
+function TilesetLibrary({
+  tilesets,
+  palettes,
+  active,
+  palette,
+  variant,
+}: {
+  tilesets: readonly Tileset[];
+  palettes: readonly Collection[];
+  active: Tileset;
+  /** The palette shown in "Tek" instead of `active`, or null. */
+  palette: Collection | null;
+  variant: TilesetViewVariant;
+}) {
+  const dock = variant === "dock";
   const view = useTilesetView((s) => s.view);
   const zoomMap = useTilesetView((s) => s.zoom);
   const globalZoom = useTilesetView((s) => s.globalZoom);
@@ -105,12 +170,17 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
   const setMode = useUiStore((s) => s.setTilesetMode);
   const template = useUiStore((s) => s.terrainTemplate);
   const setActive = useUiStore((s) => s.setActiveTileset);
-  const randomSet = useEditorStore((s) => s.randomSet);
+  const map = useEditorStore((s) => s.project?.store.document.map);
+  const mapTileW = map?.tileWidth ?? 32;
+  const mapTileH = map?.tileHeight ?? 32;
   const stack = view === "all";
+  // A palette has nothing to tag: editing applies to tilesets only.
+  const showingPalette = !stack && palette !== null;
+  const editing = isEditMode(mode) && !showingPalette;
 
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  const availWidth = Math.max(0, stack ? width - 2 * PADDING : width);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const availWidth = Math.max(0, stack || dock ? size.width - 2 * PADDING : size.width);
   const [pending, setPending] = useState<PendingBlock | null>(null);
   const keyHandlers = useRef(new Map<string, (e: KeyboardEvent) => boolean>());
   const pan = usePanDrag(viewportRef);
@@ -121,16 +191,37 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     const el = viewportRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(Math.floor(entry.contentRect.width));
+      if (entry) setSize({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) });
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
-  const scaleOf = useCallback(
-    (ts: Tileset) => effectiveZoom(zoomMap[ts.id], globalZoom, fitScale(availWidth, ts.columns * ts.tileWidth, ts.tileWidth)),
-    [zoomMap, globalZoom, availWidth],
+  const shown: Source = showingPalette ? paletteSource(palette, mapTileW, mapTileH) : tilesetSource(active);
+  const sources = useMemo(() => {
+    const m = new Map<string, Source>();
+    for (const ts of tilesets) m.set(ts.id, tilesetSource(ts));
+    for (const p of palettes) {
+      const src = paletteSource(p, mapTileW, mapTileH);
+      m.set(src.key, src);
+    }
+    return m;
+  }, [tilesets, palettes, mapTileW, mapTileH]);
+
+  /** Fit: the panel width; in the short dock also at most a third of its height per tile (a wide strip, not a giant single tileset). */
+  const fitOf = useCallback(
+    (src: Source) => {
+      const byWidth = fitScale(availWidth, src.width, src.tileW);
+      if (!dock || size.height <= 0) return byWidth;
+      const cap = Math.max(MIN_ZOOM, (size.height - 2 * PADDING) / 3 / src.tileH);
+      const step = [...ZOOM_STEPS].reverse().find((z) => z <= cap) ?? MIN_ZOOM;
+      return Math.min(byWidth, Math.max(step, MIN_ZOOM));
+    },
+    [availWidth, dock, size.height],
   );
+  const scaleOfSource = useCallback((src: Source) => effectiveZoom(zoomMap[src.key], globalZoom, fitOf(src)), [zoomMap, globalZoom, fitOf]);
+  const scaleOf = useCallback((ts: Tileset) => scaleOfSource(tilesetSource(ts)), [scaleOfSource]);
+  const scaleOfPalette = useCallback((p: Collection) => scaleOfSource(paletteSource(p, mapTileW, mapTileH)), [scaleOfSource, mapTileW, mapTileH]);
 
   // ---- host for the grids
 
@@ -179,49 +270,54 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     if (mode !== "terrain") setPending(null);
   }, [mode]);
 
+  // The "Rastgele" mode is gone: a stale value (old command, saved UI state) falls back to Seç.
+  useEffect(() => {
+    if (mode === "random") setMode("pick");
+  }, [mode, setMode]);
+
   // ---- zoom (anchored at the cursor)
 
   const setZoom = useTilesetView((s) => s.setZoom);
   const setGlobalZoom = useTilesetView((s) => s.setGlobalZoom);
-  const anchorRef = useRef<{ id: string; ux: number; uy: number; cx: number; cy: number; scale: number } | null>(null);
+  const anchorRef = useRef<{ key: string; ux: number; uy: number; cx: number; cy: number; scale: number } | null>(null);
 
-  const gridEl = (id: string) => viewportRef.current?.querySelector<HTMLElement>(`[data-tileset-grid="${CSS.escape(id)}"]`) ?? null;
+  const gridEl = (key: string) => viewportRef.current?.querySelector<HTMLElement>(`[data-tileset-grid="${CSS.escape(key)}"]`) ?? null;
 
-  /** Remembers the content point under (`cx`, `cy`) of tileset `id` so it stays put across the zoom. */
-  const anchor = (id: string, cx?: number, cy?: number) => {
-    const el = gridEl(id);
+  /** Remembers the content point under (`cx`, `cy`) of source `key` so it stays put across the zoom. */
+  const anchor = (key: string, cx?: number, cy?: number) => {
+    const el = gridEl(key);
     const vp = viewportRef.current;
-    const ts = tilesets.find((x) => x.id === id);
-    if (!el || !vp || !ts) return;
+    const src = sources.get(key);
+    if (!el || !vp || !src) return;
     const r = el.getBoundingClientRect();
     const v = vp.getBoundingClientRect();
     const x = cx ?? Math.min(r.right, Math.max(r.left, v.left + v.width / 2));
     const y = cy ?? Math.min(r.bottom, Math.max(r.top, v.top + v.height / 2));
-    const scale = scaleOf(ts);
-    anchorRef.current = { id, ux: (x - r.left) / scale, uy: (y - r.top) / scale, cx: x, cy: y, scale };
+    const scale = scaleOfSource(src);
+    anchorRef.current = { key, ux: (x - r.left) / scale, uy: (y - r.top) / scale, cx: x, cy: y, scale };
   };
 
-  /** Sets tileset `id`'s own zoom (null = back to the global zoom). */
-  const zoomTileset = (id: string, next: number | null, cx?: number, cy?: number) => {
-    const ts = tilesets.find((x) => x.id === id);
-    if (!ts) return;
-    const now = scaleOf(ts);
-    const then = effectiveZoom(next, globalZoom, fitScale(availWidth, ts.columns * ts.tileWidth, ts.tileWidth));
-    if (Math.abs(now - then) > 1e-6) anchor(id, cx, cy);
-    setZoom(id, next);
+  /** Sets source `key`'s own zoom (null = back to the global zoom). */
+  const zoomSource = (key: string, next: number | null, cx?: number, cy?: number) => {
+    const src = sources.get(key);
+    if (!src) return;
+    const now = scaleOfSource(src);
+    const then = effectiveZoom(next, globalZoom, fitOf(src));
+    if (Math.abs(now - then) > 1e-6) anchor(key, cx, cy);
+    setZoom(key, next);
   };
 
-  /** The global zoom; in "Tek" it also drops the shown tileset's own zoom (the slider always moves what you see). */
+  /** The global zoom; in "Tek" it also drops the shown source's own zoom (the slider always moves what you see). */
   const zoomGlobal = (next: number | null) => {
     const vp = viewportRef.current;
-    let id: string | null = active.id;
+    let key: string | null = shown.key;
     if (stack && vp) {
       const v = vp.getBoundingClientRect();
       const hit = document.elementFromPoint(v.left + v.width / 2, v.top + v.height / 2)?.closest("[data-tileset-grid]");
-      id = hit?.getAttribute("data-tileset-grid") ?? null;
+      key = hit?.getAttribute("data-tileset-grid") ?? null;
     }
-    if (id) anchor(id);
-    if (!stack) setZoom(active.id, null);
+    if (key) anchor(key);
+    if (!stack) setZoom(shown.key, null);
     setGlobalZoom(next);
   };
 
@@ -229,7 +325,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     const a = anchorRef.current;
     const vp = viewportRef.current;
     if (!a || !vp) return;
-    const el = gridEl(a.id);
+    const el = gridEl(a.key);
     const scale = Number(el?.getAttribute("data-tileset-scale"));
     if (!el || !(scale > 0) || Math.abs(scale - a.scale) < 1e-6) return;
     anchorRef.current = null;
@@ -253,7 +349,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
       e.preventDefault();
       const r = accumulateWheelZoom(wheelAcc.current, delta);
       wheelAcc.current = r.acc;
-      if (r.step !== 0) zoomGlobal(stepZoom(globalZoom ?? scaleOf(active), r.step));
+      if (r.step !== 0) zoomGlobal(stepZoom(globalZoom ?? scaleOfSource(shown), r.step));
       return;
     }
     e.preventDefault();
@@ -268,8 +364,8 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
     const r = accumulateWheelZoom(wheelAcc.current, action.delta);
     wheelAcc.current = r.acc;
     if (r.step === 0) return;
-    // Zoom the shown tileset at the cursor (its own zoom).
-    zoomTileset(active.id, stepZoom(scaleOf(active), r.step), e.clientX, e.clientY);
+    // Zoom the shown source at the cursor (its own zoom).
+    zoomSource(shown.key, stepZoom(scaleOfSource(shown), r.step), e.clientX, e.clientY);
   };
   useEffect(() => {
     const el = viewportRef.current;
@@ -282,6 +378,7 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
   // ---- keyboard
 
   const panelSelection = useTilesetView((s) => s.selection);
+  const paletteSelection = usePaletteStore((s) => s.selection);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("input,textarea")) return;
     if (event.key === "Escape") {
@@ -300,16 +397,22 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
       }
       return;
     }
-    const target = panelSelection?.tilesetId && keyHandlers.current.has(panelSelection.tilesetId) ? panelSelection.tilesetId : active.id;
-    if (keyHandlers.current.get(target)?.(event)) event.preventDefault();
+    const has = (key: string | undefined) => (key && keyHandlers.current.has(key) ? key : null);
+    const target = showingPalette
+      ? paletteKey(palette.id)
+      : ((stack ? has(paletteSelection ? paletteKey(paletteSelection.paletteId) : undefined) : null) ?? has(panelSelection?.tilesetId) ?? active.id);
+    if (keyHandlers.current.get(target)?.(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   };
 
-  // ---- footer state
+  // ---- footer / side state
 
-  const override = !stack ? (zoomMap[active.id] ?? null) : null;
-  const shownScale = stack ? (globalZoom ?? scaleOf(active)) : scaleOf(active);
-  const contentW = active.columns * active.tileWidth;
-  const widenExtra = !stack && zoomMap[active.id] == null && globalZoom === null && availWidth > 0 && contentW > availWidth ? contentW - availWidth : 0;
+  const override = !stack ? (zoomMap[shown.key] ?? null) : null;
+  const shownScale = stack ? (globalZoom ?? scaleOfSource(shown)) : scaleOfSource(shown);
+  const widenExtra =
+    !dock && !stack && !showingPalette && zoomMap[active.id] == null && globalZoom === null && availWidth > 0 && shown.width > availWidth ? shown.width - availWidth : 0;
   const canWiden = useLayoutStore(
     (s) =>
       widenExtra > 0 &&
@@ -318,164 +421,395 @@ function TilesetLibrary({ tilesets, active }: { tilesets: readonly Tileset[]; ac
   const solidCount = active.solidTiles?.length ?? 0;
   const pendingTileset = (pending && tilesets.find((ts) => ts.id === pending.tilesetId)) || active;
   const pendingCell = pending && pending.template === template ? pending.cell : null;
-  const offsetX = (ts: Tileset) => Math.max(0, Math.floor((availWidth - Math.round(ts.columns * ts.tileWidth * scaleOf(ts))) / 2));
+  const offsetOf = (scaledWidth: number) => (dock ? 0 : Math.max(0, Math.floor((availWidth - Math.round(scaledWidth)) / 2)));
+  const offsetX = (ts: Tileset) => offsetOf(ts.columns * ts.tileWidth * scaleOf(ts));
+  const paletteOffsetX = (p: Collection) => offsetOf(p.columns * mapTileW * scaleOfPalette(p));
+
+  const dockSlot = useTilesetView((s) => s.dockSlot);
+  const zoomControls = (
+    <ZoomControls
+      override={override}
+      onResetOverride={() => zoomSource(shown.key, null)}
+      globalZoom={globalZoom}
+      shownScale={shownScale}
+      onZoom={zoomGlobal}
+      widen={
+        canWiden ? (
+          <Tooltip label={t("tilesetPanel.widen")} side="top">
+            <IconButton aria-label={t("tilesetPanel.widen")} data-tileset-widen className="size-6 text-accent" onClick={() => useLayoutStore.getState().widenLibrary(widenExtra)}>
+              <Icon name="widen" size={13} />
+            </IconButton>
+          </Tooltip>
+        ) : null
+      }
+    />
+  );
+
+  const switcher = (
+    <TilesetSwitcher
+      tilesets={tilesets}
+      palettes={palettes}
+      active={active}
+      palette={showingPalette ? palette : null}
+      onSelect={(id) => {
+        showPalette(null);
+        setActive(id);
+      }}
+      onSelectPalette={(id) => showPalette(id)}
+      onNewPalette={() => void createPalette()}
+      compact={dock}
+      meta={dock ? meta : undefined}
+    />
+  );
+
+  const meta = showingPalette ? (
+    <span className="min-w-0 truncate" data-tileset-meta>
+      {t("palettes.meta", { count: palette.cells.length, columns: palette.columns })}
+    </span>
+  ) : (
+    <span className="min-w-0 truncate font-mono tabular" data-tileset-meta>
+      {t("tilesetDock.tileSize", { width: active.tileWidth, height: active.tileHeight })}
+      <span className="text-faint/80"> · {active.columns}×{active.rows}</span>
+    </span>
+  );
+
+  const modeArea = (
+    <>
+      {dock ? (
+        editing && <EditModeChips mode={mode} onChange={setMode} />
+      ) : showingPalette ? (
+        <PaletteColumns palette={palette} />
+      ) : (
+        <div className="flex shrink-0 items-center gap-1" data-tileset-edit-row>
+          <EditToggle mode={mode} onChange={setMode} />
+          {editing && <EditModeChips mode={mode} onChange={setMode} />}
+        </div>
+      )}
+      {!editing && !dock && (
+        <div className="shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
+          {t(showingPalette ? "palettes.hint" : "tilesetPanel.hintSelect")}
+        </div>
+      )}
+      {editing && mode === "solid" && (
+        <ModeBar icon="bricks" tone="solid" onDone={() => setMode("pick")}>
+          <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
+            {t(MODE_HINT.solid)}
+          </span>
+          {!stack && <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.solidCount", { count: solidCount })}</span>}
+        </ModeBar>
+      )}
+      {editing && mode === "terrain" && (
+        <>
+          <TerrainDefineBar
+            tileset={pendingTileset}
+            template={template}
+            pending={pendingCell}
+            problem={null}
+            onCancel={() => setPending(null)}
+            onDone={() => setMode("pick")}
+          />
+          {!pendingCell && (
+            <div className="shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
+              {t(MODE_HINT.terrain)}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  const viewport = (
+    <div
+      ref={viewportRef}
+      tabIndex={0}
+      role={stack ? "region" : "grid"}
+      aria-label={stack ? t("tilesetLib.allLabel") : showingPalette ? palette.name : active.name}
+      aria-multiselectable={stack ? undefined : true}
+      data-tileset-viewport
+      data-tileset-scroll
+      data-tileset-view={view}
+      data-tileset-shown={showingPalette ? paletteKey(palette.id) : active.id}
+      className={`relative min-h-0 min-w-0 flex-1 overflow-auto bg-bg/40 focus-visible:outline-offset-[-2px] ${dock ? "" : "border-t border-line-subtle"} ${pan.cursor}`}
+      style={{ padding: stack ? 0 : PADDING, scrollbarGutter: dock ? undefined : "stable" }}
+      {...pan.handlers}
+    >
+      {stack ? (
+        <TilesetStack
+          tilesets={tilesets}
+          palettes={palettes}
+          scaleOf={scaleOf}
+          scaleOfPalette={scaleOfPalette}
+          offsetX={offsetX}
+          paletteOffsetX={paletteOffsetX}
+          onResetZoom={(key) => zoomSource(key, null)}
+        />
+      ) : showingPalette ? (
+        <div style={{ marginLeft: paletteOffsetX(palette), width: "max-content" }}>
+          <PaletteGrid key={palette.id} palette={palette} scale={scaleOfPalette(palette)} />
+        </div>
+      ) : (
+        <div style={{ marginLeft: offsetX(active), width: "max-content" }}>
+          <TilesetGrid key={active.id} tileset={active} scale={scaleOf(active)} />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <GridHostContext.Provider value={host}>
-      <div className="relative flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
-        {stack ? (
-          <LibrarySearch tilesets={tilesets} trailing={<ViewToggle />} />
-        ) : (
-          <TilesetSwitcher tilesets={tilesets} active={active} onSelect={setActive} trailing={<ViewToggle />} />
-        )}
-        <ModeTabs mode={mode} onChange={setMode} />
-        {mode === "pick" && (
-          <div className="mx-3 mb-1 shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
-            {t("tilesetPanel.hintSelect")}
+      <TileDragGhost />
+      {dock && dockSlot && createPortal(<div className="flex items-center gap-1" data-tileset-zoom>{zoomControls}</div>, dockSlot)}
+      {dock ? (
+        <div className="relative flex min-h-0 min-w-0 flex-1" onKeyDown={onKeyDown} data-tileset-library="dock">
+          <aside
+            aria-label={t("tilesetDock.side")}
+            className="flex w-[216px] shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-line-subtle px-2 pt-2 pb-1.5 text-xs text-muted"
+            data-tileset-side
+          >
+            {stack ? <LibrarySearch tilesets={tilesets} trailing={null} /> : switcher}
+            <div className="flex shrink-0 items-center gap-1">
+              <ViewToggle />
+              {showingPalette ? <PaletteColumns palette={palette} /> : <EditToggle mode={mode} onChange={setMode} />}
+            </div>
+            <PaletteChips palettes={palettes} activeId={showingPalette ? palette.id : null} wide />
+            {modeArea}
+          </aside>
+          {viewport}
+        </div>
+      ) : (
+        <div className="relative flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown} data-tileset-library="column">
+          <div className="flex shrink-0 flex-col gap-1.5 px-2 pb-1.5">
+            <div className="flex items-center gap-1">
+              <div className="min-w-0 flex-1">{stack ? <LibrarySearch tilesets={tilesets} trailing={null} /> : switcher}</div>
+              <ViewToggle />
+            </div>
+            <PaletteChips palettes={palettes} activeId={showingPalette ? palette.id : null} wide />
+            {modeArea}
           </div>
-        )}
-        {mode === "solid" && (
-          <ModeBar icon="bricks" tone="solid" onDone={() => setMode("pick")}>
-            <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
-              {t(MODE_HINT.solid)}
-            </span>
-            {!stack && <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.solidCount", { count: solidCount })}</span>}
-          </ModeBar>
-        )}
-        {mode === "random" && (
-          <ModeBar icon="dice" tone="random" onDone={() => setMode("pick")}>
-            <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
-              {t(MODE_HINT.random)}
-            </span>
-            {randomSet.length >= 2 && <span className="shrink-0 font-mono text-2xs text-faint tabular">{t("tileset.randomCount", { count: randomSet.length })}</span>}
-          </ModeBar>
-        )}
-        {mode === "terrain" && (
-          <>
-            <TerrainDefineBar
-              tileset={pendingTileset}
-              template={template}
-              pending={pendingCell}
-              problem={null}
-              onCancel={() => setPending(null)}
-              onDone={() => setMode("pick")}
-            />
-            {!pendingCell && (
-              <div className="mx-3 mb-1 shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
-                {t(MODE_HINT.terrain)}
-              </div>
-            )}
-          </>
-        )}
-        {stack && <JumpChips tilesets={tilesets} activeId={active.id} />}
-        <div
-          ref={viewportRef}
-          tabIndex={0}
-          role={stack ? "region" : "grid"}
-          aria-label={stack ? t("tilesetLib.allLabel") : active.name}
-          aria-multiselectable={stack ? undefined : true}
-          data-tileset-viewport
-          data-tileset-scroll
-          data-tileset-view={view}
-          className={`relative min-h-0 flex-1 overflow-auto border-t border-line-subtle bg-bg/40 focus-visible:outline-offset-[-2px] ${pan.cursor}`}
-          style={{ padding: stack ? 0 : PADDING, scrollbarGutter: "stable" }}
-          {...pan.handlers}
-        >
-          {stack ? (
-            <TilesetStack tilesets={tilesets} scaleOf={scaleOf} offsetX={offsetX} onResetZoom={(id) => zoomTileset(id, null)} />
-          ) : (
-            <div style={{ marginLeft: offsetX(active), width: "max-content" }}>
-              <TilesetGrid key={active.id} tileset={active} scale={scaleOf(active)} />
+          {stack && <JumpChips tilesets={tilesets} palettes={palettes} activeId={active.id} />}
+          {viewport}
+          <TerrainSets />
+          {stack && (
+            // How the wheel behaves in the stacked list (it scrolls here, unlike "Tek").
+            <div className="shrink-0 border-t border-line-subtle px-3 pt-1 text-2xs leading-4 text-pretty text-faint" title={t("tilesetLib.wheelHint")} data-tileset-wheel-hint>
+              {t("tilesetLib.wheelHint")}
             </div>
           )}
-        </div>
-
-        <TerrainSets />
-
-        {stack && (
-          // How the wheel behaves in the stacked list (it scrolls here, unlike "Tek").
-          <div
-            className="shrink-0 border-t border-line-subtle px-3 pt-1 text-2xs leading-4 text-pretty text-faint"
-            title={t("tilesetLib.wheelHint")}
-            data-tileset-wheel-hint
-          >
-            {t("tilesetLib.wheelHint")}
-          </div>
-        )}
-        <div
-          className={`flex h-8 shrink-0 items-center gap-2 pr-1.5 pl-3 text-xs text-faint ${stack ? "" : "border-t border-line-subtle"}`}
-          data-tileset-footer
-        >
-          {stack ? (
-            <span className="min-w-0 truncate">{t("tilesetLib.count", { count: tilesets.length })}</span>
-          ) : (
-            <>
-              <span className="min-w-0 truncate">{t("tileset.tileCount", { count: active.columns * active.rows })}</span>
-              <span className="font-mono tabular">
-                {active.columns}×{active.rows}
-              </span>
-              {solidCount > 0 && mode !== "solid" && (
-                <span className="flex min-w-0 items-center gap-1 truncate">
-                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-collision-solid" />
-                  {t("tileset.solidCount", { count: solidCount })}
-                </span>
-              )}
-            </>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-1" data-tileset-zoom>
-            {override !== null && (
-              <Tooltip label={t("tilesetLib.zoomOverrideReset")} side="top">
-                <button
-                  type="button"
-                  data-tileset-zoom-override
-                  onClick={() => zoomTileset(active.id, null)}
-                  className="flex h-6 items-center gap-1 rounded-sm bg-accent-soft px-1.5 font-mono text-2xs text-accent tabular hover:brightness-110"
-                >
-                  {t("tilesetLib.zoomOverride", { zoom: zoomLabel(override) })}
-                  <Icon name="x" size={11} />
-                </button>
-              </Tooltip>
-            )}
-            {canWiden && (
-              <Tooltip label={t("tilesetPanel.widen")} side="top">
-                <IconButton
-                  aria-label={t("tilesetPanel.widen")}
-                  data-tileset-widen
-                  className="size-6 text-accent"
-                  onClick={() => useLayoutStore.getState().widenLibrary(widenExtra)}
-                >
-                  <Icon name="widen" size={13} />
-                </IconButton>
-              </Tooltip>
-            )}
-            <ZoomSlider value={override ?? globalZoom} shown={shownScale} onChange={zoomGlobal} />
-            <Tooltip label={t("tilesetPanel.zoomActual")} side="top">
-              <button
-                type="button"
-                aria-label={t("tilesetPanel.zoomActual")}
-                data-tileset-zoom-label
-                onClick={() => zoomGlobal(1)}
-                className="h-6 min-w-[40px] rounded-sm px-1 text-center font-mono text-xs text-muted tabular hover:bg-hover hover:text-text"
-              >
-                {zoomLabel(shownScale)}
-              </button>
-            </Tooltip>
-            <Tooltip label={t("tilesetPanel.zoomFitTitle")} side="top">
-              <button
-                type="button"
-                aria-pressed={globalZoom === null && override === null}
-                onClick={() => zoomGlobal(null)}
-                className={`h-6 rounded-sm px-1.5 text-xs transition-colors ${
-                  globalZoom === null && override === null ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"
-                }`}
-              >
-                {t("tileset.zoomFit")}
-              </button>
-            </Tooltip>
+          <div className={`flex h-8 shrink-0 items-center gap-2 pr-1.5 pl-3 text-xs text-faint ${stack ? "" : "border-t border-line-subtle"}`} data-tileset-footer>
+            {stack ? <span className="min-w-0 truncate">{t("tilesetLib.count", { count: tilesets.length })}</span> : meta}
+            <div className="ml-auto flex shrink-0 items-center gap-1" data-tileset-zoom>
+              {zoomControls}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </GridHostContext.Provider>
+  );
+}
+
+// ------------------------------------------------------------------ header pieces
+
+/** ⚙ "Düzenle": tag tiles (Katı / Arazi) instead of picking a brush. Remembers the last edit mode. */
+let lastEditMode: TilesetMode = "solid";
+
+function EditToggle({ mode, onChange }: { mode: TilesetMode; onChange(mode: TilesetMode): void }) {
+  const on = isEditMode(mode);
+  if (on) lastEditMode = mode;
+  return (
+    <Tooltip label={on ? t("tilesetDock.editDone") : t("tilesetDock.editTitle")}>
+      <button
+        type="button"
+        aria-pressed={on}
+        data-tileset-edit
+        onClick={() => onChange(on ? "pick" : lastEditMode)}
+        className={`flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-xs transition-colors ${
+          on ? "bg-accent-soft text-accent shadow-[inset_0_0_0_1px_var(--color-accent-line)]" : "text-muted hover:bg-hover hover:text-text"
+        }`}
+      >
+        <Icon name="sliders" size={13} />
+        {t("tilesetDock.edit")}
+      </button>
+    </Tooltip>
+  );
+}
+
+const EDIT_CHIPS: readonly { mode: TilesetMode; icon: "bricks" | "terrain"; label: "tilesetPanel.modeSolid" | "tilesetPanel.modeTerrain"; title: "tilesetPanel.modeSolidTitle" | "tilesetPanel.modeTerrainTitle"; tone: string }[] = [
+  { mode: "solid", icon: "bricks", label: "tilesetPanel.modeSolid", title: "tilesetPanel.modeSolidTitle", tone: "text-collision-solid" },
+  { mode: "terrain", icon: "terrain", label: "tilesetPanel.modeTerrain", title: "tilesetPanel.modeTerrainTitle", tone: "text-terrain-tint" },
+];
+
+/** Labelled chips of the edit modes (only while ⚙ Düzenle is on). */
+function EditModeChips({ mode, onChange }: { mode: TilesetMode; onChange(mode: TilesetMode): void }) {
+  return (
+    <div role="radiogroup" aria-label={t("tilesetPanel.modes")} className="flex min-w-0 gap-0.5 rounded-md bg-raised p-0.5" data-tileset-modes>
+      {EDIT_CHIPS.map((m) => {
+        const on = m.mode === mode;
+        return (
+          <button
+            key={m.mode}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            title={t(m.title)}
+            data-tileset-mode={m.mode}
+            onClick={() => onChange(m.mode)}
+            className={`flex h-5 min-w-0 items-center gap-1 rounded-sm px-1.5 text-xs font-medium transition-colors ${
+              on ? "bg-active text-text shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-faint hover:bg-hover hover:text-muted"
+            }`}
+          >
+            <Icon name={m.icon} size={12} className={`shrink-0 ${on ? m.tone : ""}`} />
+            <span className="truncate">{t(m.label)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Palette column count stepper (a palette's header). */
+function PaletteColumns({ palette }: { palette: Collection }) {
+  const step = (d: number) => setPaletteColumnCount(palette.id, palette.columns + d);
+  return (
+    <div className="flex shrink-0 items-center gap-1 text-2xs text-faint" data-palette-columns>
+      <span>{t("palettes.columns")}</span>
+      <span className="flex items-center rounded-sm border border-line">
+        <button type="button" aria-label={t("palettes.columnsLess")} disabled={palette.columns <= MIN_PALETTE_COLUMNS} onClick={() => step(-1)} className="grid size-5 place-items-center text-muted hover:text-text disabled:opacity-30">
+          <Icon name="minus" size={11} />
+        </button>
+        <span className="w-5 text-center font-mono text-xs text-text tabular">{palette.columns}</span>
+        <button type="button" aria-label={t("palettes.columnsMore")} disabled={palette.columns >= MAX_PALETTE_COLUMNS} onClick={() => step(1)} className="grid size-5 place-items-center text-muted hover:text-text disabled:opacity-30">
+          <Icon name="plus" size={11} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Palette chips: a click shows the palette; dropping dragged tiles on a
+ * chip appends them (so a drag works while a tileset is shown). "+" makes
+ * a new palette.
+ */
+function PaletteChips({ palettes, activeId, wide = false }: { palettes: readonly Collection[]; activeId: string | null; wide?: boolean }) {
+  const dragging = usePaletteStore((s) => s.drag !== null);
+  const dropId = usePaletteStore((s) => (s.drag?.target && !s.drag.target.slot ? s.drag.target.paletteId : null));
+  return (
+    <div className={`flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] ${wide ? "" : "flex-1"}`} data-palette-chips role="list" aria-label={t("palettes.title")}>
+      {palettes.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          role="listitem"
+          data-palette-drop={p.id}
+          title={p.name}
+          onClick={() => showPalette(activeId === p.id ? null : p.id)}
+          className={`flex h-5 max-w-[110px] shrink-0 items-center gap-1 truncate rounded-full border px-1.5 text-2xs transition-colors ${
+            dropId === p.id
+              ? "border-accent bg-accent text-on-accent"
+              : activeId === p.id
+                ? "border-accent-line bg-accent-soft text-accent"
+                : dragging
+                  ? "border-dashed border-accent-line text-muted"
+                  : "border-line text-muted hover:border-line-strong hover:text-text"
+          }`}
+        >
+          <Icon name="grid" size={10} className="shrink-0" />
+          <span className="truncate">{p.name}</span>
+        </button>
+      ))}
+      <Tooltip label={t("palettes.new")}>
+        <button
+          type="button"
+          aria-label={t("palettes.new")}
+          data-palette-new
+          onClick={() => void createPalette()}
+          className={`flex h-5 shrink-0 items-center gap-0.5 rounded-full border border-dashed border-line px-1.5 text-2xs text-faint transition-colors hover:border-accent-line hover:text-accent`}
+        >
+          <Icon name="plus" size={10} />
+          {palettes.length === 0 && t("palettes.newShort")}
+        </button>
+      </Tooltip>
+    </div>
+  );
+}
+
+/** Floating "+3 · Kopyala" next to the pointer while tiles are dragged. */
+function TileDragGhost() {
+  const drag = usePaletteStore((s) => s.drag);
+  if (!drag) return null;
+  const moving = drag.move && drag.source.kind === "palette";
+  return createPortal(
+    <div
+      aria-hidden
+      data-tile-drag-ghost
+      className={`pointer-events-none fixed z-50 flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-2xs font-medium shadow-popup ${
+        drag.target ? "border-accent bg-accent text-on-accent" : "border-line bg-raised text-muted"
+      }`}
+      style={{ left: drag.x + 14, top: drag.y + 12 }}
+    >
+      <Icon name={moving ? "arrowDown" : "copy"} size={11} />
+      {t(moving ? "palettes.ghostMove" : "palettes.ghostCopy", { count: drag.items.length })}
+    </div>,
+    document.body,
+  );
+}
+
+function ZoomControls({
+  override,
+  onResetOverride,
+  globalZoom,
+  shownScale,
+  onZoom,
+  widen,
+}: {
+  override: number | null;
+  onResetOverride(): void;
+  globalZoom: number | null;
+  shownScale: number;
+  onZoom(zoom: number | null): void;
+  widen: ReactNode;
+}) {
+  const fit = globalZoom === null && override === null;
+  return (
+    <>
+      {override !== null && (
+        <Tooltip label={t("tilesetLib.zoomOverrideReset")} side="top">
+          <button
+            type="button"
+            data-tileset-zoom-override
+            onClick={onResetOverride}
+            className="flex h-6 shrink-0 items-center gap-1 rounded-sm bg-accent-soft px-1.5 font-mono text-2xs text-accent tabular hover:brightness-110"
+          >
+            {t("tilesetLib.zoomOverride", { zoom: zoomLabel(override) })}
+            <Icon name="x" size={11} />
+          </button>
+        </Tooltip>
+      )}
+      {widen}
+      <ZoomSlider value={override ?? globalZoom} shown={shownScale} onChange={onZoom} />
+      <Tooltip label={t("tilesetPanel.zoomActual")} side="top">
+        <button
+          type="button"
+          aria-label={t("tilesetPanel.zoomActual")}
+          data-tileset-zoom-label
+          onClick={() => onZoom(1)}
+          className="h-6 min-w-[40px] shrink-0 rounded-sm px-1 text-center font-mono text-xs text-muted tabular hover:bg-hover hover:text-text"
+        >
+          {zoomLabel(shownScale)}
+        </button>
+      </Tooltip>
+      <Tooltip label={t("tilesetPanel.zoomFitTitle")} side="top">
+        <button
+          type="button"
+          aria-pressed={fit}
+          data-tileset-zoom-fit
+          onClick={() => onZoom(null)}
+          className={`h-6 shrink-0 rounded-sm px-1.5 text-xs transition-colors ${fit ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+        >
+          {t("tileset.zoomFit")}
+        </button>
+      </Tooltip>
+    </>
   );
 }
 
@@ -495,12 +829,12 @@ function ZoomSlider({ value, shown, onChange }: { value: number | null; shown: n
       aria-valuetext={zoomLabel(current)}
       data-tileset-zoom-slider
       onChange={(e) => onChange(ZOOM_STEPS[Number(e.target.value)] ?? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current)))}
-      className="h-6 w-16 min-w-0 accent-(--color-accent)"
+      className="h-6 w-16 min-w-0 flex-1 accent-(--color-accent)"
     />
   );
 }
 
-/** "Tümü | Tek" segmented toggle (remembered); icons keep the switcher's name readable in a narrow column. */
+/** "Tümü | Tek" segmented toggle (remembered). */
 function ViewToggle() {
   const view = useTilesetView((s) => s.view);
   const setView = useTilesetView((s) => s.setView);
@@ -521,14 +855,14 @@ function ViewToggle() {
   );
   return (
     <div role="radiogroup" aria-label={t("tilesetLib.view")} className="flex shrink-0 gap-0.5 rounded-md bg-raised p-0.5">
-      {option("all", t("tilesetLib.viewAllTitle"), "layers")}
       {option("single", t("tilesetLib.viewSingleTitle"), "image")}
+      {option("all", t("tilesetLib.viewAllTitle"), "layers")}
     </div>
   );
 }
 
 /** Search by name ("Tümü"): filters the stack; Enter jumps to the best match; Esc clears. */
-function LibrarySearch({ tilesets, trailing }: { tilesets: readonly Tileset[]; trailing: React.ReactNode }) {
+function LibrarySearch({ tilesets, trailing }: { tilesets: readonly Tileset[]; trailing: ReactNode }) {
   const query = useTilesetView((s) => s.query);
   const setQuery = useTilesetView((s) => s.setQuery);
   const focusNonce = useTilesetView((s) => s.searchFocus);
@@ -537,7 +871,7 @@ function LibrarySearch({ tilesets, trailing }: { tilesets: readonly Tileset[]; t
     if (focusNonce > 0) ref.current?.focus();
   }, [focusNonce]);
   return (
-    <div className="flex shrink-0 items-center gap-1 px-2 pb-1.5">
+    <div className="flex shrink-0 items-center gap-1">
       <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-raised px-2 transition-colors focus-within:border-accent hover:border-line-strong">
         <Icon name="search" size={14} className="shrink-0 text-faint" />
         <input
@@ -573,10 +907,13 @@ function LibrarySearch({ tilesets, trailing }: { tilesets: readonly Tileset[]; t
   );
 }
 
-/** One chip per tileset (search applied): a click jumps there. */
-function JumpChips({ tilesets, activeId }: { tilesets: readonly Tileset[]; activeId: string }) {
+/** One chip per tileset / palette (search applied): a click jumps there. */
+function JumpChips({ tilesets, palettes, activeId }: { tilesets: readonly Tileset[]; palettes: readonly Collection[]; activeId: string }) {
   const query = useTilesetView((s) => s.query);
-  const shown = filterTilesets(tilesets, query);
+  const shown = [
+    ...filterTilesets(palettes, query).map((p) => ({ key: paletteKey(p.id), name: p.name, palette: true })),
+    ...filterTilesets(tilesets, query).map((ts) => ({ key: ts.id, name: ts.name, palette: false })),
+  ];
   const rowRef = useRef<HTMLDivElement>(null);
   // Which ends have chips scrolled out of sight (they fade there).
   const [more, setMore] = useState({ left: false, right: false });
@@ -629,18 +966,19 @@ function JumpChips({ tilesets, activeId }: { tilesets: readonly Tileset[]; activ
       role="navigation"
       aria-label={t("tilesetLib.jump")}
     >
-      {shown.map((ts) => (
+      {shown.map((s) => (
         <button
-          key={ts.id}
+          key={s.key}
           type="button"
-          data-tileset-chip={ts.id}
-          title={ts.name}
-          onClick={() => gotoTileset(ts.id)}
-          className={`h-5 max-w-[120px] shrink-0 truncate rounded-full border px-2 text-2xs transition-colors ${
-            ts.id === activeId ? "border-accent-line bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:text-text"
+          data-tileset-chip={s.key}
+          title={s.name}
+          onClick={() => (s.palette ? useTilesetView.getState().requestJump(s.key) : gotoTileset(s.key))}
+          className={`flex h-5 max-w-[120px] shrink-0 items-center gap-1 truncate rounded-full border px-2 text-2xs transition-colors ${
+            s.key === activeId ? "border-accent-line bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:text-text"
           }`}
         >
-          {ts.name}
+          {s.palette && <Icon name="grid" size={10} className="shrink-0" />}
+          <span className="truncate">{s.name}</span>
         </button>
       ))}
     </div>
@@ -651,14 +989,20 @@ function JumpChips({ tilesets, activeId }: { tilesets: readonly Tileset[]; activ
 
 function TilesetStack({
   tilesets,
+  palettes,
   scaleOf,
+  scaleOfPalette,
   offsetX,
+  paletteOffsetX,
   onResetZoom,
 }: {
   tilesets: readonly Tileset[];
+  palettes: readonly Collection[];
   scaleOf(ts: Tileset): number;
+  scaleOfPalette(p: Collection): number;
   offsetX(ts: Tileset): number;
-  onResetZoom(id: string): void;
+  paletteOffsetX(p: Collection): number;
+  onResetZoom(key: string): void;
 }) {
   const query = useTilesetView((s) => s.query);
   const collapsed = useTilesetView((s) => s.collapsed);
@@ -667,8 +1011,10 @@ function TilesetStack({
   const jump = useTilesetView((s) => s.jump);
   const activeId = useUiStore((s) => s.activeTilesetId);
   const shown = filterTilesets(tilesets, query);
+  const shownPalettes = filterTilesets(palettes, query);
   const groups = groupTilesets(shown);
-  const labelled = groups.some((g) => g.name !== UNGROUPED);
+  // With palettes listed, tilesets always get group headers, so the two kinds read apart.
+  const labelled = groups.some((g) => g.name !== UNGROUPED) || shownPalettes.length > 0;
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<DropTarget | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -678,15 +1024,16 @@ function TilesetStack({
   const jumped = useRef(0);
   useLayoutEffect(() => {
     if (!jump || jumped.current === jump.nonce) return;
-    const ts = tilesets.find((x) => x.id === jump.tilesetId);
-    if (!ts) return;
-    const group = ts.group ?? UNGROUPED;
+    const isPalette = jump.tilesetId.startsWith("palette:");
+    const ts = isPalette ? undefined : tilesets.find((x) => x.id === jump.tilesetId);
+    if (!isPalette && !ts) return;
+    const group = isPalette ? PALETTE_GROUP : (ts!.group ?? UNGROUPED);
     if (labelled && collapsed.includes(group)) {
       toggleCollapsed(group);
       return;
     }
     const vp = rootRef.current?.closest<HTMLElement>("[data-tileset-scroll]");
-    const section = rootRef.current?.querySelector<HTMLElement>(`[data-tileset-section="${CSS.escape(ts.id)}"]`);
+    const section = rootRef.current?.querySelector<HTMLElement>(`[data-tileset-section="${CSS.escape(jump.tilesetId)}"]`);
     if (!vp || !section) return;
     jumped.current = jump.nonce;
     vp.scrollTop += section.getBoundingClientRect().top - vp.getBoundingClientRect().top - (labelled ? HEADER_H : 0);
@@ -708,35 +1055,88 @@ function TilesetStack({
     },
   });
 
-  if (shown.length === 0) {
+  if (shown.length === 0 && shownPalettes.length === 0) {
     return <div className="px-4 py-8 text-center text-sm text-faint">{t("tilesetLib.noMatch")}</div>;
   }
 
+  const groupHeader = (name: string, label: string, count: number, extra?: ReactNode, props?: object) => {
+    const isCollapsed = collapsed.includes(name);
+    return (
+      <div
+        className="sticky top-0 z-20 flex items-center gap-1 border-b border-line-subtle bg-panel pr-2 pl-1"
+        style={{ height: HEADER_H }}
+        data-group-header={name}
+        {...props}
+      >
+        <button
+          type="button"
+          aria-expanded={!isCollapsed}
+          aria-label={isCollapsed ? t("tilesetLib.groupExpand") : t("tilesetLib.groupCollapse")}
+          onClick={() => toggleCollapsed(name)}
+          className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
+        >
+          <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={13} />
+        </button>
+        {extra ?? <span className="min-w-0 flex-1 truncate text-2xs font-semibold tracking-wide text-muted uppercase select-none">{label}</span>}
+        <span className="shrink-0 font-mono text-2xs text-faint tabular">{count}</span>
+      </div>
+    );
+  };
+
   return (
     <div ref={rootRef} onDragEnd={() => (setDragId(null), setOver(null))}>
+      {shownPalettes.length > 0 && (
+        <div data-tileset-group={PALETTE_GROUP} data-group-labelled="">
+          {groupHeader(PALETTE_GROUP, t("palettes.title"), shownPalettes.length)}
+          {!collapsed.includes(PALETTE_GROUP) &&
+            shownPalettes.map((p) => {
+              const key = paletteKey(p.id);
+              const own = zoomMap[key];
+              return (
+                <section key={p.id} data-tileset-section={key} aria-label={p.name}>
+                  <div
+                    className="sticky z-10 flex items-center gap-1.5 border-b border-line-subtle bg-panel/95 pr-2 pl-2 backdrop-blur-sm"
+                    style={{ top: HEADER_H, height: HEADER_H }}
+                    data-palette-header={p.id}
+                    data-palette-drop={p.id}
+                  >
+                    <Icon name="grid" size={13} className="shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-muted">{p.name}</span>
+                    {own != null && (
+                      <button
+                        type="button"
+                        title={t("tilesetLib.zoomOverrideReset")}
+                        onClick={() => onResetZoom(key)}
+                        className="flex h-5 shrink-0 items-center gap-0.5 rounded-sm bg-accent-soft px-1 font-mono text-2xs text-accent tabular"
+                      >
+                        {zoomLabel(own)}
+                        <Icon name="x" size={10} />
+                      </button>
+                    )}
+                    <span className="shrink-0 font-mono text-2xs text-faint tabular">{p.cells.length}</span>
+                  </div>
+                  <div style={{ padding: `8px ${PADDING}px` }}>
+                    <div style={{ marginLeft: paletteOffsetX(p), width: "max-content" }}>
+                      <PaletteGrid palette={p} scale={scaleOfPalette(p)} />
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
+        </div>
+      )}
       {groups.map((group) => {
         const isCollapsed = labelled && collapsed.includes(group.name);
         const groupTarget = { group: group.name, beforeId: null };
         const overGroup = over && over.group === group.name && over.beforeId === null;
         return (
           <div key={group.name || "\u0000"} data-tileset-group={group.name} data-group-labelled={labelled ? "" : undefined}>
-            {labelled && (
-              <div
-                className={`sticky top-0 z-20 flex items-center gap-1 border-b border-line-subtle bg-panel pr-2 pl-1 ${overGroup ? "shadow-[inset_0_-2px_0_var(--color-accent)]" : ""}`}
-                style={{ height: HEADER_H }}
-                data-group-header={group.name}
-                {...dragProps(groupTarget)}
-              >
-                <button
-                  type="button"
-                  aria-expanded={!isCollapsed}
-                  aria-label={isCollapsed ? t("tilesetLib.groupExpand") : t("tilesetLib.groupCollapse")}
-                  onClick={() => toggleCollapsed(group.name)}
-                  className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
-                >
-                  <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={13} />
-                </button>
-                {renaming === group.name ? (
+            {labelled &&
+              groupHeader(
+                group.name,
+                group.name === UNGROUPED ? t("tilesetLib.ungrouped") : group.name,
+                group.tilesets.length,
+                renaming === group.name ? (
                   <RenameInput
                     initial={group.name}
                     label={t("tilesetLib.groupName")}
@@ -747,17 +1147,16 @@ function TilesetStack({
                   />
                 ) : (
                   <span
-                    className="min-w-0 flex-1 truncate text-2xs font-semibold tracking-wide text-muted select-none"
+                    className={`min-w-0 flex-1 truncate text-2xs font-semibold tracking-wide text-muted select-none ${overGroup ? "text-accent" : ""}`}
                     title={group.name === UNGROUPED ? undefined : t("tilesetLib.groupRenameHint")}
                     onDoubleClick={() => group.name !== UNGROUPED && setRenaming(group.name)}
                     data-group-name
                   >
-                    {group.name === UNGROUPED ? t("tilesetLib.ungrouped") : group.name}
+                    {group.name === UNGROUPED ? (shownPalettes.length > 0 ? t("tilesetDock.tilesets") : t("tilesetLib.ungrouped")) : group.name}
                   </span>
-                )}
-                <span className="shrink-0 font-mono text-2xs text-faint tabular">{group.tilesets.length}</span>
-              </div>
-            )}
+                ),
+                dragProps(groupTarget),
+              )}
             {!isCollapsed &&
               group.tilesets.map((ts) => {
                 const target = { group: group.name, beforeId: ts.id };
@@ -775,7 +1174,10 @@ function TilesetStack({
                               e.dataTransfer.effectAllowed = "move";
                               setDragId(ts.id);
                             }}
-                            onClick={() => useUiStore.getState().setActiveTileset(ts.id)}
+                            onClick={() => {
+                              showPalette(null);
+                              useUiStore.getState().setActiveTileset(ts.id);
+                            }}
                             className={`sticky z-10 flex cursor-grab items-center gap-1.5 border-b border-line-subtle bg-panel/95 pr-2 pl-1.5 backdrop-blur-sm active:cursor-grabbing ${
                               overThis ? "shadow-[inset_0_2px_0_var(--color-accent)]" : ""
                             } ${dragId === ts.id ? "opacity-50" : ""}`}
@@ -804,6 +1206,7 @@ function TilesetStack({
                           </button>
                         )}
                         <span className="shrink-0 font-mono text-2xs text-faint tabular">
+                          {ts.tileWidth === ts.tileHeight ? `${ts.tileWidth}px · ` : `${ts.tileWidth}×${ts.tileHeight} · `}
                           {ts.columns}×{ts.rows}
                         </span>
                       </ContextMenu.Trigger>
@@ -822,3 +1225,23 @@ function TilesetStack({
     </div>
   );
 }
+
+// ------------------------------------------------------------------ dock tab
+
+/** "+" in the dock's tab strip while the Tileset tab is open. */
+function DockActions() {
+  const setSlot = useCallback((el: HTMLDivElement | null) => useTilesetView.getState().setDockSlot(el), []);
+  return (
+    <>
+      {/* The tileset view portals its zoom controls in here. */}
+      <div ref={setSlot} className="flex items-center" data-tileset-dock-actions />
+      <Tooltip label={t("tileset.add")}>
+        <IconButton aria-label={t("tileset.add")} className="size-7" data-tileset-add onClick={() => void openTilesetImport()}>
+          <Icon name="plus" size={15} />
+        </IconButton>
+      </Tooltip>
+    </>
+  );
+}
+
+registerDockTab({ id: "tileset", label: "panels.tileset", order: 10, Component: TilesetDockTab, Actions: DockActions });

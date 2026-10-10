@@ -41,7 +41,7 @@ import { AutosaveScheduler } from "./autosave";
 import { listBackups, writeBackup, type BackupEntry } from "./backups";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 import { useProjectLibrary } from "./projectLibrary";
-import { LevelWorkspace, paletteProblems, type SavedLevel } from "./levelWorkspace";
+import { LevelWorkspace, paletteProblems, projectDataOf, type SavedLevel } from "./levelWorkspace";
 import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
 import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";

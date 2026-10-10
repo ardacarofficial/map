@@ -15,84 +15,16 @@ import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { terrainSwatchTile } from "../terrain/TerrainList";
-import { BRUSH_PRESETS, MAX_BRUSH, MIN_BRUSH, stepBrushSize } from "./brushSize";
+import { BrushSizeChip } from "../inspector/BrushSizeChip";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel, Segmented, triggerClass } from "./parts";
-import { CommandKbd } from "../primitives/Kbd";
 
 const isTerrainLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "terrain";
 /** The terrain picker shows only on a terrain layer (plain tile layers paint tiles; terrains are picked in the Araziler list). */
 const showsTerrainPicker = isTerrainLayer;
 const isCollisionLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "collision";
 
-// ---- Brush size / shape
-
-function BrushSize() {
-  const size = useEditorStore((s) => s.brushSize);
-  const setSize = useEditorStore((s) => s.setBrushSize);
-  // A multi-tile selection / stamp is placed as it is: the size does not apply (eraser still uses it).
-  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
-  return (
-    <div
-      className={`flex items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`}
-      data-tool-option="brush-size"
-      title={unused ? t("toolOptions.sizeUnusedStamp") : undefined}
-    >
-      <OptionLabel>{t("toolOptions.size")}</OptionLabel>
-      <Menu.Root>
-        <Menu.Trigger aria-label={t("toolOptions.size")} data-brush-size-trigger="" className={`${triggerClass} min-w-[64px] justify-between font-mono tabular`}>
-          {t("toolOptions.sizeValue", { size })}
-          <Icon name="chevronDown" size={12} className="text-faint" />
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-            <Menu.Popup className={`${menuPopupClass} min-w-[150px]`}>
-              {BRUSH_PRESETS.map((preset) => (
-                <Menu.Item key={preset} className={`${menuItemClass} py-1 font-mono text-sm tabular`} onClick={() => setSize(preset)}>
-                  <Icon name="check" size={13} className={preset === size ? "text-accent" : "invisible"} />
-                  {t("toolOptions.sizeValue", { size: preset })}
-                </Menu.Item>
-              ))}
-              <Menu.Separator className={menuSeparatorClass} />
-              <Menu.Item disabled={size >= MAX_BRUSH} className={`${menuItemClass} py-1 text-sm`} onClick={() => setSize(stepBrushSize(size, 1))}>
-                <Icon name="plus" size={13} className="text-faint" />
-                <span className="flex-1">{t("toolOptions.brushLarger")}</span>
-                <CommandKbd command="brush.larger" />
-              </Menu.Item>
-              <Menu.Item disabled={size <= MIN_BRUSH} className={`${menuItemClass} py-1 text-sm`} onClick={() => setSize(stepBrushSize(size, -1))}>
-                <Icon name="minus" size={13} className="text-faint" />
-                <span className="flex-1">{t("toolOptions.brushSmaller")}</span>
-                <CommandKbd command="brush.smaller" />
-              </Menu.Item>
-            </Menu.Popup>
-          </Menu.Positioner>
-        </Menu.Portal>
-      </Menu.Root>
-    </div>
-  );
-}
-
-function BrushShape() {
-  const shape = useEditorStore((s) => s.brushShape);
-  const size = useEditorStore((s) => s.brushSize);
-  const setShape = useEditorStore((s) => s.setBrushShape);
-  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
-  return (
-    <div className={`flex items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`} data-tool-option="brush-shape">
-      <OptionLabel>{t("toolOptions.shape")}</OptionLabel>
-      <Segmented
-        label={t("toolOptions.shape")}
-        value={shape}
-        dim={size === 1}
-        onChange={setShape}
-        options={[
-          { value: "square", label: t("toolOptions.square"), glyph: <span className="size-2.5 rounded-[1px] border-[1.5px] border-current" /> },
-          { value: "circle", label: t("toolOptions.circle"), glyph: <span className="size-2.5 rounded-full border-[1.5px] border-current" /> },
-        ]}
-      />
-    </div>
-  );
-}
+// ---- Brush size: a collapsed "Boyut 1 ▾" chip; − / + and shape appear only above 1 (ui/inspector/BrushSizeChip)
 
 // ---- Terrain layer: which terrain the brush paints
 
@@ -227,8 +159,7 @@ export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
   const notEntity = (c: ToolOptionsContext) => !isEntityLayer(c.layer);
-  registerToolOptions(["brush", "eraser"], BrushSize, { id: "builtin.brushSize", order: 10, when: notEntity });
-  registerToolOptions(["brush", "eraser"], BrushShape, { id: "builtin.brushShape", order: 20, when: notEntity });
+  registerToolOptions(["brush", "eraser"], BrushSizeChip, { id: "builtin.brushSize", order: 10, when: notEntity });
   registerToolOptions(["brush", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
   registerToolOptions(["brush", "rect", "fill", "eraser"], CollisionKind, { id: "builtin.collision", order: 30, when: isCollisionLayer });
   registerToolOptions(["fill", "rect", "select", "eyedropper", "entity"], ToolHint, {

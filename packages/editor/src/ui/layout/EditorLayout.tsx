@@ -9,7 +9,6 @@ import { UndoHud } from "../feedback/UndoHud";
 import { BlockedActionFeedback } from "../feedback/BlockedActionFeedback";
 import { CanvasContextMenu } from "../contextMenus/CanvasContextMenu";
 import { LibraryPanel } from "../panels/LibraryPanel";
-import { SelectionBar } from "../selectionBar/SelectionBar";
 import { useUiStore } from "../uiStore";
 import { AppBar } from "./AppBar";
 import { fitColumns } from "./columns";
@@ -89,7 +88,6 @@ export function EditorLayout() {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <main aria-label={t("layout.canvas")} className="relative min-h-0 min-w-0 flex-1 bg-canvas">
                     <CanvasHost />
-                    <SelectionBar />
                     <UndoHud />
                     <PointPickOverlay />
                     <CanvasContextMenu />

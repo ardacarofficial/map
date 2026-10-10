@@ -15,7 +15,11 @@ let registered = false;
 export function registerBrushCommands(): void {
   if (registered) return;
   registered = true;
-  const enabled = () => useEditorStore.getState().project !== null && !isWorldView();
+  // Only the brush and the eraser have a size.
+  const enabled = () => {
+    const s = useEditorStore.getState();
+    return s.project !== null && !isWorldView() && (s.tool === "brush" || s.tool === "eraser");
+  };
   registerCommands([
     { id: "brush.smaller", title: "toolOptions.brushSmaller", category: "tool", enabled, run: () => changeBrushSize(-1) },
     { id: "brush.larger", title: "toolOptions.brushLarger", category: "tool", enabled, run: () => changeBrushSize(1) },
