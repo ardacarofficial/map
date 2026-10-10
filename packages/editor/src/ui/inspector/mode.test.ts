@@ -15,10 +15,17 @@ describe("inspector mode (first match wins)", () => {
     // A leftover region under another tool does not take over.
     expect(mode({ tool: "brush", region: true })).toBe("brush");
   });
-  it("collision and terrain layers", () => {
+  it("collision layer and the terrain brush", () => {
     expect(mode({ layer: "collision" })).toBe("collision");
-    expect(mode({ layer: "terrain" })).toBe("terrain");
     expect(mode({ terrainBrush: true })).toBe("terrain");
+    expect(mode({ terrainBrush: true, tool: "fill" })).toBe("terrain");
+    // The terrain brush paints tile layers only; other layers / tools keep their card.
+    expect(mode({ terrainBrush: true, layer: "collision" })).toBe("collision");
+    expect(mode({ terrainBrush: true, tool: "select" })).toBe("map");
+  });
+  it("defining a terrain wins over everything but an entity", () => {
+    expect(mode({ terrainEdit: true, layer: "collision", tool: "select", region: true })).toBe("terrain");
+    expect(mode({ terrainEdit: true, entitySelected: true })).toBe("entity");
   });
   it("brush card for paint tools on tile layers, also empty", () => {
     for (const tool of ["brush", "eraser", "fill", "rect"] as const) expect(mode({ tool })).toBe("brush");

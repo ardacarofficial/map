@@ -8,11 +8,14 @@ import {
   stampPath,
   type Stamp,
   type Tileset,
+  withStampMeta,
 } from "@smap/core";
+
 import { describe, expect, it } from "vitest";
 
 import { MemoryFileSystem } from "./memoryFs";
 import { DEFAULT_LEVEL_PATH, loadProject, projectFiles, saveProject, type SaveProjectInput } from "./projectIo";
+import { stampEditLayout, stampEditStore, stampFromDocument } from "../ui/stampEditor/stampDoc";
 import { loadStamps, removeStaleStamps } from "./stampsIo";
 
 const grass: Tileset = {
@@ -81,6 +84,41 @@ describe("stamp persistence", () => {
       ["Duvar", false],
       ["Collision", true],
     ]);
+  });
+
+  it("round-trips library metadata (category, tags, ★) and a stamp-editor save", async () => {
+    const fs = new MemoryFileSystem();
+    const store = sample();
+    const house = withStampMeta(stampOf(store, "ev", "Ev"), { category: "Binalar", tags: ["köy", "ahşap"], favorite: true });
+    const plain = stampOf(store, "kuyu", "Kuyu");
+    await saveProject(fs, input(store, [house, plain]));
+    let loaded = await loadProject(fs, fakeDecode);
+    const ev = loaded.stamps.find((s) => s.id === "ev")!;
+    expect([ev.category, ev.tags, ev.favorite]).toEqual(["Binalar", ["köy", "ahşap"], true]);
+    const kuyu = loaded.stamps.find((s) => s.id === "kuyu")!;
+    expect([kuyu.category, kuyu.tags, kuyu.favorite]).toEqual([undefined, undefined, undefined]);
+    expect(serializeStamp(ev)).toBe(serializeStamp(house));
+
+    // Clearing metadata leaves the keys out of the file again.
+    const cleared = withStampMeta(ev, { category: "", tags: [], favorite: false });
+    await saveProject(fs, input(store, [cleared, kuyu]));
+    expect(await fs.readText(stampPath("ev"))).not.toMatch(/category|tags|favorite/);
+
+    // Stamp editor: open, draw, save → cropped content under the same id, name and metadata.
+    const editing = stampEditStore(ev, store.document);
+    const idx = editing.getOrAddPaletteIndex("grass", 9);
+    const ground = editing.document.layers[0]!.id;
+    const { x, y } = stampEditLayout(ev);
+    editing.dispatch({ type: "paintCells", layerId: ground, cells: [{ x: x + 2, y, cell: makeCell(idx) }] });
+    const content = stampFromDocument(editing.document, ev)!;
+    const saved = withStampMeta(content, { category: ev.category!, tags: ev.tags!, favorite: ev.favorite! });
+    await saveProject(fs, input(store, [saved, kuyu]));
+    loaded = await loadProject(fs, fakeDecode);
+    const back = loaded.stamps.find((s) => s.id === "ev")!;
+    expect([back.name, back.width, back.height, back.category, back.favorite]).toEqual(["Ev", 3, 2, "Binalar", true]);
+    expect(back.layers.map((l) => l.name)).toEqual(["Zemin", "Duvar", "Collision"]);
+    // The level itself is untouched (stamps are flat copies, nothing links back).
+    expect(loaded.document.layers.length).toBe(store.document.layers.length);
   });
 
   it("removes the file of a deleted stamp on the next save and keeps unchanged files", async () => {

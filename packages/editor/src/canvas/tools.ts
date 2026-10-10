@@ -265,15 +265,13 @@ export function rectPreviewCells(
  * of failing silently). `"noBrush"`: brush / fill / rectangle on a tile layer
  * with nothing to paint (no tile, stamp or random set chosen).
  */
-export type BlockedReason = "locked" | "hidden" | "derived" | "wrongKind" | "noBrush";
+export type BlockedReason = "locked" | "hidden" | "wrongKind" | "noBrush";
 
 /** What {@link blockedReason} needs to know about the active layer. */
 export interface LayerState {
   readonly kind: "tile" | "grid" | "entity";
   readonly visible: boolean;
   readonly locked: boolean;
-  /** Tile layer derived from a terrain (written by its terrain layer only). */
-  readonly derived: boolean;
 }
 
 /**
@@ -281,12 +279,12 @@ export interface LayerState {
  * when it can act (or when there is nothing to explain, e.g. no layer).
  *
  * - Paint tools (brush, eraser, fill, rectangle) need a visible, unlocked
- *   tile or grid layer that is not derived from a terrain. A saved library
+ *   tile or grid layer. A saved library
  *   stamp (`savedStampBrush`) maps its own layers and is never blocked.
  * - The entity tool needs a visible entity layer. A locked entity layer is
  *   left to the entity action (its own toast; clicking still selects).
  * - `"move"` (dragging the selection with the select tool) needs a visible,
- *   unlocked layer of any kind (core moves a derived layer's terrain).
+ *   unlocked layer of any kind.
  */
 export function blockedReason(tool: ToolId | "move", layer: LayerState | null, savedStampBrush = false): BlockedReason | null {
   if (!layer) return null;
@@ -302,7 +300,6 @@ export function blockedReason(tool: ToolId | "move", layer: LayerState | null, s
   if (layer.kind === "entity") return "wrongKind";
   if (layer.locked) return "locked";
   if (!layer.visible) return "hidden";
-  if (layer.derived) return "derived";
   return null;
 }
 

@@ -1,7 +1,7 @@
 /**
  * Built-in Denetçi cards, one per inspector mode (see `mode.ts`):
- * entity, marquee region, brush (FIRÇA), terrain (placeholder until the
- * terrain brush redesign), collision kind and the map summary.
+ * entity, marquee region, brush (FIRÇA), terrain brush (ARAZİ, from
+ * `ui/terrain/TerrainCard`), collision kind and the map summary.
  */
 import { Menu } from "@base-ui/react/menu";
 import {
@@ -11,7 +11,6 @@ import {
   isEntityLayer,
   isTileSolid,
   SPAWN_TYPE_ID,
-  terrainTemplateInfo,
   tilePosition,
   type MapDocument,
   type TileClip,
@@ -48,8 +47,7 @@ import { Kbd } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Toggle } from "../primitives/Toggle";
-import { templateShortName } from "../terrain/TemplatePicker";
-import { terrainSwatchTile } from "../terrain/TerrainList";
+import { TerrainCard } from "../terrain/TerrainCard";
 import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
 import { saveClipAsStamp } from "../tileset/SelectionSection";
 import { keysFor } from "../../shortcuts/shortcuts";
@@ -561,36 +559,6 @@ function StepGlyph({ icon, label, disabled, onClick }: { icon: "plus" | "minus";
   );
 }
 
-// ------------------------------------------------------------------ terrain (placeholder until the terrain brush redesign)
-
-function TerrainSection({ ctx }: { ctx: InspectorContext }) {
-  const value = useEditorStore((s) => s.gridValue);
-  const terrain = ctx.doc.getTerrain(value);
-  const tileset = terrain ? ctx.doc.getTileset(terrain.tilesetId) : undefined;
-  return (
-    <div data-inspector-terrain={terrain?.id ?? "none"}>
-      <SectionHeader>{t("toolOptions.terrain")}</SectionHeader>
-      {terrain && tileset ? (
-        <div className="flex items-center gap-3 px-3 py-1.5">
-          <TileSwatch tileset={tileset} tileId={terrainSwatchTile(tileset, terrain)} size={48} className="rounded-md border border-terrain-tint/60" />
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[16px] leading-[22px] font-semibold text-text">{terrain.name}</span>
-            <span className="truncate text-sm text-muted">
-              {tileset.name} · {templateShortName(terrainTemplateInfo(terrain.template))}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col px-3 py-1">
-          <span className="text-md text-muted">{t("terrain.none")}</span>
-          <span className="text-sm text-faint">{t("terrain.noneHint")}</span>
-        </div>
-      )}
-      <p className="px-3 pt-1 text-xs leading-4 text-faint">{t("inspector.terrainSoon")}</p>
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ collision layer
 
 const COLLISION_KINDS: { value: number; label: MessageKey; hint: MessageKey; swatch: string }[] = [
@@ -715,7 +683,7 @@ export function registerBuiltinInspectorSections(): void {
   registerInspectorSection({ id: "builtin.entity", order: 10, when: (c) => c.mode === "entity", Component: EntitySection });
   registerInspectorSection({ id: "builtin.region", order: 10, when: (c) => c.mode === "region" && c.region !== null, Component: RegionSection });
   registerInspectorSection({ id: "builtin.brush", order: 20, when: (c) => c.mode === "brush", Component: BrushSection });
-  registerInspectorSection({ id: "builtin.terrain", order: 20, when: (c) => c.mode === "terrain", Component: TerrainSection });
+  registerInspectorSection({ id: "builtin.terrain", order: 20, when: (c) => c.mode === "terrain", Component: TerrainCard });
   registerInspectorSection({ id: "builtin.collision", order: 20, when: (c) => c.mode === "collision", Component: CollisionSection });
   registerInspectorSection({ id: "builtin.map", order: 90, when: (c) => c.mode === "map", Component: MapSection });
 }

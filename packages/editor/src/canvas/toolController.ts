@@ -66,7 +66,7 @@ import { dragPosition, type WorldPoint } from "./entityLogic";
 import type { EntityRenderer } from "./entityRenderer";
 import { brushFootprint, constrainRect, footprintCells, type RectModifiers } from "./footprint";
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
-import { activeLayer, isDerivedLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
+import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { activeRandomSet, hasRandomBrush, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint } from "./randomPaint";
@@ -205,12 +205,11 @@ export interface ToolHost {
 }
 
 /** Tool view of a layer for {@link blockedReason}. */
-export function layerState(layer: TileLayer, doc: { readonly layers: readonly TileLayer[] } | undefined): LayerState {
+export function layerState(layer: TileLayer, _doc?: { readonly layers: readonly TileLayer[] }): LayerState {
   return {
     kind: isEntityLayer(layer) ? "entity" : isGridLayer(layer) ? "grid" : "tile",
     visible: layer.visible,
     locked: layer.locked,
-    derived: !!doc && isDerivedLayer(doc as Parameters<typeof isDerivedLayer>[0], layer.id),
   };
 }
 

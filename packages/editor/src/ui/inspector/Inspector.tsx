@@ -5,6 +5,8 @@ import { clampRegion } from "../../commands/enablement";
 import { useRandomBrush } from "../../commands/randomBrush";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { useTerrainDraft } from "../terrain/terrainDraft";
+import { resolveTerrain } from "../terrain/terrainModel";
 import { brushContent, inspectorMode, type LayerKind } from "./mode";
 import { inspectorSectionsFor, inspectorVersion, subscribeInspector, type InspectorContext } from "./registry";
 import { registerBuiltinInspectorSections } from "./sections";
@@ -14,7 +16,7 @@ registerBuiltinInspectorSections();
 export function layerKind(layer: TileLayer | undefined): LayerKind {
   if (!layer) return "none";
   if (isEntityLayer(layer)) return "entity";
-  if (isGridLayer(layer)) return layer.role === "terrain" ? "terrain" : "collision";
+  if (isGridLayer(layer)) return "collision";
   return isTileLayer(layer) ? "tile" : "none";
 }
 
@@ -26,6 +28,8 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
   const rawRegion = useEditorStore((s) => s.region);
   const brush = useEditorStore((s) => brushContent(s));
   const randomStamps = useRandomBrush((s) => s.stamps.length);
+  const terrainBrush = useEditorStore((s) => s.terrainActive && resolveTerrain(doc, s.terrain) !== null);
+  const terrainEdit = useTerrainDraft((s) => s.draft !== null || resolveTerrain(doc, s.fix) !== null);
   const layer = activeLayerId ? doc.getLayer(activeLayerId) : undefined;
   const found = selectedEntityId ? doc.findEntity(selectedEntityId) : undefined;
   const region = clampRegion(rawRegion, doc.map.width, doc.map.height);
@@ -36,6 +40,8 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
     region: region !== null,
     // Stamps alone make a random brush too (tileset agent's random sets).
     brush: brush === "tile" && randomStamps > 0 ? "random" : brush,
+    terrainBrush,
+    terrainEdit,
   });
   return {
     doc,

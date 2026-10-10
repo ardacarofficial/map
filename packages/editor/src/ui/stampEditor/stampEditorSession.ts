@@ -132,12 +132,17 @@ function showSession(session: StampEditSession): void {
   // The level's project data may have changed meanwhile (a tileset added): the stamp picks it up.
   const level = levelProject();
   if (level) {
-    const next = withProjectData(session.store, level.store.document);
-    if (next !== session.store) {
-      session.rebuiltDirty = isStampSessionDirty(session);
+    const wasDirty = isStampSessionDirty(session);
+    const before = session.store;
+    const next = withProjectData(before, level.store.document);
+    if (next !== before) {
+      session.rebuiltDirty = wasDirty;
       session.store = next;
       session.savedRevision = next.revision;
       watchSessionStore(session);
+    } else if (!wasDirty) {
+      // Tilesets added in place are not an edit of the stamp.
+      session.savedRevision = next.revision;
     }
   }
   useStampEditor.setState({ active: true });

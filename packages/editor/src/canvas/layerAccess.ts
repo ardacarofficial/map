@@ -17,21 +17,13 @@ import {
 import { useEditorStore } from "../state/editorStore";
 import { stampMapping, type LayerInfo } from "./tools";
 
-/**
- * True when `layerId` is a terrain's derived tile layer (a terrain grid
- * layer targets it). Core skips direct writes there; paint the terrain layer.
- */
-export function isDerivedLayer(doc: MapDocument | undefined, layerId: string): boolean {
-  return !!doc?.layers.some((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layerId);
-}
-
-/** Tool view of a layer. Pass `doc` so derived tile layers count as locked. */
-export function layerInfo(layer: TileLayer, doc?: MapDocument): LayerInfo {
+/** Tool view of a layer (`doc` is accepted for callers that pass it; unused). */
+export function layerInfo(layer: TileLayer, _doc?: MapDocument): LayerInfo {
   return {
     id: layer.id,
     visible: layer.visible,
-    // Entity layers hold no cells (entities have their own tool); derived tile layers are owned by their terrain.
-    locked: layer.locked || isEntityLayer(layer) || isDerivedLayer(doc, layer.id),
+    // Entity layers hold no cells (entities have their own tool).
+    locked: layer.locked || isEntityLayer(layer),
     grid: isGridLayer(layer),
     getCell: (x, y) => layer.getCell(x, y),
   };
@@ -79,9 +71,8 @@ export const NEW_LAYER_TARGET = "\u0000new";
 
 /**
  * Clip layer id → target layer id (or {@link NEW_LAYER_TARGET}) of the stamp
- * layers a saved stamp visibly places: `placeStamp` skips locked layers and
- * derived tile layers, and hidden ones would not show, so all three are left
- * out of the preview.
+ * layers a saved stamp visibly places: `placeStamp` skips locked layers,
+ * and hidden ones would not show, so both are left out of the preview.
  */
 export function savedStampPreviewMapping(store: MapStore | undefined, stamp: TileClip): Record<string, string> {
   const doc = store?.document;
@@ -93,8 +84,7 @@ export function savedStampPreviewMapping(store: MapStore | undefined, stamp: Til
       continue;
     }
     const l = doc.getLayer(t.targetLayerId);
-    // Derived tile layers are re-derived from their terrain, not pasted into.
-    if (l && l.visible && !l.locked && !isDerivedLayer(doc, l.id)) out[t.clipLayerId] = t.targetLayerId;
+    if (l && l.visible && !l.locked) out[t.clipLayerId] = t.targetLayerId;
   }
   return out;
 }

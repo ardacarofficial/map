@@ -16,18 +16,17 @@ import {
   type LayerState,
 } from "./tools";
 
-const tile: LayerState = { kind: "tile", visible: true, locked: false, derived: false };
+const tile: LayerState = { kind: "tile", visible: true, locked: false };
 const grid: LayerState = { ...tile, kind: "grid" };
 const entity: LayerState = { ...tile, kind: "entity" };
 
 describe("blockedReason", () => {
-  it("paint tools explain locked / hidden / derived / wrong-kind layers", () => {
+  it("paint tools explain locked / hidden / wrong-kind layers", () => {
     for (const tool of ["brush", "eraser", "fill", "rect"] as const) {
       expect(blockedReason(tool, tile)).toBeNull();
       expect(blockedReason(tool, grid)).toBeNull();
       expect(blockedReason(tool, { ...tile, locked: true })).toBe("locked");
       expect(blockedReason(tool, { ...tile, visible: false })).toBe("hidden");
-      expect(blockedReason(tool, { ...tile, derived: true })).toBe("derived");
       expect(blockedReason(tool, entity)).toBe("wrongKind");
     }
     // Locked wins over hidden (the explicit choice).
@@ -50,7 +49,7 @@ describe("blockedReason", () => {
 
   it("select / eyedropper / hand never block; move needs a visible unlocked layer of any kind", () => {
     for (const tool of ["select", "eyedropper", "hand"] as const) expect(blockedReason(tool, { ...tile, locked: true })).toBeNull();
-    expect(blockedReason("move", { ...tile, derived: true })).toBeNull();
+    expect(blockedReason("move", tile)).toBeNull();
     expect(blockedReason("move", entity)).toBeNull();
     expect(blockedReason("move", { ...grid, locked: true })).toBe("locked");
     expect(blockedReason("move", { ...grid, visible: false })).toBe("hidden");
