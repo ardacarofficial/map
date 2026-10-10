@@ -298,7 +298,7 @@ function ExportForm({
         })}
       </div>
 
-      <div className="mx-6 mt-4 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden rounded-lg border border-line">
+      <div className="mx-6 mt-4 grid h-[540px] min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden rounded-lg border border-line">
         <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-4" data-testid="export-form">
           {showMap && (
             <Section label={t("export.map")}>
@@ -324,7 +324,7 @@ function ExportForm({
                 <label className="mt-1 grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2">
                   <span className="text-sm text-muted">{t("export.outputFolder")}</span>
                   <input
-                    className={`${inputClass} ${inputOk} font-mono`}
+                    className={`${inputClass} ${inputOk} ${subfolder === "" ? "" : "font-mono"}`}
                     value={subfolder}
                     placeholder={t("export.outputFolderPlaceholder")}
                     spellCheck={false}
@@ -608,7 +608,7 @@ function MapPreview({ document, layers }: { document: MapDocument; layers: reado
   }, [document, layers]);
   return (
     <div className="grid h-[240px] place-items-center overflow-hidden rounded-md border border-line bg-canvas">
-      <canvas ref={canvasRef} aria-label={t("export.preview")} data-testid="export-preview" />
+      <canvas ref={canvasRef} aria-label={t("export.preview")} className="bg-checker-a" data-testid="export-preview" />
     </div>
   );
 }
@@ -686,9 +686,15 @@ function FolderRow({ handle, onPick }: { handle: FileSystemDirectoryHandle | nul
           <span className="truncate text-sm text-faint">{t("export.noFolder")}</span>
         )}
       </div>
-      <Button onClick={onPick} className="size-8 shrink-0 px-0" aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")} title={handle ? t("export.changeFolder") : t("export.pickFolder")}>
-        <Icon name="folder" size={15} />
-      </Button>
+      <button
+        type="button"
+        onClick={onPick}
+        aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")}
+        title={handle ? t("export.changeFolder") : t("export.pickFolder")}
+        className="grid size-8 shrink-0 place-items-center rounded-md border border-line bg-raised text-muted transition-colors hover:border-line-strong hover:bg-hover hover:text-text"
+      >
+        <Icon name="folder" size={16} />
+      </button>
     </div>
   );
 }

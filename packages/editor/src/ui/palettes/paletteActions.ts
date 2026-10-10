@@ -142,7 +142,7 @@ export function clearPaletteSlots(id: string, ids: readonly number[]): void {
 function selectSlots(palette: PaletteData, at: Cell, items: readonly PaletteItem[]): void {
   const ids = items.filter((it) => at.col + it.dx < palette.columns).map((it) => slotIndex(palette.columns, at.col + it.dx, at.row + it.dy));
   if (ids.length === 0) return;
-  const focus = cellOf(palette, Math.max(...ids));
+  const focus = cellOf({ columns: palette.columns, rows: Infinity }, Math.max(...ids));
   usePaletteStore.getState().setSelection({ paletteId: palette.id, ids: [...ids].sort((a, b) => a - b), anchor: at, focus, clip: null });
 }
 

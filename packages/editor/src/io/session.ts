@@ -7,6 +7,7 @@ import {
   createDocument,
   DEFAULT_PROJECT_SETTINGS,
   FormatError,
+  isTileLayer,
   MapStore,
   normalizeProjectSettings,
   parseLevel,
@@ -230,6 +231,9 @@ export async function newProject(options: NewProjectSetup): Promise<void> {
   }
   // Starting a project is not an undo step.
   project.store.clearHistory();
+  // Start drawing on the bottom tile layer (Zemin), not on the template's top collision layer.
+  const ground = project.store.document.layers.find(isTileLayer);
+  if (ground) useEditorStore.getState().setActiveLayer(ground.id);
   if (options.unityDir || settings.unity.exportOnSave) {
     void updateExportSettings(project.name, {
       ...(options.unityDir ? { unityDir: options.unityDir } : {}),

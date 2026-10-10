@@ -445,6 +445,17 @@ function TilesetLibrary({
     />
   );
 
+  const meta = showingPalette ? (
+    <span className="min-w-0 truncate" data-tileset-meta>
+      {t("palettes.meta", { count: palette.cells.length, columns: palette.columns })}
+    </span>
+  ) : (
+    <span className="min-w-0 truncate font-mono tabular" data-tileset-meta>
+      {t("tilesetDock.tileSize", { width: active.tileWidth, height: active.tileHeight })}
+      <span className="text-faint/80"> · {active.columns}×{active.rows}</span>
+    </span>
+  );
+
   const switcher = (
     <TilesetSwitcher
       tilesets={tilesets}
@@ -460,17 +471,6 @@ function TilesetLibrary({
       compact={dock}
       meta={dock ? meta : undefined}
     />
-  );
-
-  const meta = showingPalette ? (
-    <span className="min-w-0 truncate" data-tileset-meta>
-      {t("palettes.meta", { count: palette.cells.length, columns: palette.columns })}
-    </span>
-  ) : (
-    <span className="min-w-0 truncate font-mono tabular" data-tileset-meta>
-      {t("tilesetDock.tileSize", { width: active.tileWidth, height: active.tileHeight })}
-      <span className="text-faint/80"> · {active.columns}×{active.rows}</span>
-    </span>
   );
 
   const modeArea = (

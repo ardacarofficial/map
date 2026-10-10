@@ -14,7 +14,7 @@ interface Box {
   world: { x: number; y: number };
 }
 
-const levelRow = (page: Page, name: string) => page.getByRole("listbox", { name: "Level'lar" }).getByRole("option", { name });
+const levelRow = (page: Page, name: string) => page.getByRole("listbox", { name: "Haritalar" }).getByRole("option", { name });
 
 const worldBoxes = (page: Page) =>
   page.evaluate(() => (window as unknown as { __smap?: { worldBoxes(): Box[] } }).__smap?.worldBoxes() ?? []);
@@ -39,10 +39,10 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
-  // A single level: the list starts folded (unfolds by itself once there are two).
-  await expect(levelRow(page, "main")).toHaveCount(0);
+  // The PROJE tree lists the single map, active.
+  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
 
-  await page.getByRole("button", { name: "Yeni level" }).click();
+  await page.getByRole("button", { name: "Yeni harita" }).first().click();
   const dialog = page.locator("[data-dialog='new-level']");
   await dialog.getByLabel("Ad").fill("Zindan");
   await dialog.getByRole("button", { name: "Oluştur" }).click();
@@ -55,12 +55,13 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // A new level does not pile up on the first one.
   expect(start.x).toBeGreaterThan(0);
 
-  // ---- Into the world view (toolbar toggle): both levels, only the level list.
-  const view = page.getByRole("group", { name: "Görünüm" });
-  await view.getByRole("button", { name: "Dünya" }).click();
-  await expect(view.getByRole("button", { name: "Dünya" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("[data-status-world]")).toContainText("Dünya · 2 level");
-  await expect(page.getByRole("region", { name: "Katman" })).toBeHidden();
+  // ---- Into the world view (left rail "Dünya"): both maps, no layers.
+  const worldButton = page.locator("[data-rail='world']");
+  await worldButton.click();
+  await expect(worldButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-status-world]")).toContainText("Dünya");
+  await expect(page.locator("[data-status-world]")).toContainText("2 harita");
+  await expect(page.getByRole("region", { name: "Katmanlar" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Kalem" })).toBeDisabled();
   await expect.poll(async () => (await worldBoxes(page)).length).toBe(2);
 
@@ -87,8 +88,8 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // ---- Esc returns to the level view.
   await page.locator("[data-canvas-host]").focus();
   await page.keyboard.press("Escape");
-  await expect(view.getByRole("button", { name: "Harita" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("region", { name: "Katman" })).toBeVisible();
+  await expect(worldButton).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("region", { name: "Katmanlar" })).toBeVisible();
 
   // ---- Reopen: the position is still there, and the world view shows it.
   await page.reload();

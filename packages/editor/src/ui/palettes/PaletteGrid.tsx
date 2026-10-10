@@ -22,7 +22,6 @@ import {
   arrowDelta,
   arrowSelect,
   boundsOf,
-  cellOf,
   clampCell,
   gestureIds,
   idOf,

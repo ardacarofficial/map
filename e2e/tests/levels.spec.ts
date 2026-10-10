@@ -11,7 +11,7 @@ interface Hook {
   cellCenter(x: number, y: number): { x: number; y: number } | null;
 }
 
-const levelRow = (page: Page, name: string) => page.getByRole("listbox", { name: "Level'lar" }).getByRole("option", { name });
+const levelRow = (page: Page, name: string) => page.getByRole("listbox", { name: "Haritalar" }).getByRole("option", { name });
 
 async function drawStroke(page: Page, dx: number) {
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
@@ -42,14 +42,12 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   const imageBox = (await image.boundingBox())!;
   await image.click({ position: { x: imageBox.width * 0.4, y: imageBox.height * 0.2 } });
 
-  // Level 1 ("main"): with a single level the list starts folded; unfolding shows it active.
-  const levelsToggle = page.getByRole("button", { name: "Level listesini aç" });
-  await levelsToggle.click();
+  // Map 1 ("main"): listed in the PROJE tree (library column), active.
   await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
   await drawStroke(page, -40);
 
   // New level "Zindan".
-  await page.getByRole("button", { name: "Yeni level" }).click();
+  await page.getByRole("button", { name: "Yeni harita" }).first().click();
   const dialog = page.locator("[data-dialog='new-level']");
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Ad").fill("Zindan");
@@ -115,9 +113,9 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   await page.mouse.dblclick(portal!.x, portal!.y);
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
 
-  // Palette: "Level'a git: main".
+  // Palette: "Haritaya git: main".
   await page.keyboard.press("Control+k");
-  await page.getByRole("combobox").fill("level'a git main");
+  await page.getByRole("combobox").fill("haritaya git main");
   await page.keyboard.press("Enter");
   await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
 

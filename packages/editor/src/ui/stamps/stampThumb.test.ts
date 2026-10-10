@@ -1,4 +1,4 @@
-import { createDocument, createStamp, FLIP_H, makeCell, MapStore, type Tileset } from "@smap/core";
+import { createDocument, createStamp, FLIP_D, FLIP_H, makeCell, MapStore, type Tileset } from "@smap/core";
 import { describe, expect, it } from "vitest";
 
 import { compositeOps } from "../../export/pngComposite";
@@ -47,6 +47,19 @@ describe("stamp thumbnails", () => {
     const ops = compositeOps(list, 2);
     const last = ops.at(-1);
     expect(last?.kind === "draw" && last.transform).toEqual([-2, 0, 0, 2, 64, 0]);
+  });
+
+  it("draws rotated tiles (FLIP_D) transposed, like the PNG export", () => {
+    const tall: Tileset = { ...ts, tileWidth: 16, tileHeight: 32, rows: 2 };
+    const clip = { width: 1, height: 1, palette: [{ tilesetId: "grass", tileId: 1 }], layers: [{ layerId: "l", name: "L", cells: Uint32Array.of(makeCell(1, FLIP_D)) }] };
+    const list = stampDrawList(clip, 16, 16, () => tall);
+    const item = list.layers[0]!.items[0]!;
+    expect(item.flipD).toBe(true);
+    // A 16 × 32 tile becomes 32 × 16, anchored bottom-left of its cell.
+    expect(item.dest).toEqual({ x: 0, y: 0, width: 32, height: 16 });
+    const ops = compositeOps(list, 1);
+    const last = ops.at(-1);
+    expect(last?.kind === "draw" && last.transform).toEqual([0, 1, 1, 0, 0, 0]);
   });
 
   it("skips tiles of unknown tilesets", () => {

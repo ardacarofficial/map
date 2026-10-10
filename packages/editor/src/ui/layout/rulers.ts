@@ -5,12 +5,11 @@
  */
 import { useEffect } from "react";
 
+import type { CanvasHandle } from "../../canvas";
 import { registerCommands } from "../../commands/registry";
 import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { useLayoutStore } from "./layoutStore";
-
-import type { CanvasHandle } from "../../canvas";
 
 function apply(handle: CanvasHandle | null, visible: boolean): void {
   if (handle && handle.areRulersVisible() !== visible) handle.setRulersVisible(visible);

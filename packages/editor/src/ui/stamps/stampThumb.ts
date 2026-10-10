@@ -1,10 +1,10 @@
 /**
  * Stamp thumbnails: a stamp's tile layers composited into a small canvas.
  * Reuses the PNG export's compositing (`compositeOps` / `replayOps`), so
- * flips and oversized tiles look the same as in an exported image.
+ * flips, rotations (FLIP_D) and oversized tiles look the same as in an exported image.
  * Grid layers (terrain / collision) carry no pixels and are not drawn.
  */
-import { cellFlags, cellPaletteIndex, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
+import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
 
 import { compositeOps, type CanvasOp } from "../../export/pngComposite";
 import { replayOps } from "../../export/pngRender";
@@ -30,13 +30,18 @@ export function stampDrawList(
       const cx = i % stamp.width;
       const cy = Math.floor(i / stamp.width);
       const flags = cellFlags(cell);
+      // Rotated tiles (FLIP_D): the source is transposed first, so the destination is `h × w` (as in export).
+      const flipD = (flags & FLIP_D) !== 0;
+      const w = flipD ? src.height : src.width;
+      const h = flipD ? src.width : src.height;
       items.push({
         tileset: ts,
         src,
         // Oversized tiles sit on the bottom-left of their cell (Tiled's rule, as in export).
-        dest: { x: cx * tileWidth, y: (cy + 1) * tileHeight - src.height, width: src.width, height: src.height },
+        dest: { x: cx * tileWidth, y: (cy + 1) * tileHeight - h, width: w, height: h },
         flipH: (flags & FLIP_H) !== 0,
         flipV: (flags & FLIP_V) !== 0,
+        flipD,
       });
     }
     layers.push({ layerId: layer.layerId, opacity: 1, items });

@@ -87,7 +87,7 @@ describe("project settings persistence", () => {
       unity: { folderHint: "Assets/Maps", exportOnSave: true },
     });
     const project = createProjectDocument({ name: "Zindan", width: 40, height: 30, tileSize: 16 });
-    const ws = new LevelWorkspace({ name: "Zindan", levels: defaultLevels(project.levelPath), active: { id: project.levelId, store: project.store, knownText: null } });
+    const ws = new LevelWorkspace({ name: "Zindan", levels: defaultLevels(project.levelPath), active: { id: project.levelId!, store: project.store, knownText: null } });
     const fs = new MemoryFileSystem();
     await ws.save(fs, { tilesetBytes: () => undefined, settings });
     expect(await fs.readText(PROJECT_FILE_NAME)).toContain('"settings"');
@@ -102,7 +102,7 @@ describe("project settings persistence", () => {
 
   it("new levels follow the project's layer template", () => {
     const project = createProjectDocument({ name: "P", width: 8, height: 8, tileSize: 16 });
-    const ws = new LevelWorkspace({ name: "P", levels: defaultLevels(project.levelPath), active: { id: project.levelId, store: project.store, knownText: null } });
+    const ws = new LevelWorkspace({ name: "P", levels: defaultLevels(project.levelPath), active: { id: project.levelId!, store: project.store, knownText: null } });
     ws.add({
       name: "İkinci",
       width: 10,

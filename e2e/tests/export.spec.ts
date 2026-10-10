@@ -54,7 +54,7 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
   }, UNITY_DIR);
 
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, "body", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
   await expect(canvas).toBeVisible();
