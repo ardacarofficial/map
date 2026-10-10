@@ -38,7 +38,7 @@ import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
 import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { CameraController } from "./cameraController";
 import type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary } from "./canvasEvents";
@@ -54,7 +54,8 @@ import { nextLod } from "./minimapMath";
 import { OverlayRenderer, type OverlayHost } from "./overlayRenderer";
 import { PointerInput } from "./pointerInput";
 import { ToolController, type Gesture } from "./toolController";
-import { isPaintable, regionContains, toolForLayer } from "./tools";
+import { Rulers } from "./rulers";
+import { INITIAL_TOOL_MEMORY, isPaintable, nextToolMemory, regionContains, toolForLayer, usesBrushSize, type ToolMemory } from "./tools";
 import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
 import { releaseFilterInputs, releaseTexture } from "./releaseTexture";
 
@@ -62,11 +63,12 @@ export type { CanvasView, LevelMovedEvent, WorldDataSource, WorldSourceChange } 
 export type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary, StrokeTool } from "./canvasEvents";
 
 /** i18n key of the on-canvas hint per blocked reason. */
-const BLOCKED_HINT: Record<BlockedReason, "canvas.blockedLocked" | "canvas.blockedHidden" | "canvas.blockedDerived" | "canvas.blockedWrongKind"> = {
+const BLOCKED_HINT: Record<BlockedReason, MessageKey> = {
   locked: "canvas.blockedLocked",
   hidden: "canvas.blockedHidden",
   derived: "canvas.blockedDerived",
   wrongKind: "canvas.blockedWrongKind",
+  noBrush: "toast.blockedNoBrush",
 };
 
 /** Zoom limits of the world view: far enough out for big worlds, no closer than 2× (thumbnails). */
@@ -193,6 +195,21 @@ export interface CanvasHandle {
    * unsubscribe.
    */
   onContextRequest(cb: (request: CanvasContextRequest) => void): () => void;
+
+  // ---------------------------------------------------------------- round 4
+
+  /**
+   * Shows `text` briefly next to the pointer (the same hint a blocked press
+   * shows), e.g. why a command did nothing ("Kare olmayan tile döndürülemez").
+   */
+  showHint(text: string): void;
+  /**
+   * Shows / hides the tile-coordinate rulers (20 px, top and left edge of
+   * the canvas; the map view shrinks by that much). Visible by default.
+   * Screen positions from {@link cellRectToScreen} include the offset.
+   */
+  setRulersVisible(visible: boolean): void;
+  areRulersVisible(): boolean;
 }
 
 /** A rectangle in CSS pixels relative to the canvas' top-left corner. */
@@ -309,6 +326,9 @@ export class MapCanvas {
   #viewLeft: number | null = null;
   #reportedZoom = NaN;
   #unsubs: (() => void)[] = [];
+  readonly #rulers: Rulers;
+  /** Last tile tool (back after an entity layer) and the tool before the eyedropper. */
+  #toolMemory: ToolMemory = INITIAL_TOOL_MEMORY;
 
   constructor(container: HTMLElement) {
     this.#container = container;
@@ -326,6 +346,7 @@ export class MapCanvas {
       userSelect: "none",
     } satisfies Partial<CSSStyleDeclaration>);
     this.#canvas = canvas;
+    this.#rulers = new Rulers(container);
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -354,6 +375,7 @@ export class MapCanvas {
       release: (id) => this.#input.release(id),
       requestRender: () => this.#requestRender(),
       springActive: () => this.#input.springActive,
+      toolBeforeEyedropper: () => this.#toolMemory.beforeEyedropper,
       picked: (event) => void this.#emit(this.#pickListeners, event, "pick"),
       strokeCommitted: (summary) => void this.#emit(this.#strokeListeners, summary, "stroke"),
       flash: (region) => this.#overlays.flash(region),
@@ -432,6 +454,8 @@ export class MapCanvas {
       this.#container.style.position = "relative";
     }
     this.#container.appendChild(this.#canvas);
+    this.#rulers.mount();
+    this.#applyRulers(true);
     this.#colors = readThemeColors(this.#container);
     const rect = this.#canvas.getBoundingClientRect();
     this.#viewLeft = rect.left;
@@ -627,7 +651,8 @@ export class MapCanvas {
       const c = this.#camera.camera;
       const tw = map.tileWidth * c.zoom;
       const th = map.tileHeight * c.zoom;
-      return { x: c.x + region.x * tw, y: c.y + region.y * th, width: region.width * tw, height: region.height * th };
+      const inset = this.#rulers.inset;
+      return { x: inset + c.x + region.x * tw, y: inset + c.y + region.y * th, width: region.width * tw, height: region.height * th };
     },
     minimapCorner: () => (this.#view === "level" && this.#minimap?.visible ? this.#minimap.footprint() : null),
     fillRegion: (region) => {
@@ -642,7 +667,31 @@ export class MapCanvas {
       this.#contextListeners.add(cb);
       return () => this.#contextListeners.delete(cb);
     },
+    showHint: (text) => {
+      if (!this.#destroyed) this.#overlays.showHint(text);
+    },
+    setRulersVisible: (visible) => {
+      if (!this.#destroyed) this.#applyRulers(visible);
+    },
+    areRulersVisible: () => this.#rulers.visible,
   };
+
+  /** Shows / hides the rulers and insets the map canvas by their size (the resize observer re-sizes the view). */
+  #applyRulers(visible: boolean): void {
+    this.#rulers.setVisible(visible);
+    // A canvas is a replaced element: left / right do not stretch it, so size it explicitly.
+    const inset = this.#rulers.inset;
+    Object.assign(this.#canvas.style, {
+      top: `${inset}px`,
+      left: `${inset}px`,
+      right: "",
+      bottom: "",
+      width: inset > 0 ? `calc(100% - ${inset}px)` : "100%",
+      height: inset > 0 ? `calc(100% - ${inset}px)` : "100%",
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.#input.invalidateRect();
+    this.#requestRender();
+  }
 
   /** Calls every listener (errors are logged, not thrown). Returns true when there was one. */
   #emit<T>(listeners: Set<(value: T) => void>, value: T, what: string): boolean {
@@ -747,6 +796,7 @@ export class MapCanvas {
     this.#movedListeners.clear();
     this.#openListeners.clear();
     this.#worldView.destroy();
+    this.#rulers.destroy();
     const s = useEditorStore.getState();
     if (s.hoverCell) s.setHoverCell(null);
     this.#flushRetired();
@@ -850,6 +900,7 @@ export class MapCanvas {
       this.#loadProject(s.project);
       return;
     }
+    if (s.tool !== prev.tool) this.#toolMemory = nextToolMemory(this.#toolMemory, prev.tool, s.tool);
     if (s.activeLayerId !== prev.activeLayerId) this.#matchToolToLayer(s);
     if (
       s.gridVisible !== prev.gridVisible ||
@@ -866,7 +917,8 @@ export class MapCanvas {
       s.brushSize !== prev.brushSize ||
       s.brushShape !== prev.brushShape
     ) {
-      if ((s.brushSize !== prev.brushSize || s.brushShape !== prev.brushShape) && this.#view === "level") this.#overlays.showSizeReadout();
+      const sized = s.brushSize !== prev.brushSize || s.brushShape !== prev.brushShape;
+      if (sized && this.#view === "level" && usesBrushSize(s.tool)) this.#overlays.showSizeReadout();
       this.#input.updateCursor();
       this.#requestRender();
     }
@@ -875,13 +927,13 @@ export class MapCanvas {
   /**
    * Keeps the tool usable on a newly active layer: an entity layer swaps a
    * tile tool (brush, eraser, fill, rectangle) for the entity tool; a tile /
-   * grid layer swaps the entity tool for the brush. Select, eyedropper and
-   * hand work everywhere and stay.
+   * grid layer swaps the entity tool back to the last tile tool used.
+   * Select, eyedropper and hand work everywhere and stay.
    */
   #matchToolToLayer(s: EditorState): void {
     const layer = activeLayer(this.#scene?.store);
     if (!layer) return;
-    const next = toolForLayer(s.tool, isEntityLayer(layer));
+    const next = toolForLayer(s.tool, isEntityLayer(layer), this.#toolMemory.lastTileTool);
     if (next !== s.tool) s.setTool(next);
   }
 
@@ -981,6 +1033,7 @@ export class MapCanvas {
     this.#input.updateCursor(); // layer lock/visibility may have changed
     this.#overlays.draw();
     this.#entities.draw();
+    this.#drawRulers();
     this.#updateMinimapAutoHide();
     this.#minimap?.draw();
     this.#app.renderer.render(this.#app.stage);
@@ -991,6 +1044,29 @@ export class MapCanvas {
 
     if (animating) this.#requestRender();
     else this.#lastFrameTime = 0;
+  }
+
+  /** Rulers for the current camera and hovered cell (no-op when hidden or unchanged). */
+  #drawRulers(): void {
+    const map = this.#map();
+    if (!map) {
+      this.#rulers.draw(null);
+      return;
+    }
+    const cam = this.#camera;
+    const off = snappedOffset(cam.camera, cam.resolution);
+    this.#rulers.draw({
+      originX: off.x,
+      originY: off.y,
+      cellW: map.tileWidth * cam.camera.zoom,
+      cellH: map.tileHeight * cam.camera.zoom,
+      cols: map.width,
+      rows: map.height,
+      viewW: cam.viewW,
+      viewH: cam.viewH,
+      resolution: cam.resolution,
+      hover: this.#input.hover,
+    });
   }
 
   /** The minimap hides itself while the whole map fits in the view (it would show nothing new). */
@@ -1039,6 +1115,7 @@ export class MapCanvas {
     more = this.#worldView.update() || more;
     this.#reframeWorldAfterLoads();
     this.#worldView.draw();
+    this.#rulers.draw(null);
     this.#input.updateCursor();
     this.#app.renderer.render(this.#app.stage);
     this.#flushRetired();

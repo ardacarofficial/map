@@ -37,7 +37,7 @@ import { dropIndex, rowShift } from "./layerOrder";
 import { PanelSection } from "./PanelSection";
 
 /** Row height in px (keep in sync with `h-8`). */
-const ROW = 32;
+const ROW = 29;
 /** Pointer travel before a press turns into a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -188,6 +188,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
         </>
       }
     >
+      {opacityLayer && <OpacityRow layer={opacityLayer} />}
       <ul
         ref={listRef}
         role="listbox"
@@ -225,8 +226,8 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                 if (row.kind !== "derived" && !(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
               }}
               style={{ transform: y ? `translateY(${y}px)` : undefined }}
-              className={`group relative flex h-8 shrink-0 items-center gap-1.5 rounded-md pr-1 text-md ${
-                row.kind === "derived" ? "pl-7" : row.kind === "group" ? "pl-0.5" : "pl-2"
+              className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 text-md ${
+                row.kind === "derived" ? "pl-7" : "pl-1"
               } ${
                 dragged
                   ? "z-10 cursor-grabbing bg-active shadow-popup"
@@ -237,19 +238,27 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                 flashed
                   ? "bg-accent-soft text-text shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
                   : isActive && row.kind !== "derived"
-                    ? "bg-active text-text"
+                    ? "bg-accent-soft text-title shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
                     : "text-muted hover:bg-hover hover:text-text"
               }`}
             />
           );
           const rowChildren = (
             <>
-              {isActive && row.kind !== "derived" && (
-                <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />
-              )}
               {row.kind === "derived" && (
                 <span aria-hidden className="absolute top-0 bottom-1/2 left-[13px] w-2.5 rounded-bl-[4px] border-b border-l border-line-strong" />
               )}
+              <RowToggle
+                on={!visible}
+                label={visible ? t("layers.hide") : t("layers.show")}
+                title={t("layers.eyeHint", { label: visible ? t("layers.hide") : t("layers.show") })}
+                icon={visible ? "eye" : "eyeOff"}
+                onClick={(event) => {
+                  if (event.altKey && row.kind !== "derived") soloLayer(layer.id);
+                  else setLayersProps(groupLayers.map((l) => l.id), { visible: !visible });
+                }}
+                persistent={!visible}
+              />
               {row.kind === "group" && (
                 <button
                   type="button"
@@ -303,17 +312,6 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                   persistent={locked}
                 />
               )}
-              <RowToggle
-                on={!visible}
-                label={visible ? t("layers.hide") : t("layers.show")}
-                title={t("layers.eyeHint", { label: visible ? t("layers.hide") : t("layers.show") })}
-                icon={visible ? "eye" : "eyeOff"}
-                onClick={(event) => {
-                  if (event.altKey && row.kind !== "derived") soloLayer(layer.id);
-                  else setLayersProps(groupLayers.map((l) => l.id), { visible: !visible });
-                }}
-                persistent={!visible}
-              />
             </>
           );
           if (row.kind === "derived") {
@@ -336,7 +334,6 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
           );
         })}
       </ul>
-      {opacityLayer && <OpacityRow layer={opacityLayer} />}
       <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
     </PanelSection>
   );
@@ -471,7 +468,7 @@ function AddLayerMenu() {
   );
 }
 
-/** Lock / eye button: hidden until row hover unless its state is "on". */
+/** Lock / eye button: always shown (quiet), brighter when its state is "on". */
 function RowToggle({
   on,
   label,
@@ -494,8 +491,8 @@ function RowToggle({
       title={title ?? label}
       aria-pressed={on}
       onClick={onClick}
-      className={`grid size-6 shrink-0 place-items-center rounded-sm transition-[opacity,color] duration-100 hover:bg-hover hover:text-text focus-visible:opacity-100 ${
-        persistent ? "text-muted opacity-100" : "text-faint opacity-0 group-hover:opacity-100 group-aria-selected:opacity-100"
+      className={`grid size-6 shrink-0 place-items-center rounded-sm transition-colors duration-100 hover:bg-hover hover:text-text ${
+        persistent ? "text-text" : "text-faint group-hover:text-muted group-aria-selected:text-muted"
       }`}
     >
       <Icon name={icon} size={14} />
@@ -523,8 +520,9 @@ function OpacityRow({ layer }: { layer: TileLayer }) {
     };
   }, []);
   return (
-    <div ref={rowRef} data-layer-opacity="" className="flex h-9 shrink-0 items-center gap-3 border-t border-line-subtle pr-3 pl-3">
-      <span className="text-xs text-faint">{t("layers.opacity")}</span>
+    <div ref={rowRef} data-layer-opacity="" className="flex h-8 shrink-0 items-center gap-3 pr-3 pl-3">
+      <span className="text-sm text-muted">{t("layers.opacity")}</span>
+      <span className="w-9 font-mono text-sm text-text tabular">{formatNumber(percent)}%</span>
       <Slider.Root
         value={percent}
         min={0}
@@ -544,7 +542,6 @@ function OpacityRow({ layer }: { layer: TileLayer }) {
           </Slider.Track>
         </Slider.Control>
       </Slider.Root>
-      <span className="w-9 text-right font-mono text-xs text-muted tabular">{formatNumber(percent)}%</span>
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * box-filtered down to k×k pixels once, then each 32×32 chunk is composited
  * from those blocks over all visible tile layers. No DOM: unit tested.
  */
-import { CELL_INDEX_MASK, CHUNK_SHIFT, CHUNK_SIZE, FLIP_H, FLIP_V } from "@smap/core";
+import { CELL_INDEX_MASK, CHUNK_SHIFT, CHUNK_SIZE, FLIP_D, FLIP_H, FLIP_V } from "@smap/core";
 
 /** RGBA pixels, row-major. */
 export interface Pixels {
@@ -86,8 +86,8 @@ let accBuffer = new Float32Array(0);
 /**
  * Composites one chunk at `k` px per cell, bottom layer first ("over"
  * blending with layer opacity). `block(paletteIndex)` gives the tile's k×k
- * pixels (undefined = not drawable). Horizontal / vertical flips are
- * honoured (like the chunk meshes, the diagonal flip is not drawn).
+ * pixels (undefined = not drawable). All flip bits are honoured like the
+ * chunk meshes (diagonal = x/y transpose first, then horizontal / vertical).
  * Returns straight-alpha RGBA of (32k)×(32k) px, written into `out` when
  * given (it must hold exactly that many bytes).
  *
@@ -137,13 +137,14 @@ export function compositeChunk(
       const cell = cellFlags[l]!;
       const fh = (cell & FLIP_H) !== 0;
       const fv = (cell & FLIP_V) !== 0;
+      const fd = (cell & FLIP_D) !== 0;
       const solid = l === from && op >= 1 && isOpaque(px);
       for (let y = 0; y < k; y++) {
         const sy = fv ? k - 1 - y : y;
         let d = ((oy + y) * side + ox) * 4;
         for (let x = 0; x < k; x++, d += 4) {
           const sx = fh ? k - 1 - x : x;
-          const s = (sy * k + sx) * 4;
+          const s = (fd ? sx * k + sy : sy * k + sx) * 4;
           if (solid) {
             acc[d] = px[s]!;
             acc[d + 1] = px[s + 1]!;

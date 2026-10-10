@@ -40,7 +40,7 @@ import type { GridOverlays } from "./gridOverlays";
 import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
-import { isRandomBrush, randomTileAt } from "./randomPaint";
+import { isRandomBrush, randomSetKey, randomTileAt, randomTileFlags } from "./randomPaint";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -287,7 +287,8 @@ export class OverlayRenderer {
       case "pick": {
         if (gesture.press === "entityMenu") return;
         const r = dragRegion(gesture.start, gesture.end, map);
-        if (r) this.#drawDashed(r);
+        if (r && gesture.press === "eraseRect") this.#drawEraseRect(r);
+        else if (r) this.#drawDashed(r);
         return;
       }
       case "move":
@@ -341,12 +342,24 @@ export class OverlayRenderer {
         if (state.brushSize > 1 || host.lineAnchor?.()) return this.#showBrushPreview(cell);
         let sel: { tilesetId: string; tileId: number } | null = state.selection;
         const random = isRandomBrush(state.randomSet) && isTileLayer(active);
+        let flags = 0;
         if (random) {
           const doc = host.scene!.store.document;
-          sel = randomTileAt(state.randomSet, doc.seed, cell.x, cell.y, (t) => !!doc.getTileset(t.tilesetId));
+          const t = randomTileAt(state.randomSet, doc.seed, cell.x, cell.y, (c) => !!doc.getTileset(c.tilesetId));
+          sel = t;
+          flags = t ? randomTileFlags(t) : 0;
+        }
+        if (random) this.#drawDice(one);
+        if (sel && flags !== 0) {
+          // A turned / mirrored candidate: drawn as a one-quad mesh (a sprite cannot transpose).
+          const key = `brush1:${sel.tilesetId}/${sel.tileId}:${flags}`;
+          if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
+          else this.#setTilePreview(key, [{ x: 0, y: 0, entry: { tilesetId: sel.tilesetId, tileId: sel.tileId }, flags }]);
+          this.#tilePreview.root.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
+          this.#drawCellCursor(one);
+          return;
         }
         const tex = sel ? host.scene?.atlas(sel.tilesetId)?.tileTexture(sel.tileId) : undefined;
-        if (random) this.#drawDice(one);
         if (tex) {
           this.#preview.texture = tex;
           this.#preview.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
@@ -405,9 +418,9 @@ export class OverlayRenderer {
       for (const c of cells) {
         if (!doc.inBounds(c.x, c.y)) continue;
         const t = randomTileAt(s.randomSet, doc.seed, c.x, c.y, ok);
-        if (t) preview.push({ x: c.x, y: c.y, entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: 0 });
+        if (t) preview.push({ x: c.x, y: c.y, entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: randomTileFlags(t) });
       }
-      const setKey = s.randomSet.map((t) => `${t.tilesetId}/${t.tileId}*${t.weight ?? 1}`).join(",");
+      const setKey = randomSetKey(s.randomSet);
       key = `brushR:${doc.seed}:${setKey}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
     } else if (sel && doc.getTileset(sel.tilesetId)) {
       const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
@@ -686,6 +699,21 @@ export class OverlayRenderer {
     }, ANTS_STEP_MS);
   }
 
+  /** Eraser right drag: the area that will be cleared, danger-coloured fill and outline. */
+  #drawEraseRect(r: CellRegion): void {
+    const g = this.overlay;
+    const cam = this.#host.camera;
+    const px = 1 / cam.resolution;
+    const k = cam.lineWidth();
+    const b = cam.cellBox(r);
+    const danger = this.#host.colors.danger;
+    g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px).fill({ color: danger, alpha: 0.16 });
+    rectOutline(g, b.x0 - k, b.y0 - k, b.x1 + k, b.y1 + k, k, px);
+    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.5 });
+    rectOutline(g, b.x0, b.y0, b.x1, b.y1, k, px);
+    g.fill(danger);
+  }
+
   /** Pick area: static black line with white dashes. */
   #drawDashed(r: CellRegion): void {
     const g = this.overlay;
@@ -859,10 +887,10 @@ export class OverlayRenderer {
       const seed = doc.seed;
       const ok = (t: { tilesetId: string }) => !!doc.getTileset(t.tilesetId);
       return {
-        key: `r${seed}:${set.map((t) => `${t.tilesetId}/${t.tileId}*${t.weight ?? 1}`).join(",")}`,
+        key: `r${seed}:${randomSetKey(set)}`,
         at: (x, y) => {
           const t = randomTileAt(set, seed, x, y, ok);
-          return t ? { entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: 0 } : null;
+          return t ? { entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: randomTileFlags(t) } : null;
         },
       };
     }

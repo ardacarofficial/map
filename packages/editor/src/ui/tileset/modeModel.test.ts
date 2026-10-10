@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contextMenuEnabled, isStroke, tilePointerAction } from "./modeModel";
+import { contextMenuEnabled, isEditMode, isStroke, tilePointerAction } from "./modeModel";
 
 const ctx = (button: number, extra: Partial<{ alt: boolean; pending: boolean; terrainId: number | null }> = {}) => ({
   button,
@@ -11,9 +11,9 @@ const ctx = (button: number, extra: Partial<{ alt: boolean; pending: boolean; te
 });
 
 describe("tileset mouse model: left adds / selects, right removes", () => {
-  it("Seç: left selects, Alt+left toggles random, right does nothing (menu)", () => {
+  it("Seç: left selects, Alt+left starts a random-brush rectangle, right does nothing (menu)", () => {
     expect(tilePointerAction("pick", ctx(0))).toEqual({ kind: "select" });
-    expect(tilePointerAction("pick", ctx(0, { alt: true }))).toEqual({ kind: "randomToggle" });
+    expect(tilePointerAction("pick", ctx(0, { alt: true }))).toEqual({ kind: "randomRect" });
     expect(tilePointerAction("pick", ctx(2))).toEqual({ kind: "none" });
     expect(contextMenuEnabled("pick")).toBe(true);
   });
@@ -25,9 +25,12 @@ describe("tileset mouse model: left adds / selects, right removes", () => {
     expect(contextMenuEnabled("solid")).toBe(false);
   });
 
-  it("Rastgele: left adds, right removes", () => {
-    expect(tilePointerAction("random", ctx(0))).toEqual({ kind: "random", add: true });
-    expect(tilePointerAction("random", ctx(2))).toEqual({ kind: "random", add: false });
+  it("no Rastgele mode any more: a legacy value acts as Seç; Katı / Arazi are edit modes", () => {
+    expect(tilePointerAction("random", ctx(0))).toEqual({ kind: "select" });
+    expect(tilePointerAction("random", ctx(2))).toEqual({ kind: "none" });
+    expect(isEditMode("pick")).toBe(false);
+    expect(isEditMode("solid")).toBe(true);
+    expect(isEditMode("terrain")).toBe(true);
   });
 
   it("Arazi: left places; right cancels a placed block, else deletes the terrain under the cursor", () => {

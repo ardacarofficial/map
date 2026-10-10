@@ -4,7 +4,15 @@
  * `ProjectFileSystem` for the target folder (browser directory handle today,
  * Tauri in v0.5, an in-memory folder in tests).
  */
-import { exportTmj, exportUnityMap, type ExportImage, type ExportWarning, type MapDocument } from "@smap/core";
+import {
+  exportTmj,
+  exportUnityMap,
+  type ExportImage,
+  type ExportLayerOptions,
+  type ExportWarning,
+  type GameExportOptions,
+  type MapDocument,
+} from "@smap/core";
 
 import { FileNotFoundError, type ProjectFileSystem } from "../io/fs";
 
@@ -28,34 +36,56 @@ export interface ExportFileSet {
 /** Original PNG bytes of a tileset, `undefined` when the image is missing. */
 export type TilesetBytes = (tilesetId: string) => Uint8Array | undefined;
 
+/** Where and how the files of a folder export are laid out. */
+export interface FileSetOptions {
+  /** Subfolder of the target folder (`""` / undefined = the folder itself). */
+  readonly subfolder?: string;
+  /** Write the tileset PNGs (default true). Off: the PNGs must already be there. */
+  readonly copyTextures?: boolean;
+}
+
 function withImages(
   mapFile: string,
   text: string,
   images: readonly ExportImage[],
   bytes: TilesetBytes,
   warnings: readonly ExportWarning[],
+  options: FileSetOptions,
 ): ExportFileSet {
+  const prefix = options.subfolder ? `${options.subfolder}/` : "";
   const files: ExportFile[] = [];
   const missingImages: string[] = [];
-  for (const image of images) {
-    const data = bytes(image.tileset.id);
-    if (data) files.push({ path: image.fileName, data });
-    else missingImages.push(image.sourcePath);
+  if (options.copyTextures !== false) {
+    for (const image of images) {
+      const data = bytes(image.tileset.id);
+      if (data) files.push({ path: prefix + image.fileName, data });
+      else missingImages.push(image.sourcePath);
+    }
   }
-  files.push({ path: mapFile, data: text });
+  files.push({ path: prefix + mapFile, data: text });
   return { mapFile, files, missingImages, warnings };
 }
 
 /** `<level>.smapmap` + the tileset PNGs it references (Unity importer). */
-export function unityExportFiles(doc: MapDocument, levelName: string, bytes: TilesetBytes): ExportFileSet {
-  const result = exportUnityMap(doc, levelName);
-  return withImages(result.fileName, result.text, result.images, bytes, result.warnings ?? []);
+export function unityExportFiles(
+  doc: MapDocument,
+  levelName: string,
+  bytes: TilesetBytes,
+  options: GameExportOptions & FileSetOptions = {},
+): ExportFileSet {
+  const result = exportUnityMap(doc, levelName, options);
+  return withImages(result.fileName, result.text, result.images, bytes, result.warnings ?? [], options);
 }
 
 /** `<level>.tmj` + the tileset PNGs next to it (Tiled, Godot, Phaser). */
-export function tmjExportFiles(doc: MapDocument, levelName: string, bytes: TilesetBytes): ExportFileSet {
-  const result = exportTmj(doc, levelName);
-  return withImages(result.fileName, result.text, result.images, bytes, result.warnings);
+export function tmjExportFiles(
+  doc: MapDocument,
+  levelName: string,
+  bytes: TilesetBytes,
+  options: ExportLayerOptions & FileSetOptions = {},
+): ExportFileSet {
+  const result = exportTmj(doc, levelName, options.layers ? { layers: options.layers } : {});
+  return withImages(result.fileName, result.text, result.images, bytes, result.warnings, options);
 }
 
 export interface WriteResult {

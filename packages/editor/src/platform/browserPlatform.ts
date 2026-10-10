@@ -59,7 +59,14 @@ async function resolveSaveFolder(
 const listed = new Map<string, RecentProject>();
 
 function toEntry(recent: RecentProject): RecentEntry {
-  return { key: String(recent.openedAt), name: recent.name, location: recent.folder, openedAt: recent.openedAt, exists: true };
+  return {
+    key: String(recent.openedAt),
+    name: recent.name,
+    location: recent.folder,
+    openedAt: recent.openedAt,
+    exists: true,
+    ...(recent.thumbnail ? { thumbnail: recent.thumbnail } : {}),
+  };
 }
 
 // ------------------------------------------------------------------ "watcher" (focus check)
@@ -177,9 +184,9 @@ export const browserPlatform: Platform = {
       for (const recent of all) listed.set(String(recent.openedAt), recent);
       return all.map(toEntry);
     },
-    async add(location, name) {
+    async add(location, name, thumbnail) {
       const handle = handleOf(location);
-      if (handle) await rememberRecent(name, handle);
+      if (handle) await rememberRecent(name, handle, thumbnail);
     },
     async remove(entry) {
       listed.delete(entry.key);

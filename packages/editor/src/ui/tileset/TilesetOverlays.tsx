@@ -10,7 +10,7 @@ import { t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { templateGlyphs } from "../terrain/templateGlyph";
-import { cellOf, outlinePath, type Cell } from "./selectionModel";
+import { cellOf, outlinePath, type Cell, type GridSize } from "./selectionModel";
 
 type TileCell = Cell;
 
@@ -149,7 +149,8 @@ export function SelectionOverlay({
   height,
   live,
 }: {
-  tileset: Tileset;
+  /** The grid (a tileset, or a palette's columns × rows). */
+  tileset: GridSize;
   ids: readonly number[];
   empty: ReadonlySet<number>;
   cellW: number;

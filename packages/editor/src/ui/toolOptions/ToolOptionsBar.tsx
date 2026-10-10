@@ -4,106 +4,52 @@ import { Fragment, useRef, useState, useSyncExternalStore } from "react";
 import { runCommand } from "../../commands/registry";
 import { useWorldView } from "../../commands/worldActions";
 import { getLocale, t } from "../../i18n";
-import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
+import { keysFor } from "../../shortcuts/shortcuts";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Kbd } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
-import { Toggle } from "../primitives/Toggle";
-import { Tooltip } from "../primitives/Tooltip";
-import { toolIcon } from "../layout/tools";
 import { getCanvasHandle } from "../canvas/canvasHandle";
 import { formatZoomPercent, parseZoomPercent } from "./zoomInput";
 import { registerBrushCommands } from "./brushCommands";
 import { registerBuiltinToolOptions } from "./builtins";
-import { OptionDivider, StepButton } from "./parts";
+import { OptionDivider } from "./parts";
 import { subscribeToolOptions, toolOptionsFor, toolOptionsVersion } from "./registry";
 
 registerBuiltinToolOptions();
 registerBrushCommands();
 
 /**
- * The strip under the menu bar: the active tool and only its options (left,
- * from the tool options registry), view switches and zoom (right, always).
+ * The active tool's options (from the tool options registry), inline in
+ * the tool bar above the canvas, left to right. Nothing on the world map.
  */
-export function ToolOptionsBar() {
+export function ToolOptions() {
   const world = useWorldView((s) => s.view === "world");
-  return (
-    <div
-      role="toolbar"
-      aria-label={t("toolOptions.bar")}
-      className="flex h-optionsbar shrink-0 items-center gap-2 border-b border-line bg-panel pr-2 pl-2"
-    >
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">{world ? <WorldOptions /> : <ToolOptions />}</div>
-      <ViewControls world={world} />
-    </div>
-  );
-}
-
-function ToolOptions() {
   const tool = useEditorStore((s) => s.tool);
   const store = useEditorStore((s) => s.project?.store);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
   useStructureVersion(store);
   useSyncExternalStore(subscribeToolOptions, toolOptionsVersion);
+  if (world) return null;
   const doc = store?.document;
   const layer = activeLayerId ? doc?.getLayer(activeLayerId) : undefined;
   const entries = toolOptionsFor({ tool, doc, layer });
   return (
-    <>
-      <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent-soft pr-2.5 pl-2 text-sm font-medium text-accent" data-tool-chip={tool}>
-        <Icon name={toolIcon(tool)} size={14} />
-        {t(`tools.${tool}`)}
-      </div>
-      {entries.map(({ id, Component }) => (
+    <div role="group" aria-label={t("toolOptions.bar")} data-tool-chip={tool} className="flex min-w-0 items-center gap-2 overflow-hidden">
+      {entries.map(({ id, Component }, i) => (
         <Fragment key={id}>
-          <OptionDivider />
+          {i > 0 && <OptionDivider />}
           <Component />
         </Fragment>
       ))}
-    </>
-  );
-}
-
-function WorldOptions() {
-  return (
-    <>
-      <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent-soft pr-2.5 pl-2 text-sm font-medium text-accent">
-        <Icon name="globe" size={14} />
-        {t("world.world")}
-      </div>
-      <OptionDivider />
-      <span className="truncate text-sm text-faint">{t("world.hint")}</span>
-    </>
-  );
-}
-
-function ViewSwitch({ label, command, checked, disabled }: { label: string; command: CommandId; checked: boolean; disabled?: boolean }) {
-  return (
-    <Tooltip label={label} command={command}>
-      <label className={`flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md px-1.5 text-sm text-muted hover:text-text ${disabled ? "pointer-events-none opacity-40" : ""}`}>
-        <Toggle checked={checked} onChange={() => runCommand(command)} label={label} />
-        <span className="hidden lg:inline">{label}</span>
-      </label>
-    </Tooltip>
-  );
-}
-
-function ViewControls({ world }: { world: boolean }) {
-  const grid = useEditorStore((s) => s.gridVisible);
-  const collision = useEditorStore((s) => s.collisionOverlay);
-  return (
-    <div className="flex shrink-0 items-center gap-1">
-      <ViewSwitch label={t("toolOptions.collisionView")} command="view.toggleCollision" checked={collision} disabled={world} />
-      <ViewSwitch label={t("toolOptions.grid")} command="view.toggleGrid" checked={grid} disabled={world} />
-      <OptionDivider />
-      <ZoomControl />
     </div>
   );
 }
 
-const ZOOM_ITEMS: { command: "view.zoomReset" | "view.frameMap"; icon: IconName }[] = [
+const ZOOM_ITEMS: { command: "view.zoomIn" | "view.zoomOut" | "view.zoomReset" | "view.frameMap"; icon: IconName }[] = [
+  { command: "view.zoomIn", icon: "zoomIn" },
+  { command: "view.zoomOut", icon: "zoomOut" },
   { command: "view.zoomReset", icon: "search" },
   { command: "view.frameMap", icon: "frame" },
 ];
@@ -112,10 +58,11 @@ const ZOOM_ITEMS: { command: "view.zoomReset" | "view.frameMap"; icon: IconName 
 const FALLBACK_PRESETS: readonly number[] = [0.25, 0.5, 1, 2, 4, 8];
 
 /**
- * − [ 100 % ⌄ ] +: the percentage is a field (type a value, Enter), the
- * chevron opens the presets and "fit / 100 %"; the canvas does the zooming.
+ * [ 100 % ⌄ ]: the percentage is a field (type a value, Enter), the
+ * chevron opens the presets, zoom in / out and "fit / 100 %"; the canvas
+ * does the zooming.
  */
-function ZoomControl() {
+export function ZoomControl() {
   const zoom = useEditorStore((s) => s.zoom);
   const locale = getLocale();
   const shown = formatZoomPercent(zoom, locale);
@@ -133,8 +80,7 @@ function ZoomControl() {
 
   return (
     <div className="flex h-7 items-center rounded-md border border-line bg-raised" data-zoom-control>
-      <StepButton icon="minus" label={t("commands.view.zoomOut")} command="view.zoomOut" onClick={() => runCommand("view.zoomOut")} />
-      <div className="flex h-full items-center border-x border-line">
+      <div className="flex h-full items-center">
         <label className="flex h-full items-center pl-1.5 font-mono text-sm text-text tabular">
           <input
             ref={inputRef}
@@ -164,7 +110,7 @@ function ZoomControl() {
             spellCheck={false}
             autoComplete="off"
             maxLength={7}
-            className="w-[42px] bg-transparent text-right outline-none"
+            className="w-[40px] bg-transparent text-right outline-none"
           />
           <span className="pr-0.5 text-faint">%</span>
         </label>
@@ -172,7 +118,7 @@ function ZoomControl() {
           <Menu.Trigger
             aria-label={t("zoomMenu.presets")}
             data-zoom-menu=""
-            className="grid h-full w-5 place-items-center text-faint outline-none hover:bg-hover hover:text-text data-popup-open:bg-hover data-popup-open:text-text"
+            className="grid h-full w-6 place-items-center rounded-r-md text-faint outline-none hover:bg-hover hover:text-text data-popup-open:bg-hover data-popup-open:text-text"
           >
             <Icon name="chevronDown" size={12} />
           </Menu.Trigger>
@@ -211,7 +157,6 @@ function ZoomControl() {
           </Menu.Portal>
         </Menu.Root>
       </div>
-      <StepButton icon="plus" label={t("commands.view.zoomIn")} command="view.zoomIn" onClick={() => runCommand("view.zoomIn")} />
     </div>
   );
 }

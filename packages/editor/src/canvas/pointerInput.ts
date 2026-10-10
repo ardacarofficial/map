@@ -10,13 +10,14 @@
  */
 import type { CellPoint, MapInfo } from "@smap/core";
 
+import { commandForEvent } from "../commands/registry";
 import { useEditorStore } from "../state/editorStore";
 import { classifyWheel } from "./brush";
 import { wheelDeltaPixels, wheelZoomFactor, wheelZoomSteps, type Point } from "./camera";
 import type { CameraController } from "./cameraController";
 import { SPRING_HOLD_MS, SPRING_IDLE, springStep, type SpringEvent, type SpringState } from "./springKey";
 import type { ToolController } from "./toolController";
-import { cursorFor, nudgeOffset } from "./tools";
+import { cursorFor, nudgeOffset, suppressedCommandKey } from "./tools";
 
 /** How long a pan gesture "sticks" for following wheel events. */
 const PAN_GESTURE_MS = 250;
@@ -167,8 +168,12 @@ export class PointerInput {
     // Capture phase: runs before the global shortcut handler, which skips prevented events.
     window.addEventListener("keydown", (e) => this.#onEscape(e), { signal, capture: true });
     window.addEventListener("keydown", (e) => this.#onArrow(e), { signal, capture: true });
+    window.addEventListener("keydown", (e) => this.#onCommandKey(e), { signal, capture: true });
     window.addEventListener("keyup", (e) => this.#onKey(e, false), opts);
     window.addEventListener("blur", () => {
+      // Focus left the window mid-gesture (Alt+Tab, a dialog): the pointer-up may never come.
+      if (this.#host.tools.gesture) this.#host.tools.end();
+      if (this.#pan) this.#endPan();
       this.#spaceDown = false;
       this.#setModifiers(false, false);
       this.#feedSpring({ type: "reset" });
@@ -337,6 +342,19 @@ export class PointerInput {
     if (!this.#host.tools.gesture) return;
     e.preventDefault();
     this.#host.tools.cancel();
+  }
+
+  /**
+   * Keys of tool / brush commands that must do nothing now (see
+   * `suppressedCommandKey`): prevented here, before the global shortcut
+   * handler, which skips prevented events.
+   */
+  #onCommandKey(e: KeyboardEvent): void {
+    if (e.defaultPrevented || isEditableTarget(e.target) || this.#host.world()) return;
+    const id = commandForEvent(e);
+    if (!id) return;
+    const gesture = this.#host.tools.gesture !== null || this.#pan !== null;
+    if (suppressedCommandKey(id, useEditorStore.getState().tool, gesture)) e.preventDefault();
   }
 
   /** Arrow keys nudge the selection (select tool, canvas focused); Shift: 10 cells. */

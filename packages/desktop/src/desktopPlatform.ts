@@ -126,12 +126,13 @@ export function createDesktopPlatform(): Platform {
             location: e.path.replace(/[\\/]project\.smap$/i, ""),
             openedAt: e.openedAt,
             exists: e.exists,
+            ...(e.thumbnail ? { thumbnail: e.thumbnail } : {}),
           }),
         );
       },
-      async add(location, name) {
+      async add(location, name, thumbnail) {
         const root = rootOf(location);
-        if (root) await bridge.recentAdd(joinPath(root, PROJECT_FILE), name);
+        if (root) await bridge.recentAdd(joinPath(root, PROJECT_FILE), name, thumbnail);
       },
       async remove(entry) {
         await bridge.recentRemove(entry.key);

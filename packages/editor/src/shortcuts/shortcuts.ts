@@ -43,6 +43,7 @@ export type CommandId =
   | "view.toggleProperties"
   | "view.toggleLayers"
   | "view.toggleRecent"
+  | "view.toggleRulers"
   | "layer.duplicate"
   | "layer.mergeDown"
   | "layer.rename"
@@ -65,7 +66,6 @@ export type CommandId =
   | "view.toggleGrid"
   | "view.togglePanels"
   | "view.toggleMinimap"
-  | "view.toggleSelectionBar"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
@@ -153,6 +153,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "view.toggleProperties", keys: [] },
   { command: "view.toggleLayers", keys: [] },
   { command: "view.toggleRecent", keys: [] },
+  { command: "view.toggleRulers", keys: [] },
   { command: "layer.duplicate", keys: ["Ctrl+J"] },
   { command: "layer.mergeDown", keys: [] },
   { command: "layer.rename", keys: ["F2"] },
@@ -176,7 +177,6 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.addCollision", keys: [] },
   { command: "tileset.markSolid", keys: [] },
   { command: "tileset.defineTerrain", keys: [] },
-  { command: "view.toggleSelectionBar", keys: [] },
   { command: "settings.language", keys: [] },
   { command: "settings.editShortcuts", keys: [] },
 ];

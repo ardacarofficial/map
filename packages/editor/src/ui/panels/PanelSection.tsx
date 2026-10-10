@@ -14,9 +14,12 @@ export function PanelSection({
   collapsed = false,
   onToggleCollapsed,
   className = "",
+  bare = false,
   children,
 }: {
   title: string;
+  /** Body only: a host (e.g. the right column's tab strip) already shows the title. */
+  bare?: boolean;
   /** Replaces the title text in the header (e.g. tabs); `title` still names the section. */
   heading?: ReactNode;
   actions?: ReactNode;
@@ -45,6 +48,13 @@ export function PanelSection({
     ) : (
       <h2 className="text-xs font-semibold tracking-wide text-muted">{title}</h2>
     ));
+  if (bare) {
+    return (
+      <section aria-label={title} className={`flex min-h-0 flex-col ${className}`}>
+        {children}
+      </section>
+    );
+  }
   return (
     <section aria-label={title} data-collapsed={collapsed ? "" : undefined} className={`flex min-h-0 flex-col border-b border-line last:border-b-0 ${className}`}>
       <header className="flex h-9 shrink-0 items-center gap-1 pr-1.5 pl-3">

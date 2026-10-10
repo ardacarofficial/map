@@ -1,7 +1,10 @@
 /**
  * One tileset's interactive grid: the image, its marks and overlays, and
  * what the mouse does in each mode (see `modeModel.ts`: left adds /
- * selects, right removes). Shared by the single view and the "Tümü" stack;
+ * selects, right removes). In Seç, Alt + drag adds a rectangle to the
+ * random brush, and a press on the selection drags its tiles into a
+ * palette (copy; Shift = move only applies between palettes); Ctrl+C copies
+ * the selection for a paste into a palette. Shared by the single view and the "Tümü" stack;
  * the host (the scroll viewport) owns zoom, panning, keyboard routing and
  * the placed terrain block, and hands them down through {@link GridHostContext}.
  *
@@ -23,14 +26,18 @@ import {
   type PointerEvent,
 } from "react";
 
-import { inRandomSet, toggleInSet, toggleRandomTile } from "../../commands/randomBrush";
+import { addTilesToRandom, inRandomSet, toggleRandomTile } from "../../commands/randomBrush";
 import { SolidStroke } from "../../commands/solidStroke";
 import { deleteTerrain, setTilesSolid, terrainBlockProblem } from "../../commands/terrainActions";
 import { t } from "../../i18n";
-import { useEditorStore, type TileSelection } from "../../state/editorStore";
+import { useEditorStore } from "../../state/editorStore";
 import { onTilesetImage } from "../../state/tilesetImages";
 import { useTilesetImage } from "../hooks";
 import { Icon } from "../primitives/Icon";
+import { AddToPaletteMenu } from "../palettes/AddToPaletteMenu";
+import { copyTilesetTiles } from "../palettes/paletteActions";
+import { itemsOfTiles } from "../palettes/paletteModel";
+import { PendingTileDrag } from "../palettes/tileDrag";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { useActiveTerrainId } from "../terrain/TerrainList";
 import { toast } from "../toast/toastStore";
@@ -104,8 +111,8 @@ export function startTerrainAt(host: GridHost, tileset: Tileset, cell: Cell): vo
 }
 
 type Drag =
-  | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell }
-  | { kind: "random"; pointerId: number; adding: boolean; visited: Set<number> }
+  /** `alt`: the rectangle goes to the random brush; `carry`: a press on the selection that may drag its tiles into a palette. */
+  | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell; alt: boolean; carry: PendingTileDrag | null }
   | { kind: "solid"; pointerId: number };
 
 export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: number }) {
@@ -132,8 +139,6 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const [menuCell, setMenuCell] = useState<Cell | null>(null);
-  /** A tile was picked in this "Rastgele" session (the first click starts a fresh set). */
-  const randomSessionRef = useRef(false);
   const [visible, setVisible] = useState(!host.lazy);
 
   const cellW = tileset.tileWidth * scale;
@@ -148,9 +153,6 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     setDrag(next);
   };
 
-  useEffect(() => {
-    randomSessionRef.current = false;
-  }, [mode]);
   useEffect(() => () => strokeRef.current?.end(), []);
 
   // Stack: draw only near the viewport.
@@ -248,24 +250,13 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 
   // ---- random brush
 
-  const toggleRandom = (tile: TileSelection, alt: boolean) => {
-    if (alt && mode !== "random") {
-      toggleRandomTile(tile);
+  /** Alt + drag released: one cell toggles that tile (from the selected one); a rectangle adds its non-transparent tiles. */
+  const finishRandomRect = (ids: readonly number[]) => {
+    if (ids.length === 1) {
+      toggleRandomTile({ tilesetId: tileset.id, tileId: ids[0]! });
       return;
     }
-    const s = useEditorStore.getState();
-    // Entering "Rastgele" does not silently add the tile that happened to be selected.
-    const fresh = s.randomSet.length === 0 && !randomSessionRef.current;
-    const result = toggleInSet(s.randomSet, fresh ? null : s.selection, tile);
-    randomSessionRef.current = true;
-    s.setRandomSet(result.randomSet);
-    s.setSelection(result.selection);
-    s.setStamp(null);
-    if (s.tool !== "brush" && s.tool !== "fill" && s.tool !== "rect") s.setTool("brush");
-  };
-  /** Puts `tile` in (or takes it out of) the random brush; nothing when it already is. */
-  const setRandom = (tile: TileSelection, add: boolean) => {
-    if (inRandomSet(useEditorStore.getState().randomSet, tile) !== add) toggleRandom(tile, false);
+    addTilesToRandom(ids.filter((id) => !empty.has(id)).map((tileId) => ({ tilesetId: tileset.id, tileId })));
   };
 
   // ---- keyboard (routed here by the host)
@@ -275,8 +266,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     if (event.key === "Escape" && dragRef.current) {
       strokeRef.current?.end();
       strokeRef.current = null;
+      if (dragRef.current.kind === "select") dragRef.current.carry?.cancel();
       updateDrag(null);
       return true;
+    }
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "c" && mode === "pick") {
+      return highlighted.length > 0 && copyTilesetTiles(tileset, highlighted, empty);
     }
     const d = arrowDelta(event.key);
     if (!d || event.ctrlKey || event.metaKey || event.altKey || mode !== "pick") return false;
@@ -311,17 +306,23 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         return;
       case "select": {
         e.currentTarget.setPointerCapture(e.pointerId);
-        const gesture = startGesture(tileset, cell, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, corners ? { ids: highlighted, anchor: corners.anchor } : null);
-        updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell });
+        const ctrl = e.ctrlKey || e.metaKey;
+        const gesture = startGesture(tileset, cell, { ctrl, shift: e.shiftKey }, corners ? { ids: highlighted, anchor: corners.anchor } : null);
+        let carry: PendingTileDrag | null = null;
+        if (!ctrl && !e.shiftKey && highlighted.includes(tile.tileId)) {
+          const items = itemsOfTiles(tileset.id, tileset.columns, highlighted, empty);
+          const kept = highlighted.length > 1 ? highlighted.filter((id) => !empty.has(id)) : highlighted;
+          const b = boundsOf(tileset, kept);
+          if (items.length > 0 && b) carry = new PendingTileDrag({ kind: "tileset", tilesetId: tileset.id }, items, { col: cell.col - b.col, row: cell.row - b.row }, e.clientX, e.clientY);
+        }
+        updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell, alt: false, carry });
         return;
       }
-      case "randomToggle":
-        toggleRandom(tile, true);
+      case "randomRect": {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        updateDrag({ kind: "select", pointerId: e.pointerId, gesture: startGesture(tileset, cell, { ctrl: false, shift: false }, null), cell, alt: true, carry: null });
         return;
-      case "random":
-        setRandom(tile, action.add);
-        updateDrag({ kind: "random", pointerId: e.pointerId, adding: action.add, visited: new Set([tile.tileId]) });
-        return;
+      }
       case "solid":
         if (!store || store.inTransaction || !store.document.getTileset(tileset.id)) return;
         strokeRef.current = new SolidStroke(store, tileset.id, cell.col, cell.row, action.solid);
@@ -346,16 +347,14 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       const c = rawCellAt(e.clientX, e.clientY);
       strokeRef.current.moveTo(c.col, c.row);
     } else if (g?.kind === "select" && g.pointerId === e.pointerId) {
-      const c = clampCell(tileset, rawCellAt(e.clientX, e.clientY));
-      if (c.col !== g.cell.col || c.row !== g.cell.row) updateDrag({ ...g, cell: c });
-    } else if (g?.kind === "random" && g.pointerId === e.pointerId) {
-      const c = cellAt(e.clientX, e.clientY);
-      if (c) {
-        const id = idOf(tileset, c);
-        if (!g.visited.has(id)) {
-          g.visited.add(id);
-          setRandom({ tilesetId: tileset.id, tileId: id }, g.adding);
-        }
+      const wasActive = g.carry?.active ?? false;
+      g.carry?.move(e.clientX, e.clientY, e.shiftKey);
+      if (g.carry?.active) {
+        // Dragging tiles out: no selection preview here.
+        if (!wasActive) updateDrag({ ...g });
+      } else {
+        const c = clampCell(tileset, rawCellAt(e.clientX, e.clientY));
+        if (c.col !== g.cell.col || c.row !== g.cell.row) updateDrag({ ...g, cell: c });
       }
     }
     const cell = cellAt(e.clientX, e.clientY);
@@ -372,12 +371,22 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     if (!g || g.pointerId !== e.pointerId) return;
     endStroke();
     updateDrag(null);
-    if (g.kind === "select") commit(gestureIds(tileset, g.gesture, g.cell), g.gesture.anchor, g.cell);
+    if (g.kind !== "select") return;
+    if (g.carry?.active) {
+      g.carry.finish(e.shiftKey);
+      return;
+    }
+    g.carry?.cancel();
+    const ids = gestureIds(tileset, g.gesture, g.cell);
+    if (g.alt) finishRandomRect(ids);
+    else commit(ids, g.gesture.anchor, g.cell);
   };
 
   const onPointerCancel = () => {
     endStroke();
-    if (dragRef.current) updateDrag(null);
+    const g = dragRef.current;
+    if (g?.kind === "select") g.carry?.cancel();
+    if (g) updateDrag(null);
   };
 
   // ---- render
@@ -386,14 +395,19 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const blockAt = mode === "terrain" ? (pending ?? hover) : null;
   const tooSmall = mode === "terrain" ? terrainBlockProblem(tileset, template, 0, 0) : null;
   const blockProblem = blockAt ? terrainBlockProblem(tileset, template, blockAt.col, blockAt.row) : null;
-  const preview = useMemo(() => (drag?.kind === "select" ? gestureIds(tileset, drag.gesture, drag.cell) : null), [drag, tileset]);
-  const shown = useMemo(() => (mode === "pick" ? (preview ?? highlighted) : []), [mode, preview, highlighted]);
+  const preview = useMemo(
+    () => (drag?.kind === "select" && !drag.carry?.active ? gestureIds(tileset, drag.gesture, drag.cell) : null),
+    [drag, tileset],
+  );
+  const picking = mode === "pick" || mode === "random";
+  const altPreview = drag?.kind === "select" && drag.alt;
+  const shown = useMemo(() => (picking && !altPreview ? (preview ?? highlighted) : []), [picking, altPreview, preview, highlighted]);
   const shownBounds = preview ? boundsOf(tileset, preview) : null;
   const randomHere = randomSet.length >= 2 ? randomSet.filter((r) => r.tilesetId === tileset.id) : [];
   const shownSet = useMemo(() => new Set(shown), [shown]);
   const hoverTerrain = mode === "terrain" && hover && !pending ? terrainAt(tileset, hover.col, hover.row) : null;
   const cursor =
-    mode === "pick" || mode === "random"
+    picking
       ? "cursor-pointer"
       : mode === "terrain" && blockProblem && hoverTerrain === null
         ? "cursor-not-allowed"
@@ -506,7 +520,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             </div>
           );
         })}
-        {(mode === "pick" || mode === "random") && hover && hoverId !== null && !shownSet.has(hoverId) && !drag && (
+        {picking && hover && hoverId !== null && !shownSet.has(hoverId) && !drag && (
           <div
             aria-hidden
             className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
@@ -525,6 +539,11 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         {shown.length > 0 && (
           <SelectionOverlay tileset={tileset} ids={shown} empty={empty} cellW={cellW} cellH={cellH} width={cssW} height={cssH} live={preview !== null} />
         )}
+        {altPreview && preview && (
+          <div data-random-rect className="contents">
+            <SelectionOverlay tileset={tileset} ids={preview} empty={empty} cellW={cellW} cellH={cellH} width={cssW} height={cssH} live />
+          </div>
+        )}
         {blockAt && !tooSmall && hoverTerrain === null && (
           <BlockGhost
             template={template}
@@ -538,7 +557,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             rows={info.rows}
           />
         )}
-        {(mode === "pick" || mode === "random") && (shownBounds ? shownBounds.width * shownBounds.height > 1 : hover !== null) && (
+        {picking && !(drag?.kind === "select" && drag.carry?.active) && (shownBounds ? shownBounds.width * shownBounds.height > 1 : hover !== null) && (
           <CellLabel
             cell={shownBounds && drag?.kind === "select" ? drag.cell : hover!}
             cellW={cellW}
@@ -546,7 +565,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             width={cssW}
             rows={tileset.rows}
             text={
-              shownBounds
+              shownBounds && altPreview
+                ? t("randomSets.rectLabel", { count: preview!.filter((id) => !empty.has(id)).length })
+                : shownBounds
                 ? t("tilesetPanel.dragSize", { width: shownBounds.width, height: shownBounds.height })
                 : t(empty.has(hoverId!) ? "tilesetPanel.hoverEmpty" : "tilesetPanel.hover", { id: hoverId!, col: hover!.col, row: hover!.row })
             }
@@ -556,7 +577,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       <ContextMenu.Portal>
         <ContextMenu.Positioner className={menuPositionerClass}>
           <ContextMenu.Popup className={menuPopupClass} data-tile-menu>
-            {menuCell && <TileMenuItems tileset={tileset} cell={menuCell} host={host} />}
+            {menuCell && <TileMenuItems tileset={tileset} cell={menuCell} host={host} selected={highlighted} empty={empty} />}
           </ContextMenu.Popup>
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
@@ -564,9 +585,22 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   );
 }
 
-/** Context menu of a tile (Seç mode): solid, terrain from here, random brush, copy the tile number. */
-function TileMenuItems({ tileset, cell, host }: { tileset: Tileset; cell: Cell; host: GridHost }) {
+/** Context menu of a tile (Seç mode): add to a palette, random brush, solid, terrain from here, copy the tile number. */
+function TileMenuItems({
+  tileset,
+  cell,
+  host,
+  selected,
+  empty,
+}: {
+  tileset: Tileset;
+  cell: Cell;
+  host: GridHost;
+  selected: readonly number[];
+  empty: ReadonlySet<number>;
+}) {
   const tileId = idOf(tileset, cell);
+  const paletteItems = itemsOfTiles(tileset.id, tileset.columns, selected.includes(tileId) ? selected : [tileId], empty);
   const tile = { tilesetId: tileset.id, tileId };
   const solid = isTileSolid(tileset, tileId);
   const inRandom = inRandomSet(useEditorStore.getState().randomSet, tile);
@@ -579,6 +613,12 @@ function TileMenuItems({ tileset, cell, host }: { tileset: Tileset; cell: Cell; 
   return (
     <>
       <div className="px-2 pt-1 pb-1.5 font-mono text-2xs text-faint tabular">{t("tilesetPanel.hover", { id: tileId, col: cell.col, row: cell.row })}</div>
+      <AddToPaletteMenu items={paletteItems} />
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="random" onClick={() => toggleRandomTile(tile)}>
+        <Icon name="dice" size={15} className="text-accent" />
+        {inRandom ? t("tilesetLib.menuRandomRemove") : t("tilesetLib.menuRandomAdd")}
+      </ContextMenu.Item>
+      <div role="separator" className={menuSeparatorClass} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="solid" onClick={() => setTilesSolid(tileset.id, [tileId], !solid)}>
         <Icon name="bricks" size={15} className="text-collision-solid" />
         {solid ? t("tilesetLib.menuUnsolid") : t("tilesetLib.menuSolid")}
@@ -586,10 +626,6 @@ function TileMenuItems({ tileset, cell, host }: { tileset: Tileset; cell: Cell; 
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="terrain" onClick={() => startTerrainAt(host, tileset, cell)}>
         <Icon name="terrain" size={15} className="text-terrain-tint" />
         {t("tilesetLib.menuTerrain")}
-      </ContextMenu.Item>
-      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="random" onClick={() => toggleRandomTile(tile)}>
-        <Icon name="dice" size={15} className="text-accent" />
-        {inRandom ? t("tilesetLib.menuRandomRemove") : t("tilesetLib.menuRandomAdd")}
       </ContextMenu.Item>
       <div role="separator" className={menuSeparatorClass} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="copy" onClick={copy}>

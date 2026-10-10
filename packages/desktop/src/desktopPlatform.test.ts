@@ -107,6 +107,28 @@ describe("desktop platform", () => {
     await expect(platform.recents.open(a!)).rejects.toBeInstanceOf(RecentGoneError);
   });
 
+  it("passes recent thumbnails both ways", async () => {
+    const platform = createDesktopPlatform();
+    handlers.set("dialog_pick_folder", () => "/p/new");
+    handlers.set("dir_has_entries", () => false);
+    const location = (await platform.pickProjectFolder("Yeni", null))!;
+    const png = "data:image/png;base64,AAAA";
+    await platform.recents.add(location, "Yeni", png);
+    await platform.recents.add(location, "Yeni");
+    const adds = calls.filter(([c]) => c === "recent_add").map(([, args]) => args);
+    expect(adds).toEqual([
+      { path: "/p/new/project.smap", name: "Yeni", thumbnail: png },
+      { path: "/p/new/project.smap", name: "Yeni" },
+    ]);
+    handlers.set("recent_list", () => [
+      { path: "/p/new/project.smap", name: "Yeni", openedAt: 2, exists: true, thumbnail: png },
+      { path: "/p/old/project.smap", name: "Eski", openedAt: 1, exists: true },
+    ]);
+    const [withPicture, without] = await platform.recents.list();
+    expect(withPicture?.thumbnail).toBe(png);
+    expect(without && "thumbnail" in without).toBe(false);
+  });
+
   it("tells Rust whether closing would lose work", () => {
     const platform = createDesktopPlatform();
     platform.setUnsavedChanges(true);

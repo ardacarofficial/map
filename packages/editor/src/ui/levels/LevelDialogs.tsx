@@ -36,9 +36,11 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
   const doc = useEditorStore.getState().project?.store.document;
   const projectTile = doc?.tilesets[0]?.tileWidth ?? doc?.map.tileWidth ?? 32;
   const [name, setName] = useState(nextLevelName);
-  const [width, setWidth] = useState(String(doc?.map.width ?? 64));
-  const [height, setHeight] = useState(String(doc?.map.height ?? 48));
-  const [tile, setTile] = useState(String(doc?.map.tileWidth ?? projectTile));
+  // New-map defaults come from the project settings.
+  const defaults = useProjectLibrary.getState().settings;
+  const [width, setWidth] = useState(String(defaults.newLevel.width));
+  const [height, setHeight] = useState(String(defaults.newLevel.height));
+  const [tile, setTile] = useState(String(defaults.tileWidth));
   const [touched, setTouched] = useState(false);
 
   const w = parseIntInRange(width, MAP_MIN, MAP_MAX);

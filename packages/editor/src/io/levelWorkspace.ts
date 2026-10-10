@@ -37,7 +37,9 @@ import {
   serializeLevel,
   setLevelWorldPosition,
   type MapDocument,
+  type NewLayer,
   type ProjectLevel,
+  type ProjectSettings,
   type Stamp,
   type WorldPoint,
 } from "@smap/core";
@@ -66,6 +68,8 @@ export interface NewLevelOptions {
   tileSize: number;
   /** Name of the empty tile layer a new level starts with. */
   layerName: string;
+  /** Round 4: the project's layer template (bottom to top); replaces the single `layerName` layer when non-empty. */
+  layers?: readonly NewLayer[];
 }
 
 /** A level written by {@link LevelWorkspace.save}. */
@@ -81,6 +85,8 @@ export interface SaveLevelsInput {
   tilesetBytes(tilesetId: string): Uint8Array | undefined;
   stamps?: readonly Stamp[];
   keepStampFiles?: Iterable<string>;
+  /** Round 4: project settings for `project.smap`. */
+  settings?: ProjectSettings;
 }
 
 /** How many portals (in other levels) point at a level. */
@@ -270,7 +276,7 @@ export class LevelWorkspace {
   /** A level file's text parsed with the active level's project data (tilesets, entity types). */
   #parse(text: string): MapDocument {
     const current = this.active.store.document;
-    return parseLevel(text, current.tilesets, current.entityTypes);
+    return parseLevel(text, current.tilesets, current.entityTypes, projectDataOf(current));
   }
 
   /**
@@ -334,9 +340,11 @@ export class LevelWorkspace {
       tileHeight: options.tileSize,
       tilesets: source.tilesets,
       entityTypes: source.entityTypes,
+      ...projectDataOf(source),
     });
     const store = new MapStore(document);
-    store.dispatch({ type: "addLayer", layer: { name: options.layerName } });
+    const layers = options.layers && options.layers.length > 0 ? options.layers : [{ name: options.layerName }];
+    for (const layer of layers) store.dispatch({ type: "addLayer", layer });
     store.clearHistory();
     return this.#insert(options.name, store, this.#levels.length, diskFiles);
   }
@@ -354,7 +362,7 @@ export class LevelWorkspace {
     else if (fs) text = await fs.readText(level.path);
     else throw new FileNotFoundError(level.path);
     const source = this.active.store.document;
-    const store = new MapStore(parseLevel(text, source.tilesets, source.entityTypes));
+    const store = new MapStore(parseLevel(text, source.tilesets, source.entityTypes, projectDataOf(source)));
     const index = this.#levels.findIndex((l) => l.id === id);
     if (index < 0) throw new Error(`duplicate: level "${id}" was removed`);
     return this.#insert(name, store, index + 1, diskFiles);
@@ -536,6 +544,7 @@ export class LevelWorkspace {
       tilesetBytes: input.tilesetBytes,
       ...(input.stamps ? { stamps: input.stamps } : {}),
       ...(input.keepStampFiles ? { keepStampFiles: input.keepStampFiles } : {}),
+      ...(input.settings ? { settings: input.settings } : {}),
     });
     for (const path of removed) this.#removedFiles.delete(path);
     const saved: SavedLevel[] = [];
@@ -555,7 +564,7 @@ export class LevelWorkspace {
 export function withProjectData(store: MapStore, source: MapDocument): MapStore {
   const doc = store.document;
   if (doc === source) return store;
-  if (same(doc.entityTypes, source.entityTypes)) {
+  if (same(doc.entityTypes, source.entityTypes) && same(doc.randomSets, source.randomSets) && same(doc.collections, source.collections)) {
     const have = doc.tilesets;
     const want = source.tilesets;
     if (have.length <= want.length && have.every((ts, i) => same(ts, want[i]))) {
@@ -563,7 +572,12 @@ export function withProjectData(store: MapStore, source: MapDocument): MapStore 
       return store;
     }
   }
-  return new MapStore(parseLevel(serializeLevel(doc), source.tilesets, source.entityTypes));
+  return new MapStore(parseLevel(serializeLevel(doc), source.tilesets, source.entityTypes, projectDataOf(source)));
+}
+
+/** Round 4 project data a level document carries besides tilesets / entity types (random sets, collections). */
+export function projectDataOf(doc: MapDocument): { randomSets: MapDocument["randomSets"]; collections: MapDocument["collections"] } {
+  return { randomSets: doc.randomSets, collections: doc.collections };
 }
 
 async function readOrNull(fs: ProjectFileSystem, path: string): Promise<string | null> {

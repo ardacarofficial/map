@@ -298,9 +298,9 @@ impl Host {
         self.recents.list()
     }
 
-    pub fn recent_add(&self, path: &str, name: &str, now_ms: u64) -> HostResult<Vec<RecentEntry>> {
+    pub fn recent_add(&self, path: &str, name: &str, thumbnail: Option<&str>, now_ms: u64) -> HostResult<Vec<RecentEntry>> {
         self.resolve(path)?;
-        self.recents.add(path, name, now_ms).map_err(|e| HostError::io(path, &e))
+        self.recents.add_with_thumbnail(path, name, thumbnail, now_ms).map_err(|e| HostError::io(path, &e))
     }
 
     pub fn recent_remove(&self, path: &str) -> HostResult<Vec<RecentEntry>> {

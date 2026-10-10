@@ -19,32 +19,35 @@
   --shadow-*: initial;
   --font-*: initial;
 
-  /* ---- Surfaces (darkest → lightest) */
-  --color-bg: #141416; /* app background, canvas surround */
-  --color-canvas: #101012; /* behind the map */
-  --color-panel: #19191c; /* toolbar, rails, side panels */
-  --color-raised: #1f1f23; /* inputs, cards, popups */
-  --color-hover: #26262b; /* hovered rows and buttons */
-  --color-active: #2d2d33; /* pressed / selected rows */
-  --color-overlay: rgb(8 8 10 / 0.6); /* modal backdrop */
+  /* ---- Surfaces (darkest → lightest). Blue-gray dark (round 4 concept). */
+  --color-bg: #11171c; /* app bar, rails, canvas surround */
+  --color-canvas: #0b1217; /* behind the map */
+  --color-panel: #1b212a; /* side panels, dock, tool bar */
+  --color-raised: #121b21; /* inputs, fields, cards (sunken into the panel) */
+  --color-popup: #212932; /* menus, tooltips, popovers */
+  --color-hover: #242a30; /* hovered rows and buttons */
+  --color-active: #2a3139; /* pressed buttons, neutral selected state */
+  --color-tab-row: #21272d; /* tab strips (document tabs, panel tabs) */
+  --color-overlay: rgb(5 9 12 / 0.62); /* modal backdrop */
 
   /* ---- Lines */
-  --color-line-subtle: #212125;
-  --color-line: #2a2a30;
-  --color-line-strong: #3a3a42;
+  --color-line-subtle: #262d34;
+  --color-line: #30383f;
+  --color-line-strong: #373f46;
 
   /* ---- Text */
-  --color-text: #e8e8ea;
-  --color-muted: #a1a1aa;
-  --color-faint: #6c6c76;
-  --color-inverse: #101012;
+  --color-title: #f7fbff; /* inspector titles, project name */
+  --color-text: #e9eef3;
+  --color-muted: #a4abb4;
+  --color-faint: #6f7881;
+  --color-inverse: #0b1217;
 
   /* ---- The single accent color */
-  --color-accent: #3dd6b0; /* teal */
-  --color-accent-hover: #62e2c2;
-  --color-accent-soft: rgb(61 214 176 / 0.13);
-  --color-accent-line: rgb(61 214 176 / 0.45);
-  --color-on-accent: #04241c;
+  --color-accent: #69c9ae; /* sea green */
+  --color-accent-hover: #86d8c0;
+  --color-accent-soft: #2a4b4b; /* selected row / active tool background */
+  --color-accent-line: #5b7679; /* outline of the selected row */
+  --color-on-accent: #0b2a24; /* text on an accent fill */
 
   /* ---- Status (toasts, validation) */
   --color-danger: #f0707a;
@@ -60,8 +63,8 @@
   /* ---- Tile hover / checkerboard in the tileset panel */
   --color-hover-tile: rgb(255 255 255 / 0.2);
   --color-tile-grid: rgb(255 255 255 / 0.07);
-  --color-checker-a: #1c1c20;
-  --color-checker-b: #232328;
+  --color-checker-a: #182027;
+  --color-checker-b: #1f2830;
 
   /* ---- Map overlays (canvas + tileset panel). Opaque hex; alpha is applied where drawn. */
   --color-collision-solid: #ff5468; /* solid tiles / cells: warm red, reads on dark and on grass */
@@ -82,6 +85,8 @@
   --text-md--line-height: 20px;
   --text-lg: 15px;
   --text-lg--line-height: 22px;
+  --text-title: 16px;
+  --text-title--line-height: 22px;
   --text-xl: 22px;
   --text-xl--line-height: 28px;
 
@@ -94,19 +99,23 @@
   --radius-full: 9999px;
 
   /* ---- Elevation */
-  --shadow-popup: 0 0 0 1px rgb(0 0 0 / 0.4), 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  --shadow-popup: 0 0 0 1px rgb(0 0 0 / 0.35), 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
   --shadow-toast: 0 0 0 1px rgb(0 0 0 / 0.35), 0 8px 24px -6px rgb(0 0 0 / 0.55);
 
   /* ---- Spacing unit (Tailwind `p-1` = 4px) */
   --spacing: 4px;
 
-  /* ---- Layout */
-  --spacing-toolbar: 40px; /* menu bar (app bar) */
-  --spacing-optionsbar: 36px; /* tool options bar under the menu bar */
-  --spacing-recentstrip: 40px; /* recent tiles strip under the canvas */
-  --spacing-statusbar: 24px;
-  --spacing-rail: 44px;
-  --spacing-sidebar: 296px; /* skeleton / default column width; live widths: ui/layout/columns.ts */
+  /* ---- Layout (frame sizes; live column widths: ui/layout/columns.ts) */
+  --spacing-toolbar: 44px; /* app bar (menus, project name, save state, export) */
+  --spacing-tabrow: 34px; /* document tabs (open maps) */
+  --spacing-optionsbar: 40px; /* tool bar above the canvas */
+  --spacing-recentstrip: 40px; /* compact recent strip (dock tab content row) */
+  --spacing-dockbar: 32px; /* bottom dock tab strip */
+  --spacing-statusbar: 28px;
+  --spacing-rail: 48px; /* left panel switcher */
+  --spacing-sidebar: 288px; /* skeleton column width */
+  --spacing-rightbar: 320px; /* skeleton right column width */
+  --spacing-layerrow: 29px; /* layer list row */
 
   /* ---- Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);

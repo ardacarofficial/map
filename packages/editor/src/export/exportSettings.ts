@@ -1,7 +1,8 @@
 /**
  * Per-project export memory: last export target, PNG scale, the Unity and
  * Tiled folders (directory handles are structured-cloneable, like recents),
- * and the "export to Unity on save" switch. Kept in its own IndexedDB
+ * the Unity options, the per-level layer selection and the "export to Unity
+ * on save" switch. Kept in its own IndexedDB
  * database, keyed by project name. Every function degrades to defaults /
  * no-ops where IndexedDB is unavailable.
  */
@@ -22,10 +23,36 @@ export interface ExportSettings {
   autoUnity: boolean;
   /** `Date.now()` of the last Unity export. */
   lastUnityAt: number | null;
+  /** Unity: subfolder of `unityDir` to write into (`""` = the folder itself). */
+  unitySubfolder: string;
+  /** Unity: write the tile layers (off = collision / entities only). */
+  unityTiles: boolean;
+  /** Unity: write the derived collision. */
+  unityCollision: boolean;
+  /** Unity: copy the tileset PNGs next to the map. */
+  copyTextures: boolean;
+  /**
+   * Tile layers left out of every export, per level (key: level id, else
+   * level path). Stored as exclusions so a new layer is exported by default.
+   */
+  excludedLayers: Record<string, string[]>;
 }
 
 export function defaultExportSettings(project: string): ExportSettings {
-  return { project, target: "unity", pngScale: 1, unityDir: null, tmjDir: null, autoUnity: false, lastUnityAt: null };
+  return {
+    project,
+    target: "unity",
+    pngScale: 1,
+    unityDir: null,
+    tmjDir: null,
+    autoUnity: false,
+    lastUnityAt: null,
+    unitySubfolder: "",
+    unityTiles: true,
+    unityCollision: true,
+    copyTextures: true,
+    excludedLayers: {},
+  };
 }
 
 const DB_NAME = "smap-export";

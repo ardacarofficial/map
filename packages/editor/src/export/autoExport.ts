@@ -18,6 +18,10 @@ export interface SavedProject {
   readonly name: string;
   readonly document: MapDocument;
   readonly levelName: string;
+  /** Level file path (export file name); defaults to `levels/<levelName>.json`. */
+  readonly levelPath?: string;
+  /** Stable level id (key of the remembered layer selection). */
+  readonly levelId?: string;
   /** True for Ctrl+S / the save button, false for autosave. */
   readonly manual: boolean;
 }

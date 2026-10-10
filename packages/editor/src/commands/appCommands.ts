@@ -51,6 +51,7 @@ import { stampRegion } from "./stampActions";
 import { askRemoveLevel, duplicateLevel, openAdjacentLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
 import { getLevelWorkspace } from "../io/session";
 import { isWorldView, setCanvasView } from "./worldActions";
+import { openMapSettings } from "../ui/mapSettings/mapSettingsStore";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
@@ -355,7 +356,8 @@ const COMMANDS: Command[] = [
     enabled: hasProject,
     run: () => ui().setEntityTypesOpen(true),
   },
-  { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => ui().setResizeOpen(true) },
+  { id: "map.settings", title: "commands.map.settings", category: "map", enabled: hasProject, run: () => openMapSettings("name") },
+  { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => openMapSettings("size") },
   // ---- Levels (v1.0)
   { id: "level.new", title: "commands.level.new", category: "level", enabled: noPick, run: () => openNewLevelDialog() },
   {

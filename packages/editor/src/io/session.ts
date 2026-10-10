@@ -5,11 +5,14 @@
  */
 import {
   createDocument,
+  DEFAULT_PROJECT_SETTINGS,
   FormatError,
   MapStore,
+  normalizeProjectSettings,
   parseLevel,
   type MapDocument,
   type ProjectLevel,
+  type ProjectSettings,
   type Stamp,
   type TileGridSpec,
   type Tileset,
@@ -43,6 +46,9 @@ import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, P
 import { useSaveStatus } from "./saveStatus";
 import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";
 import { refreshRecentProjects } from "../platform/recentProjects";
+import { captureMapThumbnail } from "../platform/recentThumbnail";
+import { addTemplateLayers, type LayerSpec } from "../ui/projectSettings/projectTemplates";
+import { updateExportSettings } from "../export/exportSettings";
 import { hasPngSignature, looksLikePng, planTilesetGrid, baseName } from "./tilesetImport";
 import { inferDraft, readLastSpec, rememberSpec } from "../ui/tilesetImport/importModel";
 import { openBulkCard, openTilesetCard, type BulkFile, type BulkRequest, type CardMode } from "../ui/tilesetImport/importStore";
@@ -108,9 +114,23 @@ export interface NewProjectOptions {
   tileSize: number;
   /** Tile height when it differs from the width (default: `tileSize`). */
   tileHeight?: number;
+  /** Layers bottom to top (default: one tile layer). */
+  layers?: readonly LayerSpec[];
 }
 
-/** A fresh document with one empty tile layer. */
+/** Round 4: what the new project dialog adds on top of {@link NewProjectOptions}. */
+export interface NewProjectSetup extends NewProjectOptions {
+  /** Project settings saved in `project.smap` (new-level defaults, Unity options). */
+  settings?: ProjectSettings;
+  /** Folder chosen up front ("Klasör seç…"): the project is written there at once, so autosave works from the start. */
+  folder?: ProjectLocation | null;
+  /** Starting tilesets (decoded, with their grid). */
+  tilesets?: readonly PlannedTileset[];
+  /** Unity export folder picked in the dialog (browser: a directory handle, remembered per project). */
+  unityDir?: FileSystemDirectoryHandle | null;
+}
+
+/** A fresh document with the given layers (default: one empty tile layer). */
 export function createProjectDocument(options: NewProjectOptions): OpenProject {
   const document = createDocument({
     width: options.width,
@@ -119,7 +139,7 @@ export function createProjectDocument(options: NewProjectOptions): OpenProject {
     tileHeight: options.tileHeight ?? options.tileSize,
   });
   const store = new MapStore(document);
-  store.dispatch({ type: "addLayer", layer: { name: t("layers.defaultName") } });
+  addTemplateLayers(store, options.layers && options.layers.length > 0 ? options.layers : [{ name: t("layers.defaultName"), kind: "tile" }]);
   // Building the document is not an undo step (the first undo must not remove the layer).
   store.clearHistory();
   return { name: options.name, store, levelPath: DEFAULT_LEVEL_PATH, levelId: defaultLevels(DEFAULT_LEVEL_PATH)[0]!.id };
@@ -130,7 +150,7 @@ function activate(
   images: readonly TilesetImage[],
   target: ProjectFolder | null,
   levelText: string | null = null,
-  library: { stamps: Stamp[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[] } = {
+  library: { stamps: Stamp[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[]; settings?: ProjectSettings } = {
     stamps: [],
     brokenStampFiles: [],
     levels: defaultLevels(project.levelPath),
@@ -194,8 +214,66 @@ export async function confirmDiscard(): Promise<boolean> {
 
 // ------------------------------------------------------------------ actions
 
-export async function newProject(options: NewProjectOptions): Promise<void> {
-  activate(createProjectDocument(options), [], null);
+/**
+ * Creates a project (new project dialog, welcome templates). With a folder
+ * chosen up front the project is written there right away (and listed in
+ * recents), so autosave runs from the first stroke. Starting tilesets and
+ * the layer template are part of the initial state, not undo steps.
+ */
+export async function newProject(options: NewProjectSetup): Promise<void> {
+  const project = createProjectDocument(options);
+  const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
+  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath), settings });
+  if (options.tilesets && options.tilesets.length > 0) {
+    const added = addDecodedTilesets(project.store, options.tilesets);
+    if (added.length > 0) toast.success(t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows }));
+  }
+  // Starting a project is not an undo step.
+  project.store.clearHistory();
+  if (options.unityDir || settings.unity.exportOnSave) {
+    void updateExportSettings(project.name, {
+      ...(options.unityDir ? { unityDir: options.unityDir } : {}),
+      autoUnity: settings.unity.exportOnSave,
+    });
+  }
+  const target = options.folder ?? null;
+  if (!target) return;
+  try {
+    useEditorStore.getState().setDirty(true);
+    const ws = workspace;
+    const libRevision = useProjectLibrary.getState().revision;
+    await writeProjectFiles(target, project, true);
+    if (workspace !== ws) return;
+    settleDirty(libRevision);
+    addRecent(target, project);
+  } catch (error) {
+    console.error(error);
+    toast.error(t("toast.saveFailed", { detail: describeError(error) }));
+  }
+}
+
+/** Replaces the open project's settings (project settings dialog); saved with the next (auto)save. */
+export function updateProjectSettings(settings: ProjectSettings): void {
+  if (!useEditorStore.getState().project) return;
+  useProjectLibrary.getState().setSettings(settings);
+}
+
+/** When the recents thumbnail was last refreshed by an autosave (`Date.now()`). */
+let lastThumbnailAt = 0;
+/** An autosave refreshes the recents thumbnail at most this often. */
+const AUTOSAVE_THUMBNAIL_MS = 60_000;
+
+/** The open level as a small PNG for the recent-projects list (undefined where it cannot be drawn). */
+function projectThumbnail(project: OpenProject): string | undefined {
+  return captureMapThumbnail(project.store, (id) => getTilesetImage(id)?.bitmap);
+}
+
+/** Lists the project in recents, with a fresh thumbnail of the open level. */
+function addRecent(target: ProjectFolder, project: OpenProject): void {
+  lastThumbnailAt = Date.now();
+  void getPlatform()
+    .recents.add(target, project.name, projectThumbnail(project))
+    .then(refreshRecentProjects, (error: unknown) => console.warn(error));
 }
 
 export function closeProject(): void {
@@ -392,6 +470,26 @@ function guessGrid(png: DecodedPng, mapTile: { tileWidth: number; tileHeight: nu
   return { name, alpha, hintSize: hintSize ?? null, ...inferred };
 }
 
+/**
+ * New project dialog: a dropped starting tileset, decoded, with the import
+ * card's best grid guess (alpha, file name; `hintSize` = the dialog's tile
+ * size). `null` (and a toast) when the file is not a readable PNG. Close
+ * `png.bitmap` when the tileset is not used.
+ */
+export async function planStartingTileset(file: File, hintSize: number | null): Promise<PlannedTileset | null> {
+  const png = await decodeTilesetFile(file);
+  if (!png) return null;
+  const { width, height } = png.bitmap;
+  const name = tilesetDisplayName(png.file.name);
+  const { suggestions } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha: readAlpha(png.bitmap) }, hintSize });
+  const best = suggestions[0];
+  const fallback = hintSize ?? 32;
+  const spec: TileGridSpec = best
+    ? { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }
+    : { tileWidth: fallback, tileHeight: fallback, margin: 0, spacing: 0 };
+  return { png, name, spec };
+}
+
 /** Decodes every PNG (non-PNGs are reported and skipped). */
 async function decodeAll(files: readonly File[]): Promise<DecodedPng[]> {
   const out: DecodedPng[] = [];
@@ -493,7 +591,8 @@ export async function createProjectFromTilesets(files: readonly File[]): Promise
     tileSize: first.spec.tileWidth,
     tileHeight: first.spec.tileHeight,
   });
-  activate(project, [], null);
+  const settings = normalizeProjectSettings({ tileWidth: first.spec.tileWidth, tileHeight: first.spec.tileHeight });
+  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath), settings });
   const added = addDecodedTilesets(project.store, items, group);
   // Starting a project is not an undo step: the first Ctrl+Z must not take the tilesets away.
   project.store.clearHistory();
@@ -537,6 +636,7 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
         stamps: lib.stamps,
         keepStampFiles: lib.brokenStampFiles,
         tilesetBytes: (id) => getTilesetImage(id)?.bytes,
+        settings: lib.settings,
       });
       if (workspace !== ws) return;
       if (folder !== target) setFolder(target);
@@ -602,9 +702,7 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
       settleDirty(libRevision);
       useSaveStatus.setState({ diskConflict: null });
       toast.success(t("toast.saved", { name: project.name || target.fs.name }));
-      void getPlatform()
-        .recents.add(target, project.name)
-        .then(refreshRecentProjects, (error: unknown) => console.warn(error));
+      addRecent(target, project);
       return true;
     } catch (error) {
       console.error(error);
@@ -641,8 +739,12 @@ export async function autosaveNow(): Promise<void> {
     return;
   }
   const libRevision = useProjectLibrary.getState().revision;
-  await writeProjectFiles(target, useEditorStore.getState().project ?? project);
-  if (workspace === ws) settleDirty(libRevision);
+  const saved = useEditorStore.getState().project ?? project;
+  await writeProjectFiles(target, saved);
+  if (workspace !== ws) return;
+  settleDirty(libRevision);
+  // Keep the welcome screen's picture roughly current without redrawing it on every autosave.
+  if (Date.now() - lastThumbnailAt >= AUTOSAVE_THUMBNAIL_MS) addRecent(target, saved);
 }
 
 let autosave: AutosaveScheduler | null = null;
@@ -713,7 +815,7 @@ export async function openBackup(entry: BackupEntry): Promise<boolean> {
   if (!project || !target) return false;
   try {
     const text = await target.fs.readText(entry.path);
-    const document = parseLevel(text, project.store.document.tilesets, project.store.document.entityTypes);
+    const document = parseLevel(text, project.store.document.tilesets, project.store.document.entityTypes, projectDataOf(project.store.document));
     const store = new MapStore(document);
     store.clearHistory();
     workspace?.replaceActiveStore(store);
@@ -740,6 +842,7 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
     brokenStampFiles: loaded.brokenStamps,
     levels: loaded.levels,
     retiredLevelIds: loaded.retiredLevelIds,
+    settings: loaded.settings,
   });
   for (const path of loaded.brokenStamps) toast.warning(t("toast.stampUnreadable", { path }));
   for (const path of loaded.missingImages) toast.warning(t("toast.missingTilesetImage", { path }));
@@ -750,9 +853,8 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
 async function openLocation(location: ProjectLocation): Promise<boolean> {
   const name = await openFromFolder(location);
   toast.success(t("toast.opened", { name }));
-  void getPlatform()
-    .recents.add(location, name)
-    .then(refreshRecentProjects, (error: unknown) => console.warn(error));
+  const project = useEditorStore.getState().project;
+  if (project) addRecent(location, project);
   return true;
 }
 

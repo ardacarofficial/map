@@ -4,6 +4,7 @@
  * Every function degrades to a no-op where IndexedDB or the File System
  * Access API is unavailable.
  */
+import { mergeThumbnail } from "../platform/recentThumbnail";
 
 export interface RecentProject {
   /** Project name (from project.smap) at the time it was last opened/saved. */
@@ -13,6 +14,8 @@ export interface RecentProject {
   handle: FileSystemDirectoryHandle;
   /** `Date.now()` of the last open/save. */
   openedAt: number;
+  /** PNG data URL of the map at the last save. */
+  thumbnail?: string;
 }
 
 const DB_NAME = "smap";
@@ -66,8 +69,11 @@ export async function listRecents(): Promise<RecentProject[]> {
   }
 }
 
-/** Adds or refreshes `handle` (same folder entries are replaced). Keeps the newest few. */
-export async function rememberRecent(name: string, handle: FileSystemDirectoryHandle): Promise<void> {
+/**
+ * Adds or refreshes `handle` (same folder entries are replaced). Keeps the
+ * newest few. Without a `thumbnail` the replaced entry's picture is kept.
+ */
+export async function rememberRecent(name: string, handle: FileSystemDirectoryHandle, thumbnail?: string): Promise<void> {
   if (!supportsRecents()) return;
   try {
     const db = await openDb();
@@ -77,14 +83,18 @@ export async function rememberRecent(name: string, handle: FileSystemDirectoryHa
     // but IndexedDB inside it would auto-commit it.
     const drop: number[] = [];
     let kept = 0;
+    let previous: string | undefined;
     for (const entry of all) {
-      if (await entry.handle.isSameEntry(handle)) drop.push(entry.openedAt);
-      else if (++kept >= MAX_RECENTS) drop.push(entry.openedAt);
+      if (await entry.handle.isSameEntry(handle)) {
+        drop.push(entry.openedAt);
+        previous ??= entry.thumbnail;
+      } else if (++kept >= MAX_RECENTS) drop.push(entry.openedAt);
     }
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     for (const key of drop) store.delete(key);
-    const record: RecentProject = { name, folder: handle.name, handle, openedAt: Date.now() };
+    const picture = mergeThumbnail(previous, thumbnail);
+    const record: RecentProject = { name, folder: handle.name, handle, openedAt: Date.now(), ...(picture ? { thumbnail: picture } : {}) };
     store.put(record);
     await done(tx);
     db.close();

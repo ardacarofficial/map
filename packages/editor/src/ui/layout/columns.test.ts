@@ -21,7 +21,7 @@ describe("column widths", () => {
     expect(clampWidth(COLUMNS.library, 100)).toBe(240);
     expect(clampWidth(COLUMNS.library, 9999)).toBe(520);
     expect(clampWidth(COLUMNS.library, 300.6)).toBe(301);
-    expect(clampWidth(COLUMNS.right, 200)).toBe(260);
+    expect(clampWidth(COLUMNS.right, 200)).toBe(280);
     expect(clampWidth(COLUMNS.right, Number.NaN)).toBe(COLUMNS.right.initial);
   });
 
@@ -57,8 +57,8 @@ describe("column widths", () => {
     const fit = fitColumns(1366, { library: 520, right: 440 });
     expect(1366 - RAIL_WIDTH - fit.library - fit.right).toBe(MIN_CANVAS);
     expect(fit.library).toBeGreaterThanOrEqual(240);
-    expect(fit.right).toBeGreaterThanOrEqual(260);
-    expect(fitColumns(800, { library: 520, right: 440 })).toEqual({ library: 240, right: 260 });
+    expect(fit.right).toBeGreaterThanOrEqual(280);
+    expect(fitColumns(800, { library: 520, right: 440 })).toEqual({ library: 240, right: 280 });
   });
 
   it("hidden columns take no width", () => {
@@ -94,15 +94,15 @@ describe("library default and smart widen", () => {
 
   it("refuses past the column max or into the canvas minimum", () => {
     expect(widenLibraryTarget(1920, { library: 352, right: 288 }, 400)).toBeNull();
-    // 1100 px window: 1100 − 44 − 288 − 400 = 368 px at most.
+    // 1100 px window: 1100 − 48 − 288 − 400 = 364 px at most.
     expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 112)).toBeNull();
-    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 80)).toBe(368);
+    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 76)).toBe(364);
     expect(widenLibraryTarget(1366, { library: 288, right: 288 }, 0)).toBeNull();
   });
 
   it("never leaves the canvas below its minimum", () => {
     fc.assert(
-      fc.property(fc.integer({ min: 900, max: 3000 }), fc.integer({ min: 240, max: 520 }), fc.integer({ min: 260, max: 440 }), fc.integer({ min: 1, max: 400 }), (vw, lib, right, extra) => {
+      fc.property(fc.integer({ min: 900, max: 3000 }), fc.integer({ min: 240, max: 520 }), fc.integer({ min: 280, max: 460 }), fc.integer({ min: 1, max: 400 }), (vw, lib, right, extra) => {
         const target = widenLibraryTarget(vw, { library: lib, right }, extra);
         if (target === null) return;
         const fitted = fitColumns(vw, { library: target, right });

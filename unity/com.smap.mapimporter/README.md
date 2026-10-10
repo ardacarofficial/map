@@ -53,6 +53,9 @@ The importer flips at import time:
 - Unity cell = `(x, height - 1 - y)`. The top-left editor cell ends up at the
   top-left of the Tilemap, and the map spans cells `0..width-1 × 0..height-1`.
 - Sprite rectangles are flipped to Unity's bottom-left texture origin.
+- Tile orientations (flags H/V/D, defined in the editor's y-down space) are
+  converted to y-up: the diagonal flip becomes the other diagonal, so a
+  rotated tile turns the same way in Unity as in the editor.
 
 One Unity unit is one map tile: pixels-per-unit equals the map's tile width.
 
@@ -159,8 +162,8 @@ Then open Window › General › Test Runner › EditMode.
 
 ## Limits
 
-- Diagonal flips are not produced by the editor yet. The importer ignores
-  them with a warning.
+- All eight tile orientations (X/Y flips and 90° rotations, flags H/V/D)
+  are imported as the cell's transform (`SmapCoords.OrientationMatrix`).
 - A tile larger or smaller than the map cell is anchored at the bottom-left
-  of its cell, as in Tiled. Flipping it mirrors it in place (around its own
-  centre), as in the editor and Tiled.
+  of its cell, as in Tiled. Flipping or rotating it keeps its (rotated)
+  rectangle anchored bottom-left, as in the editor and Tiled.

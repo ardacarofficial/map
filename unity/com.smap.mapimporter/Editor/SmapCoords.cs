@@ -12,7 +12,11 @@ namespace Smap.MapImporter
     {
         public const int FlipH = 1;
         public const int FlipV = 2;
-        /// <summary>Reserved; the editor does not produce it yet and the importer ignores it.</summary>
+        /// <summary>
+        /// Diagonal flip: x/y swap in the export's y-down tile space, applied before
+        /// <see cref="FlipH"/> and <see cref="FlipV"/> (Tiled's rule). D+H = 90° clockwise,
+        /// H+V = 180°, D+V = 90° counter-clockwise.
+        /// </summary>
         public const int FlipD = 4;
 
         /// <summary>Unity cell of export cell (x, y). With yUp false, row 0 (top) becomes the highest Unity row.</summary>
@@ -56,32 +60,72 @@ namespace Smap.MapImporter
             return new Vector3(1f, (float)tileHeight / tileWidth, 0f);
         }
 
-        /// <summary>Per-cell transform for the flip flags (scale -1 on the flipped axis), for tiles as large as the cell.</summary>
-        public static Matrix4x4 FlipMatrix(int flags)
+        /// <summary>
+        /// The 2x2 linear part of an orientation in Unity's y-up space (rows of
+        /// <c>[m00 m01; m10 m11]</c>). The export defines the flags in y-down tile
+        /// space: D transposes <c>(u, v) → (v, u)</c>, then H mirrors x and V mirrors y.
+        /// With <c>y = -v</c> the transpose becomes the other diagonal,
+        /// <c>(x, y) → (-y, -x)</c>, so the result is <c>V · H · A</c> with
+        /// <c>A = [[0, -1], [-1, 0]]</c> when D is set.
+        /// </summary>
+        public static void OrientationLinear(int flags, out float m00, out float m01, out float m10, out float m11)
         {
-            if ((flags & (FlipH | FlipV)) == 0) return Matrix4x4.identity;
-            return Matrix4x4.Scale(new Vector3((flags & FlipH) != 0 ? -1f : 1f, (flags & FlipV) != 0 ? -1f : 1f, 1f));
+            float h = (flags & FlipH) != 0 ? -1f : 1f;
+            float v = (flags & FlipV) != 0 ? -1f : 1f;
+            if ((flags & FlipD) != 0)
+            {
+                m00 = 0f; m01 = -h;
+                m10 = -v; m11 = 0f;
+            }
+            else
+            {
+                m00 = h; m01 = 0f;
+                m10 = 0f; m11 = v;
+            }
         }
 
         /// <summary>
-        /// Per-cell transform for the flip flags that mirrors the sprite in place,
-        /// like the editor and Tiled do. The Tilemap applies the matrix around the
-        /// cell centre (the tile anchor); a tile smaller or larger than the cell is
-        /// anchored bottom-left (<see cref="Pivot"/>), so its centre is off the cell
-        /// centre and the mirror must be shifted back onto it. Equal sizes give
-        /// <see cref="FlipMatrix(int)"/>. Units: pixels-per-unit = map tile width.
+        /// Per-cell transform for the orientation flags (all eight combinations of
+        /// H, V and D) of a tile exactly as large as the cell, around the cell centre.
         /// </summary>
-        public static Matrix4x4 FlipMatrix(int flags, SmapTileset ts, int mapTileWidth, int mapTileHeight)
+        public static Matrix4x4 OrientationMatrix(int flags)
         {
-            bool h = (flags & FlipH) != 0, v = (flags & FlipV) != 0;
-            if (!h && !v) return Matrix4x4.identity;
-            // Sprite centre relative to the cell centre, in units.
-            float cx = (ts.tileWidth - mapTileWidth) * 0.5f / mapTileWidth;
-            float cy = (ts.tileHeight - mapTileHeight) * 0.5f / mapTileWidth;
-            // Mirror about the sprite centre: x' = 2cx - x.
-            var m = Matrix4x4.Scale(new Vector3(h ? -1f : 1f, v ? -1f : 1f, 1f));
-            m.m03 = h ? 2f * cx : 0f;
-            m.m13 = v ? 2f * cy : 0f;
+            if ((flags & (FlipH | FlipV | FlipD)) == 0) return Matrix4x4.identity;
+            OrientationLinear(flags, out float m00, out float m01, out float m10, out float m11);
+            var m = Matrix4x4.identity;
+            m.m00 = m00; m.m01 = m01;
+            m.m10 = m10; m.m11 = m11;
+            return m;
+        }
+
+        /// <summary>
+        /// Per-cell transform for the orientation flags that mirrors / rotates the
+        /// sprite in place, like the editor and Tiled do. The Tilemap applies the
+        /// matrix around the cell centre (the tile anchor). A tile is anchored
+        /// bottom-left of its cell (<see cref="Pivot"/>), and so is its oriented
+        /// rectangle, which is transposed (<c>h × w</c>) when D is set. So the sprite
+        /// centre <c>c</c> is mapped to the oriented rectangle's centre <c>c'</c>:
+        /// <c>p' = c' + L (p - c)</c>. Equal sizes give <see cref="OrientationMatrix(int)"/>.
+        /// Units: pixels-per-unit = map tile width.
+        /// </summary>
+        public static Matrix4x4 OrientationMatrix(int flags, SmapTileset ts, int mapTileWidth, int mapTileHeight)
+        {
+            if ((flags & (FlipH | FlipV | FlipD)) == 0) return Matrix4x4.identity;
+            bool d = (flags & FlipD) != 0;
+            float unit = mapTileWidth;
+            // Sprite centre relative to the cell centre, before and after, in units.
+            float cx = (ts.tileWidth - mapTileWidth) * 0.5f / unit;
+            float cy = (ts.tileHeight - mapTileHeight) * 0.5f / unit;
+            int w2 = d ? ts.tileHeight : ts.tileWidth;
+            int h2 = d ? ts.tileWidth : ts.tileHeight;
+            float cx2 = (w2 - mapTileWidth) * 0.5f / unit;
+            float cy2 = (h2 - mapTileHeight) * 0.5f / unit;
+            OrientationLinear(flags, out float m00, out float m01, out float m10, out float m11);
+            var m = Matrix4x4.identity;
+            m.m00 = m00; m.m01 = m01;
+            m.m10 = m10; m.m11 = m11;
+            m.m03 = cx2 - (m00 * cx + m01 * cy);
+            m.m13 = cy2 - (m10 * cx + m11 * cy);
             return m;
         }
 

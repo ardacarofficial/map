@@ -6,6 +6,23 @@
  */
 import { makeCell, pickRandomTile, type RandomTile } from "@smap/core";
 
+/**
+ * A candidate may carry flip bits (FLIP_H / FLIP_V / FLIP_D: the brush was
+ * mirrored or turned with X / Y / Z); without them it paints unflipped.
+ */
+export type OrientedRandomTile = RandomTile & { readonly flags?: number };
+
+/** Flip bits of a random brush candidate (0 when it has none). */
+export function randomTileFlags(tile: RandomTile): number {
+  const flags = (tile as OrientedRandomTile).flags;
+  return typeof flags === "number" ? flags >>> 0 : 0;
+}
+
+/** Cache key of a random set (tiles, weights and orientation). */
+export function randomSetKey(set: readonly RandomTile[]): string {
+  return set.map((t) => `${t.tilesetId}/${t.tileId}*${t.weight ?? 1}~${randomTileFlags(t)}`).join(",");
+}
+
 /** A random brush applies only with at least two tiles. */
 export function isRandomBrush(set: readonly RandomTile[]): boolean {
   return set.length >= 2;
@@ -26,7 +43,7 @@ export function randomCellPicker(
   for (const tile of set) {
     if ((tile.weight ?? 1) <= 0) continue;
     const index = indexOf(tile.tilesetId, tile.tileId);
-    if (index > 0) usable.push({ tile, cell: makeCell(index) });
+    if (index > 0) usable.push({ tile, cell: makeCell(index, randomTileFlags(tile)) });
   }
   if (usable.length === 0) return null;
   const candidates = usable.map((u) => ({

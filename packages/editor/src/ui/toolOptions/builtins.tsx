@@ -17,7 +17,8 @@ import { TileSwatch } from "../primitives/TileSwatch";
 import { terrainSwatchTile } from "../terrain/TerrainList";
 import { BRUSH_PRESETS, MAX_BRUSH, MIN_BRUSH, stepBrushSize } from "./brushSize";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
-import { OptionLabel, Segmented, StepButton, triggerClass } from "./parts";
+import { OptionLabel, Segmented, triggerClass } from "./parts";
+import { CommandKbd } from "../primitives/Kbd";
 
 const isTerrainLayer = (c: ToolOptionsContext) => isGridLayer(c.layer) && c.layer.role === "terrain";
 /** The terrain picker shows only on a terrain layer (plain tile layers paint tiles; terrains are picked in the Araziler list). */
@@ -38,45 +39,35 @@ function BrushSize() {
       title={unused ? t("toolOptions.sizeUnusedStamp") : undefined}
     >
       <OptionLabel>{t("toolOptions.size")}</OptionLabel>
-      <div className="flex h-7 items-center rounded-md border border-line bg-raised">
-        <StepButton
-          icon="minus"
-          label={t("toolOptions.brushSmaller")}
-          command="brush.smaller"
-          disabled={size <= MIN_BRUSH}
-          onClick={() => setSize(stepBrushSize(size, -1))}
-        />
-        <Menu.Root>
-          <Menu.Trigger
-            aria-label={t("toolOptions.size")}
-            className="flex h-full min-w-[58px] items-center justify-center gap-1 border-x border-line px-1.5 font-mono text-sm text-text tabular outline-none hover:bg-hover data-popup-open:bg-hover"
-          >
-            {t("toolOptions.sizeValue", { size })}
-            <Icon name="chevronDown" size={12} className="text-faint" />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner side="bottom" align="center" sideOffset={4} className={menuPositionerClass}>
-              <Menu.Popup className={`${menuPopupClass} min-w-[120px]`}>
-                {BRUSH_PRESETS.map((preset) => (
-                  <Menu.Item key={preset} className={`${menuItemClass} py-1 font-mono text-sm tabular`} onClick={() => setSize(preset)}>
-                    <Icon name="check" size={13} className={preset === size ? "text-accent" : "invisible"} />
-                    {t("toolOptions.sizeValue", { size: preset })}
-                  </Menu.Item>
-                ))}
-                <Menu.Separator className={menuSeparatorClass} />
-                <div className="px-2 pt-0.5 pb-1 text-2xs text-faint">{t("toolOptions.sizeKeys")}</div>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
-        <StepButton
-          icon="plus"
-          label={t("toolOptions.brushLarger")}
-          command="brush.larger"
-          disabled={size >= MAX_BRUSH}
-          onClick={() => setSize(stepBrushSize(size, 1))}
-        />
-      </div>
+      <Menu.Root>
+        <Menu.Trigger aria-label={t("toolOptions.size")} data-brush-size-trigger="" className={`${triggerClass} min-w-[64px] justify-between font-mono tabular`}>
+          {t("toolOptions.sizeValue", { size })}
+          <Icon name="chevronDown" size={12} className="text-faint" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+            <Menu.Popup className={`${menuPopupClass} min-w-[150px]`}>
+              {BRUSH_PRESETS.map((preset) => (
+                <Menu.Item key={preset} className={`${menuItemClass} py-1 font-mono text-sm tabular`} onClick={() => setSize(preset)}>
+                  <Icon name="check" size={13} className={preset === size ? "text-accent" : "invisible"} />
+                  {t("toolOptions.sizeValue", { size: preset })}
+                </Menu.Item>
+              ))}
+              <Menu.Separator className={menuSeparatorClass} />
+              <Menu.Item disabled={size >= MAX_BRUSH} className={`${menuItemClass} py-1 text-sm`} onClick={() => setSize(stepBrushSize(size, 1))}>
+                <Icon name="plus" size={13} className="text-faint" />
+                <span className="flex-1">{t("toolOptions.brushLarger")}</span>
+                <CommandKbd command="brush.larger" />
+              </Menu.Item>
+              <Menu.Item disabled={size <= MIN_BRUSH} className={`${menuItemClass} py-1 text-sm`} onClick={() => setSize(stepBrushSize(size, -1))}>
+                <Icon name="minus" size={13} className="text-faint" />
+                <span className="flex-1">{t("toolOptions.brushSmaller")}</span>
+                <CommandKbd command="brush.smaller" />
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
     </div>
   );
 }

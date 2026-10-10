@@ -265,8 +265,8 @@ async fn recent_list(host: State<'_, Host>) -> Result<Vec<smap_host::recent::Rec
 }
 
 #[tauri::command]
-async fn recent_add(host: State<'_, Host>, path: String, name: String) -> Result<(), HostError> {
-    host.recent_add(&path, &name, now_ms()).map(|_| ())
+async fn recent_add(host: State<'_, Host>, path: String, name: String, thumbnail: Option<String>) -> Result<(), HostError> {
+    host.recent_add(&path, &name, thumbnail.as_deref(), now_ms()).map(|_| ())
 }
 
 #[tauri::command]

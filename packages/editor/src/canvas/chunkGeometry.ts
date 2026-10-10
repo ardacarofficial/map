@@ -2,7 +2,9 @@
  * Pure chunk → quad geometry. One chunk becomes one quad batch per texture
  * (atlas page); with a single tileset that is one mesh, one draw call.
  */
-import { CELL_INDEX_MASK, CHUNK_SHIFT, CHUNK_SIZE, FLIP_H, FLIP_V } from "@smap/core";
+import { CELL_FLAG_MASK, CELL_INDEX_MASK, CHUNK_SHIFT, CHUNK_SIZE } from "@smap/core";
+
+import { quadUvs } from "./rotation";
 
 /** Where a palette index is drawn from. `group` identifies the texture (atlas page). */
 export interface QuadSource {
@@ -29,8 +31,9 @@ export interface QuadBatch {
 /**
  * Builds quads for a chunk's 32×32 cells. Positions are local to the chunk
  * origin (cell (0,0) of the chunk at (0,0)); each cell is `tileW`×`tileH`.
- * Empty cells and unresolved palette indices produce no quad. FLIP_H / FLIP_V
- * swap the UVs. Batches are ordered by `group`.
+ * Empty cells and unresolved palette indices produce no quad. The flip bits
+ * remap the UV corners (FLIP_D transposes first, then FLIP_H / FLIP_V; see
+ * `rotation.ts`). Batches are ordered by `group`.
  */
 export function buildChunkQuads(
   data: ArrayLike<number>,
@@ -80,18 +83,16 @@ export function buildChunkQuads(
     const y0 = ly * tileH;
     const x1 = x0 + tileW;
     const y1 = y0 + tileH;
-    let { u0, u1, v0, v1 } = src;
-    if ((cell & FLIP_H) !== 0) [u0, u1] = [u1, u0];
-    if ((cell & FLIP_V) !== 0) [v0, v1] = [v1, v0];
-    // TODO(v0.6): FLIP_D (diagonal flip) — swap the UV axes. Not produced by the editor yet.
     const q = b.filled++;
     const p = q * 8;
     const pos = b.positions;
     pos[p] = x0; pos[p + 1] = y0; pos[p + 2] = x1; pos[p + 3] = y0;
     pos[p + 4] = x1; pos[p + 5] = y1; pos[p + 6] = x0; pos[p + 7] = y1;
     const uv = b.uvs;
-    uv[p] = u0; uv[p + 1] = v0; uv[p + 2] = u1; uv[p + 3] = v0;
-    uv[p + 4] = u1; uv[p + 5] = v1; uv[p + 6] = u0; uv[p + 7] = v1;
+    if ((cell & CELL_FLAG_MASK) === 0) {
+      uv[p] = src.u0; uv[p + 1] = src.v0; uv[p + 2] = src.u1; uv[p + 3] = src.v0;
+      uv[p + 4] = src.u1; uv[p + 5] = src.v1; uv[p + 6] = src.u0; uv[p + 7] = src.v1;
+    } else uv.set(quadUvs(src, cell), p);
     const v = q * 4;
     const ix = b.indices;
     const k = q * 6;
@@ -133,16 +134,13 @@ export function buildCellQuads(cells: readonly CellQuad[], tileW: number, tileH:
     let q = 0;
     for (const c of cells) {
       if (c.src.group !== group) continue;
-      let { u0, u1, v0, v1 } = c.src;
-      if ((c.flags & FLIP_H) !== 0) [u0, u1] = [u1, u0];
-      if ((c.flags & FLIP_V) !== 0) [v0, v1] = [v1, v0];
       const x0 = c.x * tileW;
       const y0 = c.y * tileH;
       const x1 = x0 + tileW;
       const y1 = y0 + tileH;
       const p = q * 8;
       positions.set([x0, y0, x1, y0, x1, y1, x0, y1], p);
-      uvs.set([u0, v0, u1, v0, u1, v1, u0, v1], p);
+      uvs.set(quadUvs(c.src, c.flags), p);
       const v = q * 4;
       indices.set([v, v + 1, v + 2, v, v + 2, v + 3], q * 6);
       q++;

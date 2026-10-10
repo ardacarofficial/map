@@ -1,12 +1,12 @@
-import type { MapStore } from "@smap/core";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { Icon } from "../primitives/Icon";
 import { useToastStore } from "../toast/toastStore";
-import { describeEntry, HistoryLabels, historyMessage, nextBurst, type Burst, type HistoryMove } from "./historyLabels";
+import { describeEntry, historyMessage, nextBurst, type Burst, type HistoryMove } from "./historyLabels";
 import { hudBottom } from "./hudStack";
+import { bindHistoryLabels, recordStrokeLabel, sharedHistoryLabels } from "./sharedHistoryLabels";
 
 /** How long the pill stays after the last undo / redo (ms). */
 const SHOW_MS = 1400;
@@ -30,22 +30,19 @@ export function UndoHud() {
   const store = useEditorStore((s) => s.project?.store);
   const [shown, setShown] = useState<Shown | null>(null);
   const [visible, setVisible] = useState(false);
-  const labels = useRef(new HistoryLabels());
   const burst = useRef<Burst | null>(null);
-  const storeRef = useRef<MapStore | undefined>(store);
   const rowRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
 
   // History of the open document (a new store = a new history).
   useEffect(() => {
-    storeRef.current = store;
+    bindHistoryLabels(store);
     if (!store) return;
-    labels.current.reset();
     burst.current = null;
     let token = 0;
     return store.subscribe((event) => {
       if (!event.historyChanged) return;
-      const feedback = labels.current.change(event.cause, store);
+      const feedback = sharedHistoryLabels.change(event.cause, store);
       if (!feedback) return;
       const b = nextBurst(burst.current, feedback.move, performance.now());
       burst.current = b;
@@ -61,10 +58,8 @@ export function UndoHud() {
     let off: (() => void) | undefined;
     const unwatch = watchCanvasHandle((handle) => {
       off?.();
-      off = handle?.onStrokeCommitted((summary) => {
-        const s = storeRef.current;
-        if (s) labels.current.stroke(summary, s);
-      });
+      // Named once for the pill and the Geçmiş tab (shared labels of the bound store).
+      off = handle?.onStrokeCommitted((summary) => recordStrokeLabel(summary));
     });
     return () => {
       unwatch();

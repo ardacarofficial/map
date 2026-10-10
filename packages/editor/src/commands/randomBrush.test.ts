@@ -48,3 +48,67 @@ describe("random brush set", () => {
     expect(randomChances([{ ...a, weight: 3 }, b])).toEqual([75, 25]);
   });
 });
+
+describe("random brush from a selection (round 4)", () => {
+  it("each distinct non-empty tile of the stamp is a candidate; grid layers ignored", async () => {
+    const { makeCell } = await import("@smap/core");
+    const { candidatesFromClip } = await import("./randomBrush");
+    const clip = {
+      width: 3,
+      height: 2,
+      palette: [a, b, c],
+      layers: [
+        { layerId: "tiles", name: "t", cells: new Uint32Array([makeCell(1), 0, makeCell(2), makeCell(1), makeCell(3), 0]) },
+        { layerId: "col", name: "c", grid: true, cells: new Uint32Array([1, 1, 1, 1, 1, 1]) },
+      ],
+    };
+    expect(candidatesFromClip(clip)).toEqual([a, b, c]);
+  });
+
+  it("makeRandomFromStamp turns the brush stamp into a random set; one tile is refused", async () => {
+    const { makeCell } = await import("@smap/core");
+    const { makeRandomFromStamp, useRandomBrush } = await import("./randomBrush");
+    const { useEditorStore } = await import("../state/editorStore");
+    const s = useEditorStore.getState();
+    s.setStamp({ width: 2, height: 1, palette: [a, b], layers: [{ layerId: "tiles", name: "t", cells: new Uint32Array([makeCell(1), makeCell(2)]) }] });
+    expect(makeRandomFromStamp()).toBe(true);
+    expect(useEditorStore.getState().randomSet).toEqual([a, b]);
+    expect(useEditorStore.getState().stamp).toBeNull();
+    expect(useEditorStore.getState().selection).toEqual(a);
+    expect(useRandomBrush.getState().activeSetId).toBeNull();
+    useEditorStore.getState().setStamp({ width: 2, height: 1, palette: [a], layers: [{ layerId: "tiles", name: "t", cells: new Uint32Array([makeCell(1), makeCell(1)]) }] });
+    expect(makeRandomFromStamp()).toBe(false);
+  });
+
+  it("Alt + drag adds a rectangle without removing; an empty set starts from the rectangle alone", async () => {
+    const { addToSet } = await import("./randomBrush");
+    expect(addToSet([], a, [b, c]).randomSet).toEqual([b, c]);
+    expect(addToSet([a, b], a, [b, c]).randomSet).toEqual([a, b, c]);
+    expect(addToSet([], null, [b])).toEqual({ randomSet: [], selection: b });
+  });
+
+  it("brush ↔ saved set round trip keeps tiles, stamps, scatter and flip", async () => {
+    const { randomSetOf, brushFromSet } = await import("./randomBrush");
+    const options = { stamps: [{ kind: "stamp" as const, stampId: "house", weight: 2 }], scatter: 0.5, randomFlip: true, chunk: { w: 2, h: 2 }, activeSetId: "s1" };
+    const set = randomSetOf([a, { ...b, weight: 3 }], options, "Çimen")!;
+    expect(set.id).toBe("s1");
+    expect(set.candidates).toHaveLength(3);
+    const back = brushFromSet(set);
+    expect(back.tiles).toEqual([a, { ...b, weight: 3 }]);
+    expect(back.options).toEqual(options);
+    // One candidate is not a random brush, unless it scatters.
+    expect(randomSetOf([a], { ...options, stamps: [], scatter: 0 })).toBeNull();
+    expect(randomSetOf([a], { ...options, stamps: [], scatter: 0.3 })).not.toBeNull();
+  });
+
+  it("picking a tile elsewhere (randomSet cleared) also clears stamp candidates", async () => {
+    const { addStampToRandomSet, useRandomBrush, toggleRandomTile } = await import("./randomBrush");
+    const { useEditorStore } = await import("../state/editorStore");
+    useEditorStore.getState().setSelection(a);
+    toggleRandomTile(b);
+    addStampToRandomSet("tree");
+    expect(useRandomBrush.getState().stamps).toHaveLength(1);
+    useEditorStore.getState().setRandomSet([]);
+    expect(useRandomBrush.getState().stamps).toHaveLength(0);
+  });
+});

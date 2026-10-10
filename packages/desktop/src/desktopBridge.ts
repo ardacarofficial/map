@@ -41,6 +41,8 @@ export interface RecentProjectEntry {
   openedAt: number;
   /** Liste okunurken diskte hâlâ var mı. */
   exists: boolean;
+  /** Son kayıttaki haritanın küçük resmi (PNG data URL). */
+  thumbnail?: string;
 }
 
 export interface DialogFilter {
@@ -139,8 +141,8 @@ export function recentList(): Promise<RecentProjectEntry[]> {
   return command("recent_list");
 }
 
-export function recentAdd(path: string, name: string): Promise<void> {
-  return command("recent_add", { path, name }, path);
+export function recentAdd(path: string, name: string, thumbnail?: string): Promise<void> {
+  return command("recent_add", thumbnail ? { path, name, thumbnail } : { path, name }, path);
 }
 
 export function recentRemove(path: string): Promise<void> {

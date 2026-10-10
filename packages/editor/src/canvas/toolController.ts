@@ -76,6 +76,7 @@ import {
   isEmptyGridPick,
   isGridEditable,
   isPaintable,
+  missingBrush,
   moveOffset,
   movedRegion,
   patternCell,
@@ -84,6 +85,7 @@ import {
   rightPressAction,
   rightReleaseAction,
   stampOrigins,
+  toolAfterPick,
   type LayerState,
   type RightPress,
 } from "./tools";
@@ -145,6 +147,8 @@ export type Gesture =
       readonly entityId?: string | undefined;
       /** Client (page) position of the press, for a context menu. */
       readonly client?: Point;
+      /** The temporary (Alt) eyedropper was active at the press: the pick does not switch tools. */
+      readonly spring: boolean;
     }
   | {
       /** Select tool: the selection's content is dragged (live, rolled back and redone per cell). */
@@ -184,6 +188,8 @@ export interface ToolHost {
   requestRender(): void;
   /** True while Alt holds the temporary eyedropper (picks do not switch tools). */
   springActive?(): boolean;
+  /** Tool active before the eyedropper was chosen: an eyedropper pick returns to it (brush / fill / rectangle). */
+  toolBeforeEyedropper?(): ToolId | null;
   /** Something was picked from the map. */
   picked?(event: CanvasPickEvent): void;
   /** An edit gesture finished as one undo step. */
@@ -289,7 +295,7 @@ export class ToolController {
     const s = useEditorStore.getState();
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
-    if (this.#reportBlocked(s.tool)) return;
+    if (this.#reportBlocked(s.tool) || this.#reportMissingBrush()) return;
     if ((s.tool === "entity" || s.tool === "select") && isEntityLayer(active)) {
       if (this.#entityDown(e, cell) || s.tool === "entity") {
         this.#host.requestRender();
@@ -323,7 +329,7 @@ export class ToolController {
         this.#start({ kind: "select", pointerId: e.pointerId, start: cell, end: cell, moved: false });
         break;
       case "eyedropper":
-        this.#start({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell });
+        this.#start({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell, spring: this.#host.springActive?.() ?? false });
         break;
     }
     this.#host.requestRender();
@@ -684,16 +690,17 @@ export class ToolController {
     s.setRegion(dragRegion(start, end, map));
   }
 
-  #finishPick(start: CellPoint, end: CellPoint): void {
+  #finishPick(start: CellPoint, end: CellPoint, spring: boolean): void {
     const doc = this.#host.scene?.store.document;
     if (!doc) return;
     const r = dragRegion(start, end, doc.map);
     if (!r) return;
     const s = useEditorStore.getState();
-    // Alt held (temporary eyedropper): releasing Alt brings the previous tool back.
+    // Tools that cannot place the pick switch (see `toolAfterPick`); the Alt eyedropper decided at the press.
     const switchTool = () => {
-      if (this.#host.springActive?.()) return;
-      if (s.tool === "eraser" || s.tool === "select" || s.tool === "eyedropper") s.setTool("brush");
+      const st = useEditorStore.getState();
+      const next = toolAfterPick(st.tool, this.#host.toolBeforeEyedropper?.() ?? null, spring);
+      if (next && next !== st.tool) st.setTool(next);
     };
     // On a grid layer a single-cell pick takes the painted value.
     const active = this.#activeLayer();
@@ -874,7 +881,45 @@ export class ToolController {
     return true;
   }
 
-  /** Right press: pick, or a context menu request on release (entity / selection). */
+  /**
+   * Brush / fill / rectangle on a tile layer with nothing chosen to paint:
+   * says so ("Önce bir tile seç") instead of doing nothing silently.
+   */
+  #reportMissingBrush(): boolean {
+    const layer = this.#activeLayer();
+    const doc = this.#host.scene?.store.document;
+    if (!layer || !doc || isEntityLayer(layer)) return false;
+    const s = useEditorStore.getState();
+    const missing = missingBrush(s.tool, {
+      grid: isGridLayer(layer),
+      stamp: s.stamp !== null,
+      tile: !!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined,
+      random: isRandomBrush(s.randomSet),
+    });
+    if (!missing) return false;
+    this.#host.blocked?.({ reason: "noBrush", layerId: layer.id });
+    this.#host.requestRender();
+    return true;
+  }
+
+  /** Eraser right drag: clears `r` on the active layer (tiles, or grid values) as one undo step. */
+  #eraseRegion(r: CellRegion): void {
+    const t = this.#editTarget();
+    if (!t) return;
+    const { store, layer } = t;
+    if (isGridLayer(layer)) {
+      const writes = gridRectWrites(r, 0, (x, y) => layer.getCell(x, y));
+      if (writes.length > 0) this.#transact(store, "eraser", () => this.#paintGrid(store, layer.id, writes));
+      return;
+    }
+    const cells: CellWrite[] = [];
+    for (let y = r.y; y < r.y + r.height; y++) {
+      for (let x = r.x; x < r.x + r.width; x++) if (layer.getCell(x, y) !== EMPTY_CELL) cells.push({ x, y, cell: EMPTY_CELL });
+    }
+    if (cells.length > 0) this.#transact(store, "eraser", () => this.#paintCells(store, layer.id, cells));
+  }
+
+  /** Right press: pick, eraser rectangle, or a context menu request on release (entity / selection). */
   #rightDown(e: PointerEvent, cell: CellPoint): void {
     const s = useEditorStore.getState();
     const layer = this.#activeLayer();
@@ -887,7 +932,10 @@ export class ToolController {
       entityHit: entityId !== undefined,
     });
     if (press === "none") return;
-    this.#start({ kind: "pick", pointerId: e.pointerId, button: 2, start: cell, end: cell, press, entityId, client: { x: e.clientX, y: e.clientY } });
+    // The eraser's right drag erases a rectangle: say why up front when the layer takes no edits.
+    if (press === "eraseRect" && this.#reportBlocked("eraser")) return;
+    const spring = this.#host.springActive?.() ?? false;
+    this.#start({ kind: "pick", pointerId: e.pointerId, button: 2, start: cell, end: cell, press, entityId, client: { x: e.clientX, y: e.clientY }, spring });
   }
 
   /** Release of a pick gesture (right button or eyedropper). */
@@ -895,8 +943,12 @@ export class ToolController {
     const moved = g.start.x !== g.end.x || g.start.y !== g.end.y;
     const action = rightReleaseAction(g.press ?? "pick", moved);
     const client = g.client ?? { x: 0, y: 0 };
-    if (action === "pick") this.#finishPick(g.start, g.end);
-    else if (action === "entityMenu" && g.entityId) {
+    if (action === "pick") this.#finishPick(g.start, g.end, g.spring);
+    else if (action === "eraseRect") {
+      const map = this.#host.scene?.store.document.map;
+      const r = map ? dragRegion(g.start, g.end, map) : null;
+      if (r) this.#eraseRegion(r);
+    } else if (action === "entityMenu" && g.entityId) {
       const s = useEditorStore.getState();
       if (s.selectedEntityId !== g.entityId) s.setSelectedEntity(g.entityId);
       this.#host.contextRequest?.({ kind: "entity", entityId: g.entityId, x: client.x, y: client.y });

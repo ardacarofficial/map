@@ -10,10 +10,11 @@ import { installSession } from "../io/session";
 import { useEditorStore } from "../state/editorStore";
 import { CommandPalette } from "./dialogs/CommandPalette";
 import { NewProjectDialog } from "./dialogs/NewProjectDialog";
+import { ProjectSettingsDialog } from "./projectSettings/ProjectSettingsDialog";
 import { UnsavedDialog } from "./dialogs/UnsavedDialog";
+import { MapSettingsDialog } from "./mapSettings/MapSettingsDialog";
 import { BackupsDialog } from "./dialogs/BackupsDialog";
 import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
-import { ResizeMapDialog } from "./dialogs/ResizeMapDialog";
 import { ExportDialog } from "../export/ExportDialog";
 import { EntityTypesDialog } from "./entities/EntityTypesDialog";
 import { SaveStampDialog } from "./stamps/SaveStampDialog";
@@ -58,8 +59,9 @@ export function App() {
       <FileDropOverlay />
       <CommandPalette />
       <NewProjectDialog />
+      <ProjectSettingsDialog />
       <UnsavedDialog />
-      <ResizeMapDialog />
+      <MapSettingsDialog />
       <BackupsDialog />
       <DiskChangedDialog />
       <ExportDialog />

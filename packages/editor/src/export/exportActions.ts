@@ -4,7 +4,7 @@
  * Folders are written through `ProjectFileSystem` (a directory handle today,
  * Tauri in v0.5).
  */
-import { exportBaseName, exportGameJson } from "@smap/core";
+import { exportBaseName, exportGameJson, exportLayerSummaries, type MapDocument } from "@smap/core";
 
 import { getLocale, t } from "../i18n";
 import { getPlatform, type SaveFileFilter } from "../platform";
@@ -17,7 +17,8 @@ import { getTilesetImage } from "../state/tilesetImages";
 import { toast } from "../ui/toast/toastStore";
 import { AutoExporter, type SavedProject } from "./autoExport";
 import { tmjExportFiles, unityExportFiles, writeExportFiles, type ExportFileSet } from "./exportFiles";
-import { loadExportSettings, updateExportSettings, type ExportSettings } from "./exportSettings";
+import { levelKey, outputSubfolder, selectedLayerIds, unityGameOptions } from "./exportOptions";
+import { defaultExportSettings, loadExportSettings, updateExportSettings, type ExportSettings } from "./exportSettings";
 import { useExportStore } from "./exportStore";
 import { type PngScale } from "./pngComposite";
 import { PngTooLargeError, renderMapPng } from "./pngRender";
@@ -37,10 +38,55 @@ export function projectLevelName(project: OpenProject): string {
   return levelName(project.levelPath);
 }
 
-/** The files a Unity / Tiled export of the open project would write (dialog preview). */
-export function previewFiles(kind: FolderKind, project: OpenProject): ExportFileSet {
-  const build = kind === "unity" ? unityExportFiles : tmjExportFiles;
-  return build(project.store.document, projectLevelName(project), tilesetBytes);
+/** The level an export writes: the open one, or another level of the project (dialog's "Harita"). */
+export interface ExportSource {
+  readonly document: MapDocument;
+  /** Project-relative level file, e.g. `"levels/main.json"` (gives the export file names). */
+  readonly levelPath: string;
+  readonly levelId?: string | undefined;
+}
+
+/** The open level as an export source. */
+export function activeSource(project: OpenProject): ExportSource {
+  return { document: project.store.document, levelPath: project.levelPath, levelId: project.levelId };
+}
+
+/** Level name of a source, for file names ("main"). */
+export function sourceLevelName(source: ExportSource): string {
+  return levelName(source.levelPath);
+}
+
+/**
+ * A project level as an export source, without opening it: the open level's
+ * live document, a cached level's (unsaved edits included) or the level file.
+ */
+export async function loadExportSource(levelId: string): Promise<ExportSource | null> {
+  const project = useEditorStore.getState().project;
+  if (!project) return null;
+  if (levelId === project.levelId) return activeSource(project);
+  const ws = getLevelWorkspace();
+  const level = ws?.level(levelId);
+  if (!ws || !level) return null;
+  const document = await ws.documentOf(levelId, getProjectFolder()?.fs ?? null);
+  return { document, levelPath: level.path, levelId };
+}
+
+/** Tile layers of `source` an export writes (the dialog's layer checkboxes), before Unity's tile switch. */
+export function sourceLayers(settings: ExportSettings, source: ExportSource): string[] {
+  return selectedLayerIds(exportLayerSummaries(source.document), settings.excludedLayers[levelKey(source)] ?? []);
+}
+
+/** The files a Unity / Tiled export of `source` writes with `settings` (also the dialog preview). */
+export function previewFiles(kind: FolderKind, source: ExportSource, settings: ExportSettings): ExportFileSet {
+  const layers = sourceLayers(settings, source);
+  if (kind === "unity") {
+    return unityExportFiles(source.document, sourceLevelName(source), tilesetBytes, {
+      ...unityGameOptions(settings, settings.unityTiles ? layers : []),
+      subfolder: outputSubfolder(settings.unitySubfolder),
+      copyTextures: settings.copyTextures,
+    });
+  }
+  return tmjExportFiles(source.document, sourceLevelName(source), tilesetBytes, { layers });
 }
 
 async function withExportBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
@@ -101,14 +147,15 @@ function warnMissing(set: ExportFileSet): void {
   if (set.missingImages.length > 0) toast.warning(t("export.toastMissingImages", { paths: set.missingImages.join(", ") }));
 }
 
-async function exportToFolder(kind: FolderKind): Promise<ExportFileSet | null> {
+async function exportToFolder(kind: FolderKind, from?: ExportSource): Promise<ExportFileSet | null> {
   const project = useEditorStore.getState().project;
   if (!project) return null;
+  const source = from ?? activeSource(project);
   const result = await withExportBusy(async () => {
     try {
       const handle = await folderFor(kind, project);
       if (!handle) return null;
-      const set = previewFiles(kind, project);
+      const set = previewFiles(kind, source, await loadExportSettings(project.name));
       try {
         await writeExportFiles(new DirectoryHandleFileSystem(handle), set.files);
       } catch (error) {
@@ -140,14 +187,18 @@ async function exportToFolder(kind: FolderKind): Promise<ExportFileSet | null> {
   return result ?? null;
 }
 
-/** Writes `<level>.smapmap` + tileset PNGs into the project's Unity folder (asks once). */
-export function exportToUnity(): Promise<ExportFileSet | null> {
-  return exportToFolder("unity");
+/**
+ * Writes `<level>.smapmap` + tileset PNGs into the project's Unity folder
+ * (asks once), with the remembered options and layer selection. `source`
+ * defaults to the open level.
+ */
+export function exportToUnity(source?: ExportSource): Promise<ExportFileSet | null> {
+  return exportToFolder("unity", source);
 }
 
 /** Writes `<level>.tmj` + tileset PNGs into the project's Tiled folder (asks once). */
-export function exportToTiled(): Promise<ExportFileSet | null> {
-  return exportToFolder("tmj");
+export function exportToTiled(source?: ExportSource): Promise<ExportFileSet | null> {
+  return exportToFolder("tmj", source);
 }
 
 /**
@@ -176,19 +227,21 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Composites the map into one PNG at `scale` and downloads `<level>.png`. */
-export async function exportPng(scale: PngScale): Promise<boolean> {
+/** Composites the map (selected visible layers) into one PNG at `scale` and downloads `<level>.png`. */
+export async function exportPng(scale: PngScale, from?: ExportSource): Promise<boolean> {
   const project = useEditorStore.getState().project;
   if (!project) return false;
+  const source = from ?? activeSource(project);
   const result = await withExportBusy(async () => {
     try {
-      const png = await renderMapPng(project.store.document, scale, (id) => getTilesetImage(id)?.bitmap);
-      const fileName = `${exportBaseName(projectLevelName(project))}.png`;
+      const layers = sourceLayers(await loadExportSettings(project.name), source);
+      const png = await renderMapPng(source.document, scale, (id) => getTilesetImage(id)?.bitmap, { layers });
+      const fileName = `${exportBaseName(sourceLevelName(source))}.png`;
       if (!(await deliverFile(png.blob, fileName, { name: "PNG", extensions: ["png"] }))) return false;
       await updateExportSettings(project.name, { target: "png", pngScale: scale });
       toast.success(t("export.toastPng", { file: fileName, width: png.width, height: png.height }));
       if (png.missing.length > 0) {
-        const paths = project.store.document.tilesets.filter((ts) => png.missing.includes(ts.id)).map((ts) => ts.imagePath);
+        const paths = source.document.tilesets.filter((ts) => png.missing.includes(ts.id)).map((ts) => ts.imagePath);
         toast.warning(t("export.toastMissingImages", { paths: paths.join(", ") }));
       }
       return true;
@@ -201,13 +254,14 @@ export async function exportPng(scale: PngScale): Promise<boolean> {
   return result ?? false;
 }
 
-/** Downloads the game JSON (`<level>.json`). */
-export async function exportJson(): Promise<boolean> {
+/** Downloads the game JSON (`<level>.json`) of the selected layers. */
+export async function exportJson(from?: ExportSource): Promise<boolean> {
   const project = useEditorStore.getState().project;
   if (!project) return false;
+  const source = from ?? activeSource(project);
   try {
-    const fileName = `${exportBaseName(projectLevelName(project))}.json`;
-    const text = exportGameJson(project.store.document);
+    const fileName = `${exportBaseName(sourceLevelName(source))}.json`;
+    const text = exportGameJson(source.document, { layers: sourceLayers(await loadExportSettings(project.name), source) });
     if (!(await deliverFile(new Blob([text], { type: "application/json" }), fileName, { name: "JSON", extensions: ["json"] }))) return false;
     await updateExportSettings(project.name, { target: "json" });
     toast.success(t("export.toastJson", { file: fileName }));
@@ -289,9 +343,12 @@ export async function exportZip(): Promise<boolean> {
 
 /** One permission / error toast per streak, not one per autosave. */
 let autoProblemShown = false;
+/** Settings read by the last `autoTarget` (the exporter asks for the target, then the files). */
+let autoSettings: ExportSettings | null = null;
 
 async function autoTarget(project: SavedProject): Promise<DirectoryHandleFileSystem | null> {
   const settings = await loadExportSettings(project.name);
+  autoSettings = settings;
   const handle = settings.unityDir;
   if (!settings.autoUnity || !handle) return null;
   const descriptor = { mode: "readwrite" } as const;
@@ -312,7 +369,10 @@ async function autoTarget(project: SavedProject): Promise<DirectoryHandleFileSys
 export function installAutoExport(): () => void {
   const exporter = new AutoExporter({
     target: autoTarget,
-    files: (project) => unityExportFiles(project.document, project.levelName, tilesetBytes),
+    files: (project) => {
+      const settings = autoSettings ?? defaultExportSettings(project.name);
+      return previewFiles("unity", { document: project.document, levelPath: project.levelPath ?? `levels/${project.levelName}.json`, levelId: project.levelId }, settings);
+    },
     onExported: ({ project, set, at }) => {
       autoProblemShown = false;
       void updateExportSettings(project.name, { lastUnityAt: at.getTime() }).then(() => useExportStore.getState().bump());
@@ -334,6 +394,8 @@ export function installAutoExport(): () => void {
         name: project.name,
         document: level.store.document,
         levelName: levelName(level.path),
+        levelPath: level.path,
+        levelId: level.id,
         manual,
       });
     }

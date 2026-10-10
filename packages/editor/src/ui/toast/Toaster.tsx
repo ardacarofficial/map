@@ -96,7 +96,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       role={toast.kind === "error" ? "alert" : "status"}
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
-      className={`pointer-events-auto flex w-full items-start gap-2.5 rounded-lg border border-line bg-raised py-2.5 pr-2 pl-3 text-md text-text shadow-toast transition-[opacity,translate] duration-200 ease-(--ease-out) ${
+      className={`pointer-events-auto flex w-full items-start gap-2.5 rounded-lg border border-line bg-popup py-2.5 pr-2 pl-3 text-md text-text shadow-toast transition-[opacity,translate] duration-200 ease-(--ease-out) ${
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
       }`}
     >

@@ -11,6 +11,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { registerAppCommands } from "./commands/appCommands";
+import { registerRotateCommands } from "./commands/rotateCommands";
 import { registerHandToolCommand } from "./commands/handTool";
 import { registerExportCommands } from "./commands/exportCommands";
 import { installKeyboardLayout } from "./commands/keymap";
@@ -23,6 +24,7 @@ import { installSettingsReload, loadAppSettings, useAppSettings } from "./platfo
 import { installErrorLogging } from "./platform/errorLogging";
 import { installFileChangeHandling } from "./platform/fileChanges";
 import { registerSettingsCommands } from "./platform/settingsCommands";
+import { registerProjectSettingsCommands } from "./ui/projectSettings/ProjectSettingsDialog";
 import { SettingsDialog } from "./platform/SettingsDialog";
 import { useEditorStore } from "./state/editorStore";
 import { useUiStore } from "./ui/uiStore";
@@ -95,9 +97,11 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   // Shortcut labels follow the keyboard layout ("Ğ" for "[" on Turkish-Q); never waits long.
   const layoutReady = Promise.race([installKeyboardLayout().catch(() => undefined), timeout(100)]);
   registerAppCommands();
+  registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version
   registerHandToolCommand();
   registerExportCommands();
   registerSettingsCommands();
+  registerProjectSettingsCommands();
   installAutoExport();
 
   await loadAppSettings().catch((error: unknown) => platform.log("warn", `settings: ${String(error)}`));

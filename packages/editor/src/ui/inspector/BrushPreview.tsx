@@ -1,10 +1,10 @@
 import type { MapDocument, TileClip } from "@smap/core";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-import { compositeOps } from "../../../export/pngComposite";
-import { replayOps } from "../../../export/pngRender";
-import { getTilesetImage, onTilesetImage } from "../../../state/tilesetImages";
-import { stampDrawList, thumbScale } from "../../stamps/stampThumb";
+import { compositeOps } from "../../export/pngComposite";
+import { replayOps } from "../../export/pngRender";
+import { getTilesetImage, onTilesetImage } from "../../state/tilesetImages";
+import { stampDrawList, thumbScale } from "../stamps/stampThumb";
 
 let imageVersion = 0;
 const subscribeImages = (notify: () => void) =>

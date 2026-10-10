@@ -1,0 +1,89 @@
+import { Menu } from "@base-ui/react/menu";
+
+import { t } from "../../i18n";
+import { useEditorStore } from "../../state/editorStore";
+import { Icon } from "../primitives/Icon";
+import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { BRUSH_PRESETS, MAX_BRUSH, MIN_BRUSH, stepBrushSize } from "../toolOptions/brushSize";
+import { Segmented, StepButton } from "../toolOptions/parts";
+
+/** Size controls show only past this size; at 1 the chip stays collapsed ("Boyut 1 ▾"). */
+export function showsSizeControls(size: number): boolean {
+  return size > 1;
+}
+
+/**
+ * Brush size, collapsed by default: a small "Boyut 1 ▾" chip (menu of
+ * common sizes). Only when the size is above 1 do the − / + steps appear
+ * (and, with `withShape`, the square / circle choice). Used by the FIRÇA
+ * card and the tool options bar.
+ */
+export function BrushSizeChip({ withShape = true, showLabel = true }: { withShape?: boolean; showLabel?: boolean }) {
+  const size = useEditorStore((s) => s.brushSize);
+  const setSize = useEditorStore((s) => s.setBrushSize);
+  // A clip on the brush is placed as it is: the size only applies to the eraser then.
+  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
+  const expanded = showsSizeControls(size);
+  return (
+    <div
+      className={`flex min-w-0 items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`}
+      data-tool-option="brush-size"
+      data-size-expanded={expanded || undefined}
+      title={unused ? t("toolOptions.sizeUnusedStamp") : undefined}
+    >
+      <div className="flex h-7 items-center rounded-md border border-line bg-raised">
+        {expanded && (
+          <StepButton icon="minus" label={t("toolOptions.brushSmaller")} command="brush.smaller" disabled={size <= MIN_BRUSH} onClick={() => setSize(stepBrushSize(size, -1))} />
+        )}
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label={t("toolOptions.size")}
+            data-size-chip
+            className={`flex h-full items-center gap-1 px-2 text-sm text-text outline-none hover:bg-hover data-popup-open:bg-hover ${
+              expanded ? "border-x border-line" : "rounded-md"
+            }`}
+          >
+            {showLabel && <span className="text-faint">{t("toolOptions.size")}</span>}
+            <span className="font-mono tabular">{size}</span>
+            <Icon name="chevronDown" size={12} className="text-faint" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+              <Menu.Popup className={`${menuPopupClass} min-w-[140px]`}>
+                {BRUSH_PRESETS.map((preset) => (
+                  <Menu.Item key={preset} className={`${menuItemClass} py-1 font-mono text-sm tabular`} onClick={() => setSize(preset)}>
+                    <Icon name="check" size={13} className={preset === size ? "text-accent" : "invisible"} />
+                    {t("toolOptions.sizeValue", { size: preset })}
+                  </Menu.Item>
+                ))}
+                <Menu.Separator className={menuSeparatorClass} />
+                <div className="px-2 pt-0.5 pb-1 text-2xs text-faint">{t("toolOptions.sizeKeys")}</div>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+        {expanded && (
+          <StepButton icon="plus" label={t("toolOptions.brushLarger")} command="brush.larger" disabled={size >= MAX_BRUSH} onClick={() => setSize(stepBrushSize(size, 1))} />
+        )}
+      </div>
+      {expanded && withShape && <BrushShapeChoice />}
+    </div>
+  );
+}
+
+/** Square / circle (meaningful only above size 1). */
+export function BrushShapeChoice() {
+  const shape = useEditorStore((s) => s.brushShape);
+  const setShape = useEditorStore((s) => s.setBrushShape);
+  return (
+    <Segmented
+      label={t("toolOptions.shape")}
+      value={shape}
+      onChange={setShape}
+      options={[
+        { value: "square", label: t("toolOptions.square"), glyph: <span className="size-2.5 rounded-[1px] border-[1.5px] border-current" /> },
+        { value: "circle", label: t("toolOptions.circle"), glyph: <span className="size-2.5 rounded-full border-[1.5px] border-current" /> },
+      ]}
+    />
+  );
+}

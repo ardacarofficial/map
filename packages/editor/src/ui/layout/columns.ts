@@ -17,13 +17,13 @@ export interface ColumnSpec {
 
 export const COLUMNS: Record<ColumnId, ColumnSpec> = {
   library: { key: "smap.layout.libraryWidth", min: 240, max: 520, initial: 288 },
-  right: { key: "smap.layout.rightWidth", min: 260, max: 440, initial: 288 },
+  right: { key: "smap.layout.rightWidth", min: 280, max: 460, initial: 320 },
 };
 
 /** The canvas never gets narrower than this (CLAUDE.md: zoom/pan stay comfortable at 1366×768). */
 export const MIN_CANVAS = 400;
 /** Width of the tool rail (keep in sync with `--spacing-rail`). */
-export const RAIL_WIDTH = 44;
+export const RAIL_WIDTH = 48;
 
 /** Library width before the user ever resized, by window width: wide screens get room for 12-column tilesets. */
 export function defaultLibraryWidth(viewport: number): number {

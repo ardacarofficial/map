@@ -14,8 +14,8 @@ import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import { stampThumbnail } from "../stamps/stampThumb";
 import { pickRecentStamp, pickRecentTile, recentStampLabel } from "./recentTiles";
 
-/** Height of a strip item (CSS px). */
-const ITEM = 26;
+/** Height of an item (CSS px). */
+const ITEM = 32;
 /** Widest a stamp thumbnail gets (wide stamps shrink to fit). */
 const STAMP_MAX_W = ITEM * 3;
 
@@ -25,9 +25,10 @@ function usable(doc: MapDocument, item: RecentItem): boolean {
 }
 
 /**
- * Slim strip under the canvas: the most recently used tiles and multi-tile
- * stamps (newest left). Click one to paint with it again; hover for its
- * tileset · id (or the stamp's name, or its anchor tileset · size @ id). Empty: a quiet one-line hint.
+ * "Son kullanılanlar" tab of the bottom dock: the most recently used tiles
+ * and multi-tile stamps (newest first), wrapping to the dock's width. Click
+ * one to paint with it again; hover for its tileset · id (or the stamp's
+ * name, or its anchor tileset · size @ id). Empty: a quiet one-line hint.
  */
 export function RecentTilesStrip() {
   const recent = useEditorStore((s) => s.recentTiles);
@@ -39,22 +40,14 @@ export function RecentTilesStrip() {
   const items = doc ? recent.filter((item) => usable(doc, item)) : [];
 
   return (
-    <div
-      role="toolbar"
-      aria-label={t("recent.title")}
-      data-recent-strip
-      className="flex h-recentstrip shrink-0 items-center gap-2.5 border-t border-line bg-panel pr-2 pl-3"
-    >
-      <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted">
-        <Icon name="history" size={13} className="text-faint" />
-        {t("recent.title")}
-      </span>
+    <div role="toolbar" aria-label={t("recent.title")} data-recent-strip className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2">
       {items.length === 0 ? (
-        <span className="truncate text-xs text-faint" data-recent-empty>
+        <span className="flex items-center gap-2 py-1 text-sm text-faint" data-recent-empty>
+          <Icon name="history" size={14} />
           {t("recent.empty")}
         </span>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1">
+        <div className="flex flex-wrap content-start items-start gap-1">
           {items.map((item) => {
             if (isRecentStamp(item)) {
               const on = stamp === item.stamp;

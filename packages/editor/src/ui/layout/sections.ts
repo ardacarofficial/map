@@ -1,6 +1,8 @@
 /**
- * The right column's vertical sections (Level'lar | Özellik | Katmanlar):
- * which are shown, folded to their header, and how tall the user dragged
+ * Foldable / hideable panel sections: the right column's Denetçi | Geçmiş
+ * tabs ("properties") and Katmanlar ("layers"), plus the library's PROJE
+ * tree ("levels": hidden / folded only, it never sits in the right column).
+ * Which are shown, folded to their header, and how tall the user dragged
  * them. Pure functions so clamping and persistence are testable without a
  * DOM; `layoutStore` wires them to React and localStorage.
  *
@@ -13,11 +15,11 @@ import type { WidthStorage } from "./columns";
 
 export type SectionId = "levels" | "properties" | "layers";
 
-/** Top to bottom. */
-export const SECTION_ORDER: readonly SectionId[] = ["levels", "properties", "layers"];
+/** The right column, top to bottom (the PROJE tree lives in the library column). */
+export const SECTION_ORDER: readonly SectionId[] = ["properties", "layers"];
 
 /** Which expanded section takes the remaining height, in order of preference. */
-const FILLER_PREFERENCE: readonly SectionId[] = ["properties", "layers", "levels"];
+const FILLER_PREFERENCE: readonly SectionId[] = ["properties", "layers"];
 
 /** Height of a section header (keep in sync with `h-9` in PanelSection). */
 export const SECTION_HEADER = 36;
@@ -26,13 +28,13 @@ export const SECTION_HEADER = 36;
 export const SECTION_MIN: Record<SectionId, number> = {
   levels: SECTION_HEADER + 32 + 6,
   properties: 120,
-  layers: SECTION_HEADER + 2 * 32 + 6,
+  layers: SECTION_HEADER + 32 + 2 * 29 + 6,
 };
 
 export interface SectionState {
   /** Not shown at all (View menu). */
   hidden: boolean;
-  /** Folded to its header. `null` (levels only) = automatic: folded while the project has one level. */
+  /** Folded to its header. `null` (levels only) = automatic (open). */
   collapsed: boolean | null;
   /** Height the user dragged it to (CSS px, header included); `null` = as tall as its content. */
   height: number | null;
@@ -53,21 +55,20 @@ export const LEGACY_LEVELS_COLLAPSED_KEY = "smap.levelsCollapsed";
 
 /** What the layout needs to know about the world around the sections. */
 export interface SectionContext {
-  /** Number of levels in the project (one level folds the list by default). */
+  /** Number of maps in the project. */
   levelCount: number;
-  /** World map view: only the level list is shown, and it fills the column. */
+  /** World map view: the right column shows only the world hint. */
   world: boolean;
 }
 
-/** Whether a section is folded right now (resolves the automatic level-list state). */
-export function isCollapsed(id: SectionId, state: SectionState, ctx: SectionContext): boolean {
-  if (state.collapsed !== null) return state.collapsed;
-  return id === "levels" ? !ctx.world && ctx.levelCount <= 1 : false;
+/** Whether a section is folded right now (the automatic state is open). */
+export function isCollapsed(_id: SectionId, state: SectionState, _ctx: SectionContext): boolean {
+  return state.collapsed ?? false;
 }
 
-/** Sections present in the column right now, top to bottom (the world view only lists levels). */
+/** Right-column sections present right now, top to bottom (none on the world map). */
 export function shownSections(sections: SectionsState, ctx: SectionContext): SectionId[] {
-  return SECTION_ORDER.filter((id) => (ctx.world ? id === "levels" : !sections[id].hidden));
+  return ctx.world ? [] : SECTION_ORDER.filter((id) => !sections[id].hidden);
 }
 
 /** Shown sections that are open (not folded). */
@@ -130,8 +131,7 @@ export function sectionFlex(id: SectionId, sections: SectionsState, ctx: Section
   if (isCollapsed(id, state, ctx)) return { flex: "0 0 auto", minHeight: SECTION_HEADER };
   if (fillerSection(sections, ctx) === id) return { flex: "1 1 0px", minHeight: SECTION_MIN[id] };
   if (state.height !== null) return { flex: `0 1 ${state.height}px`, minHeight: SECTION_MIN[id] };
-  // Content height. The level list stays modest until the user drags it taller.
-  return id === "levels" ? { flex: "0 1 auto", minHeight: SECTION_MIN[id], maxHeight: 200 } : { flex: "0 1 auto", minHeight: SECTION_MIN[id] };
+  return { flex: "0 1 auto", minHeight: SECTION_MIN[id] };
 }
 
 function isBool(v: unknown): v is boolean {

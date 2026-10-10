@@ -8,16 +8,16 @@ import { registerSettingsCommands } from "../../platform/settingsCommands";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 import { tr } from "../../i18n/tr";
 import { registerBrushCommands } from "../toolOptions/brushCommands";
-import { registerSelectionBarCommands } from "../selectionBar/selectionBarStore";
+import { registerHistoryCommands } from "../history/historyCommands";
 import { MENUS, menuCommands, resolveMenu, type CommandLookup } from "./menuModel";
 
-/** Everything the app registers at startup (bootstrap.tsx, App, ToolOptionsBar, SelectionBar). */
+/** Everything the app registers at startup (bootstrap.tsx, App, ToolOptionsBar, HistoryPanel). */
 function registerAll(): void {
   registerAppCommands();
   registerExportCommands();
   registerSettingsCommands();
   registerBrushCommands();
-  registerSelectionBarCommands();
+  registerHistoryCommands();
   installWorldActions();
 }
 

@@ -47,7 +47,8 @@ export function FileDropOverlay() {
       depth = 0;
       set(false);
       const files = [...(e.dataTransfer?.files ?? [])];
-      if (files.length === 0) return;
+      // The new project dialog takes drops itself (its starting tileset); elsewhere they are ignored meanwhile.
+      if (files.length === 0 || useUiStore.getState().newProjectOpen) return;
       if (useEditorStore.getState().project) void addTilesetFiles(files);
       else void createProjectFromTilesets(files);
     };

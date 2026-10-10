@@ -1,5 +1,5 @@
 /** PNG export, the browser half: replays `compositeOps` on a 2D canvas and encodes a PNG. */
-import { layerDrawList, type MapDocument } from "@smap/core";
+import { layerDrawList, type ExportLayerOptions, type MapDocument } from "@smap/core";
 
 import { compositeOps, opsTilesets, pngFits, pngSize, type CanvasOp } from "./pngComposite";
 
@@ -53,13 +53,14 @@ export interface RenderedPng {
   missing: string[];
 }
 
-/** Composites the whole map (visible tile layers) into one PNG. */
+/** Composites the whole map (visible tile layers, only `options.layers` when given) into one PNG. */
 export async function renderMapPng(
   doc: MapDocument,
   scale: number,
   image: (tilesetId: string) => ImageBitmap | undefined,
+  options: ExportLayerOptions = {},
 ): Promise<RenderedPng> {
-  const list = layerDrawList(doc);
+  const list = layerDrawList(doc, options);
   if (!pngFits(list.width, list.height, scale)) throw new PngTooLargeError();
   const { width, height } = pngSize(list.width, list.height, scale);
   const ops = compositeOps(list, scale);

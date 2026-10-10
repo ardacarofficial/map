@@ -260,8 +260,12 @@ export function rectPreviewCells(
 
 // ------------------------------------------------------------------ blocked actions, right click
 
-/** Why a left press on the map cannot do anything (the canvas says so instead of failing silently). */
-export type BlockedReason = "locked" | "hidden" | "derived" | "wrongKind";
+/**
+ * Why a left press on the map cannot do anything (the canvas says so instead
+ * of failing silently). `"noBrush"`: brush / fill / rectangle on a tile layer
+ * with nothing to paint (no tile, stamp or random set chosen).
+ */
+export type BlockedReason = "locked" | "hidden" | "derived" | "wrongKind" | "noBrush";
 
 /** What {@link blockedReason} needs to know about the active layer. */
 export interface LayerState {
@@ -305,12 +309,14 @@ export function blockedReason(tool: ToolId | "move", layer: LayerState | null, s
 /**
  * What a right press does:
  * - `"pick"`: take tiles from the map (single cell / dragged area);
+ * - `"eraseRect"`: eraser tool — erase the dragged rectangle (one cell on a
+ *   click) and stay in the eraser (Tiled habit);
  * - `"entityMenu"`: entity layer, pressed on an entity: ask for its context menu;
  * - `"selectionMenu"`: select tool, pressed inside the selection: its context
  *   menu on release without a drag (a drag picks the area instead);
- * - `"none"`: entity layer elsewhere (no tiles to pick there).
+ * - `"none"`: entity layer elsewhere (no tiles to pick there), or the hand tool.
  */
-export type RightPress = "pick" | "entityMenu" | "selectionMenu" | "none";
+export type RightPress = "pick" | "eraseRect" | "entityMenu" | "selectionMenu" | "none";
 
 export function rightPressAction(input: {
   readonly layer: LayerState["kind"] | null;
@@ -318,8 +324,10 @@ export function rightPressAction(input: {
   readonly inRegion: boolean;
   readonly entityHit: boolean;
 }): RightPress {
+  if (input.tool === "hand") return "none";
   if (input.layer === "entity") return input.entityHit ? "entityMenu" : "none";
   if (input.tool === "select" && input.inRegion) return "selectionMenu";
+  if (input.tool === "eraser") return "eraseRect";
   return "pick";
 }
 
@@ -427,13 +435,86 @@ export function isEditTool(tool: ToolId): boolean {
 
 /**
  * Tool for a newly active layer: tile tools (brush, eraser, fill,
- * rectangle) become the entity tool on an entity layer, the entity tool
- * becomes the brush elsewhere; select, eyedropper and hand stay.
+ * rectangle) become the entity tool on an entity layer; the entity tool
+ * becomes the last tile tool used (`lastTileTool`, default brush)
+ * elsewhere; select, eyedropper and hand stay.
  */
-export function toolForLayer(tool: ToolId, entityLayer: boolean): ToolId {
+export function toolForLayer(tool: ToolId, entityLayer: boolean, lastTileTool: ToolId = "brush"): ToolId {
   if (entityLayer) return isEditTool(tool) ? "entity" : tool;
-  return tool === "entity" ? "brush" : tool;
+  return tool === "entity" ? (isEditTool(lastTileTool) ? lastTileTool : "brush") : tool;
 }
+
+/** Tools the canvas remembers across layer changes and eyedropper picks. */
+export interface ToolMemory {
+  /** Last tile tool (brush, eraser, fill, rectangle) used: comes back after an entity layer. */
+  readonly lastTileTool: ToolId;
+  /** Tool active right before the eyedropper was chosen (null: none yet). */
+  readonly beforeEyedropper: ToolId | null;
+}
+
+export const INITIAL_TOOL_MEMORY: ToolMemory = { lastTileTool: "brush", beforeEyedropper: null };
+
+/** Memory after the tool changed from `prev` to `tool`. Returns `memory` itself when nothing changes. */
+export function nextToolMemory(memory: ToolMemory, prev: ToolId, tool: ToolId): ToolMemory {
+  if (prev === tool) return memory;
+  let next = memory;
+  if (isEditTool(tool) && memory.lastTileTool !== tool) next = { ...next, lastTileTool: tool };
+  if (tool === "eyedropper" && next.beforeEyedropper !== prev) next = { ...next, beforeEyedropper: prev };
+  return next;
+}
+
+/**
+ * Tool to switch to after a pick, or null to stay:
+ * - a pick of the temporary (Alt) eyedropper stays — releasing Alt brings
+ *   the previous tool back (`spring` is read at the press, so releasing Alt
+ *   before the mouse does not change the outcome);
+ * - the eyedropper tool returns to the paint tool used before it (brush,
+ *   fill or rectangle place the picked tiles), else the brush;
+ * - the select tool switches to the brush (it cannot place tiles);
+ * - every other tool stays (fill and rectangle use the picked tiles too).
+ */
+export function toolAfterPick(tool: ToolId, beforeEyedropper: ToolId | null, spring: boolean): ToolId | null {
+  if (spring) return null;
+  if (tool === "eyedropper") {
+    return beforeEyedropper === "fill" || beforeEyedropper === "rect" ? beforeEyedropper : "brush";
+  }
+  if (tool === "select") return "brush";
+  return null;
+}
+
+/**
+ * True when a left press with `tool` has nothing to paint: brush / fill /
+ * rectangle on a tile layer without a usable tile, stamp or random set.
+ * (Grid layers paint their value; the eraser needs nothing.)
+ */
+export function missingBrush(
+  tool: ToolId,
+  brush: { readonly grid: boolean; readonly stamp: boolean; readonly tile: boolean; readonly random: boolean },
+): boolean {
+  if (tool !== "brush" && tool !== "fill" && tool !== "rect") return false;
+  if (brush.grid) return false;
+  return !brush.stamp && !brush.tile && !brush.random;
+}
+
+/** Tools whose footprint size (`[` `]`, size readout) means something. */
+export function usesBrushSize(tool: ToolId): boolean {
+  return tool === "brush" || tool === "eraser";
+}
+
+/**
+ * True when a key for command `id` must do nothing right now: tool, brush
+ * size and brush orientation keys while a gesture is running (a stroke keeps
+ * its tool to the end), and the brush size keys for tools without a
+ * footprint.
+ */
+export function suppressedCommandKey(id: string, tool: ToolId, gestureActive: boolean): boolean {
+  const brushKey = id.startsWith("tool.") || id.startsWith("brush.") || BRUSH_ORIENTATION.has(id);
+  if (gestureActive && brushKey) return true;
+  if ((id === "brush.smaller" || id === "brush.larger") && !usesBrushSize(tool)) return true;
+  return false;
+}
+
+const BRUSH_ORIENTATION = new Set(["edit.flipX", "edit.flipY", "edit.rotateCW", "edit.rotateCCW"]);
 
 /** CSS cursor for the canvas. */
 export function cursorFor(s: CursorInput): string {

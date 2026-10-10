@@ -70,7 +70,7 @@ export const MENUS: readonly MenuDef[] = [
       "view.toggleLayers",
       "view.toggleRecent",
       "view.toggleMinimap",
-      "view.toggleSelectionBar",
+      "view.history",
       "-",
       "view.togglePanels",
       "view.resetLayout",
@@ -101,7 +101,7 @@ export const MENUS: readonly MenuDef[] = [
   {
     id: "map",
     label: "menu.map",
-    entries: ["map.resize", "-", "tileset.markSolid", "tileset.defineTerrain", "-", "level.new", "level.duplicate", "level.next", "level.previous", "level.remove"],
+    entries: ["map.settings", "map.resize", "-", "tileset.markSolid", "tileset.defineTerrain", "-", "level.new", "level.duplicate", "level.next", "level.previous", "level.remove"],
   },
   {
     id: "help",

@@ -18,6 +18,10 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_RECENTS: usize = 10;
 
+/// Küçük resim (PNG data URL) için üst sınır, karakter. Daha büyüğü ya da
+/// PNG data URL olmayan bir değer saklanmaz; eski resim korunur.
+pub const MAX_THUMBNAIL_CHARS: usize = 200_000;
+
 /// `recent.json` geçici olarak okunamazsa (antivirüs/yedekleme kilidi)
 /// denemeler arasındaki beklemeler. Hepsi başarısızsa dosyaya dokunulmaz.
 pub const READ_RETRY_DELAYS: [Duration; 3] =
@@ -36,6 +40,14 @@ pub struct RecentEntry {
     pub name: String,
     /// Unix zamanı, milisaniye.
     pub opened_at: u64,
+    /// Son kayıttaki haritanın küçük resmi (PNG data URL). Eski dosyalarda yok.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+}
+
+/// Saklanabilir küçük resim mi: PNG data URL ve sınırın altında.
+pub fn storable_thumbnail(value: &str) -> bool {
+    value.starts_with("data:image/png;base64,") && value.len() <= MAX_THUMBNAIL_CHARS
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -128,10 +140,21 @@ impl RecentStore {
     }
 
     pub fn add(&self, path: &str, name: &str, now_ms: u64) -> io::Result<Vec<RecentEntry>> {
+        self.add_with_thumbnail(path, name, None, now_ms)
+    }
+
+    /// `add`, küçük resimle. `thumbnail` yoksa (ya da saklanamazsa) girdinin
+    /// önceki resmi korunur: projeyi açmak son kaydın resmini silmez.
+    pub fn add_with_thumbnail(&self, path: &str, name: &str, thumbnail: Option<&str>, now_ms: u64) -> io::Result<Vec<RecentEntry>> {
         let _edit = self.edit.lock().unwrap_or_else(|e| e.into_inner());
         let mut list = self.load_for_edit()?;
+        let previous = list.iter().find(|e| same_path(&e.path, path)).and_then(|e| e.thumbnail.clone());
+        let thumbnail = match thumbnail {
+            Some(t) if storable_thumbnail(t) => Some(t.to_owned()),
+            _ => previous.filter(|t| storable_thumbnail(t)),
+        };
         list.retain(|e| !same_path(&e.path, path));
-        list.insert(0, RecentEntry { path: path.to_owned(), name: name.to_owned(), opened_at: now_ms });
+        list.insert(0, RecentEntry { path: path.to_owned(), name: name.to_owned(), opened_at: now_ms, thumbnail });
         list.truncate(MAX_RECENTS);
         self.save(&list)?;
         Ok(list)
@@ -182,7 +205,7 @@ mod tests {
         store.add("/p5/project.smap", "Beş", 100).unwrap();
         let list = store.load();
         assert_eq!(list.len(), MAX_RECENTS);
-        assert_eq!(list[0], RecentEntry { path: "/p5/project.smap".into(), name: "Beş".into(), opened_at: 100 });
+        assert_eq!(list[0], RecentEntry { path: "/p5/project.smap".into(), name: "Beş".into(), opened_at: 100, thumbnail: None });
         assert_eq!(list[1].path, "/p11/project.smap");
         assert_eq!(list.iter().filter(|e| e.path == "/p5/project.smap").count(), 1);
         assert!(store.contains("/p5/project.smap"));
@@ -201,6 +224,37 @@ mod tests {
             text,
             "{\n  \"version\": 1,\n  \"projects\": [\n    {\n      \"path\": \"/a/project.smap\",\n      \"name\": \"Dünyam\",\n      \"openedAt\": 1\n    }\n  ]\n}\n"
         );
+    }
+
+    #[test]
+    fn thumbnail_is_kept_replaced_or_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("recent.json");
+        let store = RecentStore::new(file.clone());
+        let png = "data:image/png;base64,AAAA";
+        store.add_with_thumbnail("/a/project.smap", "A", Some(png), 1).unwrap();
+        assert_eq!(store.load()[0].thumbnail.as_deref(), Some(png));
+        assert!(std::fs::read_to_string(&file).unwrap().contains("\"thumbnail\": \"data:image/png;base64,AAAA\""));
+
+        // Opening (no picture) keeps the last saved one.
+        store.add("/a/project.smap", "A", 2).unwrap();
+        assert_eq!(store.load()[0].thumbnail.as_deref(), Some(png));
+
+        // Not a PNG data URL, or too big: refused, the old one stays.
+        store.add_with_thumbnail("/a/project.smap", "A", Some("javascript:alert(1)"), 3).unwrap();
+        assert_eq!(store.load()[0].thumbnail.as_deref(), Some(png));
+        let huge = format!("data:image/png;base64,{}", "A".repeat(MAX_THUMBNAIL_CHARS));
+        store.add_with_thumbnail("/a/project.smap", "A", Some(&huge), 4).unwrap();
+        assert_eq!(store.load()[0].thumbnail.as_deref(), Some(png));
+
+        // A newer picture replaces it.
+        let newer = "data:image/png;base64,BBBB";
+        store.add_with_thumbnail("/a/project.smap", "A", Some(newer), 5).unwrap();
+        assert_eq!(store.load()[0].thumbnail.as_deref(), Some(newer));
+
+        // Old files without the field still read.
+        std::fs::write(&file, b"{\"version\":1,\"projects\":[{\"path\":\"/b/project.smap\",\"name\":\"B\",\"openedAt\":1}]}").unwrap();
+        assert_eq!(store.load()[0].thumbnail, None);
     }
 
     /// A store whose reads fail with a sharing violation `fails` times, then hit the disk.

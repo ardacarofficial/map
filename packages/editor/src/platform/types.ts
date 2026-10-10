@@ -29,6 +29,8 @@ export interface RecentEntry {
   readonly openedAt: number;
   /** False when the platform already knows the project is gone. */
   readonly exists: boolean;
+  /** Small PNG data URL of the map at the last save (absent until the project is saved once). */
+  readonly thumbnail?: string;
 }
 
 export type FileChangeKind = "created" | "modified" | "removed";
@@ -71,7 +73,12 @@ export interface Platform {
     /** False where recents cannot be kept (browser without IndexedDB / FS Access). */
     readonly supported: boolean;
     list(): Promise<RecentEntry[]>;
-    add(location: ProjectLocation, name: string): Promise<void>;
+    /**
+     * Adds or refreshes an entry. `thumbnail` (PNG data URL, see
+     * `recentThumbnail.ts`) replaces the stored one; without it the entry
+     * keeps its previous picture.
+     */
+    add(location: ProjectLocation, name: string, thumbnail?: string): Promise<void>;
     remove(entry: RecentEntry): Promise<void>;
     /**
      * Turns an entry into an openable folder (asking for permission again if

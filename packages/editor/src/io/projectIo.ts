@@ -18,6 +18,7 @@ import {
   type LevelRef,
   type MapDocument,
   type ProjectLevel,
+  type ProjectSettings,
   type Stamp,
 } from "@smap/core";
 
@@ -57,6 +58,8 @@ export interface SaveProjectInput {
   retiredLevelIds?: readonly string[];
   /** v1.0: level files to delete after `project.smap` is written (removed levels). */
   removeFiles?: readonly string[];
+  /** Round 4: project settings (written only when they differ from the defaults). */
+  settings?: ProjectSettings;
 }
 
 /** `levels` with the saved level in it (a level path is listed once). */
@@ -102,7 +105,10 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
       levels: levelsForSave(input.levels, input.levelPath),
       tilesets: doc.tilesets,
       entityTypes: doc.entityTypes,
+      randomSets: doc.randomSets,
+      collections: doc.collections,
       ...(input.retiredLevelIds && input.retiredLevelIds.length > 0 ? { retiredLevelIds: input.retiredLevelIds } : {}),
+      ...(input.settings ? { settings: input.settings } : {}),
     }),
   });
   return files;
@@ -208,6 +214,8 @@ export interface LoadedProject {
   stamps: Stamp[];
   /** Stamp files that could not be read (the project still opens). */
   brokenStamps: string[];
+  /** Round 4: project settings (defaults when the file has none). */
+  settings: ProjectSettings;
 }
 
 export type ImageDecoder = (bytes: Uint8Array) => Promise<ImageBitmap>;
@@ -233,7 +241,10 @@ export async function loadProject(
   const level = project.levels.find((l) => l.id === options.levelId) ?? project.levels[0];
   if (!level) throw new ProjectOpenError("noLevel");
   const levelText = await fs.readText(level.path);
-  const document = parseLevel(levelText, project.tilesets, project.entityTypes);
+  const document = parseLevel(levelText, project.tilesets, project.entityTypes, {
+    randomSets: project.randomSets,
+    collections: project.collections,
+  });
 
   const images: TilesetImage[] = [];
   const missingImages: string[] = [];
@@ -265,6 +276,7 @@ export async function loadProject(
     retiredLevelIds: [...project.retiredLevelIds],
     stamps,
     brokenStamps: broken,
+    settings: project.settings,
   };
 }
 

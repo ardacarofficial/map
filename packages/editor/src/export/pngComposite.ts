@@ -29,16 +29,22 @@ export type CanvasOp =
       readonly sh: number;
       /** Maps tile-local space (0..dw, 0..dh) to the output image (scale and flips included). */
       readonly transform: Transform;
-      /** Size drawn in tile-local space (the destination rectangle's size, unscaled). */
+      /** Size drawn in tile-local space (the source tile's size, unscaled; see {@link tileTransform}). */
       readonly dw: number;
       readonly dh: number;
     };
 
 /**
- * Transform that places a `width × height` tile at `(x, y)` in map pixels,
- * scaled by `scale`, mirrored inside its own rectangle when flipped. A flip
- * maps the tile's left edge to the rectangle's right edge (negative scale plus
- * an offset of the full width), so the tile stays in its cell.
+ * Transform that places a tile at `(x, y)` in map pixels, scaled by `scale`,
+ * in one of the eight orientations (Tiled's rule, see core's `DrawItem`):
+ * `flipD` first swaps the tile's x and y, then `flipH` / `flipV` mirror it
+ * inside its own `width × height` destination rectangle (already transposed
+ * when `flipD`). A mirror maps the tile's left edge to the rectangle's right
+ * edge (negative scale plus an offset of the full width), so the tile stays
+ * in its cell.
+ *
+ * Tile-local space is the source tile's: `(0..height, 0..width)` when
+ * `flipD`, `(0..width, 0..height)` otherwise.
  */
 export function tileTransform(
   x: number,
@@ -48,12 +54,14 @@ export function tileTransform(
   flipH: boolean,
   flipV: boolean,
   scale: number,
+  flipD = false,
 ): Transform {
-  const a = flipH ? -scale : scale;
-  const d = flipV ? -scale : scale;
+  const sx = flipH ? -scale : scale;
+  const sy = flipV ? -scale : scale;
   const e = (flipH ? x + width : x) * scale;
   const f = (flipV ? y + height : y) * scale;
-  return [a, 0, 0, d, e, f];
+  // x' = a·u + c·v + e, y' = b·u + d·v + f; the transpose swaps which of u, v feeds x'.
+  return flipD ? [0, sy, sx, 0, e, f] : [sx, 0, 0, sy, e, f];
 }
 
 /** Canvas operations for `list` at `scale`, bottom layer first. Empty layers emit nothing. */
@@ -75,9 +83,9 @@ export function compositeOps(list: DrawList, scale: number): CanvasOp[] {
         sy: src.y,
         sw: src.width,
         sh: src.height,
-        transform: tileTransform(dest.x, dest.y, dest.width, dest.height, item.flipH, item.flipV, scale),
-        dw: dest.width,
-        dh: dest.height,
+        transform: tileTransform(dest.x, dest.y, dest.width, dest.height, item.flipH, item.flipV, scale, item.flipD),
+        dw: item.flipD ? dest.height : dest.width,
+        dh: item.flipD ? dest.width : dest.height,
       });
     }
   }

@@ -4,14 +4,14 @@ import { runCommand } from "../../commands/registry";
 import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { LevelsPanel } from "../levels/LevelsPanel";
+import { HistoryPanel } from "../history/HistoryPanel";
 import { WorldHint } from "../levels/WorldHint";
 import { LayersPanel } from "../panels/LayersPanel";
 import { PropertiesPanel } from "../panels/PropertiesPanel";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
-import { useLayoutStore } from "./layoutStore";
+import { useLayoutStore, type RightTab } from "./layoutStore";
 import { ResizeHandle } from "./ResizeHandle";
 import { SectionSplitter } from "./SectionSplitter";
 import { clampSectionHeight, fillerSection, isCollapsed, sectionFlex, shownSections, splitterPairs, type SectionContext, type SectionId } from "./sections";
@@ -22,11 +22,63 @@ export interface SectionPanelProps {
   onToggleCollapsed(): void;
   /** Trailing header control (the column's hide button on the top section). */
   extra?: ReactNode;
+  /**
+   * Rendered inside the column's tab host, which draws the tab strip: the
+   * panel shows only its body (no own section header).
+   */
+  bare?: boolean;
 }
 
-const PANELS: Record<SectionId, (props: SectionPanelProps) => ReactNode> = {
-  levels: (p) => <LevelsPanel {...p} />,
-  properties: (p) => <PropertiesPanel {...p} />,
+const TABS: readonly { id: RightTab; label: "layout.inspector" | "layout.history" }[] = [
+  { id: "inspector", label: "layout.inspector" },
+  { id: "history", label: "layout.history" },
+];
+
+/** "Denetçi | Geçmiş": the tab strip over the selected tab's panel. */
+function RightTabs({ collapsed, onToggleCollapsed }: SectionPanelProps) {
+  const tab = useLayoutStore((s) => s.rightTab);
+  const setTab = useLayoutStore((s) => s.setRightTab);
+  return (
+    <section aria-label={t(tab === "history" ? "layout.history" : "layout.inspector")} className="flex min-h-0 flex-1 flex-col">
+      <header className="flex h-9 shrink-0 items-stretch border-b border-line-subtle pr-1.5">
+        <div role="tablist" aria-label={t("layout.inspector")} className="flex min-w-0 flex-1 items-stretch">
+          {TABS.map(({ id, label }) => {
+            const on = id === tab;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                data-right-tab={id}
+                onClick={() => {
+                  setTab(id);
+                  if (collapsed) onToggleCollapsed();
+                }}
+                onDoubleClick={onToggleCollapsed}
+                className={`relative flex min-w-0 flex-1 items-center justify-center px-3 text-md transition-colors ${on ? "text-accent" : "text-muted hover:text-text"}`}
+              >
+                {t(label)}
+                {on && !collapsed && <span aria-hidden className="absolute right-0 bottom-0 left-0 h-0.5 bg-accent" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center pl-1">
+          <HideInspectorButton />
+        </div>
+      </header>
+      {!collapsed && (
+        <div className="flex min-h-0 flex-1 flex-col" data-right-tab-body={tab}>
+          {tab === "history" ? <HistoryPanel /> : <PropertiesPanel collapsed={false} onToggleCollapsed={onToggleCollapsed} bare />}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const PANELS: Record<"properties" | "layers", (props: SectionPanelProps) => ReactNode> = {
+  properties: (p) => <RightTabs {...p} />,
   layers: (p) => <LayersPanel {...p} />,
 };
 
@@ -42,10 +94,11 @@ export function HideInspectorButton() {
 }
 
 /**
- * The right column: Level'lar | Özellik | Katmanlar, top to bottom. Each
- * header folds its section; the splitters between open sections resize
- * them (heights remembered, double-click: back to content height). The
- * column itself is resizable and can be hidden (Ctrl+Alt+B).
+ * The right column: tabs "Denetçi | Geçmiş" (fills), then Katmanlar fixed
+ * at the bottom. Katmanlar's header folds it; the splitter between them
+ * resizes Katmanlar (height remembered, double-click: back to content
+ * height). The column itself is resizable and can be hidden (Ctrl+Alt+B).
+ * On the world map it only shows the world hint.
  */
 export function RightColumn({ width, visible }: { width: number; visible: boolean }) {
   const world = useWorldView((s) => s.view === "world");
@@ -82,7 +135,7 @@ export function RightColumn({ width, visible }: { width: number; visible: boolea
       className={`relative shrink-0 flex-col border-l border-line bg-panel ${visible ? "flex" : "hidden"}`}
     >
       <ResizeHandle column="right" edge="left" width={width} />
-      {shown.map((id, index) => {
+      {(shown as ("properties" | "layers")[]).map((id, index) => {
         const prev = shown[index - 1];
         const pair = prev !== undefined && pairs.some(([a, b]) => a === prev && b === id);
         const collapsed = isCollapsed(id, sections[id], ctx);
@@ -102,14 +155,14 @@ export function RightColumn({ width, visible }: { width: number; visible: boolea
               {PANELS[id]({
                 collapsed,
                 onToggleCollapsed: () => useLayoutStore.getState().setSectionCollapsed(id, !collapsed),
-                extra: index === 0 ? <HideInspectorButton /> : undefined,
+                extra: index === 0 && id !== "properties" ? <HideInspectorButton /> : undefined,
               })}
             </div>
           </Fragment>
         );
       })}
       {world && <WorldHint />}
-      {shown.length === 0 && <AllHidden />}
+      {!world && shown.length === 0 && <AllHidden />}
     </aside>
   );
 }
@@ -118,7 +171,7 @@ export function RightColumn({ width, visible }: { width: number; visible: boolea
 function AllHidden() {
   const show = () => {
     const s = useLayoutStore.getState();
-    for (const id of ["levels", "properties", "layers"] as const) s.setSectionHidden(id, false);
+    for (const id of ["properties", "layers"] as const) s.setSectionHidden(id, false);
   };
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">

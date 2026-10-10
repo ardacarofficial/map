@@ -19,7 +19,7 @@ namespace Smap.MapImporter
     /// the PNG's own import settings. Sprites, Tiles and textures are all
     /// sub-assets of this file.
     /// </summary>
-    [ScriptedImporter(2, "smapmap")]
+    [ScriptedImporter(3, "smapmap")]
     public sealed class SmapImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -48,7 +48,6 @@ namespace Smap.MapImporter
             root.AddComponent<Grid>().cellSize = SmapCoords.CellSize(map.tileWidth, map.tileHeight);
 
             var tiles = new Dictionary<long, Tile>();
-            bool warnedDiagonal = false;
             for (int l = 0; l < map.layers.Length; l++)
             {
                 var layer = map.layers[l];
@@ -64,17 +63,12 @@ namespace Smap.MapImporter
                     int x = layer.cells[i], y = layer.cells[i + 1], ts = layer.cells[i + 2], tileId = layer.cells[i + 3], flags = layer.cells[i + 4];
                     var tile = GetTile(ctx, map, textures, tiles, ts, tileId);
                     if (tile == null) continue;
-                    if ((flags & SmapCoords.FlipD) != 0 && !warnedDiagonal)
-                    {
-                        warnedDiagonal = true;
-                        ctx.LogImportWarning($"{ctx.assetPath}: diagonal flips are not supported yet and were ignored.");
-                    }
                     changes.Add(new TileChangeData
                     {
                         position = SmapCoords.ToCell(x, y, map.height, map.yUp),
                         tile = tile,
                         color = Color.white,
-                        transform = SmapCoords.FlipMatrix(flags, map.tilesets[ts], map.tileWidth, map.tileHeight),
+                        transform = SmapCoords.OrientationMatrix(flags, map.tilesets[ts], map.tileWidth, map.tileHeight),
                     });
                 }
                 if (changes.Count > 0) tilemap.SetTiles(changes.ToArray(), true);
@@ -148,7 +142,7 @@ namespace Smap.MapImporter
                     tile.name = name;
                     tile.sprite = sprite;
                     tile.colliderType = Tile.ColliderType.None;
-                    tile.flags = TileFlags.None; // per-cell transform (flips) and colour come from the Tilemap
+                    tile.flags = TileFlags.None; // per-cell transform (flips, rotations) and colour come from the Tilemap
                     ctx.AddObjectToAsset($"tile/{ts}/{tileId}", tile);
                 }
             }

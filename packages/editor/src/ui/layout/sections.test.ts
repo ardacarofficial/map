@@ -73,52 +73,46 @@ describe("sections persistence", () => {
 });
 
 describe("sections layout", () => {
-  it("folds the level list automatically only while there is one level (not on the world map)", () => {
-    expect(isCollapsed("levels", DEFAULT_SECTIONS.levels, { levelCount: 1, world: false })).toBe(true);
-    expect(isCollapsed("levels", DEFAULT_SECTIONS.levels, { levelCount: 2, world: false })).toBe(false);
-    expect(isCollapsed("levels", DEFAULT_SECTIONS.levels, { levelCount: 1, world: true })).toBe(false);
-    expect(isCollapsed("levels", { ...DEFAULT_SECTIONS.levels, collapsed: false }, { levelCount: 1, world: false })).toBe(false);
+  it("is open unless the user folded it", () => {
+    expect(isCollapsed("levels", DEFAULT_SECTIONS.levels, { levelCount: 1, world: false })).toBe(false);
+    expect(isCollapsed("levels", { ...DEFAULT_SECTIONS.levels, collapsed: true }, ctx)).toBe(true);
   });
 
-  it("lists only the level list on the world map, and skips hidden sections", () => {
-    expect(shownSections(DEFAULT_SECTIONS, { levelCount: 2, world: true })).toEqual(["levels"]);
-    expect(shownSections(with_({ properties: { hidden: true } }), ctx)).toEqual(["levels", "layers"]);
+  it("lists the right column's sections (none on the world map), skipping hidden ones", () => {
+    expect(shownSections(DEFAULT_SECTIONS, ctx)).toEqual(["properties", "layers"]);
+    expect(shownSections(DEFAULT_SECTIONS, { levelCount: 2, world: true })).toEqual([]);
+    expect(shownSections(with_({ properties: { hidden: true } }), ctx)).toEqual(["layers"]);
   });
 
-  it("gives the remaining height to Özellik, else Katmanlar, else Level'lar", () => {
+  it("gives the remaining height to the tabs, else Katmanlar", () => {
     expect(fillerSection(DEFAULT_SECTIONS, ctx)).toBe("properties");
     expect(fillerSection(with_({ properties: { collapsed: true } }), ctx)).toBe("layers");
-    expect(fillerSection(with_({ properties: { hidden: true }, layers: { collapsed: true } }), ctx)).toBe("levels");
-    expect(fillerSection(with_({ levels: { collapsed: true }, properties: { collapsed: true }, layers: { collapsed: true } }), ctx)).toBeNull();
+    expect(fillerSection(with_({ properties: { collapsed: true }, layers: { collapsed: true } }), ctx)).toBeNull();
   });
 
-  it("puts splitters between open neighbours; each resizes the non-filler side", () => {
-    expect(splitterPairs(DEFAULT_SECTIONS, ctx)).toEqual([
-      ["levels", "properties"],
-      ["properties", "layers"],
-    ]);
-    expect(splitterPairs(with_({ properties: { collapsed: true } }), ctx)).toEqual([]);
-    expect(splitterTarget("levels", "properties", "properties")).toEqual({ section: "levels", sign: 1 });
+  it("puts a splitter between open neighbours; it resizes the non-filler side", () => {
+    expect(splitterPairs(DEFAULT_SECTIONS, ctx)).toEqual([["properties", "layers"]]);
+    expect(splitterPairs(with_({ layers: { collapsed: true } }), ctx)).toEqual([]);
     expect(splitterTarget("properties", "layers", "properties")).toEqual({ section: "layers", sign: -1 });
-    expect(splitterTarget("levels", "layers", "layers")).toEqual({ section: "levels", sign: 1 });
+    expect(splitterTarget("properties", "layers", "layers")).toEqual({ section: "properties", sign: 1 });
   });
 
   it("clamps a dragged height between the minimum and what the others leave", () => {
     const column = 700;
     const max = maxSectionHeight("layers", column, DEFAULT_SECTIONS, ctx);
-    expect(max).toBe(column - SECTION_MIN.levels - SECTION_MIN.properties);
+    expect(max).toBe(column - SECTION_MIN.properties);
     expect(clampSectionHeight("layers", 10, column, DEFAULT_SECTIONS, ctx)).toBe(SECTION_MIN.layers);
     expect(clampSectionHeight("layers", 5000, column, DEFAULT_SECTIONS, ctx)).toBe(max);
     expect(clampSectionHeight("layers", Number.NaN, column, DEFAULT_SECTIONS, ctx)).toBe(SECTION_MIN.layers);
     // A folded neighbour only keeps its header.
-    const folded = with_({ levels: { collapsed: true } });
-    expect(maxSectionHeight("layers", column, folded, ctx)).toBe(column - SECTION_HEADER - SECTION_MIN.properties);
+    const folded = with_({ properties: { collapsed: true } });
+    expect(maxSectionHeight("layers", column, folded, ctx)).toBe(column - SECTION_HEADER);
   });
 
   it("never clamps outside [min, max] and max never below min (property)", () => {
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 3000 }), fc.double({ min: -1e5, max: 1e5, noNaN: true }), fc.boolean(), (column, value, foldLevels) => {
-        const state = with_({ levels: { collapsed: foldLevels } });
+      fc.property(fc.integer({ min: 0, max: 3000 }), fc.double({ min: -1e5, max: 1e5, noNaN: true }), fc.boolean(), (column, value, fold) => {
+        const state = with_({ properties: { collapsed: fold } });
         const h = clampSectionHeight("layers", value, column, state, ctx);
         const max = maxSectionHeight("layers", column, state, ctx);
         expect(max).toBeGreaterThanOrEqual(SECTION_MIN.layers);
@@ -132,6 +126,6 @@ describe("sections layout", () => {
     expect(sectionFlex("properties", DEFAULT_SECTIONS, ctx).flex).toBe("1 1 0px");
     expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).flex).toBe("0 1 auto");
     expect(sectionFlex("layers", with_({ layers: { height: 240 } }), ctx).flex).toBe("0 1 240px");
-    expect(sectionFlex("levels", with_({ levels: { collapsed: true } }), ctx)).toEqual({ flex: "0 0 auto", minHeight: SECTION_HEADER });
+    expect(sectionFlex("layers", with_({ layers: { collapsed: true } }), ctx)).toEqual({ flex: "0 0 auto", minHeight: SECTION_HEADER });
   });
 });

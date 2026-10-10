@@ -12,6 +12,8 @@ import { create } from "zustand";
 import { t } from "../i18n";
 import type { PortalReferences } from "../io/levelWorkspace";
 import { LEVELS_DIR } from "../io/levelWorkspace";
+import { useProjectLibrary } from "../io/projectLibrary";
+import { newLayerFor } from "../ui/projectSettings/projectTemplates";
 import { describeError, getLevelWorkspace, getProjectFolder, openLevel, publishLevelState } from "../io/session";
 import { useEditorStore, type ToolId } from "../state/editorStore";
 import { getCanvasHandle, watchCanvasHandle } from "../ui/canvas/canvasHandle";
@@ -89,7 +91,9 @@ export async function createLevel(input: NewLevelInput): Promise<boolean> {
   const ws = getLevelWorkspace();
   if (!ws) return false;
   try {
-    const level = ws.add({ ...input, name: input.name.trim(), layerName: t("layers.defaultName") }, await diskLevelFiles());
+    // The project's layer template (project settings), if any.
+    const layers = useProjectLibrary.getState().settings.layerTemplate.map(newLayerFor);
+    const level = ws.add({ ...input, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
     publishLevelState({ listChanged: true });
     return await openLevel(level.id);
   } catch (error) {
