@@ -10,14 +10,14 @@ import { StampsPanel } from "../stamps/StampsPanel";
 import { useUiStore, type LibraryTab } from "../uiStore";
 import { useLayoutStore } from "../layout/layoutStore";
 import { useWorldView as useWorldViewStore } from "../../commands/worldActions";
-import { hasDockTab, useDockVersion } from "../layout/dock/registry";
 import { LibrarySearch, LibrarySearchResults, useLibraryQuery } from "../layout/library/LibrarySearch";
-import { TilesetCards } from "../layout/library/TilesetCards";
+import { TilesetList } from "../tileset/TilesetList";
+import { runCommand } from "../../commands/registry";
+import { PanelSection } from "./PanelSection";
 import { ProjectTree } from "../levels/ProjectTree";
 import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
-import { TilesetPanel } from "./TilesetPanel";
 
 /** What a tab's `visible` / `auto` sees. */
 export interface LibraryTabContext {
@@ -77,13 +77,26 @@ export function resolveLibraryTab(selected: LibraryTab, listed: readonly Library
 
 const useStampCount = () => useProjectLibrary((s) => s.stamps.length);
 
-/**
- * Tileset'ler: the tileset cards once the bottom dock shows the tileset
- * itself (its "tileset" dock tab), else the full tileset view as before.
- */
+/** Tileset'ler: tileset cards and palettes (the tileset itself shows in the bottom dock). */
 function TilesetTab() {
-  useDockVersion();
-  return hasDockTab("tileset") ? <TilesetCards /> : <TilesetPanel />;
+  return (
+    <PanelSection
+      title={t("panels.tileset")}
+      heading={<LibraryTabs />}
+      className="min-h-0 flex-1"
+      actions={
+        <Tooltip label={t("commands.tileset.add")} command="tileset.add">
+          <IconButton aria-label={t("commands.tileset.add")} className="size-7" onClick={() => runCommand("tileset.add")}>
+            <Icon name="plus" size={15} />
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto pt-1">
+        <TilesetList />
+      </div>
+    </PanelSection>
+  );
 }
 
 // Components are wrapped so the (circular) panel imports are only read at render time.

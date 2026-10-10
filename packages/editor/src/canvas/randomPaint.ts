@@ -4,7 +4,17 @@
  * previews show exactly what a click will paint and repainting is stable.
  * Pure: unit tested.
  */
-import { makeCell, pickRandomTile, type RandomTile } from "@smap/core";
+import {
+  FLIP_H,
+  FLIP_V,
+  makeCell,
+  pickRandomCandidate,
+  pickRandomTile,
+  type CellPoint,
+  type RandomCandidate,
+  type RandomSet,
+  type RandomTile,
+} from "@smap/core";
 
 /**
  * A candidate may carry flip bits (FLIP_H / FLIP_V / FLIP_D: the brush was
@@ -68,4 +78,75 @@ export function randomTileAt<T extends RandomTile>(
 ): T | null {
   const usable = set.filter((t) => (t.weight ?? 1) > 0 && ok(t));
   return usable.length > 0 ? pickRandomTile(usable, seed, x, y) : null;
+}
+
+// ------------------------------------------------------------------ round 4: core RandomSet (tile + stamp candidates)
+
+/** Where a stamp candidate goes: its top-left at the pick's anchor, flipped by the random flip. */
+export interface RandomStampPlacement {
+  readonly stampId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly flip: { readonly x: boolean; readonly y: boolean };
+}
+
+/** A tile candidate's write at one cell (flags = its own flip bits XOR the random flip). */
+export interface RandomTilePlacement {
+  readonly x: number;
+  readonly y: number;
+  readonly tilesetId: string;
+  readonly tileId: number;
+  readonly flags: number;
+}
+
+/** What a random brush puts on a set of cells. */
+export interface RandomPaintPlan {
+  readonly tiles: RandomTilePlacement[];
+  readonly stamps: RandomStampPlacement[];
+}
+
+/**
+ * `set` without the candidates `ok` rejects (missing tileset, missing
+ * stamp…), or null when none is left. Returns `set` itself when all are
+ * usable. Paint and preview must filter with the same `ok` so they agree.
+ */
+export function usableRandomSet(set: RandomSet, ok: (candidate: RandomCandidate) => boolean): RandomSet | null {
+  const candidates = set.candidates.filter(ok);
+  if (candidates.length === set.candidates.length) return set;
+  if (!candidates.some((c) => (c.weight ?? 1) > 0)) return null;
+  return { ...set, candidates };
+}
+
+/**
+ * The random brush's decisions over `cells` (core `pickRandomCandidate`
+ * with `seed`, so deterministic per anchor):
+ * - a tile candidate writes its tile at the cell;
+ * - a stamp candidate is placed once per anchor (the chunk's top-left
+ *   cell), however many of the chunk's cells are covered; `placed` holds
+ *   the anchors ("x,y") already placed — pass the same set for every call
+ *   of one stroke so a stamp is not placed twice;
+ * - scatter → nothing (the cell is left as it is).
+ */
+export function planRandomPaint(set: RandomSet, seed: number, cells: Iterable<CellPoint>, placed: Set<string> = new Set()): RandomPaintPlan {
+  const tiles: RandomTilePlacement[] = [];
+  const stamps: RandomStampPlacement[] = [];
+  for (const { x, y } of cells) {
+    const pick = pickRandomCandidate(set, seed, x, y);
+    if (!pick) continue;
+    const c = pick.candidate;
+    if (c.kind === "tile") {
+      tiles.push({ x, y, tilesetId: c.tilesetId, tileId: c.tileId, flags: pick.flags });
+      continue;
+    }
+    const key = `${pick.anchorX},${pick.anchorY}`;
+    if (placed.has(key)) continue;
+    placed.add(key);
+    stamps.push({ stampId: c.stampId, x: pick.anchorX, y: pick.anchorY, flip: { x: (pick.flags & FLIP_H) !== 0, y: (pick.flags & FLIP_V) !== 0 } });
+  }
+  return { tiles, stamps };
+}
+
+/** Cache key of a core random set + seed (previews). */
+export function randomPlanKey(set: RandomSet, seed: number): string {
+  return `${seed >>> 0}:${JSON.stringify(set)}`;
 }

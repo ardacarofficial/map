@@ -225,10 +225,15 @@ describe.each(BLOB_TEMPLATES)("blob47 derivation (%s)", (template) => {
     const st = store(12, 12);
     paint(st, [...square(1, 1, 5, 4), [7, 7], [8, 7], [8, 8], [3, 9], [4, 10]], BLOB_ID);
     const project = parseProject(serializeProject({ name: "p", levels: [], tilesets: st.document.tilesets }));
-    expect(project.tilesets[0]!.terrains!.find((t) => t.id === BLOB_ID)!.template).toBe(template);
+    expect(project.tilesets[0]!.terrainSets!.find((t) => t.id === "terrain-1")!.kind).toBe("blob");
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) expect(deriveTerrainTiles(st.document, "terrain")[y * 12 + x]?.tileId ?? null).toBe(tileAt(st, x, y));
+    // Reopening migrates the grid away; the tiles stay exactly as they were.
     const reopened = parseLevel(serializeLevel(st.document), project.tilesets);
-    const derived = deriveTerrainTiles(reopened, "terrain");
-    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) expect(derived[y * 12 + x]?.tileId ?? null).toBe(tileAt(st, x, y));
+    expect(reopened.getLayer("terrain")).toBeUndefined();
+    const tiles = reopened.getLayer("tiles")!;
+    for (let y = 0; y < 12; y++) {
+      for (let x = 0; x < 12; x++) expect(reopened.palette.get(tiles.getCell(x, y) >>> 0)?.tileId ?? null).toBe(tileAt(st, x, y));
+    }
   });
 });
 
@@ -361,7 +366,8 @@ describe("paintTerrain history and events", () => {
     const before = serializeLevel(store.document);
     store.dispatch({ type: "resizeMap", width: 6, height: 6 });
     expect(tileAt(store, 5, 5)).toBe(blobTile(46)); // now on the edge: no border
-    expect(serializeLevel(store.document)).toBe(serializeLevel(parseLevel(serializeLevel(store.document), store.document.tilesets)));
+    const reopened = JSON.parse(serializeLevel(parseLevel(serializeLevel(store.document), store.document.tilesets)));
+    expect(reopened.layers[0]).toEqual(JSON.parse(serializeLevel(store.document)).layers[0]);
     store.undo();
     expect(serializeLevel(store.document)).toBe(before);
   });
@@ -393,8 +399,8 @@ describe("variants", () => {
     const project = parseProject(serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets }));
     const reopened = parseLevel(text, project.tilesets);
     expect(reopened.seed).toBe(1234);
-    expect(serializeLevel(reopened)).toBe(text);
-    const derived = deriveTerrainTiles(reopened, "terrain");
+    expect(JSON.parse(serializeLevel(reopened)).layers[0]).toEqual(JSON.parse(text).layers[0]);
+    const derived = deriveTerrainTiles(store.document, "terrain");
     for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) expect(derived[y * 40 + x]?.tileId ?? null).toBe(tileAt(store, x, y));
 
     store.undo();
@@ -402,7 +408,7 @@ describe("variants", () => {
     expect(serializeLevel(store.document)).toBe(text);
     expect(serializeLevel(withVariants(1234).document)).toBe(text);
     expect(serializeLevel(withVariants(99).document)).not.toBe(text);
-    expect(terrainTileAt(reopened, "terrain", 7, 9)).toEqual({ tilesetId: "terrain", tileId: tileAt(store, 7, 9) });
+    expect(terrainTileAt(store.document, "terrain", 7, 9)).toEqual({ tilesetId: "terrain", tileId: tileAt(store, 7, 9) });
   });
 
   it("cellHash is a pure 32-bit function", () => {

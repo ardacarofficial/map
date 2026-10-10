@@ -345,8 +345,12 @@ const COST_HARD = 1000;
 const COST_STUCK = 300;
 /** Cost per terrain-graph step when changing a free corner. */
 const COST_STEP = 10;
-/** Cost of changing a free corner to a terrain with no path to its current one. */
-const COST_NO_PATH = 200;
+/**
+ * Cost of changing a free corner to a terrain with no path to its current
+ * one. Higher than leaving a fixed corner unmatched: a terrain without
+ * transitions stays where it is painted instead of flooding the neighbours.
+ */
+const COST_NO_PATH = 1500;
 
 class Solver {
   readonly #doc: MapDocument;

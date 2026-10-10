@@ -543,10 +543,26 @@ export function parseLevel(
     seenTargets.add(target);
   }
 
-  if (options.deriveTerrain ?? tilesets.length > 0) rederiveTerrainInPlace(doc);
+  // Re-derive only when every terrain the grids use is still known (a
+  // migrated project no longer carries legacy terrains: the tiles on disk win).
+  if ((options.deriveTerrain ?? tilesets.length > 0) && legacyTerrainsKnown(doc)) rederiveTerrainInPlace(doc);
   migrateTerrainLayers(doc);
   if (options.warnings) options.warnings.push(...paletteWarnings(doc));
   return doc;
+}
+
+/** True when `doc` has terrain grid layers and every value they hold is a known legacy terrain. */
+function legacyTerrainsKnown(doc: MapDocument): boolean {
+  const terrains = doc.terrainMap();
+  let any = false;
+  for (const layer of doc.layers) {
+    if (!isGridLayer(layer) || layer.role !== "terrain") continue;
+    any = true;
+    for (const chunk of layer.chunks()) {
+      for (const v of chunk.data) if (v !== 0 && !terrains.has(v)) return false;
+    }
+  }
+  return any;
 }
 
 /**

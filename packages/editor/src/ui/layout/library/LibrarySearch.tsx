@@ -8,9 +8,7 @@ import { useEditorStore } from "../../../state/editorStore";
 import { useStructureVersion } from "../../hooks";
 import { showMap } from "../../levels/DocumentTabs";
 import { Icon, type IconName } from "../../primitives/Icon";
-import { useUiStore } from "../../uiStore";
-import { showDockTab } from "../dock/BottomDock";
-import { hasDockTab } from "../dock/registry";
+import { showTilesetInDock } from "../../tileset/TilesetList";
 
 /** The library search text (UI only). */
 export const useLibraryQuery = create<{ query: string }>()(() => ({ query: "" }));
@@ -78,9 +76,7 @@ export function LibrarySearchResults() {
             label={ts.name}
             detail={`${ts.tileWidth}×${ts.tileHeight}`}
             onClick={() => {
-              useUiStore.getState().setActiveTileset(ts.id);
-              if (hasDockTab("tileset")) showDockTab("tileset");
-              else useUiStore.getState().setLibraryTab("tileset");
+              showTilesetInDock(ts.id);
               useLibraryQuery.setState({ query: "" });
             }}
           />

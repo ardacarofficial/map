@@ -140,7 +140,6 @@ export const en: Messages = {
     loading: "Loading…",
     missingImage: "Image not found: {path}",
     zoomFit: "Fit",
-    tileCount: "{count} tiles",
     solidMode: "Mark solid",
     solidModeHint: "Click or drag: solid ↔ passable",
     solidCount: "{count} solid",
@@ -322,8 +321,6 @@ export const en: Messages = {
     search: "Search library…",
     searchClear: "Clear search",
     noResults: "Nothing matches “{query}”",
-    noTilesets: "No tilesets yet. Drop a PNG on the window or add one with +.",
-    tileCount: "{count} tiles",
   },
   inspector: {
     brush: "Brush",

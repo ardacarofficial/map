@@ -14,17 +14,20 @@ import {
   EMPTY_CELL,
   cellFlags,
   cellPaletteIndex,
+  flipClip,
   floodFill,
   isEntityLayer,
   isGridLayer,
-  isTileLayer,
   makeCell,
   type CellPoint,
+  type MapDocument,
+  type RandomSet,
   type TileClip,
   type TileLayer,
 } from "@smap/core";
 import { AlphaFilter, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 
+import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion } from "../state/editorStore";
 import { strokeCells } from "./brush";
 import type { Point } from "./camera";
@@ -40,7 +43,8 @@ import type { GridOverlays } from "./gridOverlays";
 import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
-import { isRandomBrush, randomSetKey, randomTileAt, randomTileFlags } from "./randomPaint";
+import { activeRandomSet, randomStampOf } from "./randomBrushSource";
+import { planRandomPaint, randomPlanKey } from "./randomPaint";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -339,26 +343,9 @@ export class OverlayRenderer {
           return;
         }
         if (!editable) return this.#drawCellCursor(one);
-        if (state.brushSize > 1 || host.lineAnchor?.()) return this.#showBrushPreview(cell);
-        let sel: { tilesetId: string; tileId: number } | null = state.selection;
-        const random = isRandomBrush(state.randomSet) && isTileLayer(active);
-        let flags = 0;
-        if (random) {
-          const doc = host.scene!.store.document;
-          const t = randomTileAt(state.randomSet, doc.seed, cell.x, cell.y, (c) => !!doc.getTileset(c.tilesetId));
-          sel = t;
-          flags = t ? randomTileFlags(t) : 0;
-        }
-        if (random) this.#drawDice(one);
-        if (sel && flags !== 0) {
-          // A turned / mirrored candidate: drawn as a one-quad mesh (a sprite cannot transpose).
-          const key = `brush1:${sel.tilesetId}/${sel.tileId}:${flags}`;
-          if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
-          else this.#setTilePreview(key, [{ x: 0, y: 0, entry: { tilesetId: sel.tilesetId, tileId: sel.tileId }, flags }]);
-          this.#tilePreview.root.position.set(cell.x * map.tileWidth, cell.y * map.tileHeight);
-          this.#drawCellCursor(one);
-          return;
-        }
+        // The random brush previews exactly what a click places (tiles, stamps, flips, scatter).
+        if (state.brushSize > 1 || host.lineAnchor?.() || this.#random()) return this.#showBrushPreview(cell);
+        const sel = state.selection;
         const tex = sel ? host.scene?.atlas(sel.tilesetId)?.tileTexture(sel.tileId) : undefined;
         if (tex) {
           this.#preview.texture = tex;
@@ -408,20 +395,14 @@ export class OverlayRenderer {
     const doc = host.scene?.store.document;
     if (!doc) return;
     const cells = this.#brushCells(cell);
-    const random = isRandomBrush(s.randomSet) && isTileLayer(activeLayer(host.scene?.store));
+    const random = this.#random();
     const sel = s.selection;
     const anchor = host.lineAnchor?.() ?? null;
-    const preview: PreviewCell[] = [];
+    let preview: PreviewCell[] = [];
     let key: string | null = null;
     if (random) {
-      const ok = (t: { tilesetId: string }) => !!doc.getTileset(t.tilesetId);
-      for (const c of cells) {
-        if (!doc.inBounds(c.x, c.y)) continue;
-        const t = randomTileAt(s.randomSet, doc.seed, c.x, c.y, ok);
-        if (t) preview.push({ x: c.x, y: c.y, entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: randomTileFlags(t) });
-      }
-      const setKey = randomSetKey(s.randomSet);
-      key = `brushR:${doc.seed}:${setKey}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
+      key = `brushR:${this.#randomKey(random, doc)}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
+      if (this.#tilePreview.key?.startsWith(`${key}|`) !== true) preview = this.#randomPreviewCells(random, doc, cells);
     } else if (sel && doc.getTileset(sel.tilesetId)) {
       const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
       for (const c of cells) if (doc.inBounds(c.x, c.y)) preview.push({ x: c.x, y: c.y, entry, flags: 0 });
@@ -822,6 +803,42 @@ export class OverlayRenderer {
     g.visible = true;
   }
 
+  /** The random set the brush / rectangle / fill paint with on the active layer, or null. */
+  #random(): RandomSet | null {
+    const store = this.#host.scene?.store;
+    if (useEditorStore.getState().stamp) return null;
+    return activeRandomSet(store?.document, activeLayer(store));
+  }
+
+  /** Preview cache key of `set`: its content, the seed and the stamp library. */
+  #randomKey(set: RandomSet, doc: MapDocument): string {
+    const stamps = set.candidates.some((c) => c.kind === "stamp") ? `:L${libraryId(useProjectLibrary.getState().stamps)}` : "";
+    return `${randomPlanKey(set, doc.seed)}${stamps}`;
+  }
+
+  /**
+   * What the random brush places on `cells` (in-bounds only), as preview
+   * tiles: tile candidates with their flips, stamp candidates' visible tile
+   * layers at their anchors (flipped like `placeStamp` will), scattered
+   * cells left out — the same plan the tool controller paints.
+   */
+  #randomPreviewCells(set: RandomSet, doc: MapDocument, cells: Iterable<CellPoint>): PreviewCell[] {
+    const inside: CellPoint[] = [];
+    for (const c of cells) if (doc.inBounds(c.x, c.y)) inside.push(c);
+    const plan = planRandomPaint(set, doc.seed, inside);
+    const out: PreviewCell[] = plan.tiles.map((t) => ({ x: t.x, y: t.y, entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: t.flags }));
+    for (const p of plan.stamps) {
+      const stamp = randomStampOf(p.stampId);
+      if (!stamp) continue;
+      let clip: TileClip = stamp;
+      if (p.flip.x) clip = flipClip(clip, "x");
+      if (p.flip.y) clip = flipClip(clip, "y");
+      const mapping = savedStampPreviewMapping(this.#host.scene?.store, clip);
+      for (const c of stampPreviewCells(clip, mapping)) out.push({ ...c, x: c.x + p.x, y: c.y + p.y });
+    }
+    return out;
+  }
+
   /** Small die in the top-right corner of a cell: the brush picks a random tile of the set. */
   #drawDice(r: CellRegion): void {
     const cam = this.#host.camera;
@@ -847,6 +864,25 @@ export class OverlayRenderer {
 
   /** Rectangle (or single-cell) preview with the current pattern tiled from `anchor`. */
   #showPatternPreview(r: CellRegion, anchor: CellPoint): void {
+    const random = this.#random();
+    const doc = this.#host.scene?.store.document;
+    if (random && doc) {
+      const v = this.#host.visible;
+      const x0 = Math.max(r.x, v.x);
+      const y0 = Math.max(r.y, v.y);
+      const x1 = Math.min(r.x + r.width, v.x + v.width);
+      const y1 = Math.min(r.y + r.height, v.y + v.height);
+      if (x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) > RECT_PREVIEW_LIMIT) return;
+      const key = `rectR:${this.#randomKey(random, doc)}:${x0},${y0},${x1},${y1}`;
+      if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
+      else {
+        const cells: CellPoint[] = [];
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) cells.push({ x, y });
+        this.#setTilePreview(key, this.#randomPreviewCells(random, doc, cells));
+      }
+      this.#tilePreview.root.position.set(0, 0);
+      return;
+    }
     const pattern = this.#previewPattern(anchor);
     if (!pattern) return;
     const v = this.#host.visible;
@@ -881,19 +917,6 @@ export class OverlayRenderer {
         },
       };
     }
-    const doc = this.#host.scene?.store.document;
-    if (doc && isRandomBrush(s.randomSet) && isTileLayer(activeLayer(this.#host.scene?.store))) {
-      const set = s.randomSet;
-      const seed = doc.seed;
-      const ok = (t: { tilesetId: string }) => !!doc.getTileset(t.tilesetId);
-      return {
-        key: `r${seed}:${randomSetKey(set)}`,
-        at: (x, y) => {
-          const t = randomTileAt(set, seed, x, y, ok);
-          return t ? { entry: { tilesetId: t.tilesetId, tileId: t.tileId }, flags: randomTileFlags(t) } : null;
-        },
-      };
-    }
     const sel = s.selection;
     if (!sel) return null;
     const entry = { tilesetId: sel.tilesetId, tileId: sel.tileId };
@@ -911,13 +934,14 @@ export class OverlayRenderer {
     const s = useEditorStore.getState();
     const layer = activeLayer(scene?.store);
     if (!scene || !layer) return;
-    if (gridValue === undefined && !s.stamp && !s.selection) return;
+    const random = gridValue === undefined && this.#random() !== null;
+    if (gridValue === undefined && !s.stamp && !s.selection && !random) return;
     const map = scene.store.document.map;
     if (map.width * map.height > FILL_PREVIEW_MAX_AREA) return;
     // Filling cells that already hold the value changes nothing.
     if (gridValue !== undefined) {
       if (layer.getCell(cell.x, cell.y) === gridValue) return;
-    } else if (!s.stamp && s.selection && !isRandomBrush(s.randomSet)) {
+    } else if (!s.stamp && s.selection && !random) {
       const index = scene.store.document.palette.indexOf(s.selection.tilesetId, s.selection.tileId);
       if (index > 0 && layer.getCell(cell.x, cell.y) === makeCell(index)) return;
     }
@@ -975,4 +999,14 @@ function perimeterSpan(g: Graphics, x0: number, y0: number, w: number, h: number
     const t = Math.min(a1, end);
     if (t > f) draw(f, t);
   }
+}
+
+const libraryIds = new WeakMap<object, number>();
+let nextLibraryId = 1;
+
+/** Stable small number per stamp library array (preview cache keys). */
+function libraryId(stamps: object): number {
+  let id = libraryIds.get(stamps);
+  if (id === undefined) libraryIds.set(stamps, (id = nextLibraryId++));
+  return id;
 }

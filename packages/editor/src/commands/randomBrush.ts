@@ -203,9 +203,22 @@ export function randomSetOf(tiles: readonly RandomTileEntry[], options: RandomBr
   return randomSetProblem(set) === null ? set : null;
 }
 
-/** The current random brush as a core `RandomSet` (for `pickRandomCandidate`), or null. */
+let memo: { tiles: readonly RandomTileEntry[]; options: RandomBrushOptions; set: RandomSet | null } | null = null;
+
+/**
+ * The current random brush as a core `RandomSet` (for `pickRandomCandidate`),
+ * or null. The one source the canvas paints and previews from: the editor
+ * store's `randomSet` (tile candidates) plus {@link useRandomBrush}.
+ * Memoized on both states, so calling it every frame is cheap and the
+ * result keeps its identity while nothing changes.
+ */
 export function currentRandomSet(): RandomSet | null {
-  return randomSetOf(useEditorStore.getState().randomSet, useRandomBrush.getState());
+  const tiles = useEditorStore.getState().randomSet;
+  const options = useRandomBrush.getState();
+  if (memo && memo.tiles === tiles && memo.options === options) return memo.set;
+  const set = randomSetOf(tiles, options);
+  memo = { tiles, options, set };
+  return set;
 }
 
 /** Number of candidates of the current random brush (tiles + stamps). */

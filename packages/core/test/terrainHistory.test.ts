@@ -14,7 +14,7 @@ import {
   serializeProject,
   type MapStore,
 } from "../src";
-import { BLOB_ID, CORNER_ID, makeTerrainStore, terrainArb } from "./helpers";
+import { BLOB_ID, CORNER_ID, makeTerrainStore, stripTerrainGrids, terrainArb } from "./helpers";
 
 const W = 18;
 const H = 15;
@@ -134,11 +134,11 @@ describe("v0.3 Bitti: terrain strokes", () => {
           expect(snap(store)).toBe(states[at]);
           expectNoDrift(store);
         }
-        // Reopen: same bytes, same derivation (variants hash the persisted seed).
+        // Reopen: same tiles (the grid migrates away; variants hash the persisted seed).
         const level = serializeLevel(store.document);
         const tilesets = parseProject(serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets })).tilesets;
         const reopened = parseLevel(level, tilesets);
-        expect(serializeLevel(reopened)).toBe(level);
+        expect(serializeLevel(reopened)).toBe(stripTerrainGrids(level));
 
         while (store.undo());
         expect(snap(store)).toBe(initial);

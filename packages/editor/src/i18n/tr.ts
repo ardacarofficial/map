@@ -78,10 +78,10 @@ export const tr = {
     eraser: "Silgi",
   },
   panels: {
-    stamps: "Stamp\'ler",
+    stamps: "Stamp'ler",
     entities: "Entity",
     layers: "Katmanlar",
-    tileset: "Tileset\'ler",
+    tileset: "Tileset'ler",
     properties: "Denetçi",
   },
   layers: {
@@ -143,7 +143,6 @@ export const tr = {
     loading: "Yükleniyor…",
     missingImage: "Görsel bulunamadı: {path}",
     zoomFit: "Sığdır",
-    tileCount: "{count} tile",
     solidMode: "Katı işaretle",
     solidModeHint: "Tıkla ya da sürükle: katı ↔ geçilebilir",
     solidCount: "{count} katı",
@@ -325,8 +324,6 @@ export const tr = {
     search: "Kütüphanede ara…",
     searchClear: "Aramayı temizle",
     noResults: "“{query}” ile eşleşen yok",
-    noTilesets: "Henüz tileset yok. PNG'yi pencereye bırak ya da + ile ekle.",
-    tileCount: "{count} tile",
   },
   inspector: {
     brush: "Fırça",

@@ -12,7 +12,8 @@
  * `placeStamp` (layers matched by name / role, missing ones created in the
  * same undo step) on any active layer; a random brush set (2+ tiles) makes
  * brush / rectangle / fill pick a tile per cell (`pickRandomTile` with the
- * document seed); on an entity layer the entity tool (and the select tool)
+ * document seed; round 4: core `RandomSet` with stamp candidates, scatter,
+ * random flip and chunks, see `randomBrushSource`); on an entity layer the entity tool (and the select tool)
  * adds, selects and drags entities (a drag = one undo step).
  *
  * Comfort round: brush / eraser (also on grid layers) paint the store's
@@ -29,7 +30,6 @@ import {
   floodFill,
   isEntityLayer,
   isGridLayer,
-  isTileLayer,
   makeCell,
   moveRegion,
   pasteClip,
@@ -40,6 +40,7 @@ import {
   type GridLayer,
   type GridWrite,
   type MapStore,
+  type RandomSet,
   type TileClip,
   type TileLayer,
 } from "@smap/core";
@@ -67,7 +68,8 @@ import { brushFootprint, constrainRect, footprintCells, type RectModifiers } fro
 import { gridFillWrites, gridPaintValue, gridRectWrites, gridWrites } from "./gridPaint";
 import { activeLayer, isDerivedLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
-import { isRandomBrush, randomCellPicker } from "./randomPaint";
+import { activeRandomSet, hasRandomBrush, randomStampOf } from "./randomBrushSource";
+import { planRandomPaint } from "./randomPaint";
 import {
   blockedReason,
   decidePick,
@@ -100,8 +102,8 @@ export type Gesture =
       /** Cell (tile layer) or grid value (grid layer) the stroke writes. */
       readonly value: number;
       readonly grid: boolean;
-      /** Random brush: cell per position (overrides `value`), or null. */
-      readonly pick: ((x: number, y: number) => number) | null;
+      /** Random brush (overrides `value`), or null; `placed` = stamp anchors this stroke already placed. */
+      readonly random: { readonly set: RandomSet; readonly placed: Set<string> } | null;
       readonly tool: StrokeTool;
       /** Brush footprint offsets around each stroke cell. */
       readonly offsets: readonly CellPoint[];
@@ -320,7 +322,7 @@ export class ToolController {
         break;
       case "rect": {
         const info = this.#activeInfo();
-        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || isRandomBrush(s.randomSet))) {
+        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || hasRandomBrush())) {
           this.#start({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell, square: e.shiftKey, fromCenter: e.altKey });
         }
         break;
@@ -486,13 +488,13 @@ export class ToolController {
   /** The brush stamp, when fill / rectangle just painted with it (not a random set). */
   #pushUsedStamp(): void {
     const s = useEditorStore.getState();
-    if (s.stamp && !isRandomBrush(s.randomSet)) this.#pushRecentClip(s.stamp);
+    if (s.stamp && !hasRandomBrush()) this.#pushRecentClip(s.stamp);
   }
 
   /** The selected single tile when the fill / rectangle tools paint it (no stamp, no random set). */
   #singleTile(): TileSelection | null {
     const s = useEditorStore.getState();
-    if (s.stamp || isRandomBrush(s.randomSet) || !s.selection) return null;
+    if (s.stamp || hasRandomBrush() || !s.selection) return null;
     return s.selection;
   }
 
@@ -582,25 +584,47 @@ export class ToolController {
         return makeCell(index, cellFlags(cell));
       };
     }
-    const random = this.#randomPicker(store);
-    if (random) return random;
     const sel = s.selection;
     if (!sel || !store.document.getTileset(sel.tilesetId)) return null;
     const value = makeCell(store.getOrAddPaletteIndex(sel.tilesetId, sel.tileId));
     return () => value;
   }
 
-  /**
-   * Random brush cell writer when a set of 2+ tiles is picked and the active
-   * layer is a tile layer; adds palette entries (call inside the transaction).
-   */
-  #randomPicker(store: MapStore): ((x: number, y: number) => number) | null {
+  /** The random set the paint tools use on the active layer now (tile layers only), or null. */
+  #randomSet(): RandomSet | null {
     const s = useEditorStore.getState();
-    if (!isRandomBrush(s.randomSet) || !isTileLayer(this.#activeLayer())) return null;
+    if (s.stamp) return null;
+    return activeRandomSet(this.#host.scene?.store.document, this.#activeLayer());
+  }
+
+  /**
+   * Applies the random brush to `cells` (inside the open transaction):
+   * tile candidates are written to `layerId`, stamp candidates placed with
+   * `placeStamp` at their anchors (once per anchor: `placed`), scattered
+   * cells are left alone. Returns the changed cell count.
+   */
+  #paintRandom(store: MapStore, layerId: string, set: RandomSet, cells: Iterable<CellPoint>, placed: Set<string>): number {
     const doc = store.document;
-    return randomCellPicker(s.randomSet, doc.seed, (tilesetId, tileId) =>
-      doc.getTileset(tilesetId) ? store.getOrAddPaletteIndex(tilesetId, tileId) : 0,
-    );
+    const layer = doc.getLayer(layerId);
+    if (!layer) return 0;
+    const inside: CellPoint[] = [];
+    for (const c of cells) if (doc.inBounds(c.x, c.y)) inside.push(c);
+    const plan = planRandomPaint(set, doc.seed, inside, placed);
+    const writes: CellWrite[] = [];
+    for (const t of plan.tiles) {
+      const v = makeCell(store.getOrAddPaletteIndex(t.tilesetId, t.tileId), t.flags);
+      if (layer.getCell(t.x, t.y) !== v) writes.push({ x: t.x, y: t.y, cell: v });
+    }
+    let changed = this.#paintCells(store, layerId, writes);
+    // Stamps after the tiles of the same batch, so a stamp is not cut by its neighbours' tiles.
+    for (const p of plan.stamps) {
+      const stamp = randomStampOf(p.stampId);
+      if (!stamp) continue;
+      const r = placeStamp(store, stamp, p.x, p.y, { flip: p.flip });
+      for (const patch of r.patches) changed += patchCellCount(patch);
+      changed += r.createdLayerIds.length;
+    }
+    return changed;
   }
 
   // ------------------------------------------------------------------ one-shot edits
@@ -621,6 +645,11 @@ export class ToolController {
     // The sentinel never equals a cell, so this is the whole same-valued region.
     const points = floodFill(layer, cell.x, cell.y, -1, map);
     const single = this.#singleTile();
+    const random = this.#randomSet();
+    if (random) {
+      this.#transact(store, "fill", () => this.#paintRandom(store, layer.id, random, points, new Set()));
+      return;
+    }
     this.#transact(store, "fill", () => {
       // Stamps tile by absolute position, so neighbouring fills line up.
       const at = this.#writePattern(store, { x: 0, y: 0 });
@@ -661,6 +690,11 @@ export class ToolController {
       return;
     }
     const single = this.#singleTile();
+    const random = this.#randomSet();
+    if (random) {
+      this.#transact(store, tool, () => this.#paintRandom(store, layer.id, random, rectCells(r), new Set()));
+      return;
+    }
     this.#transact(store, tool, () => {
       const at = this.#writePattern(store, anchor);
       if (!at) return 0;
@@ -752,7 +786,7 @@ export class ToolController {
     if (!t) return;
     const { store, layer } = t;
     let value: number;
-    let pick: ((x: number, y: number) => number) | null = null;
+    let random: { set: RandomSet; placed: Set<string> } | null = null;
     let recent: TileSelection | null = null;
     const grid = isGridLayer(layer);
     if (grid) {
@@ -760,14 +794,10 @@ export class ToolController {
       if (v === null) return;
       value = v;
     } else if (state.tool === "eraser") value = EMPTY_CELL;
-    else if (isRandomBrush(state.randomSet)) {
-      try {
-        pick = this.#randomPicker(store);
-      } catch (error) {
-        console.error("[canvas] cannot paint random set", error);
-        return;
-      }
-      if (!pick) return;
+    else if (hasRandomBrush()) {
+      const set = this.#randomSet();
+      if (!set) return;
+      random = { set, placed: new Set() };
       value = EMPTY_CELL;
     } else {
       const sel = state.selection;
@@ -786,7 +816,7 @@ export class ToolController {
     const seen = new Set<string>();
     // The line starts after the anchor's footprint, which the previous stroke already painted.
     if (from) footprintCells([from], offsets, seen);
-    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, pick, tool, offsets, seen, count: 0, last: from });
+    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, random, tool, offsets, seen, count: 0, last: from });
     this.#paint([e]);
     if (recent) this.#pushRecent(recent);
   }
@@ -846,15 +876,8 @@ export class ToolController {
     let changed: number;
     try {
       if (g.grid) changed = this.#paintGrid(g.store, g.layerId, gridWrites(covered, g.value, doc.map, getCell));
-      else if (g.pick) {
-        const writes: CellWrite[] = [];
-        for (const { x, y } of covered) {
-          if (!doc.inBounds(x, y)) continue;
-          const v = g.pick(x, y);
-          if (getCell(x, y) !== v) writes.push({ x, y, cell: v });
-        }
-        changed = this.#paintCells(g.store, g.layerId, writes);
-      } else {
+      else if (g.random) changed = this.#paintRandom(g.store, g.layerId, g.random.set, covered, g.random.placed);
+      else {
         changed = this.#paintCells(g.store, g.layerId, cellWrites(covered, g.value, doc.map.width, doc.map.height, getCell));
       }
     } catch (error) {
@@ -894,7 +917,7 @@ export class ToolController {
       grid: isGridLayer(layer),
       stamp: s.stamp !== null,
       tile: !!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined,
-      random: isRandomBrush(s.randomSet),
+      random: hasRandomBrush(),
     });
     if (!missing) return false;
     this.#host.blocked?.({ reason: "noBrush", layerId: layer.id });
@@ -1082,4 +1105,9 @@ export class ToolController {
     }
     this.#markDirty();
   }
+}
+
+/** The cells of `r`, row by row. */
+function* rectCells(r: CellRegion): Generator<CellPoint> {
+  for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) yield { x, y };
 }

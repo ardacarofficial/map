@@ -8,6 +8,8 @@ import { Tooltip } from "../../primitives/Tooltip";
 import { RecentTilesStrip } from "../RecentTilesStrip";
 import { DOCK, useLayoutStore } from "../layoutStore";
 import { dockTabs, registerDockTab, useDockVersion } from "./registry";
+// The tileset view registers its own "tileset" tab (order 10) when its module loads.
+import "../../panels/TilesetPanel";
 
 registerDockTab({ id: "recent", label: "recent.title", order: 20, Component: RecentTilesStrip });
 
