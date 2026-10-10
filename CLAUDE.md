@@ -87,8 +87,8 @@ Bağımlılık yönü: `desktop → editor → core`.
 | Chunk adresi | `x >> 5` ve `x & 31` | JS'te `/` ve `%` eksi sayılarda yanlış sonuç verir |
 | Harita sınırı | Genişlik ve yükseklik var, sonradan büyütülebilir | Sonsuz tuval fill, dışa aktarma ve minimap'i "sınır nerede" sorusuyla uğraştırır |
 | Koordinat | Editörde y aşağı doğru | Unity y yukarı; çevirme yalnızca dışa aktarıcıda ve testle |
-| Katman türleri | Tile, Izgara (arazi ve collision için), Entity | Arazi ve collision aynı türden: sayı ızgarası |
-| Autotile | Asıl veri arazi ızgarası, tile'lar ondan türetilir | Undo araziyi geri alır, tile'lar yeniden hesaplanır |
+| Katman türleri | Tile, Izgara (collision istisnaları için), Entity | Arazi artık ayrı katman değil (aşağıya bkz.) |
+| Autotile | Arazi, normal tile katmanında kullanılan bir fırçadır; asıl veri tile'ların kendisi, arazi bilgisi tileset tile'larındaki etiketlerdir (köşe/blob) | Ekim 2026 kararı: ayrı ızgara + türetilmiş katman çifti kullanıcıya görünmez katmanlar, elle tile karıştıramama ve araziden araziye geçiş olmaması getirdi. Tiled/Godot modeli seçildi; eski dosyalar görüntü değişmeden taşınır |
 | Varyant seçimi | `hash(seed, x, y)` | Sıralı rastgele sayı kullanılırsa undo ve yeniden açmada tile'lar değişir |
 | Undo | Fareye basıştan bırakışa tek işlem; değişen hücrelerin `{önce, sonra}` yaması | Geri alma ikisini yer değiştirir, ayrı "ters işlem" tutulmaz |
 | Sürüm numarası | Tek `documentFormatVersion` | |
@@ -124,7 +124,7 @@ benim-dunyam/
 └──────────────────────────────────────────┘
 ```
 
-- Koyu tema (zemin `#141416`), tek vurgu rengi, Inter + JetBrains Mono, 12–13 piksel yazı. Bunlar başlangıç; Arda değiştirebilir.
+- Mavi-gri koyu tema (zemin `#11171c`, panel `#1b212a`, vurgu `#69c9ae`; konsept görsellerinden alındı), tek vurgu rengi, Inter + JetBrains Mono, 12–13 piksel yazı. Arda değiştirebilir.
 - Çizerken arayüz göze batmaz. `Tab` panelleri gizler, ama yalnızca tuval odaktayken.
 - Boş ekran gösterilmez; program karşılama ekranıyla açılır.
 - Kısayollar Tiled alışkanlığına uyar:
@@ -216,12 +216,22 @@ Ayrı bir editör değil; mevcut tuvalin ikinci görünümü.
 - Portal bağlantıları iki level arasında çizgi olarak görünür
 - Komşu level'ın kenarını çizerken görme, otomatik yapışma, üst üste binme kontrolü yok
 
+### v1.3 — Rahat kullanım (Ekim 2026, Arda'nın denemelerinden)
+Arda'nın Windows'ta denediği sürümlerden gelen geri bildirimle eklendi; hepsi onaylı.
+- Konsept görsellerine göre arayüz: belge sekmeleri, üstte araç çubuğu, cetveller, sol kütüphane (Stamp'ler/Tileset'ler, Proje ağacı), alt dock (Tileset / Son kullanılanlar), sağda bağlama göre değişen Denetçi + Geçmiş sekmesi (undo listesi; dal ve checkpoint yok) + Katmanlar
+- Tileset: sürükleyerek çoklu seçim, toplu ekleme kartı, gruplar, "Tümü" görünümü, arama, silme, ayarları sonradan düzenleme
+- Kullanıcı paletleri: farklı tileset'lerden tile'lar referans olarak kopyalanır/taşınır (piksel kopyalanmaz)
+- Rastgele fırça: blok seçip rastgele set yapma, kayıtlı setler, stamp'ler arasından rastgele
+- Araçlar: el (H), fırça boyutu, Shift ile çizgi, Alt ile geçici damlalık, seçimi taşıma, Z/Shift+Z döndürme, silgide sağ sürükle = alan sil
+- Arazi fırçası (normal katmanda), otomatik şablon bulma, araziden araziye geçişler
+- Ayrıntılı yeni proje dialogu ve proje ayarları; stamp kütüphanesi (kategori, etiket, favori) ve düz stamp düzenleyici
+- Sağ tık menüleri yalnızca anlamlı yerlerde; tarayıcı menüsü ve F5 kapalı; kapatırken kaydedilmemiş değişiklik sorulur
+
 ### Sonra
 - "Bu stamp'ten gelenleri yenile" düğmesi (elle değiştirilmiş olanları atlar veya sorar)
 - Tileset düzeni bozulunca "eski → yeni" eşleştirme ekranı
 - `.aseprite` dosyasını doğrudan okuma (format açık; Aseprite'ı komut satırından çağırmak yok)
 - Basit Tiled içe aktarma: yalnızca tile katmanları, alınamayanlar tek listede
-- History paneli
 
 ## Bilinen tuzaklar
 
@@ -252,7 +262,7 @@ Kaynaklardan doğrulanmış; ilgili sürüme gelince uygulanır.
 - Toplu yazma için `SetTilesBlock`; hücre hücre `SetTile` döngüsü yavaştır.
 
 **Genel**
-- 90° stamp döndürme yönlü gölgeyi ve collision'ı bozar; varsayılan yalnızca X/Y çevirme.
+- 90° stamp döndürme yönlü gölgeyi ve collision'ı bozar; varsayılan yalnızca X/Y çevirme. Döndürme yalnızca Z / Shift+Z ile, isteğe bağlı (çapraz çevirme biti).
 - Git satır sonlarını değiştirebilir; yeni projeye `.gitattributes` (`*.json text eol=lf`) konur.
 
 ## Yapılmayacaklar
