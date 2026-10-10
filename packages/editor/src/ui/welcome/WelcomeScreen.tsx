@@ -89,6 +89,7 @@ function DropZone() {
     <button
       type="button"
       onClick={browse}
+      data-welcome-drop=""
       className={`flex items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors duration-150 ${
         dragging ? "border-accent bg-accent-soft" : "border-line-strong hover:border-faint hover:bg-hover"
       }`}

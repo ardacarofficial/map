@@ -219,10 +219,28 @@ async function withBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
 }
 
 /**
+ * Extra unsaved work outside the level workspace (the stamp editor tab).
+ * `dirty` is checked by the browser's close guard; `settle` runs before the
+ * project is discarded and may ask (false = cancel).
+ */
+export interface UnsavedGuard {
+  dirty(): boolean;
+  settle(): Promise<boolean>;
+}
+
+const unsavedGuards = new Set<UnsavedGuard>();
+
+export function registerUnsavedGuard(guard: UnsavedGuard): () => void {
+  unsavedGuards.add(guard);
+  return () => unsavedGuards.delete(guard);
+}
+
+/**
  * When a project with unsaved changes is open, asks whether to save first.
  * Returns true when it is fine to continue (saved or discarded).
  */
 export async function confirmDiscard(): Promise<boolean> {
+  for (const guard of unsavedGuards) if (guard.dirty() && !(await guard.settle())) return false;
   const project = useEditorStore.getState().project;
   if (!project || !readSaveIndicator().unsaved) return true;
   const choice = await askUnsaved(project.name);
@@ -1017,6 +1035,8 @@ export function installSession(): () => void {
     unsubscribeStore = null;
     scheduler.cancel();
     if (!project) return;
+    // The stamp editor's temporary map is not part of the project (saved with "Kaydet" only).
+    if (project.levelId?.startsWith("stamp:")) return;
     unsubscribeStore = project.store.subscribe((event) => {
       if (event.cells.length === 0 && event.structure.length === 0) return;
       const ws = workspace;
@@ -1040,7 +1060,7 @@ export function installSession(): () => void {
   });
 
   const onBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!readSaveIndicator().unsaved) return;
+    if (!readSaveIndicator().unsaved && ![...unsavedGuards].some((g) => g.dirty())) return;
     event.preventDefault();
     event.returnValue = "";
   };

@@ -21,7 +21,7 @@ import { useExportStore } from "../../export/exportStore";
 import { t } from "../../i18n";
 import { withProjectData } from "../../io/levelWorkspace";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { getLevelWorkspace, openLevel } from "../../io/session";
+import { getLevelWorkspace, openLevel, registerUnsavedGuard } from "../../io/session";
 import { useEditorStore, type OpenProject } from "../../state/editorStore";
 import { toast } from "../toast/toastStore";
 import { isStampLevelId, missingStampTilesets, stampEditStore, stampFromDocument, stampLevelId } from "./stampDoc";
@@ -308,7 +308,10 @@ export function installStampEditor(): () => void {
     if (!state.stamps.some((s) => s.id === session.stampId)) discardStampEditor();
     else bump();
   });
+  // Closing the window / opening another project asks about an unsaved stamp first.
+  const offGuard = registerUnsavedGuard({ dirty: () => isStampSessionDirty(), settle: closeStampEditor });
   return () => {
+    offGuard();
     offEditor();
     offWorld();
     offExport();
