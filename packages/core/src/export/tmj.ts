@@ -3,8 +3,10 @@
  * as plain GID arrays, tilesets embedded.
  *
  * - GID = tileset `firstgid` + tileId, OR-ed with the cell's flip bits. Our
- *   cell flag layout is Tiled's (H 0x80000000, V 0x40000000, D 0x20000000),
- *   so the flag bits are copied as they are.
+ *   cell flag layout and meaning are Tiled's (H 0x80000000, V 0x40000000,
+ *   D 0x20000000 = x/y swap applied before H and V; rotations are D+H / H+V /
+ *   D+V), so the flag bits are copied as they are.
+ * - `options.layers` limits the tile layers; entity layers are always written.
  * - Collision: solid tiles get the tile property `solid: true` (bool). The
  *   exceptions painted on collision grid layers have no Tiled equivalent
  *   without objects; they are not exported and a warning says so.
@@ -24,7 +26,16 @@ import type { MapDocument } from "../document";
 import { entitySize, resolveEntityFields, type ResolvedEntityField } from "../entity";
 import { isEntityLayer, isGridLayer, isTileLayer } from "../layer";
 import { tileCount, type Tileset } from "../tileset";
-import { exportBaseName, type ExportWarning, exportedTilesets, exportWarnings, layerCells, tilesetImageSize, type ExportImage } from "./common";
+import {
+  exportBaseName,
+  type ExportLayerOptions,
+  type ExportWarning,
+  exportedTilesets,
+  exportWarnings,
+  layerCells,
+  tilesetImageSize,
+  type ExportImage,
+} from "./common";
 import type { ExportResult } from "./game";
 import { Rows, writeJson } from "./json";
 
@@ -33,7 +44,7 @@ export const TMJ_VERSION = "1.10";
 /** Tiled version written to `tiledversion`. */
 export const TMJ_TILED_VERSION = "1.10.2";
 
-export interface TmjOptions {
+export interface TmjOptions extends ExportLayerOptions {
   /**
    * Image path written into each tileset, relative to the TMJ file.
    * Defaults to the export image file name (PNG copied next to the TMJ).
@@ -76,10 +87,11 @@ export function tmjFirstGids(tilesets: readonly Tileset[]): number[] {
 /** TMJ export of `doc` as `<level>.tmj` (deterministic). */
 export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptions = {}): TmjResult {
   const { width, height, tileWidth, tileHeight } = doc.map;
-  const images = exportedTilesets(doc);
+  const images = exportedTilesets(doc, options.layers);
   const firstGids = tmjFirstGids(images.map((image) => image.tileset));
 
-  const written = doc.layers.filter((layer) => isTileLayer(layer) || isEntityLayer(layer));
+  const only = options.layers ? new Set(options.layers) : null;
+  const written = doc.layers.filter((layer) => (isTileLayer(layer) && (!only || only.has(layer.id))) || isEntityLayer(layer));
   let nextObjectId = 1;
   const tmjLayers = written.map((layer, i) => {
     if (isEntityLayer(layer)) {
@@ -164,7 +176,7 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
     });
   }
   // Cells of missing tilesets / out-of-range tile ids are skipped by layerCells; report them.
-  warnings.push(...exportWarnings(doc));
+  warnings.push(...exportWarnings(doc, options.layers));
 
   const text = writeJson({
     compressionlevel: -1,

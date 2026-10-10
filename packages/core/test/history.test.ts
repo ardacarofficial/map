@@ -20,6 +20,8 @@ import {
   isTileLayer,
   LayerMergeError,
   moveRegion,
+  placeStamp,
+  rotateClip,
   SPAWN_TYPE_ID,
   type EntityFieldValue,
   type EntityType,
@@ -339,6 +341,45 @@ const actionArb = fc.oneof(
       dx: fc.integer({ min: -4, max: 4 }), dy: fc.integer({ min: -4, max: 4 }),
     }),
   },
+  // Round 4: rotation, random sets, collections, level props.
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("rotatePaste" as const),
+      layers: fc.array(pick, { minLength: 1, maxLength: 3 }),
+      x: coord, y: coord, w: fc.integer({ min: 1, max: 6 }), h: fc.integer({ min: 1, max: 6 }),
+      tx: coord, ty: coord,
+      turns: fc.constantFrom(0 as const, 1 as const, 2 as const, 3 as const),
+      flipX: fc.boolean(),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("setRandomSet" as const),
+      id: fc.constantFrom("r1", "r2"),
+      tiles: fc.array(fc.record({ tileset: fc.constantFrom("grass", "terrain"), tileId: fc.nat({ max: 70 }), weight: fc.constantFrom(undefined, 0.5, 2) }), { minLength: 1, maxLength: 3 }),
+      scatter: fc.constantFrom(undefined, 0, 0.5),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeRandomSet" as const), id: fc.constantFrom("r1", "r2") }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("setCollection" as const),
+      id: fc.constantFrom("c1", "c2"),
+      cells: fc.array(fc.record({ x: fc.nat({ max: 3 }), y: fc.nat({ max: 3 }), tileset: fc.constantFrom("grass", "terrain"), tileId: fc.nat({ max: 70 }), flags: fc.constantFrom(0, FLIP_H, FLIP_V) }), { maxLength: 5 }),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("removeCollection" as const), id: fc.constantFrom("c1", "c2") }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("setMapProps" as const),
+      background: fc.constantFrom(undefined, null, "#112233", "#AbCdEf"),
+      name: fc.constantFrom(undefined, "", "Zindan"),
+    }),
+  },
   { weight: 2, arbitrary: fc.constant({ kind: "undo" as const }) },
   { weight: 2, arbitrary: fc.constant({ kind: "redo" as const }) },
 );
@@ -428,7 +469,14 @@ function gridLayerAt(store: MapStore, n: number): string | undefined {
 function snap(store: MapStore): string {
   return (
     serializeLevel(store.document) +
-    serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets, entityTypes: store.document.entityTypes })
+    serializeProject({
+      name: "p",
+      levels: [],
+      tilesets: store.document.tilesets,
+      entityTypes: store.document.entityTypes,
+      randomSets: store.document.randomSets,
+      collections: store.document.collections,
+    })
   );
 }
 
@@ -651,6 +699,53 @@ function applyEdit(store: MapStore, a: EditAction): void {
       }
       return;
     }
+    case "rotatePaste": {
+      const ids = layerSet(store, a.layers);
+      if (ids.length === 0) return;
+      const clip = copyRegion(doc, ids, { x: a.x, y: a.y, width: a.w, height: a.h });
+      if (clip.palette.some((e) => !doc.getTileset(e.tilesetId))) return;
+      if (a.flipX) {
+        // Through placeStamp (layer matching by id-less rules; may create layers).
+        placeStamp(store, clip, a.tx, a.ty, { rotate: a.turns, flip: { x: true } });
+      } else {
+        let r = clip;
+        for (let t = 0; t < a.turns; t++) r = rotateClip(r, "cw");
+        pasteClip(store, r, null, a.tx, a.ty);
+      }
+      return;
+    }
+    case "setRandomSet": {
+      const candidates = a.tiles
+        .filter((t) => {
+          const ts = doc.getTileset(t.tileset);
+          return ts !== undefined && t.tileId < ts.columns * ts.rows;
+        })
+        .map((t) => ({ kind: "tile" as const, tilesetId: t.tileset, tileId: t.tileId, ...(t.weight !== undefined ? { weight: t.weight } : {}) }));
+      if (candidates.length === 0) return;
+      store.dispatch({ type: "setRandomSet", set: { id: a.id, name: a.id, candidates, ...(a.scatter !== undefined ? { scatter: a.scatter } : {}) } });
+      return;
+    }
+    case "removeRandomSet":
+      if (doc.getRandomSet(a.id)) store.dispatch({ type: "removeRandomSet", id: a.id });
+      return;
+    case "setCollection": {
+      const seen = new Set<string>();
+      const cells = a.cells.filter((c) => {
+        const ts = doc.getTileset(c.tileset);
+        const key = `${c.x},${c.y}`;
+        if (!ts || c.tileId >= ts.columns * ts.rows || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).map((c) => ({ x: c.x, y: c.y, tilesetId: c.tileset, tileId: c.tileId, flags: c.flags }));
+      store.dispatch({ type: "setCollection", collection: { id: a.id, name: a.id, columns: 4, cells } });
+      return;
+    }
+    case "removeCollection":
+      if (doc.getCollection(a.id)) store.dispatch({ type: "removeCollection", id: a.id });
+      return;
+    case "setMapProps":
+      store.dispatch({ type: "setMapProps", ...(a.background !== undefined ? { background: a.background } : {}), ...(a.name !== undefined ? { name: a.name } : {}) });
+      return;
     case "moveRegion": {
       const ids = layerSet(store, a.layers);
       if (ids.length === 0) return;
@@ -705,6 +800,13 @@ describe("v0.2/v0.3/v0.6 Bitti: random op sequences (incl. terrain, solid, terra
         }
 
         const final = snap(store);
+        // The history list mirrors the stacks; undoTo(oldest) = undo everything.
+        const items = store.historyEntries();
+        expect(items.filter((it) => it.state === "done").length).toBe(store.undoDepth);
+        expect(items.length).toBe(store.undoDepth + store.redoDepth);
+        const oldest = items.find((it) => it.state === "done");
+        if (oldest) expect(store.undoTo(oldest.id)).toBe(items.filter((it) => it.state === "done").length);
+        expect(snap(store)).toBe(initial);
         while (store.undo());
         expect(snap(store)).toBe(initial);
         while (store.redo());

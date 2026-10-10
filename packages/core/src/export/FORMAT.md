@@ -85,6 +85,12 @@ appear.
 Key order is fixed and always as shown. All fields are always present
 (`entities` may be empty and `spawn` may be `null`).
 
+Options (`exportGameJson(doc, options)`, `exportUnityMap(doc, name, options)`):
+`layers` limits `layers` (and the tilesets / images) to the given tile layer
+ids; `collision: false` writes an all-passable `collision.solid` (one run of
+`width * height`). The collision is always derived from every tile layer,
+whatever `layers` says. Entities are always written.
+
 `entities` and `spawn` were added in v0.6 without bumping `smapExport`:
 readers that do not know them ignore them (Unity's `JsonUtility` skips
 unknown fields, so the v0.4 importer keeps working).
@@ -100,7 +106,7 @@ sorted by `y`, then `x`:
 | 1 | `y`       | row, `0 ≤ y < height`, **0 = top row** |
 | 2 | `tileset` | index into `tilesets` |
 | 3 | `tileId`  | tile index in the tileset grid, row-major: `row * columns + col` |
-| 4 | `flags`   | `1` = flip horizontally, `2` = flip vertically, `4` = diagonal (reserved, not produced yet) |
+| 4 | `flags`   | `1` = flip horizontally, `2` = flip vertically, `4` = diagonal (x/y swap), see [Orientation](#orientation) |
 
 The tile's source rectangle in its image (pixels, origin top-left):
 `x = margin + col * (tileWidth + spacing)`, `y = margin + row * (tileHeight + spacing)`.
@@ -175,11 +181,42 @@ flips **at import**:
 - cell: `engineY = height - 1 - y`
 - sprite rectangle in a bottom-left-origin texture: `texY = imageHeight - (srcY + tileHeight)`
 
-Flip flags are visual and need no conversion. A vertical flip stays a
-vertical flip. A tile mirrors in place, within its own rectangle; a tile
-larger or smaller than the map cell stays anchored bottom-left of its cell
-(Tiled's rule), so an engine that flips around the cell centre must shift it
-back (the Unity importer does, `SmapCoords.FlipMatrix`).
+Flip flags are visual: a vertical flip stays a vertical flip. The diagonal
+flag, however, is defined in y-down image space (see below); an engine with
+y up must convert it (the Unity importer does, `SmapCoords.OrientationMatrix`).
+
+### Orientation
+
+The three flag bits give the eight orientations of a tile (Tiled's rule and
+bit meaning). In the tile's own pixel space (`u` right, `v` **down**), the
+diagonal flip is applied first, then the mirrors:
+
+1. `4` (D): transpose, pixel `(u, v)` → `(v, u)`. A `w × h` tile becomes `h × w`.
+2. `1` (H): mirror horizontally inside the (transposed) rectangle.
+3. `2` (V): mirror vertically inside it.
+
+| flags | result |
+|-------|--------|
+| 0 | as drawn |
+| 1 | mirrored left-right |
+| 2 | mirrored top-bottom |
+| 3 | rotated 180° |
+| 4 | transposed (mirrored about the top-left → bottom-right diagonal) |
+| 5 | rotated 90° clockwise |
+| 6 | rotated 90° counter-clockwise |
+| 7 | mirrored about the other diagonal |
+
+A tile mirrors and rotates in place, within its own rectangle: the
+(transposed) rectangle stays anchored bottom-left of its cell, also for a
+tile larger or smaller than the map cell. An engine that rotates around the
+cell centre must shift it back.
+
+**y-up engines.** With `y_up = -v`, the transpose `(u, v) → (v, u)` becomes
+`(x, y) → (-y, -x)` (the other diagonal) around the tile centre; H and V stay
+`x → -x` and `y → -y`. The full linear part in y-up space is
+`V · H · A`, with `A = [[0, -1], [-1, 0]]` when D is set, otherwise the
+identity. Example: flags `5` (D+H) gives `[[0, 1], [-1, 0]]`, a clockwise
+quarter turn.
 
 ## Determinism
 

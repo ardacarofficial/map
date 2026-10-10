@@ -8,7 +8,16 @@
 import type { MapDocument } from "../document";
 import { deriveCollision } from "../collision";
 import { entityCell, entitySize, resolveEntityFields, type EntityFieldValue } from "../entity";
-import { exportBaseName, exportedLayers, exportedTilesets, exportWarnings, layerCells, type ExportImage, type ExportWarning } from "./common";
+import {
+  exportBaseName,
+  exportedLayers,
+  exportedTilesets,
+  exportWarnings,
+  layerCells,
+  type ExportImage,
+  type ExportLayerOptions,
+  type ExportWarning,
+} from "./common";
 import { Rows, writeJson } from "./json";
 import { encodeRle } from "./rle";
 
@@ -35,32 +44,43 @@ export interface ExportResult {
   readonly warnings?: readonly ExportWarning[];
 }
 
+/** Options of the game JSON / Unity export. All optional; the defaults export everything. */
+export interface GameExportOptions extends ExportLayerOptions {
+  /**
+   * Write the derived collision (default `true`). `false` writes an
+   * all-passable `collision.solid` (one run), so the format stays the same.
+   * The collision is always derived from every tile layer, whatever
+   * `layers` says (a wall stays solid even when its layer is not exported).
+   */
+  readonly collision?: boolean;
+}
+
 /**
  * Game JSON text of `doc` (deterministic: same document, same bytes).
  * Cells it cannot export are skipped; `exportWarnings(doc)` lists them
  * (`exportUnityMap` returns them in `warnings`).
  */
-export function exportGameJson(doc: MapDocument): string {
-  return buildGameJson(doc, exportedTilesets(doc));
+export function exportGameJson(doc: MapDocument, options: GameExportOptions = {}): string {
+  return buildGameJson(doc, exportedTilesets(doc, options.layers), options);
 }
 
 /**
  * The Unity map file: game JSON under `<level>.smapmap`. The editor writes it
  * and the listed PNGs into one folder under the Unity project's `Assets/`.
  */
-export function exportUnityMap(doc: MapDocument, levelName: string): ExportResult {
-  const images = exportedTilesets(doc);
+export function exportUnityMap(doc: MapDocument, levelName: string, options: GameExportOptions = {}): ExportResult {
+  const images = exportedTilesets(doc, options.layers);
   return {
     fileName: exportBaseName(levelName) + UNITY_MAP_EXTENSION,
-    text: buildGameJson(doc, images),
+    text: buildGameJson(doc, images, options),
     images,
-    warnings: exportWarnings(doc),
+    warnings: exportWarnings(doc, options.layers),
   };
 }
 
-function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string {
+function buildGameJson(doc: MapDocument, images: readonly ExportImage[], options: GameExportOptions): string {
   const { width, height, tileWidth, tileHeight } = doc.map;
-  const collision = deriveCollision(doc);
+  const solid = options.collision === false ? [width * height] : encodeRle(deriveCollision(doc).data);
   return writeJson({
     smapExport: GAME_EXPORT_VERSION,
     width,
@@ -78,7 +98,7 @@ function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string
       margin: tileset.margin,
       spacing: tileset.spacing,
     })),
-    layers: exportedLayers(doc).map((layer) => {
+    layers: exportedLayers(doc, options.layers).map((layer) => {
       const values: number[] = [];
       for (const c of layerCells(doc, layer, images)) values.push(c.x, c.y, c.tilesetIndex, c.tileId, c.flags);
       return {
@@ -89,7 +109,7 @@ function buildGameJson(doc: MapDocument, images: readonly ExportImage[]): string
         cells: new Rows(values, GAME_CELL_STRIDE),
       };
     }),
-    collision: { solid: new Rows(encodeRle(collision.data), 16) },
+    collision: { solid: new Rows(solid, 16) },
     entities: doc.entityLayers().map((layer) => ({
       id: layer.id,
       name: layer.name,

@@ -1,7 +1,9 @@
 import { terrainSlotAt, type TerrainSlot } from "./autotile";
 import { isValidCell, cellPaletteIndex, makeCell, type Cell } from "./cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, CHUNK_SIZE, chunkKey, localIndex, parseChunkKey, type ChunkKey } from "./chunk";
-import { mapInfoProblem, uniqueLayerName, type MapDocument, type MapInfo } from "./document";
+import { collectionProblem, normalizeCollection, remapCollectionsForTileset, type Collection } from "./collection";
+import { mapInfoProblem, mapPropsFrom, uniqueLayerName, type MapDocument, type MapInfo, type MapProps } from "./document";
+import { normalizeRandomSet, randomSetProblem, remapRandomSetsForTileset, type RandomSet } from "./randomSet";
 import {
   defaultEntityFields,
   entityProblem,
@@ -29,6 +31,11 @@ import {
 } from "./layer";
 import { LayerMergeError } from "./ops";
 import type {
+  RemoveCollectionOp,
+  RemoveRandomSetOp,
+  SetCollectionOp,
+  SetMapPropsOp,
+  SetRandomSetOp,
   DuplicateLayerOp,
   MergeLayerDownOp,
   MoveTilesetOp,
@@ -60,7 +67,7 @@ import type {
   TilesetRemapResult,
   UpdateTilesetGridOp,
 } from "./ops";
-import { cellChangesOf, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
+import { cellChangesOf, patchCellCount, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
 import type { PaletteEntry } from "./palette";
 import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem, terrainSlotTileId, terrainTemplateInfo, type Terrain } from "./terrain";
 import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset } from "./tileset";
@@ -83,11 +90,19 @@ import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithG
  *   moved or edited. Re-read `entities` of the entity layers.
  * - `"entityTypes"` (v0.6): a user-defined entity type was defined, changed
  *   or removed. Re-read `document.entityTypes`.
+ * - `"randomSets"` (round 4): a saved random set was added, changed or
+ *   removed (also by `removeTileset` / tileset grid edits). Re-read
+ *   `document.randomSets`.
+ * - `"collections"` (round 4): a collection (palette) was added, changed or
+ *   removed (also by `removeTileset` / tileset grid edits). Re-read
+ *   `document.collections`.
+ * - `"props"` (round 4): level properties (`document.props`: background,
+ *   name) changed.
  *
  * Grid layer (terrain / collision) cell changes are reported in `cells` like
  * tile layer changes; renderers may draw grid layers as a coloured overlay.
  */
-export type StructureChange = "layers" | "tilesets" | "palette" | "map" | "entities" | "entityTypes";
+export type StructureChange = "layers" | "tilesets" | "palette" | "map" | "entities" | "entityTypes" | "randomSets" | "collections" | "props";
 
 /** Chunks of one layer whose cells changed. A key whose chunk no longer exists was emptied. */
 export interface DirtyChunks {
@@ -192,6 +207,27 @@ export interface EntityTypesHistoryChange {
   readonly after: readonly EntityType[];
 }
 
+/** Random set list before and after (round 4). */
+export interface RandomSetsHistoryChange {
+  readonly kind: "randomSets";
+  readonly before: readonly RandomSet[];
+  readonly after: readonly RandomSet[];
+}
+
+/** Collection list before and after (round 4). */
+export interface CollectionsHistoryChange {
+  readonly kind: "collections";
+  readonly before: readonly Collection[];
+  readonly after: readonly Collection[];
+}
+
+/** Level properties before and after (round 4, `setMapProps`). */
+export interface MapPropsHistoryChange {
+  readonly kind: "mapProps";
+  readonly before: MapProps;
+  readonly after: MapProps;
+}
+
 /**
  * One reversible change. Every change stores both sides; undo applies the
  * `before` sides (in reverse order), redo the `after` sides. No inverse ops.
@@ -205,7 +241,10 @@ export type HistoryChange =
   | TilesetListHistoryChange
   | PaletteHistoryChange
   | EntitiesHistoryChange
-  | EntityTypesHistoryChange;
+  | EntityTypesHistoryChange
+  | RandomSetsHistoryChange
+  | CollectionsHistoryChange
+  | MapPropsHistoryChange;
 
 /** One undo step: all changes of one transaction, in the order they happened. */
 export interface HistoryEntry {
@@ -219,6 +258,24 @@ export interface HistoryEntry {
   readonly changes: readonly HistoryChange[];
   /** The cell changes among `changes` (kept for v0.1 compatibility). */
   readonly patches: readonly LayerPatch[];
+  /** Label given to `beginTransaction(label)` (round 4), if any. */
+  readonly label?: string;
+}
+
+/** What kind of step a history list row is: its first non-cell change's kind, or `"cells"`. */
+export type HistoryEntryKind = HistoryChange["kind"];
+
+/** One row of {@link MapStore.historyEntries} (read-only summary of a step). */
+export interface HistoryListItem {
+  /** The step's {@link HistoryEntry.id}. */
+  readonly id: number;
+  /** The transaction label, when one was given. */
+  readonly label?: string;
+  readonly kind: HistoryEntryKind;
+  /** Total cells changed by the step (all layers), when it changed any. */
+  readonly cellCount?: number;
+  /** `"done"`: on the undo stack (applied); `"undone"`: on the redo stack. */
+  readonly state: "done" | "undone";
 }
 
 export interface MapStoreOptions {
@@ -316,10 +373,28 @@ function emptyPatch(layerId: string): LayerPatch {
 
 let nextEntryId = 1;
 
-function makeEntry(changes: readonly HistoryChange[]): HistoryEntry {
+function makeEntry(changes: readonly HistoryChange[], label?: string): HistoryEntry {
   // Cell changes are LayerPatch-shaped already; `patches` shares them.
   const patches = changes.filter((c): c is CellsHistoryChange => c.kind === "cells");
-  return Object.freeze({ id: nextEntryId++, changes: Object.freeze([...changes]), patches: Object.freeze(patches) });
+  return Object.freeze({
+    id: nextEntryId++,
+    changes: Object.freeze([...changes]),
+    patches: Object.freeze(patches),
+    ...(label !== undefined ? { label } : {}),
+  });
+}
+
+function historyItem(entry: HistoryEntry, state: "done" | "undone"): HistoryListItem {
+  const kind = entry.changes.find((c) => c.kind !== "cells")?.kind ?? "cells";
+  let cells = 0;
+  for (const patch of entry.patches) cells += patchCellCount(patch);
+  return Object.freeze({
+    id: entry.id,
+    ...(entry.label !== undefined ? { label: entry.label } : {}),
+    kind,
+    ...(cells > 0 ? { cellCount: cells } : {}),
+    state,
+  });
 }
 
 function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
@@ -420,7 +495,7 @@ function remapTerrain(current: Tileset, next: Tileset, terrain: Terrain, remap: 
   return normalizeTerrain(variants.length > 0 ? { ...moved, variants } : moved);
 }
 
-const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map", "entities", "entityTypes"];
+const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map", "entities", "entityTypes", "randomSets", "collections", "props"];
 
 /**
  * State of one op that may produce several changes (grid + derived tiles,
@@ -457,6 +532,7 @@ export class MapStore {
   #revision = 0;
   #depth = 0;
   #pending: ChangeRecorder | null = null;
+  #pendingLabel: string | undefined = undefined;
   /** Palette entries moved aside by the last application of a palette change (see `#applyPaletteChange`). */
   readonly #displaced = new WeakMap<PaletteHistoryChange, { index: number; entry: PaletteEntry; from: PaletteEntry }[]>();
 
@@ -510,6 +586,49 @@ export class MapStore {
     return this.#redo[this.#redo.length - 1];
   }
 
+  /**
+   * Read-only summary of the history for a history list: the undo stack
+   * bottom → top (`state: "done"`, oldest first; the last one is what
+   * `undo()` undoes), followed by the redo stack in redo order
+   * (`state: "undone"`; the first one is what `redo()` redoes). The number
+   * of `"done"` rows equals {@link undoDepth}.
+   */
+  historyEntries(): HistoryListItem[] {
+    const out = this.#undo.map((e) => historyItem(e, "done"));
+    for (let i = this.#redo.length - 1; i >= 0; i--) out.push(historyItem(this.#redo[i]!, "undone"));
+    return out;
+  }
+
+  /**
+   * Undoes steps until step `id` (on the undo stack) is undone, i.e. `id`
+   * and every later step. Returns the number of steps undone: 0 when `id` is
+   * not on the undo stack or a transaction is open. One `undo()` per step,
+   * so listeners see one event per step and every step stays a whole
+   * transaction.
+   */
+  undoTo(id: number): number {
+    if (this.#depth > 0) return 0;
+    const at = this.#undo.findIndex((e) => e.id === id);
+    if (at < 0) return 0;
+    let n = 0;
+    while (this.#undo.length > at && this.undo()) n++;
+    return n;
+  }
+
+  /**
+   * Redoes steps until step `id` (on the redo stack) is redone, i.e. every
+   * undone step up to and including `id`. Returns the number of steps
+   * redone: 0 when `id` is not on the redo stack or a transaction is open.
+   */
+  redoTo(id: number): number {
+    if (this.#depth > 0) return 0;
+    const at = this.#redo.findIndex((e) => e.id === id);
+    if (at < 0) return 0;
+    let n = 0;
+    while (this.#redo.length > at && this.redo()) n++;
+    return n;
+  }
+
   /** Registers a change listener. Returns an unsubscribe function. */
   subscribe(listener: StoreListener): () => void {
     this.#listeners.add(listener);
@@ -524,6 +643,16 @@ export class MapStore {
     switch (op.type) {
       case "paintCells":
         return this.#paintCells(op);
+      case "setRandomSet":
+        return this.#setRandomSet(op);
+      case "removeRandomSet":
+        return this.#removeRandomSet(op);
+      case "setCollection":
+        return this.#setCollection(op);
+      case "removeCollection":
+        return this.#removeCollection(op);
+      case "setMapProps":
+        return this.#setMapProps(op);
       case "addTileset":
         return this.#addTileset(op);
       case "removeTileset":
@@ -586,9 +715,15 @@ export class MapStore {
     return this.dispatch({ type: "addPaletteEntry", tilesetId, tileId });
   }
 
-  /** Opens a transaction (nestable). Pair every call with `commit()` or `rollback()`. */
-  beginTransaction(): void {
+  /**
+   * Opens a transaction (nestable). Pair every call with `commit()` or
+   * `rollback()`. `label` (round 4) names the resulting undo step in
+   * {@link historyEntries}; the first label given while the outermost
+   * transaction is open wins.
+   */
+  beginTransaction(label?: string): void {
     this.#depth++;
+    if (label !== undefined && this.#pendingLabel === undefined) this.#pendingLabel = label;
     if (this.#depth > 1) return;
     this.#pending = new ChangeRecorder();
     // canUndo/canRedo read false while a transaction is open.
@@ -606,8 +741,10 @@ export class MapStore {
     this.#depth--;
     if (this.#depth > 0) return;
     const changes = this.#pending?.build() ?? [];
+    const label = this.#pendingLabel;
     this.#pending = null;
-    if (changes.length > 0) this.#pushUndo(makeEntry(changes));
+    this.#pendingLabel = undefined;
+    if (changes.length > 0) this.#pushUndo(makeEntry(changes, label));
     this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true });
   }
 
@@ -622,6 +759,7 @@ export class MapStore {
     if (this.#depth === 0) throw new Error("rollback() called without an open transaction");
     const changes = this.#pending?.build() ?? [];
     this.#pending = null;
+    this.#pendingLabel = undefined;
     this.#depth = 0;
     const result = this.#applyChanges(changes, "before");
     this.#emit({ cause: "rollback", ...this.#eventParts(result), historyChanged: true });
@@ -755,6 +893,7 @@ export class MapStore {
       ctx.dirty.add(layer.id, x, y);
     }
     this.#setTilesetList(ctx, this.#doc.tilesets.filter((t) => t.id !== tileset.id));
+    this.#remapTilesetRefs(ctx, tileset.id, () => null);
     if (terrainIds.size > 0) this.#deriveAllTerrain(ctx);
     this.#closeOp(ctx);
   }
@@ -1281,6 +1420,10 @@ export class MapStore {
       ctx.structure.add("palette");
     }
     this.#replaceTileset(ctx, nextTileset);
+    // Collections and random sets follow the tiles' pixels. Tiles that map
+    // nowhere (also out-of-range ones of replaceTilesetImage) are dropped
+    // from them: a parked id could show other pixels. Undo brings them back.
+    this.#remapTilesetRefs(ctx, current.id, remap);
     // The same palette indices now show other pixels: every tile chunk redraws.
     markTileChunksDirty(this.#doc, ctx.dirty);
     this.#deriveAllTerrain(ctx);
@@ -1444,6 +1587,96 @@ export class MapStore {
     const before = this.#doc.entityTypes;
     if (!before.some((t) => t.id === op.typeId)) throw new Error(`removeEntityType: unknown entity type "${op.typeId}"`);
     this.#setEntityTypes(before.filter((t) => t.id !== op.typeId));
+  }
+
+  // ---------------------------------------------------------------- round 4: project data, level props
+
+  #setRandomSet(op: SetRandomSetOp): void {
+    const problem = randomSetProblem(op.set);
+    if (problem) throw new Error(`setRandomSet: ${problem}`);
+    for (const c of op.set.candidates) if (c.kind === "tile") this.#assertTile("setRandomSet", c.tilesetId, c.tileId);
+    const normalized = normalizeRandomSet(op.set);
+    const before = this.#doc.randomSets;
+    const index = before.findIndex((s) => s.id === normalized.id);
+    if (index >= 0 && JSON.stringify(before[index]) === JSON.stringify(normalized)) return;
+    const after = index >= 0 ? before.map((s, i) => (i === index ? normalized : s)) : [...before, normalized];
+    const ctx = this.#openOp();
+    this.#setRandomSets(ctx, after);
+    this.#closeOp(ctx);
+  }
+
+  #removeRandomSet(op: RemoveRandomSetOp): void {
+    const before = this.#doc.randomSets;
+    if (!before.some((s) => s.id === op.id)) throw new Error(`removeRandomSet: unknown random set "${String(op.id)}"`);
+    const ctx = this.#openOp();
+    this.#setRandomSets(ctx, before.filter((s) => s.id !== op.id));
+    this.#closeOp(ctx);
+  }
+
+  #setCollection(op: SetCollectionOp): void {
+    const problem = collectionProblem(op.collection);
+    if (problem) throw new Error(`setCollection: ${problem}`);
+    for (const c of op.collection.cells) this.#assertTile("setCollection", c.tilesetId, c.tileId);
+    const normalized = normalizeCollection(op.collection);
+    const before = this.#doc.collections;
+    const index = before.findIndex((c) => c.id === normalized.id);
+    if (index >= 0 && JSON.stringify(before[index]) === JSON.stringify(normalized)) return;
+    const after = index >= 0 ? before.map((c, i) => (i === index ? normalized : c)) : [...before, normalized];
+    const ctx = this.#openOp();
+    this.#setCollections(ctx, after);
+    this.#closeOp(ctx);
+  }
+
+  #removeCollection(op: RemoveCollectionOp): void {
+    const before = this.#doc.collections;
+    if (!before.some((c) => c.id === op.id)) throw new Error(`removeCollection: unknown collection "${String(op.id)}"`);
+    const ctx = this.#openOp();
+    this.#setCollections(ctx, before.filter((c) => c.id !== op.id));
+    this.#closeOp(ctx);
+  }
+
+  #setMapProps(op: SetMapPropsOp): void {
+    const current = this.#doc.props;
+    let next: MapProps;
+    try {
+      next = mapPropsFrom(op.background === undefined ? current.background : op.background, op.name === undefined ? current.name : op.name);
+    } catch (error) {
+      throw new RangeError(`setMapProps: ${(error as Error).message}`, { cause: error });
+    }
+    if (next.background === current.background && next.name === current.name) return;
+    this.#doc._setProps(next);
+    const ctx = this.#openOp();
+    ctx.rec.recordStructural(Object.freeze({ kind: "mapProps", before: current, after: next }));
+    ctx.structure.add("props");
+    this.#closeOp(ctx);
+  }
+
+  #assertTile(what: string, tilesetId: string, tileId: number): void {
+    const tileset = this.#doc.getTileset(tilesetId);
+    if (!tileset) throw new Error(`${what}: unknown tileset "${tilesetId}"`);
+    if (!isValidTileId(tileset, tileId)) throw new RangeError(`${what}: tile id ${tileId} is outside tileset "${tilesetId}"`);
+  }
+
+  #setRandomSets(ctx: OpContext, after: readonly RandomSet[]): void {
+    const before = this.#doc.randomSets;
+    this.#doc._setRandomSets(after);
+    ctx.rec.recordStructural(Object.freeze({ kind: "randomSets", before, after: this.#doc.randomSets }));
+    ctx.structure.add("randomSets");
+  }
+
+  #setCollections(ctx: OpContext, after: readonly Collection[]): void {
+    const before = this.#doc.collections;
+    this.#doc._setCollections(after);
+    ctx.rec.recordStructural(Object.freeze({ kind: "collections", before, after: this.#doc.collections }));
+    ctx.structure.add("collections");
+  }
+
+  /** Remaps (or drops, `null`) tile references of `tilesetId` in collections and random sets. */
+  #remapTilesetRefs(ctx: OpContext, tilesetId: string, remap: (tileId: number) => number | null): void {
+    const sets = remapRandomSetsForTileset(this.#doc.randomSets, tilesetId, remap);
+    if (sets !== this.#doc.randomSets) this.#setRandomSets(ctx, sets);
+    const collections = remapCollectionsForTileset(this.#doc.collections, tilesetId, remap);
+    if (collections !== this.#doc.collections) this.#setCollections(ctx, collections);
   }
 
   #setEntityTypes(after: readonly EntityType[]): void {
@@ -1693,6 +1926,21 @@ export class MapStore {
       case "entityTypes": {
         doc._setEntityTypes(change[side]);
         result.structure.add("entityTypes");
+        return;
+      }
+      case "randomSets": {
+        doc._setRandomSets(change[side]);
+        result.structure.add("randomSets");
+        return;
+      }
+      case "collections": {
+        doc._setCollections(change[side]);
+        result.structure.add("collections");
+        return;
+      }
+      case "mapProps": {
+        doc._setProps(change[side]);
+        result.structure.add("props");
         return;
       }
       case "map": {

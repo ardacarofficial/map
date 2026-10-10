@@ -6,6 +6,9 @@ export {
   type ExportImage,
   type ExportCell,
   type ExportWarning,
+  type ExportLayerOptions,
+  type ExportLayerSummary,
+  exportLayerSummaries,
   exportedLayers,
   exportedTilesets,
   layerCells,
@@ -18,6 +21,7 @@ export {
   UNITY_MAP_EXTENSION,
   GAME_CELL_STRIDE,
   type ExportResult,
+  type GameExportOptions,
   exportGameJson,
   exportUnityMap,
 } from "./game";

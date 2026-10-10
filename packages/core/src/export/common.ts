@@ -18,8 +18,22 @@ import { isValidTileId, type Tileset } from "../tileset";
 /** Export flip flags (small bits, so they fit any int parser). */
 export const EXPORT_FLIP_H = 1;
 export const EXPORT_FLIP_V = 2;
-/** Reserved like the cell's `FLIP_D`; the editor does not produce it yet. */
+/**
+ * Diagonal flip (x/y swap, Tiled's "anti-diagonal" bit), applied before H and
+ * V. Rotations are combinations: 90° clockwise = D|H, 180° = H|V, 90°
+ * counter-clockwise = D|V.
+ */
 export const EXPORT_FLIP_D = 4;
+
+/** Which tile layers an export writes. Shared by every exporter. */
+export interface ExportLayerOptions {
+  /**
+   * Ids of the tile layers to export, in any order (output keeps the
+   * document's order). `undefined` = every tile layer. Ids of other layer
+   * kinds are ignored.
+   */
+  readonly layers?: readonly string[];
+}
 
 /** A tileset that appears in an export, with the image file name written next to the map. */
 export interface ExportImage {
@@ -57,20 +71,54 @@ export type ExportWarning =
     }
   | { readonly code: "collisionExceptions"; readonly layers: readonly string[]; readonly message: string };
 
-/** Tile layers (grid and entity layers excluded), bottom to top. */
-export function exportedLayers(doc: MapDocument): TileLayer[] {
-  return doc.layers.filter((layer) => isTileLayer(layer));
+/** Tile layers (grid and entity layers excluded), bottom to top; only `layers` when given. */
+export function exportedLayers(doc: MapDocument, layers?: readonly string[]): TileLayer[] {
+  const only = layers ? new Set(layers) : null;
+  return doc.layers.filter((layer): layer is TileLayer => isTileLayer(layer) && (!only || only.has(layer.id)));
+}
+
+/** One tile layer with its number of painted in-bounds cells (export dialog). */
+export interface ExportLayerSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly visible: boolean;
+  readonly tiles: number;
+}
+
+/** Every tile layer, bottom to top, with its painted cell count. */
+export function exportLayerSummaries(doc: MapDocument): ExportLayerSummary[] {
+  const { width, height } = doc.map;
+  return exportedLayers(doc).map((layer) => {
+    let tiles = 0;
+    for (const chunk of layer.chunks()) {
+      const x0 = chunk.cx << CHUNK_SHIFT;
+      const y0 = chunk.cy << CHUNK_SHIFT;
+      // Whole chunk inside the map: no per-cell bounds check.
+      const inside = x0 >= 0 && y0 >= 0 && x0 + CHUNK_MASK < width && y0 + CHUNK_MASK < height;
+      for (let i = 0; i < CHUNK_AREA; i++) {
+        if (chunk.data[i] === 0) continue;
+        if (!inside) {
+          const x = x0 + (i & CHUNK_MASK);
+          const y = y0 + (i >> CHUNK_SHIFT);
+          if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        }
+        tiles++;
+      }
+    }
+    return { id: layer.id, name: layer.name, visible: layer.visible, tiles };
+  });
 }
 
 /**
  * Tilesets referenced by any exported cell, in the document's tileset order,
  * with unique image file names (basename of `imagePath`; a clash gets
- * `-2`, `-3`… before the extension).
+ * `-2`, `-3`… before the extension). With `layers`, only cells of those
+ * tile layers count.
  */
-export function exportedTilesets(doc: MapDocument): ExportImage[] {
+export function exportedTilesets(doc: MapDocument, layers?: readonly string[]): ExportImage[] {
   const used = new Set<string>();
   const palette = doc.palette;
-  for (const layer of exportedLayers(doc)) {
+  for (const layer of exportedLayers(doc, layers)) {
     for (const chunk of layer.chunks()) {
       for (let i = 0; i < CHUNK_AREA; i++) {
         const cell = chunk.data[i]!;
@@ -129,14 +177,15 @@ export function layerCells(doc: MapDocument, layer: TileLayer, images: readonly 
  * tile id is outside its tileset (e.g. the PNG lost rows; CLAUDE.md: tiles
  * are only appended, so this means the image shrank). Such cells are left
  * out of every export — writing them would show a tile of the next tileset
- * (TMJ GID overflow) or read outside the image.
+ * (TMJ GID overflow) or read outside the image. With `layers`, only those
+ * tile layers are checked.
  */
-export function exportWarnings(doc: MapDocument): ExportWarning[] {
+export function exportWarnings(doc: MapDocument, layers?: readonly string[]): ExportWarning[] {
   const missing = new Set<string>();
   const outOfRange = new Map<string, Set<number>>();
   const palette = doc.palette;
   const seen = new Set<number>();
-  for (const layer of exportedLayers(doc)) {
+  for (const layer of exportedLayers(doc, layers)) {
     for (const chunk of layer.chunks()) {
       for (let i = 0; i < CHUNK_AREA; i++) {
         const cell = chunk.data[i]!;

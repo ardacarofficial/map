@@ -33,6 +33,13 @@
  * Round 3 additions (optional, version stays 1):
  * - tileset `group` (library group name; written right after `name`, only when set).
  *
+ * Round 4 additions (optional, version stays 1):
+ * - project `randomSets`, `collections` (written only when non-empty) and
+ *   `settings` (only the non-default part, see `projectSettingsJson`);
+ * - level `background` (`#rrggbb`) and `name`, after `seed`, only when set;
+ * - stamp `category`, `tags`, `favorite`, after `name`, only when set;
+ * - cells / clips / collections may carry `FLIP_D` (rotation).
+ *
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
 import { decodeUint32LE, encodeUint32LE } from "./base64";
@@ -52,9 +59,12 @@ import {
   type EntityType,
 } from "./entity";
 import { normalizeProject, type Project, type ProjectData } from "./project";
-import { stampIdProblem, type Stamp } from "./stamp";
+import { normalizeStampMeta, stampIdProblem, stampMetaProblem, type Stamp, type StampMeta } from "./stamp";
+import { collectionsProblem, normalizeCollection, type Collection } from "./collection";
+import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomSet";
+import { projectSettingsJson, type ProjectSettingsInput } from "./projectSettings";
 import { CHUNK_AREA, CHUNK_SHIFT, CHUNK_SIZE } from "./chunk";
-import { DOCUMENT_FORMAT_VERSION, MAX_MAP_SIZE, MapDocument, isValidSeed, mapInfoProblem, type MapInfo } from "./document";
+import { DOCUMENT_FORMAT_VERSION, MAX_MAP_SIZE, MapDocument, isValidSeed, mapInfoProblem, mapPropsFrom, type MapInfo } from "./document";
 import {
   EntityLayer,
   GridLayer,
@@ -112,8 +122,16 @@ export function serializeProject(project: ProjectData): string {
     levels: p.levels.map((level) => ({ id: level.id, name: level.name, path: level.path, world: { x: level.world.x, y: level.world.y } })),
     tilesets: p.tilesets.map(tilesetJson),
     ...(p.entityTypes.length > 0 ? { entityTypes: p.entityTypes.map(entityTypeJson) } : {}),
+    ...(p.randomSets.length > 0 ? { randomSets: p.randomSets } : {}),
+    ...(p.collections.length > 0 ? { collections: p.collections } : {}),
+    ...withSettings(p.settings),
     ...(p.retiredLevelIds.length > 0 ? { retiredLevelIds: [...p.retiredLevelIds] } : {}),
   });
+}
+
+function withSettings(settings: Project["settings"]): Record<string, unknown> {
+  const json = projectSettingsJson(settings);
+  return json ? { settings: json } : {};
 }
 
 /** Level file text for a document (tilesets live in the project file). */
@@ -128,6 +146,8 @@ export function serializeLevel(doc: MapDocument): string {
       tileHeight: doc.map.tileHeight,
     },
     ...(doc.seed !== 0 ? { seed: doc.seed } : {}),
+    ...(doc.props.background !== null ? { background: doc.props.background } : {}),
+    ...(doc.props.name !== "" ? { name: doc.props.name } : {}),
     palette: doc.palette.entries().map((entry, i) => ({
       index: i + 1,
       tilesetId: entry.tilesetId,
@@ -163,6 +183,7 @@ export function serializeStamp(stamp: Stamp): string {
     documentFormatVersion: DOCUMENT_FORMAT_VERSION,
     id: stamp.id,
     name: stamp.name,
+    ...stampMetaJson(stamp),
     ...clipBodyJson(stamp),
   });
 }
@@ -173,6 +194,13 @@ export function serializeStamp(stamp: Stamp): string {
  */
 export function serializeClip(clip: TileClip): string {
   return toJson({ format: CLIP_FORMAT, documentFormatVersion: DOCUMENT_FORMAT_VERSION, ...clipBodyJson(clip) });
+}
+
+function stampMetaJson(stamp: Stamp): Record<string, unknown> {
+  const problem = stampMetaProblem(stamp);
+  if (problem) throw new Error(`serializeStamp: ${problem}`);
+  const meta = normalizeStampMeta(stamp);
+  return { ...meta, ...(meta.tags ? { tags: [...meta.tags] } : {}) };
 }
 
 function clipBodyJson(clip: TileClip): Record<string, unknown> {
@@ -301,10 +329,33 @@ export function parseProject(text: string): Project {
       return id;
     });
   }
+  let randomSets: RandomSet[] = [];
+  if (root["randomSets"] !== undefined) {
+    randomSets = arr(root, "randomSets", "").map((item, i) => obj(item, `randomSets[${i}]`) as unknown as RandomSet);
+    const problem = randomSetsProblem(randomSets);
+    if (problem) throw new FormatError("randomSets", problem);
+    randomSets = randomSets.map(normalizeRandomSet);
+  }
+  let collections: Collection[] = [];
+  if (root["collections"] !== undefined) {
+    collections = arr(root, "collections", "").map((item, i) => {
+      const c = obj(item, `collections[${i}]`);
+      if (!Array.isArray(c["cells"])) throw new FormatError(`collections[${i}].cells`, "must be an array");
+      return c as unknown as Collection;
+    });
+    const problem = collectionsProblem(collections);
+    if (problem) throw new FormatError("collections", problem);
+    collections = collections.map(normalizeCollection);
+  }
+  let settings: ProjectSettingsInput = {};
+  if (root["settings"] !== undefined) {
+    settings = obj(root["settings"], "settings") as ProjectSettingsInput;
+  }
   try {
-    return normalizeProject({ name, levels, tilesets, entityTypes, retiredLevelIds });
+    return normalizeProject({ name, levels, tilesets, entityTypes, retiredLevelIds, randomSets, collections, settings });
   } catch (error) {
-    throw new FormatError("levels", (error as Error).message);
+    const message = (error as Error).message;
+    throw new FormatError(message.startsWith("settings") ? "settings" : "levels", message);
   }
 }
 
@@ -325,6 +376,10 @@ export interface ParseLevelOptions {
    * still loads. Pushed in a fixed order.
    */
   readonly warnings?: string[];
+  /** Project random sets to attach (round 4; project data like `tilesets`). Default none. */
+  readonly randomSets?: readonly RandomSet[];
+  /** Project collections to attach (round 4; project data like `tilesets`). Default none. */
+  readonly collections?: readonly Collection[];
 }
 
 /**
@@ -372,6 +427,27 @@ export function parseLevel(
   const typesProblem = entityTypesProblem(entityTypes);
   if (typesProblem) throw new FormatError("", typesProblem);
   doc._setEntityTypes(entityTypes);
+  if (options.randomSets) {
+    const problem = randomSetsProblem(options.randomSets);
+    if (problem) throw new FormatError("randomSets", problem);
+    doc._setRandomSets(options.randomSets.map(normalizeRandomSet));
+  }
+  if (options.collections) {
+    const problem = collectionsProblem(options.collections);
+    if (problem) throw new FormatError("collections", problem);
+    doc._setCollections(options.collections.map(normalizeCollection));
+  }
+  {
+    let background: string | null = null;
+    let levelName = "";
+    if (root["background"] !== undefined) background = str(root, "background", "");
+    if (root["name"] !== undefined) levelName = str(root, "name", "");
+    try {
+      doc._setProps(mapPropsFrom(background, levelName));
+    } catch (error) {
+      throw new FormatError("background", (error as Error).message);
+    }
+  }
 
   arr(root, "palette", "").forEach((item, i) => {
     const path = `palette[${i}]`;
@@ -491,8 +567,14 @@ export function parseStamp(text: string): Stamp {
   const problem = stampIdProblem(id);
   if (problem) throw new FormatError("id", problem);
   const name = str(root, "name", "");
+  const meta: { category?: string; tags?: string[]; favorite?: boolean } = {};
+  if (root["category"] !== undefined) meta.category = str(root, "category", "");
+  if (root["tags"] !== undefined) meta.tags = arr(root, "tags", "").map((v, i) => strValue(v, `tags[${i}]`));
+  if (root["favorite"] !== undefined) meta.favorite = bool(root, "favorite", "");
+  const metaProblem = stampMetaProblem(meta);
+  if (metaProblem) throw new FormatError("", metaProblem);
   const clip = readClipBody(root);
-  return Object.freeze({ id, name, width: clip.width, height: clip.height, palette: clip.palette, layers: clip.layers });
+  return Object.freeze({ id, name, ...normalizeStampMeta(meta as StampMeta), width: clip.width, height: clip.height, palette: clip.palette, layers: clip.layers });
 }
 
 function readClipBody(root: Record<string, unknown>): TileClip {

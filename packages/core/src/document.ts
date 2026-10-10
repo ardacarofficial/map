@@ -1,6 +1,8 @@
 import { builtinEntityType, BUILTIN_ENTITY_TYPES, entityTypesProblem, normalizeEntityType, SPAWN_TYPE_ID, type Entity, type EntityType } from "./entity";
 import { isEntityLayer, isGridLayer, type EntityLayer, type GridLayer, type TileLayer } from "./layer";
+import { collectionsProblem, normalizeCollection, type Collection } from "./collection";
 import { Palette } from "./palette";
+import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomSet";
 import type { Terrain } from "./terrain";
 import { normalizeTileset, type Tileset } from "./tileset";
 
@@ -40,6 +42,26 @@ export interface CreateDocumentOptions {
   seed?: number;
   /** User-defined entity types of the project (v0.6). Built-in types are always present. */
   entityTypes?: readonly EntityType[];
+  /** Saved random sets of the project (round 4). */
+  randomSets?: readonly RandomSet[];
+  /** Collections (palettes) of the project (round 4). */
+  collections?: readonly Collection[];
+  /** Level background colour `#rrggbb` (round 4); default none. */
+  background?: string | null;
+  /** Level display name kept in the level file (round 4); default `""`. */
+  name?: string;
+}
+
+/** Level properties changed by `setMapProps` (round 4). */
+export interface MapProps {
+  /** Canvas / export background `#rrggbb` (lowercase), or `null` = none (theme colour / project default). */
+  readonly background: string | null;
+  /**
+   * Display name stored in the level file, `""` when unset. The project
+   * file's level list stays authoritative for the level name in the UI;
+   * this is for documents outside the level list (e.g. a stamp being edited).
+   */
+  readonly name: string;
 }
 
 /** True when `seed` is an integer in `[0, 2^32)`. */
@@ -59,6 +81,9 @@ export class MapDocument {
   readonly #tilesets: Tileset[] = [];
   readonly #layers: TileLayer[] = [];
   #entityTypes: readonly EntityType[] = Object.freeze([]);
+  #randomSets: readonly RandomSet[] = Object.freeze([]);
+  #collections: readonly Collection[] = Object.freeze([]);
+  #props: MapProps = Object.freeze({ background: null, name: "" });
   readonly #seed: number;
   /** terrain id → terrain (rebuilt lazily after tileset changes). */
   #terrains: Map<number, Terrain> | null = null;
@@ -96,6 +121,36 @@ export class MapDocument {
    */
   get entityTypes(): readonly EntityType[] {
     return this.#entityTypes;
+  }
+
+  /** Saved random sets (project-level data, like `entityTypes`), in project order. */
+  get randomSets(): readonly RandomSet[] {
+    return this.#randomSets;
+  }
+
+  /** Random set by id, or `undefined`. */
+  getRandomSet(id: string): RandomSet | undefined {
+    return this.#randomSets.find((s) => s.id === id);
+  }
+
+  /** Collections / palettes (project-level data, like `entityTypes`), in project order. */
+  get collections(): readonly Collection[] {
+    return this.#collections;
+  }
+
+  /** Collection by id, or `undefined`. */
+  getCollection(id: string): Collection | undefined {
+    return this.#collections.find((c) => c.id === id);
+  }
+
+  /** Level properties (background, name). Replaced (never mutated) by `setMapProps`. */
+  get props(): MapProps {
+    return this.#props;
+  }
+
+  /** Level background `#rrggbb`, or `null`. Shorthand for `props.background`. */
+  get background(): string | null {
+    return this.#props.background;
   }
 
   /** Built-in types followed by the user-defined ones (what a type picker shows). */
@@ -208,6 +263,21 @@ export class MapDocument {
     this.#entityTypes = Object.freeze(types.map((t) => (Object.isFrozen(t) ? t : normalizeEntityType(t))));
   }
 
+  /** @internal Replaces the random sets (validated by the caller). */
+  _setRandomSets(sets: readonly RandomSet[]): void {
+    this.#randomSets = Object.freeze(sets.map((s) => (Object.isFrozen(s) ? s : normalizeRandomSet(s))));
+  }
+
+  /** @internal Replaces the collections (validated by the caller). */
+  _setCollections(collections: readonly Collection[]): void {
+    this.#collections = Object.freeze(collections.map((c) => (Object.isFrozen(c) ? c : normalizeCollection(c))));
+  }
+
+  /** @internal Replaces the level properties (validated by the caller). */
+  _setProps(props: MapProps): void {
+    this.#props = Object.isFrozen(props) ? props : Object.freeze({ background: props.background, name: props.name });
+  }
+
   /** Position of layer `id` from the bottom, or `-1`. */
   indexOfLayer(id: string): number {
     return this.#layers.findIndex((layer) => layer.id === id);
@@ -248,6 +318,20 @@ export function createDocument(options: CreateDocumentOptions): MapDocument {
     if (problem) throw new Error(`createDocument: ${problem}`);
     doc._setEntityTypes(options.entityTypes);
   }
+  if (options.randomSets) {
+    const problem = randomSetsProblem(options.randomSets);
+    if (problem) throw new Error(`createDocument: ${problem}`);
+    doc._setRandomSets(options.randomSets.map(normalizeRandomSet));
+  }
+  if (options.collections) {
+    const problem = collectionsProblem(options.collections);
+    if (problem) throw new Error(`createDocument: ${problem}`);
+    doc._setCollections(options.collections.map(normalizeCollection));
+  }
+  if (options.background != null || options.name) {
+    const props = mapPropsFrom(options.background ?? null, options.name ?? "");
+    doc._setProps(props);
+  }
   return doc;
 }
 
@@ -279,4 +363,16 @@ export function mapInfoProblem(map: MapInfo): string | null {
     if (!Number.isInteger(v) || v < 1) return `${key} must be a positive integer, got ${String(v)}`;
   }
   return null;
+}
+
+/**
+ * Validated, frozen level properties.
+ * @throws RangeError on a background that is not `#rrggbb` / `null`, or a non-string name.
+ */
+export function mapPropsFrom(background: string | null, name: string): MapProps {
+  if (background !== null && !(typeof background === "string" && /^#[0-9a-fA-F]{6}$/.test(background))) {
+    throw new RangeError(`background must be "#rrggbb" or null, got ${JSON.stringify(background)}`);
+  }
+  if (typeof name !== "string") throw new RangeError("name must be a string");
+  return Object.freeze({ background: background === null ? null : background.toLowerCase(), name });
 }

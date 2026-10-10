@@ -17,7 +17,7 @@
  *    right above the map layer the previous stamp layer went to.
  * Entity layers never receive stamp cells.
  */
-import { copyRegion, flipClip, pasteClip, type ClipLayer, type PasteOptions, type TileClip } from "./clip";
+import { copyRegion, flipClip, pasteClip, rotateClip, type ClipLayer, type PasteOptions, type TileClip } from "./clip";
 import type { MapDocument } from "./document";
 import { isReservedFileName } from "./fileName";
 import type { CellRect } from "./geometry";
@@ -31,6 +31,67 @@ export interface Stamp extends TileClip {
   readonly id: string;
   /** Display name. */
   readonly name: string;
+  /** Library category (round 4), e.g. `"Binalar"`; omitted = uncategorized. */
+  readonly category?: string;
+  /** Search tags (round 4); omitted = none. */
+  readonly tags?: readonly string[];
+  /** Marked as favourite in the library (round 4); omitted = false. */
+  readonly favorite?: boolean;
+}
+
+/** Library metadata of a stamp (round 4). */
+export interface StampMeta {
+  readonly category?: string;
+  readonly tags?: readonly string[];
+  readonly favorite?: boolean;
+}
+
+/**
+ * Why `meta` is not valid stamp metadata, or `null`: `category` a string
+ * (≤ 64 chars), `tags` an array of strings (each ≤ 64 chars, at most 64;
+ * blank ones are dropped by {@link normalizeStampMeta}), `favorite` a boolean.
+ */
+export function stampMetaProblem(meta: StampMeta): string | null {
+  if (meta.category !== undefined && (typeof meta.category !== "string" || meta.category.length > 64)) return "stamp category must be a string of at most 64 characters";
+  if (meta.tags !== undefined) {
+    if (!Array.isArray(meta.tags) || meta.tags.length > 64) return "stamp tags must be an array of at most 64 strings";
+    for (const tag of meta.tags) if (typeof tag !== "string" || tag.length > 64) return "stamp tags must be strings of at most 64 characters";
+  }
+  if (meta.favorite !== undefined && typeof meta.favorite !== "boolean") return "stamp favorite must be a boolean";
+  return null;
+}
+
+/**
+ * Canonical metadata: empty / whitespace-only category, empty tag list and
+ * `favorite: false` are left out; tags are trimmed, de-duplicated (first
+ * kept) and keep their order. Fixed key order `category, tags, favorite`.
+ */
+export function normalizeStampMeta(meta: StampMeta): StampMeta {
+  const category = meta.category?.trim();
+  const tags = [...new Set((meta.tags ?? []).map((t) => t.trim()).filter((t) => t.length > 0))];
+  return Object.freeze({
+    ...(category ? { category } : {}),
+    ...(tags.length > 0 ? { tags: Object.freeze(tags) } : {}),
+    ...(meta.favorite ? { favorite: true } : {}),
+  });
+}
+
+/**
+ * `stamp` with new library metadata (fields in `meta` replace the old ones;
+ * `undefined` leaves a field, use `""` / `[]` / `false` to clear). Cells,
+ * id and name are unchanged. @throws Error on invalid metadata.
+ */
+export function withStampMeta(stamp: Stamp, meta: StampMeta): Stamp {
+  const merged: StampMeta = {
+    ...(stamp.category !== undefined ? { category: stamp.category } : {}),
+    ...(stamp.tags !== undefined ? { tags: stamp.tags } : {}),
+    ...(stamp.favorite !== undefined ? { favorite: stamp.favorite } : {}),
+    ...Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined)),
+  };
+  const problem = stampMetaProblem(merged);
+  if (problem) throw new Error(`withStampMeta: ${problem}`);
+  const { category: _c, tags: _t, favorite: _f, ...rest } = stamp;
+  return Object.freeze({ ...rest, ...normalizeStampMeta(merged) });
 }
 
 /** Folder of stamp files inside a project. */
@@ -98,12 +159,12 @@ export function createStamp(
   doc: MapDocument,
   layerIds: readonly string[],
   rect: CellRect,
-  meta: { readonly id: string; readonly name: string },
+  meta: { readonly id: string; readonly name: string } & StampMeta,
 ): Stamp {
-  const problem = stampIdProblem(meta.id);
+  const problem = stampIdProblem(meta.id) ?? stampMetaProblem(meta);
   if (problem) throw new Error(`createStamp: ${problem}`);
   const clip = copyRegion(doc, layerIds, rect);
-  return Object.freeze({ id: meta.id, name: meta.name, ...clip });
+  return Object.freeze({ id: meta.id, name: meta.name, ...normalizeStampMeta(meta), ...clip });
 }
 
 /** Where one stamp layer goes: an existing layer id, or `null` = a new layer is created. */
@@ -141,7 +202,13 @@ export function stampLayerMapping(doc: MapDocument, stamp: TileClip): StampLayer
 }
 
 export interface PlaceStampOptions extends PasteOptions {
-  /** Mirror before placing (`x`: left/right, `y`: top/bottom). */
+  /**
+   * Quarter turns clockwise before placing (round 4; `rotateClip` "cw"
+   * this many times). Applied first, then `flip`; the top-left corner of the
+   * turned stamp lands at (`x`, `y`). Default 0.
+   */
+  readonly rotate?: 0 | 1 | 2 | 3;
+  /** Mirror before placing (`x`: left/right, `y`: top/bottom), after `rotate`. */
   readonly flip?: { readonly x?: boolean; readonly y?: boolean };
 }
 
@@ -165,6 +232,10 @@ export interface PlaceStampResult {
  */
 export function placeStamp(store: MapStore, stamp: TileClip, x: number, y: number, options: PlaceStampOptions = {}): PlaceStampResult {
   let clip: TileClip = stamp;
+  const turns = options.rotate ?? 0;
+  if (!Number.isInteger(turns) || turns < 0 || turns > 3) throw new RangeError(`placeStamp: rotate must be 0, 1, 2 or 3, got ${String(turns)}`);
+  if (turns === 3) clip = rotateClip(clip, "ccw");
+  else for (let i = 0; i < turns; i++) clip = rotateClip(clip, "cw");
   if (options.flip?.x) clip = flipClip(clip, "x");
   if (options.flip?.y) clip = flipClip(clip, "y");
   const plan = stampLayerMapping(store.document, clip);

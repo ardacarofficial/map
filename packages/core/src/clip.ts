@@ -11,7 +11,9 @@ import {
   cellFlags,
   cellPaletteIndex,
   makeCell,
+  rotateCellFlags,
   type Cell,
+  type RotateDirection,
 } from "./cell";
 import type { MapDocument } from "./document";
 import type { CellRect, CellPoint } from "./geometry";
@@ -304,9 +306,10 @@ export function cutRegion(store: MapStore, layerIds: readonly string[], rect: Ce
 /**
  * Mirrors a clip: `"x"` swaps left/right and toggles `FLIP_H` on every
  * non-empty cell, `"y"` swaps top/bottom and toggles `FLIP_V`. Grid clip
- * layers are only mirrored (their values have no flags). Returns a new clip.
+ * layers are only mirrored (their values have no flags). Extra fields of the
+ * input (a stamp's id, name and metadata) are kept. Returns a new clip.
  */
-export function flipClip(clip: TileClip, axis: "x" | "y"): TileClip {
+export function flipClip<T extends TileClip>(clip: T, axis: "x" | "y"): T {
   const { width, height } = clip;
   const flag = axis === "x" ? FLIP_H : FLIP_V;
   const layers = clip.layers.map((layer): ClipLayer => {
@@ -320,13 +323,47 @@ export function flipClip(clip: TileClip, axis: "x" | "y"): TileClip {
         cells[ty * width + tx] = layer.grid ? cell : toggleFlag(cell, flag);
       }
     }
-    return Object.freeze(
-      layer.grid
-        ? { layerId: layer.layerId, name: layer.name, grid: true, ...(layer.role ? { role: layer.role } : {}), cells }
-        : { layerId: layer.layerId, name: layer.name, cells },
-    );
+    return withCells(layer, cells);
   });
-  return Object.freeze({ width, height, palette: clip.palette, layers: Object.freeze(layers) });
+  // Extra fields (a stamp's id, name and metadata) are kept.
+  return Object.freeze({ ...clip, width, height, palette: clip.palette, layers: Object.freeze(layers) });
+}
+
+/**
+ * Turns a clip 90° (`"cw"` clockwise, `"ccw"` counter-clockwise): width and
+ * height swap, cell (`x`, `y`) moves to (`height - 1 - y`, `x`) for `"cw"`
+ * and to (`y`, `width - 1 - x`) for `"ccw"`, and every non-empty tile cell's
+ * flags turn with it ({@link rotateCellFlags}; may set `FLIP_D`). Grid clip
+ * layers only move (their values have no flags). Extra fields of the input
+ * (a {@link Stamp}'s id, name, category…) are kept. Returns a new clip.
+ */
+export function rotateClip<T extends TileClip>(clip: T, dir: RotateDirection): T {
+  const { width, height } = clip;
+  const nw = height;
+  const nh = width;
+  const layers = clip.layers.map((layer): ClipLayer => {
+    const cells = new Uint32Array(nw * nh);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const cell = layer.cells[y * width + x] ?? EMPTY_CELL;
+        if (cell === EMPTY_CELL) continue;
+        const tx = dir === "cw" ? height - 1 - y : y;
+        const ty = dir === "cw" ? x : width - 1 - x;
+        cells[ty * nw + tx] = layer.grid ? cell : rotateCellFlags(cell, dir);
+      }
+    }
+    return withCells(layer, cells);
+  });
+  return Object.freeze({ ...clip, width: nw, height: nh, palette: clip.palette, layers: Object.freeze(layers) });
+}
+
+/** `layer` with new cells (frozen; grid layers keep their role). */
+function withCells(layer: ClipLayer, cells: Uint32Array): ClipLayer {
+  return Object.freeze(
+    layer.grid
+      ? { layerId: layer.layerId, name: layer.name, grid: true, ...(layer.role ? { role: layer.role } : {}), cells }
+      : { layerId: layer.layerId, name: layer.name, cells },
+  );
 }
 
 /** Non-empty cells of one clip layer as (clip-relative) points, row-major. Handy for paste previews. */

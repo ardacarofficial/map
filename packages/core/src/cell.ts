@@ -9,8 +9,8 @@
  * ```
  *
  * - `0` is the empty cell. An empty cell never carries flags.
- * - `flipD` (diagonal / anti-diagonal flip) is reserved for future use; the
- *   format keeps the bit so stamps can be flipped later without a format change.
+ * - `flipD` (diagonal flip = transpose, applied before H and V, as in Tiled)
+ *   is produced by 90° rotation ({@link rotateCellFlags}, round 4; opt-in).
  * - Every result goes through `>>> 0`, so values stay in `[0, 2^32)` and never
  *   turn negative the way `Int32` arithmetic would.
  */
@@ -25,7 +25,7 @@ export const EMPTY_CELL: Cell = 0;
 export const FLIP_H = 0x8000_0000;
 /** Vertical flip flag (bit 30). */
 export const FLIP_V = 0x4000_0000;
-/** Diagonal flip flag (bit 29). Reserved; not produced by the editor yet. */
+/** Diagonal flip flag (bit 29): transpose, applied before H / V. Produced by rotation (round 4). */
 export const FLIP_D = 0x2000_0000;
 /** Mask of all flag bits. */
 export const CELL_FLAG_MASK = 0xe000_0000;
@@ -132,4 +132,32 @@ export function hasFlipV(cell: Cell): boolean {
 /** True when the diagonal flip flag is set. */
 export function hasFlipD(cell: Cell): boolean {
   return (cell & FLIP_D) !== 0;
+}
+
+/** Direction of a 90° rotation: clockwise or counter-clockwise. */
+export type RotateDirection = "cw" | "ccw";
+
+/**
+ * Orientation tables for 90° rotation, indexed by `mask = H << 2 | V << 1 | D`
+ * (Tiled `tilelayer.cpp`): the new mask after rotating a tile with `mask`.
+ */
+const ROTATE_CW: readonly number[] = [5, 4, 1, 0, 7, 6, 3, 2];
+const ROTATE_CCW: readonly number[] = [3, 2, 7, 6, 1, 0, 5, 4];
+
+function flagsToMask(flags: number): number {
+  return ((flags & FLIP_H) !== 0 ? 4 : 0) | ((flags & FLIP_V) !== 0 ? 2 : 0) | ((flags & FLIP_D) !== 0 ? 1 : 0);
+}
+
+function maskToFlags(mask: number): number {
+  return ((mask & 4 ? FLIP_H : 0) | (mask & 2 ? FLIP_V : 0) | (mask & 1 ? FLIP_D : 0)) >>> 0;
+}
+
+/**
+ * The cell with its flip flags turned 90° (`"cw"` or `"ccw"`); the palette
+ * index stays. Four turns in one direction give the cell back. Empty cells stay empty.
+ */
+export function rotateCellFlags(cell: Cell, dir: RotateDirection): Cell {
+  if (isEmptyCell(cell)) return EMPTY_CELL;
+  const table = dir === "cw" ? ROTATE_CW : ROTATE_CCW;
+  return withFlags(cell, maskToFlags(table[flagsToMask(cellFlags(cell))]!));
 }

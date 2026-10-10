@@ -3,6 +3,8 @@
  * Send them with `MapStore.dispatch(op)`.
  */
 import type { Cell } from "./cell";
+import type { Collection } from "./collection";
+import type { RandomSet } from "./randomSet";
 import type { EntityFieldValue, EntityType } from "./entity";
 import type { CellRect } from "./geometry";
 import type { GridRole } from "./layer";
@@ -77,6 +79,9 @@ export interface AddTilesetOp {
  * - every terrain-grid cell whose value is one of its terrains is cleared;
  * - its solid flags and terrains go with it, and every terrain layer is
  *   re-derived (derived tiles of its terrains disappear).
+ * - its tiles leave every collection (cells dropped) and every random set
+ *   (tile candidates dropped; a set left without candidates is removed)
+ *   (round 4).
  * Its palette entries stay (the palette is append-only), unused. Undo
  * restores the tileset at its position and every cell byte-exactly.
  * Check `tilesetUsage(doc, id)` first to ask the user. Structure event
@@ -456,6 +461,8 @@ export interface RemoveEntityTypeOp {
  * shape). Everything else is dropped: cells using a dropped palette entry
  * are cleared (also on locked layers), dropped solid flags / variants /
  * terrains are removed. Derived terrain tiles are re-derived.
+ * Collections and random sets (round 4) follow the same remap; references
+ * to dropped tiles are removed from them.
  *
  * Undoable as one step (palette rewrites included, byte-exact); a no-op
  * (no step) when the grid does not change. Throws on an unknown tileset,
@@ -481,7 +488,9 @@ export interface UpdateTilesetGridOp {
  * range**: their palette entries and cells are kept (reported and skipped by
  * exports, like any out-of-range id) so that a temporarily smaller PNG does
  * not destroy the map; solid flags and terrains that no longer fit are
- * removed. Undoable as one step; a no-op when columns and rows stay.
+ * removed. Collections and random sets (round 4) follow moved tiles; references to
+ * tiles outside the new image are dropped from them (a parked id could show
+ * other pixels; undo brings them back). Undoable as one step; a no-op when columns and rows stay.
  */
 export interface ReplaceTilesetImageOp {
   readonly type: "replaceTilesetImage";
@@ -506,7 +515,63 @@ export interface TilesetRemapResult {
   readonly droppedTerrains: readonly number[];
 }
 
+/**
+ * Adds a saved random set (appended) or replaces the one with the same id
+ * (in place). Project-level, like entity types; undoable; a no-op when
+ * nothing changes. Tile candidates must point at an existing tileset and a
+ * tile inside it (stamp candidates are not checked: stamps are files).
+ * Structure event `"randomSets"`. Throws on an invalid set
+ * (`randomSetProblem`) or an unknown tile.
+ */
+export interface SetRandomSetOp {
+  readonly type: "setRandomSet";
+  readonly set: RandomSet;
+}
+
+/** Removes a random set. Undoable. Structure event `"randomSets"`. Throws on an unknown id. */
+export interface RemoveRandomSetOp {
+  readonly type: "removeRandomSet";
+  readonly id: string;
+}
+
+/**
+ * Adds a collection (palette; appended) or replaces the one with the same
+ * id (in place) — moving / copying tiles inside or between collections is a
+ * `setCollection` per changed collection (in one transaction for one undo
+ * step). Cells are sorted on the way in. Undoable; a no-op when nothing
+ * changes. Every cell must point at an existing tileset and a tile inside
+ * it. Structure event `"collections"`. Throws on an invalid collection
+ * (`collectionProblem`) or an unknown tile.
+ */
+export interface SetCollectionOp {
+  readonly type: "setCollection";
+  readonly collection: Collection;
+}
+
+/** Removes a collection. Undoable. Structure event `"collections"`. Throws on an unknown id. */
+export interface RemoveCollectionOp {
+  readonly type: "removeCollection";
+  readonly id: string;
+}
+
+/**
+ * Changes level properties: `background` (`#rrggbb`, `null` removes it)
+ * and `name` (see `MapProps`). Omitted fields stay. Undoable; a no-op when
+ * nothing changes. Structure event `"props"`. Throws on an
+ * invalid colour or a non-string name.
+ */
+export interface SetMapPropsOp {
+  readonly type: "setMapProps";
+  readonly background?: string | null;
+  readonly name?: string;
+}
+
 export type Op =
+  | SetRandomSetOp
+  | RemoveRandomSetOp
+  | SetCollectionOp
+  | RemoveCollectionOp
+  | SetMapPropsOp
   | RemoveTilesetOp
   | SetTilesetMetaOp
   | MoveTilesetOp
@@ -537,6 +602,11 @@ export type OpType = Op["type"];
 
 /** What `dispatch` returns for each op type. */
 export interface OpResultMap {
+  setRandomSet: void;
+  removeRandomSet: void;
+  setCollection: void;
+  removeCollection: void;
+  setMapProps: void;
   /** Cells this op actually changed (no-op writes omitted). */
   paintCells: LayerPatch;
   addTileset: void;

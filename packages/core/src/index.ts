@@ -31,6 +31,8 @@ export {
   hasFlipH,
   hasFlipV,
   hasFlipD,
+  rotateCellFlags,
+  type RotateDirection,
 } from "./cell";
 
 export { Palette, type PaletteEntry } from "./palette";
@@ -134,6 +136,8 @@ export {
   MapDocument,
   type MapInfo,
   type CreateDocumentOptions,
+  type MapProps,
+  mapPropsFrom,
   createDocument,
   mapInfoProblem,
   isValidSeed,
@@ -183,6 +187,11 @@ export type {
   DuplicateLayerOp,
   MergeLayerDownOp,
   LayerMergeRefusal,
+  SetRandomSetOp,
+  RemoveRandomSetOp,
+  SetCollectionOp,
+  RemoveCollectionOp,
+  SetMapPropsOp,
 } from "./ops";
 
 export { LayerMergeError } from "./ops";
@@ -220,6 +229,11 @@ export {
   type PaletteHistoryChange,
   type EntitiesHistoryChange,
   type EntityTypesHistoryChange,
+  type RandomSetsHistoryChange,
+  type CollectionsHistoryChange,
+  type MapPropsHistoryChange,
+  type HistoryEntryKind,
+  type HistoryListItem,
 } from "./store";
 
 export {
@@ -260,6 +274,10 @@ export {
   type StampLayerTarget,
   type PlaceStampOptions,
   type PlaceStampResult,
+  type StampMeta,
+  stampMetaProblem,
+  normalizeStampMeta,
+  withStampMeta,
   STAMPS_DIR,
   stampIdProblem,
   stampPath,
@@ -270,6 +288,50 @@ export {
 } from "./stamp";
 
 export { type RandomTile, pickRandomTile } from "./randomBrush";
+
+export {
+  type RandomCandidate,
+  type RandomTileCandidate,
+  type RandomStampCandidate,
+  type RandomSet,
+  type RandomPick,
+  MAX_RANDOM_CHUNK,
+  randomSetProblem,
+  randomSetsProblem,
+  normalizeRandomSet,
+  randomChunkAt,
+  pickRandomCandidate,
+  remapRandomSetsForTileset,
+} from "./randomSet";
+
+export {
+  type Collection,
+  type CollectionCell,
+  type CollectionRect,
+  type CollectionClipOptions,
+  MAX_COLLECTION_COLUMNS,
+  MAX_COLLECTION_CELLS,
+  collectionProblem,
+  collectionsProblem,
+  normalizeCollection,
+  collectionRows,
+  collectionCellAt,
+  collectionClip,
+  remapCollectionsForTileset,
+} from "./collection";
+
+export {
+  type ProjectSettings,
+  type ProjectSettingsInput,
+  type LayerTemplateEntry,
+  type LayerTemplateKind,
+  DEFAULT_PROJECT_SETTINGS,
+  MAX_SETTINGS_TILE_SIZE,
+  normalizeProjectSettings,
+  projectSettingsJson,
+  isHexColor,
+  normalizeHexColor,
+} from "./projectSettings";
 
 export { isReservedFileName, fileNameProblem, portablePathProblem, safeFileName } from "./fileName";
 
@@ -361,6 +423,7 @@ export {
   pasteClip,
   cutRegion,
   flipClip,
+  rotateClip,
   clipLayerPoints,
   clipFromTileset,
   tilesetCellsInRect,
@@ -381,6 +444,10 @@ export {
   type ExportWarning,
   type ExportCell,
   type ExportResult,
+  type ExportLayerOptions,
+  type ExportLayerSummary,
+  type GameExportOptions,
+  exportLayerSummaries,
   exportedLayers,
   exportedTilesets,
   layerCells,

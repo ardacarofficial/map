@@ -18,7 +18,10 @@
  * removed one gets a fresh id (`lvl-…-2`) and the removed level's portals
  * stay `"missingLevel"` (CLAUDE.md v1.1: "Otomatik onarım yok").
  */
+import { collectionsProblem, normalizeCollection, type Collection } from "./collection";
 import type { MapDocument } from "./document";
+import { normalizeProjectSettings, type ProjectSettings, type ProjectSettingsInput } from "./projectSettings";
+import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomSet";
 import { PORTAL_TARGET_LEVEL, PORTAL_TARGET_POINT, PORTAL_TYPE_ID, isEntityPoint, type Entity, type EntityPoint, type EntityType } from "./entity";
 import { isEntityLayer } from "./layer";
 import { portablePathProblem } from "./fileName";
@@ -60,6 +63,12 @@ export interface ProjectData {
    * Defaults to none. Old files have none.
    */
   readonly retiredLevelIds?: readonly string[];
+  /** Saved random sets (round 4). Defaults to none. */
+  readonly randomSets?: readonly RandomSet[];
+  /** Collections / palettes (round 4). Defaults to none. */
+  readonly collections?: readonly Collection[];
+  /** Project settings (round 4); missing fields take `DEFAULT_PROJECT_SETTINGS`. */
+  readonly settings?: ProjectSettingsInput;
 }
 
 /** A project with every optional field filled in (what `parseProject` and the level functions return). */
@@ -67,6 +76,9 @@ export interface Project extends ProjectData {
   readonly levels: readonly ProjectLevel[];
   readonly entityTypes: readonly EntityType[];
   readonly retiredLevelIds: readonly string[];
+  readonly randomSets: readonly RandomSet[];
+  readonly collections: readonly Collection[];
+  readonly settings: ProjectSettings;
 }
 
 /** Deterministic level id for a path: `"lvl-"` + 8 hex digits (FNV-1a of the path). */
@@ -105,6 +117,11 @@ export function normalizeProject(data: ProjectData): Project {
     if (taken.has(level.id)) throw new Error(`duplicate level id "${level.id}"`);
     taken.add(level.id);
   }
+  const setsProblem = randomSetsProblem(data.randomSets ?? []);
+  if (setsProblem) throw new Error(setsProblem);
+  const collectionsIssue = collectionsProblem(data.collections ?? []);
+  if (collectionsIssue) throw new Error(collectionsIssue);
+  const settings = normalizeProjectSettings(data.settings ?? {});
   const explicit = new Set(taken);
   const retired = [...new Set(retiredInput)].filter((id) => !explicit.has(id));
   const avoid = new Set([...taken, ...retired]);
@@ -126,6 +143,9 @@ export function normalizeProject(data: ProjectData): Project {
     tilesets: data.tilesets,
     entityTypes: data.entityTypes ?? Object.freeze([]),
     retiredLevelIds: Object.freeze(retired),
+    randomSets: Object.freeze((data.randomSets ?? []).map(normalizeRandomSet)),
+    collections: Object.freeze((data.collections ?? []).map(normalizeCollection)),
+    settings,
   });
 }
 
