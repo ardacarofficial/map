@@ -12,7 +12,10 @@ import { terrainOwnerOf } from "../../commands/terrainActions";
  */
 export function fillBlocker(
   doc: MapDocument | undefined,
-  s: Pick<EditorState, "activeLayerId" | "gridValue" | "stamp" | "selection" | "randomSet">,
+  s: Pick<EditorState, "activeLayerId" | "gridValue" | "stamp" | "selection" | "randomSet"> & {
+    /** The random brush is active (also stamp candidates / scatter, see `currentRandomSet`). */
+    readonly random?: boolean;
+  },
 ): MessageKey | null {
   const layer = doc && s.activeLayerId ? doc.getLayer(s.activeLayerId) : undefined;
   if (!doc || !layer) return "selectionBar.fillNoLayer";
@@ -24,6 +27,6 @@ export function fillBlocker(
     if (layer.role === "collision") return s.gridValue === COLLISION_SOLID || s.gridValue === COLLISION_PASSABLE ? null : "selectionBar.fillNoBrush";
     return doc.terrainMap().has(s.gridValue) ? null : "selectionBar.fillNoTerrain";
   }
-  if (s.stamp || isRandomBrush(s.randomSet)) return null;
+  if (s.stamp || s.random || isRandomBrush(s.randomSet)) return null;
   return s.selection && doc.getTileset(s.selection.tilesetId) ? null : "selectionBar.fillNoBrush";
 }

@@ -352,8 +352,17 @@ export function clearRandomSet(): void {
 export function addStampToRandomSet(stampId: string): void {
   const o = useRandomBrush.getState();
   if (o.stamps.some((c) => c.stampId === stampId)) return;
-  useRandomBrush.setState({ stamps: [...o.stamps, { kind: "stamp", stampId }] });
   const s = useEditorStore.getState();
+  // Like the first Alt + click: the selected tile (when it is the brush) becomes the first candidate.
+  if (o.stamps.length === 0 && s.randomSet.length === 0 && !s.stamp && s.selection) {
+    writing = true;
+    try {
+      s.setRandomSet([{ tilesetId: s.selection.tilesetId, tileId: s.selection.tileId }]);
+    } finally {
+      writing = false;
+    }
+  }
+  useRandomBrush.setState({ stamps: [...o.stamps, { kind: "stamp", stampId }] });
   // The brush stamp (if any) is replaced by the random brush.
   if (s.stamp) s.setStamp(null);
   if (s.tool !== "brush" && s.tool !== "fill" && s.tool !== "rect") s.setTool("brush");

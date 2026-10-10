@@ -1,4 +1,9 @@
 /**
+ * @deprecated Legacy (format 1) model, kept only so the old editor API
+ * compiles. Terrain is now a brush on ordinary tile layers driven by tile
+ * tags (`terrainSet.ts`, `terrainBrush.ts`); terrain grid layers are
+ * migrated away when a level is parsed.
+ *
  * Autotile derivation: terrain grid → tiles. Pure functions; the store uses
  * the same code when a `paintTerrain` op re-derives the linked tile layer.
  *

@@ -1,6 +1,7 @@
 import type { Stamp } from "@smap/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { addStampToRandomSet } from "../../commands/randomBrush";
 import { runCommand } from "../../commands/registry";
 import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, stampRegion } from "../../commands/stampActions";
 import { t } from "../../i18n";
@@ -127,6 +128,7 @@ function StampCard({
         { type: "item", id: "use", label: t("stamps.use"), icon: "pencil", run: () => pickStamp(stamp.id) },
         { type: "item", id: "rename", label: t("stamps.rename"), icon: "pencilLine", run: () => onEdit(true) },
         { type: "item", id: "duplicate", label: t("contextMenu.duplicate"), icon: "copy", run: () => void duplicateStamp(stamp.id) },
+        { type: "item", id: "addToRandom", label: t("randomSets.addStamp"), icon: "dice", run: () => addStampToRandomSet(stamp.id) },
         SEPARATOR,
         { type: "item", id: "delete", label: t("stamps.delete"), icon: "trash", danger: true, run: () => deleteStamp(stamp.id) },
       ]}

@@ -4,7 +4,6 @@ import {
   copyRegion,
   cutRegion,
   flipClip,
-  isGridLayer,
   parseClip,
   parseLevel,
   parseProject,

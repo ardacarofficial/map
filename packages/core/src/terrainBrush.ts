@@ -471,7 +471,6 @@ class Solver {
       const exact = index.configByKey.get(cornerKey(want as unknown as TerrainCorners));
       if (exact && (exact.key === 0 || exact.tileIds.length > 0)) {
         best = exact;
-        bestCost = 0;
       } else {
         for (const config of index.configs) {
           let cost = 0;
@@ -519,12 +518,8 @@ class Solver {
     const writes: TerrainTileWrite[] = [];
     for (const i of [...chosen.keys()].sort((a, b) => a - b)) {
       const config = chosen.get(i)!;
-      const cur = current(i);
-      if (cur && cornerKey(cur) === config.key) {
-        // Already shows these corners (an empty cell stays empty).
-        if (!paintedSet.has(i) || this.#cellInfo(i).kind !== "fixed") continue;
-      }
-      if (config.key === 0 && this.#cellInfo(i).kind === "empty") continue;
+      const cur = current(i); // null only for a painted manual tile, which is always replaced
+      if (cur && cornerKey(cur) === config.key) continue; // already shows these corners
       writes.push(this.#write(i, config.key === 0 ? null : config.tileIds));
     }
     return writes;

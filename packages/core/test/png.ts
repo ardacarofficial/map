@@ -2,7 +2,10 @@
  * Minimal PNG decoder for tests (no dependencies; node:zlib for inflate).
  * Supports 8-bit, non-interlaced greyscale, RGB, palette, grey+alpha and RGBA.
  */
+// Test-only helper: tests may read the sample PNGs with node built-ins; core src never does.
+// eslint-disable-next-line no-restricted-imports
 import { readFileSync } from "node:fs";
+// eslint-disable-next-line no-restricted-imports
 import { inflateSync } from "node:zlib";
 import type { RgbaImage } from "../src";
 

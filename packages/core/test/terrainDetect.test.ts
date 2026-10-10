@@ -38,4 +38,17 @@ describe("detectTerrainBlock", () => {
       });
     }
   }
+
+  it("scores a tileset without a terrain block low", () => {
+    const image = loadSample("overworld-32.png");
+    const result = detectTerrainBlock(tilesetFor(image), image, { col: 0, row: 0, columns: 8, rows: 8 });
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0]!.score).toBeLessThan(0.8);
+  });
+
+  it("returns nothing when no template fits the tileset", () => {
+    const image = loadSample("dungeon-16.png");
+    const tileset = { ...tilesetFor(image), tileWidth: 16, tileHeight: 16, columns: 6, rows: 4 };
+    expect(detectTerrainBlock(tileset, image, { col: 0, row: 0, columns: 6, rows: 4 }, { templates: ["blob47-cr31"] })).toEqual([]);
+  });
 });

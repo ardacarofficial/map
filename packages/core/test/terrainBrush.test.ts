@@ -247,7 +247,7 @@ describe("terrainPaint — corner sets with several terrains", () => {
 
   it("finds a path through several intermediate terrains (A–B–C–E chain)", () => {
     const pair = (base: number, a: number, b: number) =>
-      Array.from({ length: 16 }, (_, m) => ({ tileId: base + m, corners: corners(m, b, a) })).filter((t, m) => base === 0 || m !== 0);
+      Array.from({ length: 16 }, (_, m) => ({ tileId: base + m, corners: corners(m, b, a) })).filter((_t, m) => base === 0 || m !== 0);
     const set: TerrainSet = {
       id: "ground",
       name: "Chain",

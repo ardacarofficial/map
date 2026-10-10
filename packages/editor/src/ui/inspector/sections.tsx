@@ -91,7 +91,8 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
   const stamp = useEditorStore((s) => s.stamp);
   const selection = useEditorStore((s) => s.selection);
   const randomSet = useEditorStore((s) => s.randomSet);
-  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet });
+  const random = useIsRandomBrush();
+  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet, random });
   const map = ctx.doc.map;
   const move = (next: Partial<CellRegion>) => setRegion(clampRegionTo({ ...region, ...next }, map.width, map.height));
   return (
