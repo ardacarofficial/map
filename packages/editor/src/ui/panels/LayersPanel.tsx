@@ -1,11 +1,13 @@
 import { Menu } from "@base-ui/react/menu";
 import { Slider } from "@base-ui/react/slider";
-import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
-import { cloneElement, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react";
+import { isEntityLayer, isGridLayer, type TileLayer } from "@smap/core";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   addLayer,
+  applyLayerOrder,
   canRemoveUnit,
   isSolo,
+  moveUnitOrder,
   opacityDrag,
   removeUnit,
   renameLayer,
@@ -14,13 +16,14 @@ import {
   setUnitProps,
   soloLayer,
   startLayerRename,
+  unitOf,
   useLayerUi,
 } from "../../commands/layerActions";
-import { addCollisionLayer, applyLayerOrder, setLayersProps } from "../../commands/terrainActions";
+import { addCollisionLayer } from "../../commands/terrainActions";
 import { addEntityLayer } from "../../commands/entityActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
-import { flashLayer, useLayerFlash } from "../feedback/layerFlash";
+import { useLayerFlash } from "../feedback/layerFlash";
 import { useStructureVersion } from "../hooks";
 import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
@@ -28,8 +31,6 @@ import { CommandKbd } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
-import { layerRows, layerUnits, moveUnitOrder, unitIndexOf, type LayerRow } from "../terrain/layerGroups";
-import { toast } from "../toast/toastStore";
 import { PointMenu, RowContextMenu, type MenuPoint } from "../contextMenus/RowContextMenu";
 import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import type { SectionPanelProps } from "../layout/RightColumn";
@@ -41,23 +42,24 @@ const ROW = 29;
 /** Pointer travel before a press turns into a drag. */
 const DRAG_THRESHOLD = 4;
 
+/** One row of the list: a layer and its top-first index. */
+interface LayerRow {
+  readonly layer: TileLayer;
+  readonly unit: number;
+}
+
 interface Drag {
   layerId: string;
-  /** Top-first index of the dragged unit (a layer, or a terrain group as a whole). */
+  /** Top-first index of the dragged layer. */
   from: number;
   startY: number;
   dy: number;
   active: boolean;
 }
 
-const NO_EXPANDED: ReadonlySet<string> = new Set();
-
 /**
  * Layers, top layer first: select, rename (double-click), show/hide, lock,
- * drag to reorder, opacity. A terrain layer and the tile layer it writes
- * into show as one group ("Çimen (arazi)", derived tiles nested and
- * collapsed); the group moves, hides and locks as a whole. Every change is
- * a core op, so all are undoable. Right-click a row for its menu (rename,
+ * drag to reorder, opacity. Every change is a core op, so all are undoable. Right-click a row for its menu (rename,
  * duplicate, solo, move, merge, opacity, select content, delete), the empty
  * list area for "new layer"; Alt+click an eye shows only that layer.
  */
@@ -67,7 +69,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
   const setActive = useEditorStore((s) => s.setActiveLayer);
   useStructureVersion(store);
   const doc = store?.document;
-  const units = doc ? layerUnits(doc) : [];
+  const units = doc ? unitOf(doc, null).units : [];
   const count = units.length;
   const layerCount = doc?.layers.length ?? 0;
 
@@ -76,7 +78,6 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
   const editingId = useLayerUi((s) => s.renamingId);
   const setEditingId = startLayerRename;
   const [emptyMenu, setEmptyMenu] = useState<MenuPoint | null>(null);
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(NO_EXPANDED);
   const dragRef = useRef<Drag | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const flash = useLayerFlash();
@@ -95,21 +96,10 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
     row?.scrollIntoView({ block: "nearest" });
   }, [flash.layerId, flash.token]);
 
-  // While dragging, groups render collapsed so every unit is one row.
-  const rows = layerRows(units, drag?.active ? NO_EXPANDED : expanded);
+  const rows = units.map((u, unit) => ({ layer: u.head, unit }));
   const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;
-  const activeUnit = units[unitIndexOf(units, activeId)];
   const active = activeId ? doc?.getLayer(activeId) : undefined;
-  // The opacity row follows what is visible: a terrain group's tiles.
-  const opacityLayer = activeUnit?.child && activeUnit.head.id === activeId ? activeUnit.child : active;
-
-  const toggleExpanded = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const opacityLayer = active;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLLIElement>, row: LayerRow) => {
     if (event.button !== 0 || editingId === row.layer.id) return;
@@ -121,7 +111,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLLIElement>, row: LayerRow) => {
     const current = dragRef.current;
-    if (!current || row.kind === "derived") return; // derived tiles move with their group
+    if (!current) return;
     const raw = event.clientY - current.startY;
     if (!current.active && Math.abs(raw) < DRAG_THRESHOLD) return;
     // Keep the row inside the list.
@@ -136,14 +126,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
     setDrag(null);
     if (!current) return;
     if (!current.active) {
-      if (row.kind === "derived") {
-        // Auto-generated tiles cannot be painted by hand: select the terrain that makes them, and say why.
-        setActive(row.parent.id);
-        flashLayer(row.parent.id);
-        toast.info(t("layers.derivedPicked", { name: row.parent.name }));
-      } else {
-        setActive(row.layer.id);
-      }
+      setActive(row.layer.id);
       return;
     }
     const target = dropIndex(current.from, current.dy, ROW, count);
@@ -199,36 +182,30 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
       >
         {rows.map((row) => {
           const { layer } = row;
-          const isActive =
-            layer.id === activeId || (row.kind === "group" && row.child.id === activeId);
+          const isActive = layer.id === activeId;
           const dragged = drag?.active && drag.from === row.unit;
           const shift = drag?.active && to !== null ? rowShift(row.unit, drag.from, to, ROW) : 0;
           const y = dragged ? drag.dy : shift;
-          const flashed =
-            flash.layerId !== null && (flash.layerId === layer.id || (row.kind === "group" && flash.layerId === row.child.id));
-          const groupLayers = row.kind === "group" ? [layer, row.child] : [layer];
-          const visible = groupLayers.some((l) => l.visible);
-          const locked = groupLayers.every((l) => l.locked);
+          const flashed = flash.layerId !== null && flash.layerId === layer.id;
+          const visible = layer.visible;
+          const locked = layer.locked;
           const rowElement = (
             <li
               key={layer.id}
               role="option"
               aria-selected={isActive}
-              aria-expanded={row.kind === "group" ? row.expanded : undefined}
               data-layer-id={layer.id}
-              data-layer-row={row.kind}
+              data-layer-row="layer"
               data-flash={flashed ? "" : undefined}
               onPointerDown={(e) => onPointerDown(e, row)}
               onPointerMove={(e) => onPointerMove(e, row)}
               onPointerUp={() => onPointerUp(row)}
               onPointerCancel={onPointerCancel}
               onDoubleClick={(e) => {
-                if (row.kind !== "derived" && !(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
+                if (!(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
               }}
               style={{ transform: y ? `translateY(${y}px)` : undefined }}
-              className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 text-md ${
-                row.kind === "derived" ? "pl-7" : "pl-1"
-              } ${
+              className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 pl-1 text-md ${
                 dragged
                   ? "z-10 cursor-grabbing bg-active shadow-popup"
                   : settling
@@ -237,7 +214,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
               } ${
                 flashed
                   ? "bg-accent-soft text-text shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
-                  : isActive && row.kind !== "derived"
+                  : isActive
                     ? "bg-accent-soft text-title shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
                     : "text-muted hover:bg-hover hover:text-text"
               }`}
@@ -245,36 +222,18 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
           );
           const rowChildren = (
             <>
-              {row.kind === "derived" && (
-                <span aria-hidden className="absolute top-0 bottom-1/2 left-[13px] w-2.5 rounded-bl-[4px] border-b border-l border-line-strong" />
-              )}
               <RowToggle
                 on={!visible}
                 label={visible ? t("layers.hide") : t("layers.show")}
                 title={t("layers.eyeHint", { label: visible ? t("layers.hide") : t("layers.show") })}
                 icon={visible ? "eye" : "eyeOff"}
                 onClick={(event) => {
-                  if (event.altKey && row.kind !== "derived") soloLayer(layer.id);
-                  else setLayersProps(groupLayers.map((l) => l.id), { visible: !visible });
+                  if (event.altKey) soloLayer(layer.id);
+                  else setUnitProps(layer.id, { visible: !visible });
                 }}
                 persistent={!visible}
               />
-              {row.kind === "group" && (
-                <button
-                  type="button"
-                  aria-label={row.expanded ? t("layers.collapseGroup") : t("layers.expandGroup")}
-                  title={row.expanded ? t("layers.collapseGroup") : t("layers.expandGroup")}
-                  onClick={() => toggleExpanded(layer.id)}
-                  className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
-                >
-                  <Icon name="chevronRight" size={12} className={`transition-transform duration-100 ${row.expanded ? "rotate-90" : ""}`} />
-                </button>
-              )}
-              <Icon
-                name={row.kind === "derived" ? "layers" : layerIcon(layer)}
-                size={14}
-                className={`shrink-0 ${row.kind === "derived" ? "text-faint" : layerTint(layer, isActive)}`}
-              />
+              <Icon name={layerIcon(layer)} size={14} className={`shrink-0 ${layerTint(layer, isActive)}`} />
               {editingId === layer.id ? (
                 <RenameInput
                   initial={layer.name}
@@ -284,49 +243,32 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                     if (name !== null) renameLayer(layer.id, name);
                   }}
                 />
-              ) : row.kind === "derived" ? (
-                <span className={`flex min-w-0 flex-1 flex-col leading-tight ${layer.visible ? "" : "text-faint line-through decoration-line-strong"}`}>
-                  <span className="truncate text-sm">{layer.name}</span>
-                  <span className="truncate text-2xs text-faint no-underline">{t("layers.derivedNote")}</span>
-                </span>
               ) : (
                 <span
                   title={t("layers.renameHint")}
                   className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${visible ? "" : "text-faint line-through decoration-line-strong"}`}
                 >
                   <span className="min-w-0 shrink truncate">{layer.name}</span>
-                  {row.kind === "layer" && doc && <LayerLink doc={doc} layer={layer} />}
                 </span>
               )}
-              {(row.kind === "group" ? row.child : layer).opacity < 1 && editingId !== layer.id && (
-                <span className="font-mono text-2xs text-faint tabular">
-                  {Math.round((row.kind === "group" ? row.child : layer).opacity * 100)}%
-                </span>
+              {layer.opacity < 1 && editingId !== layer.id && (
+                <span className="font-mono text-2xs text-faint tabular">{Math.round(layer.opacity * 100)}%</span>
               )}
-              {row.kind !== "derived" && (
-                <RowToggle
-                  on={locked}
-                  label={locked ? t("layers.unlock") : t("layers.lock")}
-                  icon={locked ? "lock" : "unlock"}
-                  onClick={() => setLayersProps(groupLayers.map((l) => l.id), { locked: !locked })}
-                  persistent={locked}
-                />
-              )}
+              <RowToggle
+                on={locked}
+                label={locked ? t("layers.unlock") : t("layers.lock")}
+                icon={locked ? "lock" : "unlock"}
+                onClick={() => setUnitProps(layer.id, { locked: !locked })}
+                persistent={locked}
+              />
             </>
           );
-          if (row.kind === "derived") {
-            return (
-              <Tooltip key={layer.id} side="left" label={t("layers.derivedTooltip", { name: row.parent.name })}>
-                {cloneWithChildren(rowElement, rowChildren)}
-              </Tooltip>
-            );
-          }
           return (
             <RowContextMenu
               key={layer.id}
               render={rowElement}
-              onOpen={() => setActive(row.kind === "group" ? row.child.id : layer.id)}
-              items={() => layerRowItems(layer.id, groupLayers)}
+              onOpen={() => setActive(layer.id)}
+              items={() => layerRowItems(layer.id, [layer])}
               disabled={drag?.active === true || editingId === layer.id}
             >
               {rowChildren}
@@ -337,11 +279,6 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
       <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
     </PanelSection>
   );
-}
-
-/** The row element with its content (rows without a context menu). */
-function cloneWithChildren(element: ReactElement<{ children?: ReactNode }>, children: ReactNode) {
-  return cloneElement(element, undefined, children);
 }
 
 /** Right-click menu of a layer row (the row's layer is made active first, so registry commands act on it). */
@@ -380,47 +317,14 @@ function layersEmptyItems(): ContextEntry[] {
 
 function layerIcon(layer: TileLayer): IconName {
   if (isEntityLayer(layer)) return "box";
-  if (!isGridLayer(layer)) return "layers";
-  return layer.role === "terrain" ? "terrain" : "shield";
+  return isGridLayer(layer) ? "shield" : "layers";
 }
 
 /** Role colour of the row icon: full when active, dimmed otherwise; plain tile layers stay neutral until active. */
 function layerTint(layer: TileLayer, active: boolean): string {
-  if (isGridLayer(layer)) {
-    const tint = layer.role === "collision" ? "text-collision-solid" : "text-terrain-tint";
-    return active ? tint : `${tint} opacity-70`;
-  }
+  if (isGridLayer(layer)) return active ? "text-collision-solid" : "text-collision-solid opacity-70";
   if (isEntityLayer(layer)) return active ? "text-warning" : "text-warning opacity-70";
   return active ? "text-accent" : "text-faint";
-}
-
-/**
- * The terrain ↔ tile layer link of a pair that is NOT grouped (pulled
- * apart), as a faint note after the name: a terrain layer shows "→ Çimen"
- * (the tile layer it writes into); that tile layer shows a small terrain mark.
- */
-function LayerLink({ doc, layer }: { doc: MapDocument; layer: TileLayer }) {
-  if (isGridLayer(layer)) {
-    if (layer.role !== "terrain") return null;
-    const target = layer.targetLayerId ? doc.getLayer(layer.targetLayerId) : undefined;
-    return (
-      <span
-        title={target ? t("layers.terrainTarget", { name: target.name }) : t("layers.terrainNoTarget")}
-        className="flex min-w-0 shrink-[2] items-center gap-0.5 truncate text-xs text-faint no-underline"
-      >
-        <Icon name="cornerDownRight" size={11} className="shrink-0" />
-        <span className="truncate">{target?.name ?? "—"}</span>
-      </span>
-    );
-  }
-  if (!isTileLayer(layer)) return null;
-  const source = doc.layers.find((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layer.id);
-  if (!source) return null;
-  return (
-    <span title={t("layers.derived", { name: source.name })} className="flex shrink-0 items-center self-center text-terrain-tint/80">
-      <Icon name="terrain" size={11} />
-    </span>
-  );
 }
 
 /** "+" in the layers header: tile layer or collision (exceptions) layer. */

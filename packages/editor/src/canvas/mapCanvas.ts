@@ -66,7 +66,6 @@ export type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEven
 const BLOCKED_HINT: Record<BlockedReason, MessageKey> = {
   locked: "canvas.blockedLocked",
   hidden: "canvas.blockedHidden",
-  derived: "canvas.blockedDerived",
   wrongKind: "canvas.blockedWrongKind",
   noBrush: "toast.blockedNoBrush",
 };
@@ -183,7 +182,7 @@ export interface CanvasHandle {
 
   /**
    * A left press on the map could not do anything because of the active
-   * layer (locked, hidden, derived from a terrain, wrong kind for the tool).
+   * layer (locked, hidden, wrong kind for the tool).
    * The canvas also shows a short hint next to the pointer; the UI may add
    * a toast. Returns an unsubscribe.
    */
@@ -915,7 +914,9 @@ export class MapCanvas {
       s.entityTypeId !== prev.entityTypeId ||
       s.selectedEntityId !== prev.selectedEntityId ||
       s.brushSize !== prev.brushSize ||
-      s.brushShape !== prev.brushShape
+      s.brushShape !== prev.brushShape ||
+      s.terrain !== prev.terrain ||
+      s.terrainActive !== prev.terrainActive
     ) {
       const sized = s.brushSize !== prev.brushSize || s.brushShape !== prev.brushShape;
       if (sized && this.#view === "level" && usesBrushSize(s.tool)) this.#overlays.showSizeReadout();

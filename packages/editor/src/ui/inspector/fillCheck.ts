@@ -3,7 +3,6 @@ import { COLLISION_PASSABLE, COLLISION_SOLID, isEntityLayer, isGridLayer, type M
 import { isRandomBrush } from "../../canvas/randomPaint";
 import type { MessageKey } from "../../i18n";
 import type { EditorState } from "../../state/editorStore";
-import { terrainOwnerOf } from "../../commands/terrainActions";
 
 /**
  * Why "Doldur" cannot fill the selection right now (a message key for the
@@ -15,6 +14,8 @@ export function fillBlocker(
   s: Pick<EditorState, "activeLayerId" | "gridValue" | "stamp" | "selection" | "randomSet"> & {
     /** The random brush is active (also stamp candidates / scatter, see `currentRandomSet`). */
     readonly random?: boolean;
+    /** The terrain brush paints the active tile layer. */
+    readonly terrain?: boolean;
   },
 ): MessageKey | null {
   const layer = doc && s.activeLayerId ? doc.getLayer(s.activeLayerId) : undefined;
@@ -22,11 +23,7 @@ export function fillBlocker(
   if (isEntityLayer(layer)) return "selectionBar.fillEntity";
   if (layer.locked) return "selectionBar.fillLocked";
   if (!layer.visible) return "selectionBar.fillHidden";
-  if (terrainOwnerOf(doc, layer.id)) return "selectionBar.fillDerived";
-  if (isGridLayer(layer)) {
-    if (layer.role === "collision") return s.gridValue === COLLISION_SOLID || s.gridValue === COLLISION_PASSABLE ? null : "selectionBar.fillNoBrush";
-    return doc.terrainMap().has(s.gridValue) ? null : "selectionBar.fillNoTerrain";
-  }
-  if (s.stamp || s.random || isRandomBrush(s.randomSet)) return null;
+  if (isGridLayer(layer)) return s.gridValue === COLLISION_SOLID || s.gridValue === COLLISION_PASSABLE ? null : "selectionBar.fillNoBrush";
+  if (s.terrain || s.stamp || s.random || isRandomBrush(s.randomSet)) return null;
   return s.selection && doc.getTileset(s.selection.tilesetId) ? null : "selectionBar.fillNoBrush";
 }

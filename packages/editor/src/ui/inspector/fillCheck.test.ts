@@ -26,3 +26,11 @@ describe("fillBlocker", () => {
     expect(fillBlocker(store.document, brush)).toBe("selectionBar.fillHidden");
   });
 });
+
+describe("fillBlocker with the terrain brush", () => {
+  it("allows a tile layer without a tile when the terrain brush paints", () => {
+    const { store, brush } = setup();
+    expect(fillBlocker(store.document, { ...brush, selection: null })).toBe("selectionBar.fillNoBrush");
+    expect(fillBlocker(store.document, { ...brush, selection: null, terrain: true })).toBeNull();
+  });
+});

@@ -1,8 +1,7 @@
-import { createDocument, isGridLayer, makeCell, MapStore, type Tileset } from "@smap/core";
+import { createDocument, makeCell, MapStore, type Tileset } from "@smap/core";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { useEditorStore } from "../state/editorStore";
-import { layerUnits } from "../ui/terrain/layerGroups";
 import { registerAppCommands } from "./appCommands";
 import {
   canMoveUnit,
@@ -52,36 +51,6 @@ describe("layer commands", () => {
     expect(copyLayerName(store.document, "Upper")).toBe("Upper kopya 2");
     store.undo();
     expect(names()).toEqual(["Ground", "Upper"]);
-  });
-
-  it("duplicates a terrain group as a group", () => {
-    const tile = store.dispatch({ type: "addLayer", layer: { name: "Grass" } });
-    store.dispatch({ type: "addLayer", layer: { type: "grid", role: "terrain", targetLayerId: tile, name: "Grass (arazi)" } });
-    store.clearHistory();
-    const before = layerUnits(store.document).length;
-    const copy = duplicateLayer(tile)!;
-    const units = layerUnits(store.document);
-    expect(units.length).toBe(before + 1);
-    const unit = units.find((u) => u.head.id === copy)!;
-    expect(unit.child).not.toBeNull();
-    const head = store.document.getLayer(copy);
-    expect(isGridLayer(head) && head.targetLayerId).toBe(unit.child!.id);
-    expect(store.undo()).toBe(true);
-    expect(layerUnits(store.document).length).toBe(before);
-  });
-
-  it("names both layers of a duplicated terrain group uniquely", () => {
-    const tile = store.dispatch({ type: "addLayer", layer: { name: "Arazi 1" } });
-    const grid = store.dispatch({ type: "addLayer", layer: { type: "grid", role: "terrain", targetLayerId: tile, name: "Arazi 1 (arazi)" } });
-    const copy = duplicateLayer(grid)!;
-    const head = store.document.getLayer(copy);
-    expect(head!.name).toBe("Arazi 1 kopya (arazi)");
-    expect(isGridLayer(head) && store.document.getLayer(head.targetLayerId!)!.name).toBe("Arazi 1 kopya");
-    duplicateLayer(grid);
-    const all = names();
-    expect(all).toContain("Arazi 1 kopya 2");
-    expect(all).toContain("Arazi 1 kopya 2 (arazi)");
-    expect(new Set(all).size).toBe(all.length);
   });
 
   it("merges down only plain, unlocked tile layers", () => {

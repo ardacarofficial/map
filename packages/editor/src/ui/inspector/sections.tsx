@@ -48,6 +48,7 @@ import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitive
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Toggle } from "../primitives/Toggle";
 import { TerrainCard } from "../terrain/TerrainCard";
+import { resolveTerrain } from "../terrain/terrainModel";
 import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
 import { saveClipAsStamp } from "../tileset/SelectionSection";
 import { keysFor } from "../../shortcuts/shortcuts";
@@ -90,7 +91,8 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
   const selection = useEditorStore((s) => s.selection);
   const randomSet = useEditorStore((s) => s.randomSet);
   const random = useIsRandomBrush();
-  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet, random });
+  const terrain = useEditorStore((s) => s.terrainActive && resolveTerrain(ctx.doc, s.terrain) !== null);
+  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet, random, terrain });
   const map = ctx.doc.map;
   const move = (next: Partial<CellRegion>) => setRegion(clampRegionTo({ ...region, ...next }, map.width, map.height));
   return (

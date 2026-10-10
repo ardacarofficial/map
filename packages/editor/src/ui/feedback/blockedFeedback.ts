@@ -8,7 +8,6 @@ import { isEntityLayer, type MapDocument } from "@smap/core";
 
 import type { BlockedAction } from "../../canvas";
 import { setUnitProps } from "../../commands/layerActions";
-import { terrainOwnerOf } from "../../commands/terrainActions";
 import { t } from "../../i18n";
 import { useEditorStore, type ToolId } from "../../state/editorStore";
 import type { ToastAction } from "../toast/toastStore";
@@ -34,13 +33,6 @@ export function blockedToast(doc: MapDocument, blocked: BlockedAction, tool: Too
         message: t("toast.blockedHidden", { name }),
         action: { label: t("toast.showAction"), run: () => setUnitProps(layer.id, { visible: true }) },
       };
-    case "derived": {
-      const owner = terrainOwnerOf(doc, layer.id);
-      return {
-        message: t("toast.blockedDerived", { name: owner?.name ?? name }),
-        action: owner ? { label: t("toast.selectTerrainAction"), run: () => useEditorStore.getState().setActiveLayer(owner.id) } : null,
-      };
-    }
     case "wrongKind":
       if (isEntityLayer(layer)) {
         return {

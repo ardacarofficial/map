@@ -2,14 +2,12 @@
  * Layer operations used by the layers panel and the command registry. All go
  * through core ops, so every one of them is undoable.
  */
-import { isEntityLayer, isGridLayer, isTileLayer, selectAllContent, uniqueLayerName, type LayerPropsPatch, type MapDocument, type MapStore } from "@smap/core";
+import { isEntityLayer, isTileLayer, selectAllContent, uniqueLayerName, type LayerPropsPatch, type MapDocument, type MapStore, type TileLayer } from "@smap/core";
 import { create } from "zustand";
 
 import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
-import { layerUnits, moveUnitOrder, unitIndexOf, type LayerUnit } from "../ui/terrain/layerGroups";
 import { toast } from "../ui/toast/toastStore";
-import { removeTerrainGroup } from "./terrainActions";
 import { undoStepAction } from "./undoStepAction";
 
 function current(): { store: MapStore; activeLayerId: string | null } | null {
@@ -130,16 +128,42 @@ export function requestOpacityFocus(): void {
   useLayerUi.setState((s) => ({ opacityFocus: s.opacityFocus + 1 }));
 }
 
-/** The unit (layer, or terrain layer + its derived tiles) that contains `layerId`, with its index (top first). */
+/** One entry of the layers list (a layer; kept as a "unit" so callers need not change). */
+export interface LayerUnit {
+  readonly head: TileLayer;
+}
+
+/** The unit containing `layerId`, with its index (top first). */
 export function unitOf(doc: MapDocument, layerId: string | null): { units: LayerUnit[]; index: number; unit: LayerUnit | undefined } {
-  const units = layerUnits(doc);
-  const index = unitIndexOf(units, layerId);
+  const units = [...doc.layers].reverse().map((head) => ({ head }));
+  const index = layerId ? units.findIndex((u) => u.head.id === layerId) : -1;
   return { units, index, unit: units[index] };
 }
 
 /** Ids of the layers of a unit. */
 export function unitLayerIds(unit: LayerUnit): string[] {
-  return unit.child ? [unit.head.id, unit.child.id] : [unit.head.id];
+  return [unit.head.id];
+}
+
+/** Layer ids, bottom first, after moving top-first unit `from` to `to`. */
+export function moveUnitOrder(units: readonly LayerUnit[], from: number, to: number): string[] {
+  const list = [...units];
+  const clampedTo = Math.max(0, Math.min(list.length - 1, to));
+  if (from >= 0 && from < list.length && clampedTo !== from) {
+    const [moved] = list.splice(from, 1);
+    list.splice(clampedTo, 0, moved!);
+  }
+  return list.map((u) => u.head.id).reverse();
+}
+
+/** Reorders the layers to `order` (layer ids, bottom first; a permutation of the current ids) as one undo step. */
+export function applyLayerOrder(order: readonly string[]): void {
+  const store = current()?.store;
+  if (!store || store.inTransaction) return;
+  const ids = store.document.layers.map((l) => l.id);
+  if (order.length !== ids.length || !ids.every((id) => order.includes(id))) return;
+  if (ids.every((id, i) => order[i] === id)) return;
+  applyOrder(store, order);
 }
 
 /** Can the unit of `layerId` move one step up (toward the top) / down? */
@@ -150,7 +174,7 @@ export function canMoveUnit(doc: MapDocument | undefined, layerId: string | null
   return dir === "up" ? index > 0 : index < units.length - 1;
 }
 
-/** Moves the unit of `layerId` one step up / down (a terrain group as a whole), one undo step. */
+/** Moves the layer `layerId` one step up / down, one undo step. */
 export function moveUnit(layerId: string, dir: "up" | "down"): boolean {
   const store = current()?.store;
   if (!store || store.inTransaction) return false;
@@ -181,38 +205,17 @@ export function copyLayerName(doc: MapDocument, name: string): string {
   return uniqueLayerName(doc, t("layers.copyName", { name }));
 }
 
-/**
- * Duplicates the unit of `layerId` right above it (a terrain group copies
- * both layers and stays a group) and makes the copy active. One undo step.
- */
+/** Duplicates the layer `layerId` right above it and makes the copy active. One undo step. */
 export function duplicateLayer(layerId: string): string | null {
   const store = current()?.store;
   if (!store || store.inTransaction) return null;
   const doc = store.document;
-  const { unit } = unitOf(doc, layerId);
-  if (!unit) return null;
-  store.beginTransaction();
+  const layer = doc.getLayer(layerId);
+  if (!layer) return null;
   let id: string;
   try {
-    if (unit.child) {
-      // Terrain pair "Çimen" + "Çimen (arazi)" → "Çimen kopya" + "Çimen kopya (arazi)".
-      const tilesName = copyLayerName(doc, unit.child.name);
-      const name = uniqueLayerName(doc, t("terrain.layerName", { name: tilesName }), [tilesName]);
-      id = store.dispatch({ type: "duplicateLayer", layerId: unit.head.id, name, targetName: tilesName });
-    } else {
-      id = store.dispatch({ type: "duplicateLayer", layerId: unit.head.id, name: copyLayerName(doc, unit.head.name) });
-    }
-    const copy = doc.getLayer(id);
-    if (unit.child && isGridLayer(copy) && copy.targetLayerId) {
-      // Keep the copy a group: [… child, head, copyTiles, copyGrid …] (bottom first).
-      const copyTiles = copy.targetLayerId;
-      const rest = doc.layers.map((l) => l.id).filter((x) => x !== copyTiles && x !== id);
-      const at = rest.indexOf(unit.head.id) + 1;
-      applyOrder(store, [...rest.slice(0, at), copyTiles, id, ...rest.slice(at)]);
-    }
-    store.commit();
+    id = store.dispatch({ type: "duplicateLayer", layerId: layer.id, name: copyLayerName(doc, layer.name) });
   } catch (error) {
-    store.rollback();
     console.error(error);
     return null;
   }
@@ -221,15 +224,13 @@ export function duplicateLayer(layerId: string): string | null {
 }
 
 /** Why "Aşağıyla birleştir" cannot run for `layerId`, or null when it can. */
-export function mergeDownProblem(doc: MapDocument | undefined, layerId: string | null): "notTile" | "noBelow" | "belowNotTile" | "locked" | "derived" | null {
+export function mergeDownProblem(doc: MapDocument | undefined, layerId: string | null): "notTile" | "noBelow" | "belowNotTile" | "locked" | null {
   const layer = layerId ? doc?.getLayer(layerId) : undefined;
   if (!doc || !layer || !isTileLayer(layer)) return "notTile";
   const below = doc.layers[doc.indexOfLayer(layer.id) - 1];
   if (!below) return "noBelow";
   if (!isTileLayer(below)) return "belowNotTile";
   if (layer.locked || below.locked) return "locked";
-  const derived = (id: string) => doc.layers.some((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === id);
-  if (derived(layer.id) || derived(below.id)) return "derived";
   return null;
 }
 
@@ -250,7 +251,7 @@ export function mergeLayerDown(layerId: string): boolean {
   return true;
 }
 
-/** Same props on every layer of the unit of `layerId` (a group hides / locks as a whole), one undo step. */
+/** Same props on the layer `layerId`, one undo step. */
 export function setUnitProps(layerId: string, props: LayerPropsPatch): void {
   const store = current()?.store;
   if (!store || store.inTransaction) return;
@@ -316,13 +317,13 @@ export function selectLayerContent(layerId: string): boolean {
   return true;
 }
 
-/** Removes the unit of `layerId` (a terrain group as a whole), with "Geri al" in the toast. */
+/** Removes the layer `layerId`, with "Geri al" in the toast. */
 export function removeUnit(layerId: string): boolean {
   const doc = current()?.store.document;
   if (!doc) return false;
   const { unit } = unitOf(doc, layerId);
   if (!unit) return false;
-  return unit.child ? removeTerrainGroup(unit.head.id) : removeLayer(unit.head.id);
+  return removeLayer(unit.head.id);
 }
 
 /** Can the unit of `layerId` be removed (the map keeps at least one layer)? */

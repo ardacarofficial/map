@@ -19,7 +19,12 @@ import {
   isEntityLayer,
   isGridLayer,
   makeCell,
+  terrainErase,
+  terrainFill,
+  terrainPaint,
   type CellPoint,
+  type TerrainBrush,
+  type TerrainTileWrite,
   type MapDocument,
   type RandomSet,
   type TileClip,
@@ -45,6 +50,7 @@ import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
 import { activeRandomSet, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint, randomPlanKey } from "./randomPaint";
+import { activeTerrainBrush, terrainBrushKey } from "./terrainBrushSource";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -281,7 +287,10 @@ export class OverlayRenderer {
         const r = rectGestureRegion(gesture, map);
         if (r) {
           if (gridActive) this.#drawGridFootprint(r);
-          else {
+          else if (this.#terrainBrush()) {
+            this.#showTerrainRect(r);
+            this.#drawAccentOutline(r);
+          } else {
             this.#showPatternPreview(r, gesture.start);
             this.#drawAccentOutline(r);
           }
@@ -334,6 +343,10 @@ export class OverlayRenderer {
     }
     if (gridActive) return this.#drawGridCursor(state.tool, cell, one);
     const editable = isEditable(activeInfo(host.scene?.store));
+    const terrain = editable ? this.#terrainBrush() : null;
+    if (terrain && (state.tool === "brush" || state.tool === "eraser" || state.tool === "fill" || state.tool === "rect")) {
+      return this.#showTerrainPreview(state.tool, cell, terrain);
+    }
     switch (state.tool) {
       case "brush": {
         if (state.stamp) {
@@ -370,6 +383,67 @@ export class OverlayRenderer {
       default:
         return this.#drawCellCursor(one);
     }
+  }
+
+  // ------------------------------------------------------------------ terrain brush
+
+  #terrainBrush(): TerrainBrush | null {
+    return activeTerrainBrush(this.#host.scene?.store);
+  }
+
+  /**
+   * Live preview of the terrain brush: exactly the tiles a click would write
+   * (core `terrainPaint` / `terrainErase` / `terrainFill`, neighbours
+   * included), as ghosts, with the footprint outlined. Cached per cell, brush
+   * and document revision.
+   */
+  #showTerrainPreview(tool: "brush" | "eraser" | "fill" | "rect", cell: CellPoint, brush: TerrainBrush): void {
+    const scene = this.#host.scene;
+    const layer = activeLayer(scene?.store);
+    if (!scene || !layer) return;
+    const doc = scene.store.document;
+    const s = useEditorStore.getState();
+    const anchor = tool === "brush" || tool === "eraser" ? (this.#host.lineAnchor?.() ?? null) : null;
+    const cells = tool === "brush" || tool === "eraser" ? this.#brushCells(cell) : [cell];
+    const key = `terrain:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${tool}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
+    if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
+    else {
+      let writes: TerrainTileWrite[] = [];
+      try {
+        if (tool === "fill") {
+          if (doc.map.width * doc.map.height <= FILL_PREVIEW_MAX_AREA) writes = terrainFill(doc, layer.id, cell.x, cell.y, brush);
+        } else if (tool === "eraser") writes = terrainErase(doc, layer.id, cells, brush);
+        else writes = terrainPaint(doc, layer.id, cells, brush);
+      } catch (error) {
+        console.warn("[canvas] terrain preview failed", error);
+      }
+      this.#setTilePreview(key, terrainPreviewCells(writes));
+    }
+    this.#tilePreview.root.position.set(0, 0);
+    if (tool === "fill" || tool === "rect") return this.#drawCellCursor({ x: cell.x, y: cell.y, width: 1, height: 1 });
+    this.#drawCellsOutline(cells);
+  }
+
+  /** Terrain preview of a rectangle drag (capped like the tile rectangle preview). */
+  #showTerrainRect(r: CellRegion): void {
+    const scene = this.#host.scene;
+    const layer = activeLayer(scene?.store);
+    const brush = this.#terrainBrush();
+    if (!scene || !layer || !brush || r.width * r.height > RECT_PREVIEW_LIMIT) return;
+    const key = `terrainR:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${r.x},${r.y},${r.width},${r.height}`;
+    if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
+    else {
+      const cells: CellPoint[] = [];
+      for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) cells.push({ x, y });
+      let writes: TerrainTileWrite[] = [];
+      try {
+        writes = terrainPaint(scene.store.document, layer.id, cells, brush);
+      } catch (error) {
+        console.warn("[canvas] terrain preview failed", error);
+      }
+      this.#setTilePreview(key, terrainPreviewCells(writes));
+    }
+    this.#tilePreview.root.position.set(0, 0);
   }
 
   // ------------------------------------------------------------------ brush footprint
@@ -1009,4 +1083,11 @@ function libraryId(stamps: object): number {
   let id = libraryIds.get(stamps);
   if (id === undefined) libraryIds.set(stamps, (id = nextLibraryId++));
   return id;
+}
+
+/** Ghost cells of terrain writes (erased cells show nothing; the outline marks them). */
+function terrainPreviewCells(writes: readonly TerrainTileWrite[]): PreviewCell[] {
+  const out: PreviewCell[] = [];
+  for (const w of writes) if (w.tile) out.push({ x: w.x, y: w.y, entry: { tilesetId: w.tile.tilesetId, tileId: w.tile.tileId }, flags: 0 });
+  return out;
 }

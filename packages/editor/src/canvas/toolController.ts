@@ -3,10 +3,14 @@
  * fill, marquee selection and pick. Owns the gesture in progress and turns
  * it into store ops — one transaction (= one undo step) per gesture.
  *
- * On a grid layer (terrain / collision) brush, eraser, rectangle and fill
- * write grid values with `paintTerrain` (which re-derives terrain tiles in
- * the same undo step); stamps do not apply there, and a single-cell pick
- * takes the grid value.
+ * On a grid (collision) layer brush, eraser, rectangle and fill write grid
+ * values with `paintTerrain`; stamps do not apply there, and a single-cell
+ * pick takes the grid value.
+ *
+ * Terrain brush (Autotile on, a tile layer active): brush / eraser strokes,
+ * rectangle, fill and the eraser's right drag dispatch core
+ * `paintTerrainBrush` (the solver picks the tiles, manual tiles stay); a
+ * single-cell right click on a tagged tile picks its terrain.
  *
  * v0.6: a saved library stamp (it has an `id`) is placed with core
  * `placeStamp` (layers matched by name / role, missing ones created in the
@@ -35,6 +39,7 @@ import {
   pasteClip,
   patchCellCount,
   placeStamp,
+  type TerrainBrush,
   type CellPoint,
   type CellWrite,
   type GridLayer,
@@ -70,6 +75,8 @@ import { activeLayer, layerInfo, mappingFor, savedStamp } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { activeRandomSet, hasRandomBrush, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint } from "./randomPaint";
+import { activeTerrainBrush } from "./terrainBrushSource";
+import { terrainOfTile } from "../ui/terrain/terrainModel";
 import {
   blockedReason,
   decidePick,
@@ -104,6 +111,8 @@ export type Gesture =
       readonly grid: boolean;
       /** Random brush (overrides `value`), or null; `placed` = stamp anchors this stroke already placed. */
       readonly random: { readonly set: RandomSet; readonly placed: Set<string> } | null;
+      /** Terrain brush (overrides `value`; the eraser erases terrain), or null. */
+      readonly terrain: TerrainBrush | null;
       readonly tool: StrokeTool;
       /** Brush footprint offsets around each stroke cell. */
       readonly offsets: readonly CellPoint[];
@@ -321,7 +330,7 @@ export class ToolController {
         break;
       case "rect": {
         const info = this.#activeInfo();
-        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || hasRandomBrush())) {
+        if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || hasRandomBrush() || this.#terrain())) {
           this.#start({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell, square: e.shiftKey, fromCenter: e.altKey });
         }
         break;
@@ -493,8 +502,32 @@ export class ToolController {
   /** The selected single tile when the fill / rectangle tools paint it (no stamp, no random set). */
   #singleTile(): TileSelection | null {
     const s = useEditorStore.getState();
-    if (s.stamp || hasRandomBrush() || !s.selection) return null;
+    if (s.stamp || hasRandomBrush() || !s.selection || this.#terrain()) return null;
     return s.selection;
+  }
+
+  /** The terrain brush on the active layer now (see `activeTerrainBrush`), or null. */
+  #terrain(): TerrainBrush | null {
+    return activeTerrainBrush(this.#host.scene?.store);
+  }
+
+  /** Dispatches a terrain brush write inside the open transaction; returns the changed cell count. */
+  #paintTerrain(store: MapStore, layerId: string, brush: TerrainBrush, cells: readonly CellPoint[], mode: { erase?: boolean; fill?: boolean } = {}): number {
+    const doc = store.document;
+    const inside = cells.filter((c) => doc.inBounds(c.x, c.y));
+    if (inside.length === 0) return 0;
+    return patchCellCount(
+      store.dispatch({
+        type: "paintTerrainBrush",
+        layerId,
+        cells: inside,
+        tilesetId: brush.tilesetId,
+        setId: brush.setId,
+        terrainId: brush.terrainId,
+        ...(mode.erase ? { erase: true } : {}),
+        ...(mode.fill ? { fill: true } : {}),
+      }),
+    );
   }
 
   // ------------------------------------------------------------------ helpers
@@ -641,6 +674,11 @@ export class ToolController {
       if (writes.length > 0) this.#transact(store, "fill", () => this.#paintGrid(store, layer.id, writes));
       return;
     }
+    const terrain = this.#terrain();
+    if (terrain) {
+      this.#transact(store, "fill", () => this.#paintTerrain(store, layer.id, terrain, [cell], { fill: true }));
+      return;
+    }
     // The sentinel never equals a cell, so this is the whole same-valued region.
     const points = floodFill(layer, cell.x, cell.y, -1, map);
     const single = this.#singleTile();
@@ -686,6 +724,11 @@ export class ToolController {
       if (value === null) return;
       const writes = gridRectWrites(r, value, (x, y) => layer.getCell(x, y));
       if (writes.length > 0) this.#transact(store, tool, () => this.#paintGrid(store, layer.id, writes));
+      return;
+    }
+    const terrain = this.#terrain();
+    if (terrain) {
+      this.#transact(store, tool, () => this.#paintTerrain(store, layer.id, terrain, [...rectCells(r)]));
       return;
     }
     const single = this.#singleTile();
@@ -746,6 +789,18 @@ export class ToolController {
       this.#picked(gridPickEvent(value, r));
       return;
     }
+    // Terrain brush: a single tagged tile picks its terrain (the brush stays a terrain brush).
+    if (r.width === 1 && r.height === 1 && this.#terrain() && active) {
+      const entry = doc.palette.get(cellPaletteIndex(active.getCell(r.x, r.y)));
+      const tileset = entry ? doc.getTileset(entry.tilesetId) : undefined;
+      const ref = tileset && entry ? terrainOfTile(tileset, entry.tileId, s.terrain) : null;
+      if (ref) {
+        s.setTerrain(ref);
+        switchTool();
+        this.#host.flash?.(r);
+        return;
+      }
+    }
     const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i));
     if (result.kind === "none") return;
     let clip: TileClip | null = null;
@@ -788,11 +843,12 @@ export class ToolController {
     let random: { set: RandomSet; placed: Set<string> } | null = null;
     let recent: TileSelection | null = null;
     const grid = isGridLayer(layer);
+    const terrain = grid ? null : this.#terrain();
     if (grid) {
       const v = this.#gridValue(layer);
       if (v === null) return;
       value = v;
-    } else if (state.tool === "eraser") value = EMPTY_CELL;
+    } else if (terrain || state.tool === "eraser") value = EMPTY_CELL;
     else if (hasRandomBrush()) {
       const set = this.#randomSet();
       if (!set) return;
@@ -815,7 +871,7 @@ export class ToolController {
     const seen = new Set<string>();
     // The line starts after the anchor's footprint, which the previous stroke already painted.
     if (from) footprintCells([from], offsets, seen);
-    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, random, tool, offsets, seen, count: 0, last: from });
+    this.#start({ kind: "paint", pointerId: e.pointerId, store, layerId: layer.id, value, grid, random, terrain, tool, offsets, seen, count: 0, last: from });
     this.#paint([e]);
     if (recent) this.#pushRecent(recent);
   }
@@ -875,6 +931,7 @@ export class ToolController {
     let changed: number;
     try {
       if (g.grid) changed = this.#paintGrid(g.store, g.layerId, gridWrites(covered, g.value, doc.map, getCell));
+      else if (g.terrain) changed = this.#paintTerrain(g.store, g.layerId, g.terrain, covered, { erase: g.tool === "eraser" });
       else if (g.random) changed = this.#paintRandom(g.store, g.layerId, g.random.set, covered, g.random.placed);
       else {
         changed = this.#paintCells(g.store, g.layerId, cellWrites(covered, g.value, doc.map.width, doc.map.height, getCell));
@@ -915,7 +972,7 @@ export class ToolController {
     const missing = missingBrush(s.tool, {
       grid: isGridLayer(layer),
       stamp: s.stamp !== null,
-      tile: !!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined,
+      tile: (!!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined) || this.#terrain() !== null,
       random: hasRandomBrush(),
     });
     if (!missing) return false;
@@ -932,6 +989,11 @@ export class ToolController {
     if (isGridLayer(layer)) {
       const writes = gridRectWrites(r, 0, (x, y) => layer.getCell(x, y));
       if (writes.length > 0) this.#transact(store, "eraser", () => this.#paintGrid(store, layer.id, writes));
+      return;
+    }
+    const terrain = this.#terrain();
+    if (terrain) {
+      this.#transact(store, "eraser", () => this.#paintTerrain(store, layer.id, terrain, [...rectCells(r)], { erase: true }));
       return;
     }
     const cells: CellWrite[] = [];
