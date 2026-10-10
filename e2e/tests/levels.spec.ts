@@ -42,8 +42,8 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   const imageBox = (await image.boundingBox())!;
   await image.click({ position: { x: imageBox.width * 0.4, y: imageBox.height * 0.2 } });
 
-  // Map 1 ("main"): listed in the PROJE tree (library column), active.
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  // Map 1 ("Ana harita", file levels/main.json): listed in the PROJE tree (library column), active.
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await drawStroke(page, -40);
 
   // New level "Zindan".
@@ -69,7 +69,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   // Close the program, open the project again: both levels come back.
   await page.reload();
   await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await expect(levelRow(page, "Zindan")).toBeVisible();
   await levelRow(page, "Zindan").click();
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
@@ -78,8 +78,8 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   expect(await readOpfsText(page, "levels/main.json")).toBe(mainText);
 
   // ---- Portal in "main" leading to "Zindan".
-  await levelRow(page, "main").click();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await levelRow(page, "Ana harita").click();
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   const entityId = await page.evaluate(() => {
     const smap = (window as unknown as { __smap: Hook }).__smap;
     const store = smap.store!;
@@ -104,7 +104,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   const target = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(32, 24));
   await page.mouse.click(target!.x, target!.y);
   await expect(page.locator("[data-point-pick]")).toBeHidden();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await expect(props.getByLabel("Hedef nokta x")).toHaveValue("1024");
   await expect(props.getByLabel("Hedef nokta y")).toHaveValue("768");
 
@@ -113,11 +113,11 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
   await page.mouse.dblclick(portal!.x, portal!.y);
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
 
-  // Palette: "Haritaya git: main".
+  // Palette: "Haritaya git: Ana harita".
   await page.keyboard.press("Control+k");
-  await page.getByRole("combobox").fill("haritaya git main");
+  await page.getByRole("combobox").fill("haritaya git ana harita");
   await page.keyboard.press("Enter");
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
 
   expect(errors).toEqual([]);
 });

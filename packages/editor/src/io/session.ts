@@ -230,9 +230,20 @@ export interface UnsavedGuard {
 
 const unsavedGuards = new Set<UnsavedGuard>();
 
+let unsavedGuardsChanged: (() => void) | null = null;
+
 export function registerUnsavedGuard(guard: UnsavedGuard): () => void {
   unsavedGuards.add(guard);
-  return () => unsavedGuards.delete(guard);
+  unsavedGuardsChanged?.();
+  return () => {
+    unsavedGuards.delete(guard);
+    unsavedGuardsChanged?.();
+  };
+}
+
+/** A guard's dirty state changed (the desktop host must know before the window closes). */
+export function notifyUnsavedGuards(): void {
+  unsavedGuardsChanged?.();
 }
 
 /**
@@ -260,7 +271,7 @@ export async function confirmDiscard(): Promise<boolean> {
 export async function newProject(options: NewProjectSetup): Promise<void> {
   const project = createProjectDocument(options);
   const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
-  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath), settings });
+  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, t("levels.firstMapName")), settings });
   if (options.tilesets && options.tilesets.length > 0) {
     const added = addDecodedTilesets(project.store, options.tilesets);
     if (added.length > 0) toast.success(t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows }));
@@ -632,7 +643,7 @@ export async function createProjectFromTilesets(files: readonly File[]): Promise
     tileHeight: first.spec.tileHeight,
   });
   const settings = normalizeProjectSettings({ tileWidth: first.spec.tileWidth, tileHeight: first.spec.tileHeight });
-  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath), settings });
+  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, t("levels.firstMapName")), settings });
   const added = addDecodedTilesets(project.store, items, group);
   // Starting a project is not an undo step: the first Ctrl+Z must not take the tilesets away.
   project.store.clearHistory();
@@ -966,6 +977,13 @@ function warnPalette(level: string, document: MapDocument): void {
   if (problems.outOfRange > 0) toast.warning(t("levels.paletteOutOfRange", { level, count: problems.outOfRange }));
 }
 
+let leaveTemporaryDocument: (() => void) | null = null;
+
+/** The stamp editor registers how to leave its tab (shows the active map again). */
+export function setLeaveTemporaryDocument(leave: (() => void) | null): void {
+  leaveTemporaryDocument = leave;
+}
+
 /** Level switches run one after another (a second click waits for the first file read). */
 let levelQueue: Promise<unknown> = Promise.resolve();
 
@@ -976,7 +994,11 @@ let levelQueue: Promise<unknown> = Promise.resolve();
  * the active level afterwards.
  */
 export function openLevel(levelId: string): Promise<boolean> {
-  const run = () => switchToLevel(levelId);
+  const run = () => {
+    // A map tab / "go to map" while the stamp editor tab is shown leaves it first (even for the active map).
+    if (leaveTemporaryDocument && useEditorStore.getState().project?.levelId?.startsWith("stamp:")) leaveTemporaryDocument();
+    return switchToLevel(levelId);
+  };
   const next = levelQueue.then(run, run);
   levelQueue = next.catch(() => false);
   return next;
@@ -1072,12 +1094,13 @@ export function installSession(): () => void {
   let lastUnsaved: boolean | null = null;
   const syncUnsaved = () => {
     const indicator = readSaveIndicator();
-    const unsaved = indicator.unsaved || indicator.text === "saving";
+    const unsaved = indicator.unsaved || indicator.text === "saving" || [...unsavedGuards].some((g) => g.dirty());
     if (unsaved === lastUnsaved) return;
     lastUnsaved = unsaved;
     platform.setUnsavedChanges(unsaved);
   };
   syncUnsaved();
+  unsavedGuardsChanged = syncUnsaved;
   const unsubscribeIndicator = subscribeSaveIndicator(syncUnsaved);
   const unsubscribeClose = platform.onCloseRequested(requestWindowClose);
 
@@ -1092,6 +1115,7 @@ export function installSession(): () => void {
     if (autosave === scheduler) autosave = null;
     window.removeEventListener("beforeunload", onBeforeUnload);
     unsubscribeIndicator();
+    if (unsavedGuardsChanged === syncUnsaved) unsavedGuardsChanged = null;
     unsubscribeClose();
   };
 }

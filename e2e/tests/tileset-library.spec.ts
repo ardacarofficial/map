@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { confirmTilesetCard, dropFile, expect, sampleBytes, test } from "../support/fixtures";
+import { confirmTilesetCard, dropFile, expect, sampleBytes, test, WELCOME_DROP } from "../support/fixtures";
 
 type Hook = {
   store: {
@@ -29,7 +29,7 @@ async function dropFiles(page: Page, selector: string, files: { name: string; by
 
 async function startProject(page: Page): Promise<void> {
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
 }
@@ -123,7 +123,8 @@ test("tileset modes: right-drag in Katı unmarks, tile context menu, remove an u
   await startProject(page);
   await page.locator("[data-library-view='single']").click();
 
-  // Katı: left-drag marks three tiles, right-drag unmarks two of them.
+  // ⚙ Düzenle → Katı: left-drag marks three tiles, right-drag unmarks two of them.
+  await page.locator("[data-tileset-edit]").click();
   await page.locator("[data-tileset-mode='solid']").click();
   await expect(page.locator("[data-tileset-hint]")).toContainText("Sol: işaretle · Sağ: kaldır");
   const a = await tileCenter(page, "overworld-32", 0, 0);
@@ -142,8 +143,9 @@ test("tileset modes: right-drag in Katı unmarks, tile context menu, remove an u
   await expect.poll(() => solidOf(page, "overworld-32")).toEqual([0]);
   await expect(page.locator("[data-tile-menu]")).toHaveCount(0);
 
-  // Seç: right click on a tile opens its menu; "Katı yap" marks it.
-  await page.locator("[data-tileset-mode='pick']").click();
+  // Back to picking (Düzenle off): right click on a tile opens its menu; "Katı yap" marks it.
+  await page.locator("[data-tileset-edit]").click();
+  await expect(page.locator("[data-tileset-edit]")).toHaveAttribute("aria-pressed", "false");
   const d = await tileCenter(page, "overworld-32", 3, 1);
   await page.mouse.click(d.x, d.y, { button: "right" });
   const menu = page.locator("[data-tile-menu]");

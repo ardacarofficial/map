@@ -26,6 +26,25 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
   return entries.map((entry, i) =>
     entry.type === "separator" ? (
       <div key={`sep-${i}`} role="separator" className={menuSeparatorClass} />
+    ) : entry.submenu ? (
+      <Menu.SubmenuRoot key={entry.id}>
+        <Menu.SubmenuTrigger data-context-item={entry.id} disabled={!entry.enabled} className={`${menuItemClass} py-1 text-sm`}>
+          {anyCheck ? (
+            <span aria-hidden className="size-[15px] shrink-0" />
+          ) : (
+            entry.icon && <Icon name={entry.icon} size={15} className="shrink-0 text-muted" />
+          )}
+          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+          <Icon name="chevronRight" size={13} className="ml-4 shrink-0 text-faint" />
+        </Menu.SubmenuTrigger>
+        <Menu.Portal>
+          <Menu.Positioner side="right" align="start" sideOffset={-2} className={menuPositionerClass}>
+            <Menu.Popup className={`${menuPopupClass} max-h-[320px] min-w-[180px] overflow-y-auto`} data-context-submenu={entry.id}>
+              <Items entries={entry.submenu} Item={Item} />
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.SubmenuRoot>
     ) : (
       <Item
         key={entry.id}

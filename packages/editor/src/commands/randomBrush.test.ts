@@ -112,3 +112,21 @@ describe("random brush from a selection (round 4)", () => {
     expect(useRandomBrush.getState().stamps).toHaveLength(0);
   });
 });
+
+describe("addStampToRandomSet: default chunk", () => {
+  it("is the largest stamp candidate (a 1 × 1 chunk would overwrite placed stamps)", async () => {
+    const { useProjectLibrary } = await import("../io/projectLibrary");
+    const { addStampToRandomSet, useRandomBrush } = await import("./randomBrush");
+    const mk = (id: string, width: number, height: number) => ({ id, name: id, width, height, layers: [] }) as never;
+    useProjectLibrary.setState({ stamps: [mk("a", 3, 2), mk("b", 2, 4)] } as never);
+    useRandomBrush.setState({ stamps: [], chunk: { w: 1, h: 1 }, scatter: 0, randomFlip: false, activeSetId: null });
+    addStampToRandomSet("a");
+    expect(useRandomBrush.getState().chunk).toEqual({ w: 3, h: 2 });
+    addStampToRandomSet("b");
+    expect(useRandomBrush.getState().chunk).toEqual({ w: 3, h: 4 });
+    // A chunk the user chose is kept.
+    useRandomBrush.setState({ stamps: [], chunk: { w: 8, h: 8 } });
+    addStampToRandomSet("a");
+    expect(useRandomBrush.getState().chunk).toEqual({ w: 8, h: 8 });
+  });
+});

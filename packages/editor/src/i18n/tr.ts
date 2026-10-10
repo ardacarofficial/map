@@ -828,6 +828,7 @@ export const tr = {
   },
   levels: {
     title: "Haritalar",
+    firstMapName: "Ana harita",
     add: "Yeni harita",
     rename: "Yeniden adlandır",
     rowHint: "Tıkla: aç · Çift tıkla: yeniden adlandır · Sürükle: sırala",
@@ -1304,6 +1305,8 @@ export const tr = {
     editHint: "Kendi sekmesinde aç ve araçlarla düzenle",
     category: "Kategori…",
     tagsMenu: "Etiketler…",
+    categoryMenu: "Kategori",
+    newCategory: "Yeni kategori…",
     categoryLabel: "Kategori",
     categoryPlaceholder: "Kategorisiz",
     tagsLabel: "Etiketler",

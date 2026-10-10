@@ -21,7 +21,7 @@ import { useExportStore } from "../../export/exportStore";
 import { t } from "../../i18n";
 import { withProjectData } from "../../io/levelWorkspace";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { getLevelWorkspace, openLevel, registerUnsavedGuard } from "../../io/session";
+import { getLevelWorkspace, notifyUnsavedGuards, openLevel, registerUnsavedGuard, setLeaveTemporaryDocument } from "../../io/session";
 import { useEditorStore, type OpenProject } from "../../state/editorStore";
 import { toast } from "../toast/toastStore";
 import { isStampLevelId, missingStampTilesets, stampEditStore, stampFromDocument, stampLevelId } from "./stampDoc";
@@ -77,6 +77,7 @@ let unwatchStore: (() => void) | null = null;
 
 function bump(): void {
   useStampEditor.setState((s) => ({ version: s.version + 1 }));
+  notifyUnsavedGuards();
 }
 
 /** True when the open stamp differs from the library's version. */
@@ -120,6 +121,7 @@ function dropSession(): void {
   sessionWorkspace = null;
   stampLayerId = null;
   useStampEditor.setState((s) => ({ session: null, active: false, version: s.version + 1 }));
+  notifyUnsavedGuards();
 }
 
 /** Shows the stamp tab's store on the canvas. */
@@ -310,7 +312,9 @@ export function installStampEditor(): () => void {
   });
   // Closing the window / opening another project asks about an unsaved stamp first.
   const offGuard = registerUnsavedGuard({ dirty: () => isStampSessionDirty(), settle: closeStampEditor });
+  setLeaveTemporaryDocument(leaveStampEditor);
   return () => {
+    setLeaveTemporaryDocument(null);
     offGuard();
     offEditor();
     offWorld();

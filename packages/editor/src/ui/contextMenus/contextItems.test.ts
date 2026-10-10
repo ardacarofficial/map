@@ -80,3 +80,20 @@ describe("resolveContextItems", () => {
     expect(plain).toMatchObject({ checked: undefined });
   });
 });
+
+describe("resolveContextItems: submenus", () => {
+  it("resolves submenu entries; an empty submenu is dropped", () => {
+    const { l } = lookup({});
+    const run = vi.fn();
+    const items = resolveContextItems(
+      [
+        { type: "item", id: "category", label: "Kategori", submenu: [{ type: "item", id: "a", label: "A", checked: true, run }, SEPARATOR, { type: "item", id: "new", label: "Yeni…", run }] },
+        { type: "item", id: "empty", label: "Boş", submenu: [{ type: "item", id: "x", command: "layer.duplicate" }] },
+      ],
+      l,
+    );
+    expect(items).toHaveLength(1);
+    const sub = items[0]!;
+    expect(sub.type === "item" && sub.submenu?.map((e) => (e.type === "item" ? e.id : "-"))).toEqual(["a", "-", "new"]);
+  });
+});

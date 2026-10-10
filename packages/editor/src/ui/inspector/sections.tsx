@@ -53,7 +53,7 @@ import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls
 import { saveClipAsStamp } from "../tileset/SelectionSection";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { BrushPreview } from "./BrushPreview";
-import { BrushShapeChoice, BrushSizeChip, showsSizeControls } from "./BrushSizeChip";
+import { BrushShapeChoice, showsSizeControls } from "./BrushSizeChip";
 import { fillBlocker } from "./fillCheck";
 import {
   ActionButton,
@@ -262,11 +262,7 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
         <PropRow label={t("inspector.tool")}>
           <ToolMenu />
         </PropRow>
-        {sized && (
-          <PropRow label={t("toolOptions.size")}>
-            <BrushSizeChip withShape={false} showLabel={false} />
-          </PropRow>
-        )}
+        {/* Size: the tool bar chip ("Boyut N ▾"). The card adds the shape once the brush is bigger than 1. */}
         {sized && showsSizeControls(size) && (
           <PropRow label={t("toolOptions.shape")}>
             <BrushShapeChoice />
@@ -628,7 +624,8 @@ function MapSection({ ctx }: { ctx: InspectorContext }) {
         subtitle={t("inspector.map")}
       />
       {isEntityLayer(ctx.layer) && <p className="px-3 pt-1 text-sm leading-5 text-muted">{t("inspector.entityHint")}</p>}
-      <SectionHeader>{t("properties.map")}</SectionHeader>
+      {/* The card title already says "Harita": no second "HARİTA" header. */}
+      <div className="h-2" aria-hidden />
       <PropGrid>
         <PropRow label={t("properties.mapSize")}>
           <ReadField>{t("common.cells", { width: map.width, height: map.height })}</ReadField>

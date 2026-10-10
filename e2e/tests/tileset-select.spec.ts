@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 
-import { confirmTilesetCard, dropFile, expect, sampleBytes, test } from "../support/fixtures";
+import { confirmTilesetCard, dropFile, expect, sampleBytes, test, WELCOME_DROP } from "../support/fixtures";
 
 type Hook = {
   editor: { getState(): { stamp: { width: number; height: number } | null; selection: { tileId: number } | null; tool: string } };
@@ -40,7 +40,7 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
   await expect(canvas).toBeVisible();
@@ -63,7 +63,8 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   await expect(selected).toHaveAttribute("data-selected-tiles", "9,10,11,17,18,19");
   const stamp = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().stamp);
   expect(stamp && [stamp.width, stamp.height]).toEqual([3, 2]);
-  await expect(page.locator("[data-selection-label]")).toHaveText("3 × 2 tile · overworld-32");
+  // The Denetçi's FIRÇA card shows the block.
+  await expect(page.locator("[data-inspector-brush]")).toContainText("3 × 2 tile");
 
   // ---- Paint once on the map: 6 cells in the same layout.
   await canvas.focus();
@@ -109,19 +110,22 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const sel = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().selection);
   expect(sel?.tileId).toBe(18);
 
-  // ---- Modes are labelled; Esc returns to "Seç".
-  await page.locator("[data-tileset-mode='solid']").click();
+  // ---- ⚙ Düzenle shows the labelled edit modes (Katı first); Esc returns to picking.
+  await page.locator("[data-tileset-edit]").click();
   await expect(page.locator("[data-tileset-mode='solid']")).toHaveAttribute("aria-checked", "true");
+  await page.locator("[data-tileset-mode='terrain']").click();
+  await expect(page.locator("[data-tileset-mode='terrain']")).toHaveAttribute("aria-checked", "true");
   await grid.focus();
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-tileset-edit]")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("[data-tileset-modes]")).toBeHidden();
 
   expect(errors).toEqual([]);
 });
 
 test("tileset panel: the wheel works like the map (notch zooms at the cursor, Shift scrolls sideways, trackpad pans), Space-drag pans", async ({ page }) => {
   await page.goto("/");
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   const grid = page.getByRole("grid", { name: /overworld/i });
   const image = grid.locator("[data-tileset-grid]");
@@ -159,6 +163,7 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   // Space + drag pans without selecting.
   const selectedNow = () => grid.evaluate((el) => el.querySelector("[data-selected-tiles]")?.getAttribute("data-selected-tiles") ?? null);
   const selectedBefore = await selectedNow();
+  await grid.evaluate((el) => el.scrollTo(0, 0));
   const s0 = await scroll();
   await page.mouse.move(box.x + box.width / 2, box.y + 120);
   await page.keyboard.down("Space");

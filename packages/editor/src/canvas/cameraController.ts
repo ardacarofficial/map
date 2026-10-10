@@ -209,11 +209,12 @@ export class CameraController {
 
   /**
    * The view to remember for this level (map px at the view centre + zoom),
-   * or null while it still shows the opening / framed view (reopening shows
-   * that again anyway). `camera` defaults to the current one.
+   * or null while it still shows the opening view (reopening shows that
+   * again anyway). `camera` defaults to the current one.
    */
   savedView(camera: Camera = this.camera): { cx: number; cy: number; zoom: number } | null {
-    if (this.#pendingFrameMap || (this.#framed && camera === this.camera) || this.viewW <= 1 || this.viewH <= 1) return null;
+    // The untouched opening view is not remembered; a fitted ("Sığdır") view is: it differs from the opening one.
+    if (this.#pendingFrameMap || (this.#framed && this.#frameMode === "initial" && camera === this.camera) || this.viewW <= 1 || this.viewH <= 1) return null;
     const zoom = this.#anim && camera === this.camera ? this.#quantize(this.#clamp(this.#anim.target)) : camera.zoom;
     const cx = (this.viewW / 2 - camera.x) / camera.zoom;
     const cy = (this.viewH / 2 - camera.y) / camera.zoom;

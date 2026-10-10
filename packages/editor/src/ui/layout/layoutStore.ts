@@ -37,7 +37,7 @@ export const LEFT_PANEL_KEY = "smap.layout.leftPanel";
 export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
 
 /** Bottom dock height: default, and the range a drag may reach (CSS px, tab strip included). */
-export const DOCK = { initial: 150, min: 96, max: 480 } as const;
+export const DOCK = { initial: 200, min: 96, max: 480 } as const;
 
 /** What the left column shows (rail buttons): the library, or the project tree on its own. */
 export type LeftPanel = "library" | "project";

@@ -553,6 +553,11 @@ function TilesetLibrary({
             <PaletteChips palettes={palettes} activeId={showingPalette ? palette.id : null} wide />
             {modeArea}
             <TerrainSets compact />
+            {stack && (
+              <div className="mt-auto shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-wheel-hint>
+                {t("tilesetLib.wheelHint")}
+              </div>
+            )}
           </aside>
           {viewport}
         </div>

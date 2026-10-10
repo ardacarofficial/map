@@ -20,6 +20,10 @@ export function sampleBytes(relativePath: string): number[] {
  */
 export const test = base.extend({
   page: async ({ page }, use) => {
+    // Console errors / warnings are printed with a marker so a run's log shows them (none expected).
+    page.on("console", (m) => {
+      if (m.type() === "error" || m.type() === "warning") console.log(`[browser ${m.type()}] ${m.text()}`);
+    });
     await page.addInitScript(() => {
       (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker = () =>
         navigator.storage.getDirectory();
@@ -93,4 +97,20 @@ export async function confirmTilesetCard(page: Page): Promise<void> {
   await expect(card).toBeVisible();
   await card.locator("button[type=submit]").click();
   await expect(card).toBeHidden();
+}
+
+/** The welcome screen's "Tileset bırak" card (drops anywhere work too; this one is the visible target). */
+export const WELCOME_DROP = "[data-welcome-drop]";
+
+/** Waits until the welcome screen (no project open) is shown. */
+export async function expectWelcome(page: Page): Promise<void> {
+  await expect(page.locator(WELCOME_DROP)).toBeVisible();
+}
+
+/** Drops a PNG on the welcome screen and accepts the import card: a new project with that tileset. */
+export async function startWithTileset(page: Page, sample = "tilesets/overworld-32.png"): Promise<void> {
+  await expectWelcome(page);
+  await dropFile(page, WELCOME_DROP, sample.split("/").pop()!, sampleBytes(sample));
+  await confirmTilesetCard(page);
+  await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
 }

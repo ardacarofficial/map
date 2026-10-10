@@ -58,12 +58,17 @@ function TerrainPicker() {
   );
 }
 
+/** Tool bar: size only (the FIRÇA card shows the shape once the size is above 1). */
+function ToolBarBrushSize() {
+  return <BrushSizeChip withShape={false} />;
+}
+
 let registered = false;
 
 /** Registers the built-in entries (idempotent). */
 export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
-  registerToolOptions(["brush", "eraser"], BrushSizeChip, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
+  registerToolOptions(["brush", "eraser"], ToolBarBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "eraser", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }

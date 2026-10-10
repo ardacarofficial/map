@@ -3,7 +3,7 @@
  * Tile data never lives in React state; panels send commands to the
  * core `MapStore` and listen for its changes.
  */
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { installGlobalShortcuts } from "../commands/globalShortcuts";
 import { installSession } from "../io/session";
@@ -15,7 +15,7 @@ import { UnsavedDialog } from "./dialogs/UnsavedDialog";
 import { MapSettingsDialog } from "./mapSettings/MapSettingsDialog";
 import { BackupsDialog } from "./dialogs/BackupsDialog";
 import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
-import { ExportDialog } from "../export/ExportDialog";
+import { useExportStore } from "../export/exportStore";
 import { EntityTypesDialog } from "./entities/EntityTypesDialog";
 import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
@@ -31,6 +31,20 @@ import { TooltipProvider } from "./primitives/Tooltip";
 import { Toaster } from "./toast/Toaster";
 import { useUiStore } from "./uiStore";
 import { WelcomeScreen } from "./welcome/WelcomeScreen";
+
+/** The export dialog (and its preview code) loads on first open: it is not needed to start drawing. */
+const ExportDialog = lazy(() => import("../export/ExportDialog").then((m) => ({ default: m.ExportDialog })));
+
+function LazyExportDialog() {
+  const open = useExportStore((s) => s.open);
+  const [wanted, setWanted] = useState(open);
+  if (open && !wanted) setWanted(true);
+  return wanted ? (
+    <Suspense fallback={null}>
+      <ExportDialog />
+    </Suspense>
+  ) : null;
+}
 
 export function App() {
   const hasProject = useEditorStore((s) => s.project !== null);
@@ -64,7 +78,7 @@ export function App() {
       <MapSettingsDialog />
       <BackupsDialog />
       <DiskChangedDialog />
-      <ExportDialog />
+      <LazyExportDialog />
       <SaveStampDialog />
       <EntityTypesDialog />
       <NewLevelDialog />

@@ -327,11 +327,6 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
       </div>
 
       <div className="flex items-center gap-2 border-t border-line px-5 py-3">
-        <span className="min-w-0 truncate font-mono text-xs text-faint tabular">
-          {tileSize && mapSize
-            ? t("newProject.previewSummary", { width: mapSize.width * tileSize.width, height: mapSize.height * tileSize.height, layers: cleanLayers(layerList).length })
-            : " "}
-        </span>
         <div className="ml-auto flex gap-2">
           <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
           <Button type="submit" variant="primary" disabled={touched && !valid}>

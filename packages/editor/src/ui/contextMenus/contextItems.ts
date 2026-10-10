@@ -27,6 +27,8 @@ export interface ContextItemDef {
   readonly danger?: boolean;
   /** Shows a check mark (on) or an empty check slot (off). */
   readonly checked?: boolean;
+  /** Opens a submenu with these entries instead of running something. */
+  readonly submenu?: readonly ContextEntry[];
 }
 
 export type ContextEntry = ContextItemDef | { readonly type: "separator" };
@@ -44,6 +46,8 @@ export interface ResolvedContextItem {
   readonly danger: boolean;
   readonly checked: boolean | undefined;
   readonly run: () => void;
+  /** Resolved submenu entries (the item opens them). */
+  readonly submenu?: ResolvedContextEntry[];
 }
 
 export type ResolvedContextEntry = ResolvedContextItem | { readonly type: "separator" };
@@ -72,6 +76,25 @@ export function resolveContextItems(entries: readonly ContextEntry[], lookup: Co
       continue;
     }
     const command = entry.command ? lookup.command(entry.command) : undefined;
+    const submenu = entry.submenu ? resolveContextItems(entry.submenu, lookup) : undefined;
+    if (submenu) {
+      if (submenu.length === 0) continue;
+      if (pendingSeparator) out.push({ type: "separator" });
+      pendingSeparator = false;
+      out.push({
+        type: "item",
+        id: entry.id,
+        label: entry.label ?? entry.id,
+        icon: entry.icon,
+        shortcut: null,
+        enabled: entry.disabled !== true,
+        danger: false,
+        checked: entry.checked,
+        run: () => undefined,
+        submenu,
+      });
+      continue;
+    }
     if (!entry.run && !command) continue;
     const label = entry.label ?? command?.title ?? entry.id;
     const enabled = entry.disabled !== undefined ? !entry.disabled : entry.run ? true : (command?.enabled ?? false);

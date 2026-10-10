@@ -306,8 +306,10 @@ export function installLevelActions(): () => void {
   const unregister = registerPaletteProvider(() => {
     const ws = getLevelWorkspace();
     if (!ws || useLevelUi.getState().pick) return [];
+    // The active map is listed too while the stamp editor tab is shown (going there leaves the stamp tab).
+    const onStamp = useEditorStore.getState().project?.levelId?.startsWith("stamp:") ?? false;
     return ws.levels
-      .filter((l) => l.id !== ws.activeId)
+      .filter((l) => onStamp || l.id !== ws.activeId)
       .map((l) => ({ key: `level.goto:${l.id}`, prefix: t("levels.goTo"), title: l.name, run: () => void openLevel(l.id) }));
   });
 

@@ -70,8 +70,8 @@ export function levelsForSave(levels: readonly LevelRef[] | undefined, levelPath
 }
 
 /** The level list of a project that was never saved: just its one level. */
-export function defaultLevels(levelPath: string): ProjectLevel[] {
-  return [{ id: levelIdFromPath(levelPath), name: levelName(levelPath), path: levelPath, world: { x: 0, y: 0 } }];
+export function defaultLevels(levelPath: string, name?: string): ProjectLevel[] {
+  return [{ id: levelIdFromPath(levelPath), name: name ?? levelName(levelPath), path: levelPath, world: { x: 0, y: 0 } }];
 }
 
 /** One file of a project folder, relative to it. Text is UTF-8. */

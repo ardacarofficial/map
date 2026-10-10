@@ -40,7 +40,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await confirmTilesetCard(page);
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
   // The PROJE tree lists the single map, active.
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
 
   await page.getByRole("button", { name: "Yeni harita" }).first().click();
   const dialog = page.locator("[data-dialog='new-level']");
@@ -57,6 +57,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
 
   // ---- Into the world view (left rail "Dünya"): both maps, no layers.
   const worldButton = page.locator("[data-rail='world']");
+  await expect(page.locator("canvas[data-ruler='top']")).toBeVisible();
   await worldButton.click();
   await expect(worldButton).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-status-world]")).toContainText("Dünya");
@@ -64,6 +65,8 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await expect(page.getByRole("region", { name: "Katmanlar" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Kalem" })).toBeDisabled();
   await expect.poll(async () => (await worldBoxes(page)).length).toBe(2);
+  // No tile rulers on the world map (they come back in the map view).
+  await expect(page.locator("canvas[data-ruler='top']")).toBeHidden();
 
   // ---- Drag Zindan down-right by about 3 × 2 tiles (snaps to the 32 px grid).
   const box = (await worldBoxes(page)).find((b) => b.id === zindanId)!;
@@ -94,7 +97,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // ---- Reopen: the position is still there, and the world view shows it.
   await page.reload();
   await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await page.locator("[data-canvas-host]").focus();
   await page.keyboard.press("w");
   await expect(page.locator("[data-status-world]")).toBeVisible();
@@ -111,8 +114,8 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // ---- Levels panel click while in the world view opens that level too.
   await page.keyboard.press("w");
   await expect(page.locator("[data-status-world]")).toBeVisible();
-  await levelRow(page, "main").click();
-  await expect(levelRow(page, "main")).toHaveAttribute("aria-selected", "true");
+  await levelRow(page, "Ana harita").click();
+  await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("[data-status-world]")).toBeHidden();
 
   expect(errors).toEqual([]);

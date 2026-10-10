@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { addStampToRandomSet } from "../../commands/randomBrush";
 import { runCommand } from "../../commands/registry";
-import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, stampRegion, toggleStampFavorite } from "../../commands/stampActions";
+import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, setStampMeta, stampRegion, toggleStampFavorite } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
@@ -44,7 +44,20 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
     { type: "item", id: "edit", label: t("stampLib.edit"), icon: "pencil", run: () => void openStampEditor(stamp.id) },
     { type: "item", id: "rename", label: t("stamps.rename"), icon: "pencilLine", run: onRename },
     SEPARATOR,
-    { type: "item", id: "category", label: t("stampLib.category"), icon: "folder", run: () => lib.requestFocus(stamp.id, "category") },
+    {
+      type: "item",
+      id: "category",
+      label: t("stampLib.categoryMenu"),
+      icon: "folder",
+      submenu: [
+        ...stampCategories(useProjectLibrary.getState().stamps).map(
+          (c): ContextEntry => ({ type: "item", id: `category:${c.name}`, label: c.name, checked: stamp.category === c.name, run: () => void setStampMeta(stamp.id, { category: c.name }) }),
+        ),
+        { type: "item", id: "category:none", label: t("stampLib.categoryPlaceholder"), checked: !stamp.category, run: () => void setStampMeta(stamp.id, { category: "" }) },
+        SEPARATOR,
+        { type: "item", id: "category:new", label: t("stampLib.newCategory"), run: () => lib.requestFocus(stamp.id, "category") },
+      ],
+    },
     { type: "item", id: "tags", label: t("stampLib.tagsMenu"), icon: "bricks", run: () => lib.requestFocus(stamp.id, "tags") },
     {
       type: "item",

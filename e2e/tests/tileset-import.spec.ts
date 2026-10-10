@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { confirmTilesetCard, dropFile, expect, sampleBytes, test } from "../support/fixtures";
+import { confirmTilesetCard, dropFile, expect, sampleBytes, test, WELCOME_DROP, expectWelcome } from "../support/fixtures";
 
 type Hook = {
   store: {
@@ -49,10 +49,10 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+  await expectWelcome(page);
 
   // A 32 px project from the welcome drop.
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
 
@@ -118,7 +118,7 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
 
 test("tileset import card: leftover pixels are reported with a margin/spacing suggestion", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+  await expectWelcome(page);
   // A 103 × 69 image: 6 × 4 tiles of 16 px with 1 px spacing and margin.
   const bytes = await page.evaluate(async () => {
     const c = new OffscreenCanvas(103, 69);
@@ -131,7 +131,7 @@ test("tileset import card: leftover pixels are reported with a margin/spacing su
     }
     return [...new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer())];
   });
-  await dropFile(page, "[role=button][tabindex='0']", "spaced.png", bytes);
+  await dropFile(page, WELCOME_DROP, "spaced.png", bytes);
   const card = page.getByTestId("tileset-card");
   await expect(card).toBeVisible();
   // Transparent gutters → margin 1, spacing 1 are found right away.

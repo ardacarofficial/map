@@ -27,6 +27,9 @@ export function editorCodeSplitting() {
       { name: "pixi", test: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:pixi\.js|@pixi)[\\/]/, priority: 20 },
       { name: "react", test: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react|react-dom|scheduler)[\\/]/, priority: 20 },
       { name: "vendor", test: /[\\/]node_modules[\\/]/, priority: 10 }, // base-ui, zustand, …
+      // Map data model (pure, changes less often than the UI) and the UI strings (both languages).
+      { name: "core", test: /[\\/]packages[\\/]core[\\/]src[\\/]/, priority: 10 },
+      { name: "i18n", test: /[\\/]packages[\\/]editor[\\/]src[\\/]i18n[\\/](?:tr|en)\.ts$/, priority: 10 },
     ],
   };
 }

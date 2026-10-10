@@ -26,6 +26,7 @@
  */
 import {
   cellPaletteIndex,
+  MAX_RANDOM_CHUNK,
   normalizeRandomSet,
   randomSetProblem,
   type RandomCandidate,
@@ -36,7 +37,9 @@ import {
 import { create } from "zustand";
 
 import { t } from "../i18n";
+import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type TileSelection } from "../state/editorStore";
+import { askText } from "../ui/tileset/TextPrompt";
 import { toast } from "../ui/toast/toastStore";
 
 export interface RandomTileEntry {
@@ -362,11 +365,29 @@ export function addStampToRandomSet(stampId: string): void {
       writing = false;
     }
   }
-  useRandomBrush.setState({ stamps: [...o.stamps, { kind: "stamp", stampId }] });
+  const stamps: RandomStampCandidate[] = [...o.stamps, { kind: "stamp", stampId }];
+  // A 1 × 1 chunk would let the next cell's pick overwrite a placed stamp: the default chunk is the largest stamp.
+  const before = largestStamp(o.stamps);
+  const auto = (o.chunk.w === 1 && o.chunk.h === 1) || (o.chunk.w === before.w && o.chunk.h === before.h);
+  useRandomBrush.setState({ stamps, ...(auto ? { chunk: largestStamp(stamps) } : {}) });
   // The brush stamp (if any) is replaced by the random brush.
   if (s.stamp) s.setStamp(null);
   if (s.tool !== "brush" && s.tool !== "fill" && s.tool !== "rect") s.setTool("brush");
   toast.success(t("randomSets.stampAdded", { count: randomCandidateCount() }));
+}
+
+/** Size of the largest stamp candidate (each axis on its own), at least 1 × 1. */
+export function largestStamp(candidates: readonly RandomStampCandidate[], library = useProjectLibrary.getState().stamps): { w: number; h: number } {
+  let w = 1;
+  let h = 1;
+  for (const c of candidates) {
+    const stamp = library.find((s) => s.id === c.stampId);
+    if (stamp) {
+      w = Math.max(w, stamp.width);
+      h = Math.max(h, stamp.height);
+    }
+  }
+  return { w: Math.min(w, MAX_RANDOM_CHUNK), h: Math.min(h, MAX_RANDOM_CHUNK) };
 }
 
 export function removeRandomStamp(stampId: string): void {
@@ -479,7 +500,6 @@ export function deleteRandomSet(id: string): boolean {
 
 /** "Yeni set olarak kaydet…": asks for a name, then saves (see {@link saveRandomSet}). */
 export async function saveRandomSetAs(): Promise<string | null> {
-  const { askText } = await import("../ui/tileset/TextPrompt");
   const name = await askText({
     title: t("randomSets.saveTitle"),
     label: t("randomSets.saveName"),

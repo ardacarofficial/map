@@ -1,4 +1,7 @@
-import { dropFile, expect, pixelDiffRatio, readOpfsText, sampleBytes, test, confirmTilesetCard } from "../support/fixtures";
+import { dropFile, expect, pixelDiffRatio, readOpfsText, sampleBytes, test, confirmTilesetCard, WELCOME_DROP, expectWelcome } from "../support/fixtures";
+
+/** Toasts float over the canvas ("Kaydedildi" vs "Açıldı"): keep them out of the comparison shots. */
+const QUIET = "[data-toaster] { display: none !important; }";
 
 // CLAUDE.md v0.1 "Bitti": tileset dropped, map drawn, saved, program closed and
 // reopened -> the same map comes back.
@@ -7,10 +10,10 @@ test("v0.1: drop tileset, draw, save, reload, open -> same map", async ({ page }
   page.on("pageerror", (e) => errors.push(e.message));
 
   await page.goto("/");
-  await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+  await expectWelcome(page);
 
   // Drop the tileset on the welcome drop zone.
-  await dropFile(page, "[role=button][tabindex='0']", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
   await confirmTilesetCard(page);
 
   const canvas = page.locator("canvas[aria-label='map canvas']").first(); // main canvas (the tileset preview shares the label)
@@ -23,13 +26,13 @@ test("v0.1: drop tileset, draw, save, reload, open -> same map", async ({ page }
   await expect(image).toBeVisible();
   const imageBox = (await image.boundingBox())!;
   await image.click({ position: { x: imageBox.width * 0.4, y: imageBox.height * 0.2 } });
-  await expect(page.getByText("Seçili tile yok")).toBeHidden();
+  await expect(page.getByText("Önce bir tile seç")).toBeHidden();
 
   // Deterministic camera (focus the canvas hover-free first, then frame the map).
   await canvas.focus();
   await page.keyboard.press("Shift+Digit1");
   await page.waitForTimeout(300);
-  const emptyShot = await canvas.screenshot();
+  const emptyShot = await canvas.screenshot({ style: QUIET });
   const box = (await canvas.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
@@ -47,20 +50,21 @@ test("v0.1: drop tileset, draw, save, reload, open -> same map", async ({ page }
   expect(levelBefore).not.toBeNull();
   expect(JSON.parse(levelBefore!)).toBeTruthy();
 
+  await page.mouse.move(2, 2); // no brush hover preview in the shot
   await page.keyboard.press("Shift+Digit1");
   await page.waitForTimeout(300);
-  const shotBefore = await canvas.screenshot();
+  const shotBefore = await canvas.screenshot({ style: QUIET });
 
   // "Close the program": reload (OPFS persists), then open the project.
   await page.reload();
-  await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+  await expectWelcome(page);
   await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
   await expect(canvas).toBeVisible();
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
 
   await page.keyboard.press("Shift+Digit1");
   await page.waitForTimeout(300);
-  const shotAfter = await canvas.screenshot();
+  const shotAfter = await canvas.screenshot({ style: QUIET });
   expect(await pixelDiffRatio(page, shotBefore, shotAfter)).toBeLessThan(0.002);
   // Sanity: the stroke is actually visible (an empty map would differ from the drawn one).
   expect(Buffer.compare(shotBefore, emptyShot)).not.toBe(0);

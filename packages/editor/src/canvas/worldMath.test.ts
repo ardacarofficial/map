@@ -176,6 +176,17 @@ describe("CameraController level view memory", () => {
     cam.initialView();
     expect(cam.savedView()).toBeNull();
   });
+  it("remembers a fitted view (Sığdır), which differs from the opening view", () => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(800, 600, 1);
+    cam.initialView();
+    const opening = cam.camera.zoom;
+    cam.frameMap();
+    const view = cam.savedView();
+    expect(view).not.toBeNull();
+    expect(view!.zoom).toBe(cam.camera.zoom);
+    expect(view!.zoom).not.toBe(opening);
+  });
   it("restores zoom and centre, also in another view size", () => {
     const cam = new CameraController(() => map, () => {});
     cam.resize(800, 600, 1);

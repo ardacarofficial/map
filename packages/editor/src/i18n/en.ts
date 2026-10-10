@@ -825,6 +825,7 @@ export const en: Messages = {
   },
   levels: {
     title: "Maps",
+    firstMapName: "Main map",
     add: "New map",
     rename: "Rename",
     rowHint: "Click: open · Double-click: rename · Drag: reorder",
@@ -1301,6 +1302,8 @@ export const en: Messages = {
     editHint: "Open in its own tab and edit with the tools",
     category: "Category…",
     tagsMenu: "Tags…",
+    categoryMenu: "Category",
+    newCategory: "New category…",
     categoryLabel: "Category",
     categoryPlaceholder: "Uncategorized",
     tagsLabel: "Tags",

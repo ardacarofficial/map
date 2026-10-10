@@ -7,6 +7,7 @@ import { useEffect } from "react";
 
 import type { CanvasHandle } from "../../canvas";
 import { registerCommands } from "../../commands/registry";
+import { useWorldView } from "../../commands/worldActions";
 import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { useLayoutStore } from "./layoutStore";
@@ -15,9 +16,11 @@ function apply(handle: CanvasHandle | null, visible: boolean): void {
   if (handle && handle.areRulersVisible() !== visible) handle.setRulersVisible(visible);
 }
 
-/** Keeps the mounted canvas' rulers in step with the stored choice. */
+/** Keeps the mounted canvas' rulers in step with the stored choice (the world map has no tile coordinates: none there). */
 export function useRulersSync(): void {
-  const visible = useLayoutStore((s) => s.rulersVisible);
+  const chosen = useLayoutStore((s) => s.rulersVisible);
+  const world = useWorldView((s) => s.view === "world");
+  const visible = chosen && !world;
   useEffect(() => watchCanvasHandle((handle) => apply(handle, visible)), [visible]);
 }
 
