@@ -12,6 +12,7 @@
  * `removeTerrain` ops (undoable).
  */
 import { normalizeTerrain, terrainProblem, type Terrain } from "./terrain";
+import { normalizeTerrainSet, terrainSetsProblem, type TerrainSet } from "./terrainSet";
 
 export interface Tileset {
   /** Stable, unique id within the project. */
@@ -36,8 +37,17 @@ export interface Tileset {
   readonly spacing: number;
   /** Tile ids marked solid ("katı"), ascending, no duplicates. Missing = none. */
   readonly solidTiles?: readonly number[];
-  /** Terrains defined on this tileset, sorted by id. Missing = none. */
+  /**
+   * @deprecated Legacy (v0.3 grid-layer) terrains, sorted by id. Read from old
+   * files and converted to {@link terrainSets} on load; no longer written.
+   * Kept only so the old terrain API compiles until the editor migrates.
+   */
   readonly terrains?: readonly Terrain[];
+  /**
+   * Terrain sets: terrain tags on this tileset's tiles (see `terrainSet.ts`),
+   * in display order. Missing = none.
+   */
+  readonly terrainSets?: readonly TerrainSet[];
 }
 
 /** True when `tileId` is marked solid in `tileset`. */
@@ -77,10 +87,12 @@ export function normalizeTileset(tileset: Tileset): Tileset {
   };
   const solid = [...new Set(tileset.solidTiles ?? [])].sort((a, b) => a - b);
   const terrains = (tileset.terrains ?? []).map(normalizeTerrain).sort((a, b) => a.id - b.id);
+  const terrainSets = (tileset.terrainSets ?? []).map((s) => (Object.isFrozen(s) ? s : normalizeTerrainSet(s)));
   return Object.freeze({
     ...base,
     ...(solid.length > 0 ? { solidTiles: Object.freeze(solid) } : {}),
     ...(terrains.length > 0 ? { terrains: Object.freeze(terrains) } : {}),
+    ...(terrainSets.length > 0 ? { terrainSets: Object.freeze(terrainSets) } : {}),
   });
 }
 
@@ -169,6 +181,10 @@ export function tilesetProblem(tileset: Tileset): string | null {
       if (ids.has(terrain.id)) return `duplicate terrain id ${terrain.id}`;
       ids.add(terrain.id);
     }
+  }
+  if (tileset.terrainSets !== undefined) {
+    const problem = terrainSetsProblem(tileset, tileset.terrainSets);
+    if (problem) return problem;
   }
   return null;
 }

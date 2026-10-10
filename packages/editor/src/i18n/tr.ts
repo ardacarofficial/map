@@ -304,6 +304,7 @@ export const tr = {
     toolBar: "Araç çubuğu",
     dock: "Alt panel",
     hideDock: "Alt paneli gizle",
+    dockTileset: "Tileset",
     resizeDock: "Alt panel yüksekliği",
   },
   rail: {
@@ -953,7 +954,7 @@ export const tr = {
   appBar: {
     projectName: "Proje adı",
     renameHint: "Çift tıkla: proje adını değiştir",
-    recentProjects: "Son açılanlar",
+    recentProjects: "Son projeler",
     recentEmpty: "Henüz yok",
     rename: "Yeniden adlandır",
   },

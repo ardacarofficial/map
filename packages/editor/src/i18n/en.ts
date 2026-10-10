@@ -301,6 +301,7 @@ export const en: Messages = {
     toolBar: "Tool bar",
     dock: "Bottom panel",
     hideDock: "Hide bottom panel",
+    dockTileset: "Tileset",
     resizeDock: "Bottom panel height",
   },
   rail: {

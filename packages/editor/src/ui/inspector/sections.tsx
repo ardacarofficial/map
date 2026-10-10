@@ -212,7 +212,8 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
   const tileset = selection ? doc.getTileset(selection.tilesetId) : undefined;
   const random = randomSet.length + randomStamps.length >= 2 && !stamp;
   const eraser = tool === "eraser";
-  const sized = tool === "brush" || eraser;
+  // A clip on the brush is placed as it is: the brush size only matters for the eraser then.
+  const sized = eraser || (tool === "brush" && !stamp);
 
   let preview: ReactNode;
   let title: ReactNode;

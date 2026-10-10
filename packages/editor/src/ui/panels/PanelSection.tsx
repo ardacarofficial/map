@@ -40,13 +40,13 @@ export function PanelSection({
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
         data-section-toggle=""
-        className="-ml-1 flex h-6 min-w-0 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-wide text-muted hover:bg-hover hover:text-text"
+        className="-ml-1 flex h-6 min-w-0 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-[0.06em] text-muted uppercase hover:bg-hover hover:text-text"
       >
         <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={13} className="shrink-0 text-faint" />
         <span className="truncate">{title}</span>
       </button>
     ) : (
-      <h2 className="text-xs font-semibold tracking-wide text-muted">{title}</h2>
+      <h2 className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{title}</h2>
     ));
   if (bare) {
     return (

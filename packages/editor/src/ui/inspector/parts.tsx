@@ -168,7 +168,7 @@ export function ActionButton({
       onClick={() => {
         if (!disabled) onClick();
       }}
-      className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-sm border px-2 text-md transition-colors duration-100 ${
+      className={`flex h-8 w-full min-w-0 items-center justify-center gap-1.5 rounded-sm border px-2 text-md transition-colors duration-100 ${
         disabled ? "cursor-default border-line bg-raised text-faint opacity-50" : tones[tone]
       }`}
     >

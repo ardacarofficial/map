@@ -745,3 +745,42 @@ export function dropTilesetRefs(refs: BrushRefs, exists: (tilesetId: string) => 
   if (recent.length !== refs.recentTiles.length) out.recentTiles = recent;
   return out;
 }
+
+/** A tile reference held outside the documents (the palette clipboard, a drag): only tileset + tile id matter here. */
+export interface TileRef {
+  readonly tilesetId: string;
+  readonly tileId: number;
+}
+
+/**
+ * Palette references after a grid edit of `tilesetId` (`before` → `after`,
+ * same pixel rule as levels and stamps): moved tiles get their new id,
+ * tiles that map nowhere are dropped. Returns `refs` itself when nothing
+ * changes. Core remaps the documents' collections and random sets inside
+ * the grid op; this is for copies the editor keeps (the palette clipboard).
+ */
+export function remapTileRefs<T extends TileRef>(refs: readonly T[], tilesetId: string, before: TileGrid, after: TileGrid): readonly T[] {
+  if (sameGrid(before, after) || !refs.some((r) => r.tilesetId === tilesetId)) return refs;
+  const remap = tilesetGridRemap(before, after);
+  const count = after.columns * after.rows;
+  let changed = false;
+  const out: T[] = [];
+  for (const r of refs) {
+    if (r.tilesetId !== tilesetId) {
+      out.push(r);
+      continue;
+    }
+    const to = remap(r.tileId);
+    if (to === r.tileId) out.push(r);
+    else {
+      changed = true;
+      if (to !== null && to < count) out.push({ ...r, tileId: to });
+    }
+  }
+  return changed ? out : refs;
+}
+
+/** `refs` without tiles of tilesets that are gone (`refs` itself when nothing is dropped). */
+export function dropTileRefs<T extends TileRef>(refs: readonly T[], exists: (tilesetId: string) => boolean): readonly T[] {
+  return refs.every((r) => exists(r.tilesetId)) ? refs : refs.filter((r) => exists(r.tilesetId));
+}

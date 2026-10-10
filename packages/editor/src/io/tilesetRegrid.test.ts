@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LevelWorkspace } from "./levelWorkspace";
 import { MemoryFileSystem } from "./memoryFs";
 import { defaultLevels } from "./projectIo";
-import { gridKey, loadAllLevels, recordRegrid, remapBrush, remapStamp, remapStamps, sameGrid, stampKey, syncLevelGrids, syncStampGrid, type StampRegrid } from "./tilesetRegrid";
+import { dropTileRefs, gridKey, loadAllLevels, remapTileRefs, recordRegrid, remapBrush, remapStamp, remapStamps, sameGrid, stampKey, syncLevelGrids, syncStampGrid, type StampRegrid } from "./tilesetRegrid";
 import { clipFromTileset } from "@smap/core";
 
 /** 96 × 64 px image cut in 16 px tiles: 6 × 4. */
@@ -415,5 +415,55 @@ describe("remapBrush (the brush follows a grid edit)", () => {
     expect(remapBrush({ selection: null, randomSet: [], stamp: lone, recentTiles: [] }, "dungeon", dungeon, as32).stamp).toBeNull();
     // Nothing of that tileset: nothing changes.
     expect(remapBrush({ selection: { tilesetId: "x", tileId: 3 }, randomSet: [], stamp: null, recentTiles: [] }, "dungeon", dungeon, as32)).toEqual({});
+  });
+});
+
+describe("palette refs follow tileset grid edits and removal", () => {
+  const palette = {
+    id: "p",
+    name: "Palet",
+    columns: 4,
+    cells: [
+      { x: 0, y: 0, tilesetId: "dungeon", tileId: 2 }, // 16 px (2,0) → 32 px (1,0) = id 1
+      { x: 1, y: 0, tilesetId: "dungeon", tileId: 1 }, // (16,0): not on the 32 px grid → dropped
+      { x: 3, y: 1, tilesetId: "dungeon", tileId: 14, flags: FLIP_H }, // (2,2) px (32,32) → (1,1) = id 4
+    ],
+  };
+
+  it("the grid op remaps the level's palettes (one undo step) and undo restores them", () => {
+    const store = levelStore();
+    store.dispatch({ type: "setCollection", collection: palette });
+    store.clearHistory();
+    store.dispatch(to32);
+    expect(store.document.getCollection("p")!.cells).toEqual([
+      { x: 0, y: 0, tilesetId: "dungeon", tileId: 1 },
+      { x: 3, y: 1, tilesetId: "dungeon", tileId: 4, flags: FLIP_H },
+    ]);
+    store.undo();
+    expect(store.document.getCollection("p")!.cells).toEqual(palette.cells);
+  });
+
+  it("removing the tileset drops its tiles from palettes; the palette stays", () => {
+    const store = levelStore();
+    store.dispatch({ type: "setCollection", collection: palette });
+    store.dispatch({ type: "removeTileset", tilesetId: "dungeon" });
+    expect(store.document.getCollection("p")!.cells).toEqual([]);
+    store.undo();
+    expect(store.document.getCollection("p")!.cells).toHaveLength(3);
+  });
+
+  it("copied tiles (palette clipboard) follow with the same pixel rule", () => {
+    const refs = [
+      { dx: 0, dy: 0, tilesetId: "dungeon", tileId: 2 },
+      { dx: 1, dy: 0, tilesetId: "dungeon", tileId: 1 },
+      { dx: 0, dy: 1, tilesetId: "other", tileId: 1 },
+    ];
+    expect(remapTileRefs(refs, "dungeon", dungeon, as32)).toEqual([
+      { dx: 0, dy: 0, tilesetId: "dungeon", tileId: 1 },
+      { dx: 0, dy: 1, tilesetId: "other", tileId: 1 },
+    ]);
+    expect(remapTileRefs(refs, "dungeon", dungeon, dungeon)).toBe(refs);
+    expect(dropTileRefs(refs, (id) => id !== "dungeon")).toEqual([refs[2]]);
+    expect(dropTileRefs(refs, () => true)).toBe(refs);
   });
 });

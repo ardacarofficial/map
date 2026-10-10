@@ -28,12 +28,14 @@ import { t } from "../i18n";
 import { decodeTilesetFile, addTilesetFiles, createProjectFromTilesets, describeError, getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
 import {
+  dropTileRefs,
   dropTilesetRefs,
   gridCopy,
   loadAllLevels,
   recordListChange,
   recordRegrid,
   remapBrush,
+  remapTileRefs,
   sameGrid,
   syncLevelGrids,
   syncLevelLists,
@@ -50,6 +52,7 @@ import { useUiStore } from "../ui/uiStore";
 import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
+import { usePaletteStore } from "../ui/palettes/paletteStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 import { groupNames, planTilesetMove, summarizeUsage, uniqueGroupName, type DropTarget, type LevelUsage } from "../ui/tileset/libraryModel";
 import { askRemoveTileset } from "../ui/tileset/RemoveTilesetDialog";
@@ -359,6 +362,13 @@ function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void
   if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
   const view = useTilesetView.getState();
   if (view.selection?.tilesetId === tilesetId) view.setSelection(null);
+  // Copied tiles waiting for a paste into a palette follow too (the palettes themselves are remapped by core).
+  const palettes = usePaletteStore.getState();
+  if (palettes.clipboard) {
+    const next = remapTileRefs(palettes.clipboard, tilesetId, before, after);
+    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? next : null);
+  }
+  if (palettes.selection?.clip) palettes.setSelection(null);
 }
 
 /** Clears the brush, panel selection and active tileset of tilesets the active level no longer has (removed, or an add undone). */
@@ -370,6 +380,12 @@ function dropMissingTilesets(doc: MapDocument): void {
   if (Object.keys(changes).length > 0) useEditorStore.setState(changes as Partial<typeof editor>);
   const view = useTilesetView.getState();
   if (view.selection && !exists(view.selection.tilesetId)) view.setSelection(null);
+  const palettes = usePaletteStore.getState();
+  if (palettes.clipboard) {
+    const next = dropTileRefs(palettes.clipboard, exists);
+    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? next : null);
+  }
+  if (palettes.activePaletteId !== null && !doc.getCollection(palettes.activePaletteId)) palettes.setActivePalette(null);
   const ui = useUiStore.getState();
   if (ui.activeTilesetId !== null && !exists(ui.activeTilesetId)) ui.setActiveTileset(doc.tilesets[0]?.id ?? null);
 }

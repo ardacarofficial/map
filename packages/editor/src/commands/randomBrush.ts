@@ -454,3 +454,15 @@ export function deleteRandomSet(id: string): boolean {
   if (ok && useRandomBrush.getState().activeSetId === id) useRandomBrush.setState({ activeSetId: null });
   return ok;
 }
+
+/** "Yeni set olarak kaydet…": asks for a name, then saves (see {@link saveRandomSet}). */
+export async function saveRandomSetAs(): Promise<string | null> {
+  const { askText } = await import("../ui/tileset/TextPrompt");
+  const name = await askText({
+    title: t("randomSets.saveTitle"),
+    label: t("randomSets.saveName"),
+    initial: t("randomSets.defaultName"),
+    confirm: t("randomSets.save"),
+  });
+  return name ? saveRandomSet(name) : null;
+}

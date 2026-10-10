@@ -83,7 +83,7 @@ export function HistoryPanel() {
         <span className="font-semibold tracking-[0.06em] text-muted uppercase">{t("history.title")}</span>
         {steps > 0 && <span className="ml-auto font-mono tabular">{t("history.count", { count: formatNumber(steps) })}</span>}
       </div>
-      <ol ref={listRef} role="listbox" aria-label={t("history.title")} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pb-2">
+      <ol ref={listRef} role="listbox" aria-label={t("history.title")} className={`flex min-h-0 flex-col overflow-y-auto px-1.5 pb-2 ${steps > 0 ? "flex-1" : ""}`}>
         {rows.map((row, index) => (
           <li key={row.id ?? "initial"} role="option" aria-selected={row.state === "current"}>
             <button

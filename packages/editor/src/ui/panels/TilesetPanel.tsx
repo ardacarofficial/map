@@ -1244,4 +1244,4 @@ function DockActions() {
   );
 }
 
-registerDockTab({ id: "tileset", label: "panels.tileset", order: 10, Component: TilesetDockTab, Actions: DockActions });
+registerDockTab({ id: "tileset", label: "layout.dockTileset", order: 10, Component: TilesetDockTab, Actions: DockActions });

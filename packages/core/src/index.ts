@@ -96,6 +96,53 @@ export {
   deriveTerrainTiles,
 } from "./autotile";
 
+export {
+  type TerrainSet,
+  type TerrainSetKind,
+  type TerrainSetTerrain,
+  type TerrainTileTag,
+  type TerrainCorners,
+  MAX_SET_TERRAIN_ID,
+  TERRAIN_COLORS,
+  defaultTerrainColor,
+  normalizeTerrainSet,
+  terrainSetProblem,
+  terrainSetsProblem,
+  getTerrainSet,
+  terrainTagOf,
+  withTerrainSet,
+  withoutTerrainSet,
+  remapTerrainSet,
+  cornersOfCorner16Mask,
+  tagBlockWithTemplate,
+  flipCorners,
+  flipBlobMask,
+  legacyTerrainSetId,
+  legacyTerrainToSet,
+  migrateLegacyTerrains,
+} from "./terrainSet";
+
+export {
+  type TerrainBrush,
+  type TerrainTileWrite,
+  type TerrainSolveOptions,
+  type TerrainCellInfo,
+  DEFAULT_TERRAIN_EXPAND,
+  terrainPaint,
+  terrainErase,
+  terrainFill,
+  terrainFillRegion,
+  terrainCellInfo,
+} from "./terrainBrush";
+
+export {
+  type RgbaImage,
+  type TileGridRect,
+  type DetectedTerrainBlock,
+  type DetectTerrainOptions,
+  detectTerrainBlock,
+} from "./terrainDetect";
+
 export { type CollisionGrid, collisionAt, deriveCollision, solidPaletteMask } from "./collision";
 
 export {

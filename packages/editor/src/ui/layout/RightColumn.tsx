@@ -7,7 +7,7 @@ import { useProjectLibrary } from "../../io/projectLibrary";
 import { HistoryPanel } from "../history/HistoryPanel";
 import { WorldHint } from "../levels/WorldHint";
 import { LayersPanel } from "../panels/LayersPanel";
-import { PropertiesPanel } from "../panels/PropertiesPanel";
+import { InspectorBody } from "../inspector/Inspector";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
@@ -22,11 +22,6 @@ export interface SectionPanelProps {
   onToggleCollapsed(): void;
   /** Trailing header control (the column's hide button on the top section). */
   extra?: ReactNode;
-  /**
-   * Rendered inside the column's tab host, which draws the tab strip: the
-   * panel shows only its body (no own section header).
-   */
-  bare?: boolean;
 }
 
 const TABS: readonly { id: RightTab; label: "layout.inspector" | "layout.history" }[] = [
@@ -70,7 +65,7 @@ function RightTabs({ collapsed, onToggleCollapsed }: SectionPanelProps) {
       </header>
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col" data-right-tab-body={tab}>
-          {tab === "history" ? <HistoryPanel /> : <PropertiesPanel collapsed={false} onToggleCollapsed={onToggleCollapsed} bare />}
+          {tab === "history" ? <HistoryPanel /> : <InspectorBody />}
         </div>
       )}
     </section>
