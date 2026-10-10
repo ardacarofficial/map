@@ -12,10 +12,14 @@ import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
+import { StampCloseDialog, StampDocTab, StampEditorBanner, useStampEditorInstall } from "../stampEditor/StampEditorChrome";
+import { leaveStampEditor } from "../stampEditor/stampEditorSession";
 import { neighbourAfterClose, setDocTabs, syncTabs, useDocTabs } from "./docTabs";
 
 /** Opens a map from a tab / the project tree (from the world map it also returns to the map view). */
 export function showMap(id: string): void {
+  // Round 5: a map tab / tree row leaves the stamp editor tab (which stays open).
+  leaveStampEditor();
   void (useWorldView.getState().view === "world" ? openLevelFromWorld(id) : openLevel(id));
 }
 
@@ -69,11 +73,13 @@ export function DocumentTabs() {
   const picking = useLevelUi((s) => s.pick !== null);
   const [editingId, setEditingId] = useState<string | null>(null);
   useSyncTabs(activeId);
+  useStampEditorInstall();
   const byId = new Map(levels.map((l) => [l.id, l]));
   const dirty = new Set(dirtyIds);
   const closable = ids.length > 1;
 
   return (
+    <>
     <div className="flex h-tabrow shrink-0 items-stretch border-b border-line bg-bg pr-2" data-doc-tabs="">
       <div role="tablist" aria-label={t("docTabs.label")} className="flex min-w-0 items-stretch overflow-x-auto [scrollbar-width:none]">
         {world && (
@@ -118,6 +124,7 @@ export function DocumentTabs() {
                     disabled: !closable,
                     run: () => {
                       void (async () => {
+                        leaveStampEditor();
                         if (id !== useEditorStore.getState().project?.levelId && !(await openLevel(id))) return;
                         setDocTabs([id]);
                       })();
@@ -190,6 +197,7 @@ export function DocumentTabs() {
             </RowContextMenu>
           );
         })}
+        <StampDocTab disabled={picking} />
       </div>
       <Tooltip label={t("levels.add")} command="level.new">
         <IconButton aria-label={t("levels.add")} className="my-auto ml-1 size-7" disabled={picking} onClick={() => openNewLevelDialog()} data-doc-tab-new="">
@@ -197,5 +205,8 @@ export function DocumentTabs() {
         </IconButton>
       </Tooltip>
     </div>
+    <StampEditorBanner />
+    <StampCloseDialog />
+    </>
   );
 }

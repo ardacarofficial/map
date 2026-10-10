@@ -3,7 +3,7 @@
  * make a stamp the brush, rename, delete. Stamps are flat copies: placing
  * one keeps no link back to the library (CLAUDE.md → Yapılmayacaklar).
  */
-import { copyRegion, createStamp, isEntityLayer, makeStampId, type CellRect, type MapDocument, type Stamp } from "@smap/core";
+import { copyRegion, createStamp, isEntityLayer, makeStampId, withStampMeta, type CellRect, type MapDocument, type Stamp, type StampMeta } from "@smap/core";
 
 import { t } from "../i18n";
 import { takenStampIds, useProjectLibrary } from "../io/projectLibrary";
@@ -131,4 +131,64 @@ export function duplicateStamp(id: string): Stamp | null {
   library.addStamp(copy);
   toast.success(t("toast.stampDuplicated", { name }));
   return copy;
+}
+
+/**
+ * Round 5: new library metadata for a stamp (category, tags, ★). Saved with
+ * the project like a rename (`stamps/<id>.json`); cells are untouched.
+ * Returns the updated stamp, or null (unknown id, invalid or unchanged meta).
+ */
+export function setStampMeta(id: string, meta: StampMeta): Stamp | null {
+  const library = useProjectLibrary.getState();
+  const stamp = library.stamps.find((s) => s.id === id);
+  if (!stamp) return null;
+  let next: Stamp;
+  try {
+    next = withStampMeta(stamp, meta);
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+  if (next.category === stamp.category && next.favorite === stamp.favorite && sameTags(next.tags, stamp.tags)) return null;
+  library.addStamp(next);
+  return next;
+}
+
+function sameTags(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  return x.length === y.length && x.every((t, i) => t === y[i]);
+}
+
+/** ★ on / off. */
+export function toggleStampFavorite(id: string): void {
+  const stamp = useProjectLibrary.getState().stamps.find((s) => s.id === id);
+  if (stamp) setStampMeta(id, { favorite: !stamp.favorite });
+}
+
+/**
+ * Round 5 (stamp editor "Kaydet"): replaces a library stamp's cells with
+ * `content` (id, name and metadata kept). Maps that already hold copies of
+ * it do not change: stamps are flat copies. Returns the saved stamp, or null.
+ */
+export function replaceStampContent(id: string, content: Stamp): Stamp | null {
+  const library = useProjectLibrary.getState();
+  const stamp = library.stamps.find((s) => s.id === id);
+  if (!stamp) return null;
+  const meta: StampMeta = {
+    ...(stamp.category !== undefined ? { category: stamp.category } : {}),
+    ...(stamp.tags !== undefined ? { tags: stamp.tags } : {}),
+    ...(stamp.favorite !== undefined ? { favorite: stamp.favorite } : {}),
+  };
+  const { category: _c, tags: _t, favorite: _f, ...cells } = content;
+  const next = withStampMeta(Object.freeze({ ...cells, id: stamp.id, name: stamp.name }) as Stamp, meta);
+  library.addStamp(next);
+  syncBrush(next);
+  return next;
+}
+
+/** A brush holding `stamp` (by id) picks up its new version. */
+function syncBrush(stamp: Stamp): void {
+  const editor = useEditorStore.getState();
+  if (activeStampId(editor.stamp) === stamp.id) editor.setStamp(stamp);
 }
