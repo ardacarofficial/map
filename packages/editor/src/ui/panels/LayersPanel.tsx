@@ -109,7 +109,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
     dragRef.current = next;
     setDrag(next);
   };
-  const onPointerMove = (event: ReactPointerEvent<HTMLLIElement>, row: LayerRow) => {
+  const onPointerMove = (event: ReactPointerEvent<HTMLLIElement>) => {
     const current = dragRef.current;
     if (!current) return;
     const raw = event.clientY - current.startY;
@@ -198,7 +198,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
               data-layer-row="layer"
               data-flash={flashed ? "" : undefined}
               onPointerDown={(e) => onPointerDown(e, row)}
-              onPointerMove={(e) => onPointerMove(e, row)}
+              onPointerMove={(e) => onPointerMove(e)}
               onPointerUp={() => onPointerUp(row)}
               onPointerCancel={onPointerCancel}
               onDoubleClick={(e) => {

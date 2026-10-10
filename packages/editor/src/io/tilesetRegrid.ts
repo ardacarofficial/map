@@ -18,7 +18,6 @@
 import {
   cellFlags,
   cellPaletteIndex,
-  isGridLayer,
   isTileLayer,
   isValidTileId,
   makeCell,
@@ -561,8 +560,6 @@ function followGrid(store: MapStore, want: Tileset): FollowResult {
 function restoreCells(store: MapStore, cells: readonly RegridCell[]): number {
   if (cells.length === 0) return 0;
   const doc = store.document;
-  const derived = new Set<string>();
-  for (const layer of doc.layers) if (isGridLayer(layer) && layer.targetLayerId) derived.add(layer.targetLayerId);
   const byLayer = new Map<string, { x: number; y: number; cell: number }[]>();
   let written = 0;
   for (const c of cells) {
@@ -571,11 +568,6 @@ function restoreCells(store: MapStore, cells: readonly RegridCell[]): number {
       const tileset = doc.getTileset(c.before.tilesetId);
       if (!tileset || !isValidTileId(tileset, c.before.tileId)) continue;
       value = makeCell(store.getOrAddPaletteIndex(c.before.tilesetId, c.before.tileId), c.before.flags);
-    }
-    // Derived layers are rebuilt from their terrain grid (matchMetadata re-derives); count them as restored.
-    if (derived.has(c.layerId)) {
-      written++;
-      continue;
     }
     let list = byLayer.get(c.layerId);
     if (!list) byLayer.set(c.layerId, (list = []));
@@ -608,17 +600,16 @@ function matchMetadata(store: MapStore, want: Tileset): void {
   const remove = [...haveSolid].filter((id) => !wantSolid.has(id));
   if (add.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: add, solid: true });
   if (remove.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: remove, solid: false });
-  const wantTerrains = want.terrains ?? [];
-  for (const terrain of have.terrains ?? []) {
-    if (!wantTerrains.some((t) => t.id === terrain.id)) store.dispatch({ type: "removeTerrain", terrainId: terrain.id });
+  // Terrain sets (tags on tiles, CLAUDE.md › Autotile).
+  const wantSets = want.terrainSets ?? [];
+  for (const set of have.terrainSets ?? []) {
+    if (!wantSets.some((x) => x.id === set.id)) store.dispatch({ type: "removeTerrainSet", tilesetId: want.id, setId: set.id });
   }
-  for (const terrain of wantTerrains) {
-    const now = store.document.getTerrain(terrain.id);
-    if (now && JSON.stringify(now) === JSON.stringify(terrain)) continue;
+  for (const set of wantSets) {
     try {
-      store.dispatch({ type: "defineTerrain", terrain });
+      store.dispatch({ type: "setTerrainSet", tilesetId: want.id, set }); // a no-op when equal
     } catch {
-      // A terrain that does not fit this level's copy: the level is rebuilt from its text when opened (withProjectData).
+      // A set that does not fit this level's copy: the level is rebuilt from its text when opened (withProjectData).
     }
   }
 }

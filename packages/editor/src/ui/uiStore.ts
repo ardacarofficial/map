@@ -1,9 +1,8 @@
-import { DEFAULT_TERRAIN_TEMPLATE, type TerrainTemplate } from "@smap/core";
 import { create } from "zustand";
 
 /**
  * What a click in the tileset panel does: pick tiles (default), toggle
- * "katı" (solid), place a terrain block, or toggle tiles of the random brush.
+ * "katı" (solid), mark a terrain block (rough rectangle), or (legacy) random.
  */
 export type TilesetMode = "pick" | "solid" | "terrain" | "random";
 
@@ -32,8 +31,6 @@ export interface UiState {
   /** True while the project passed at start-up is opening (the editor frame shows instead of the welcome screen). */
   startupOpening: boolean;
   tilesetMode: TilesetMode;
-  /** Template used by "Arazi tanımla". */
-  terrainTemplate: TerrainTemplate;
   libraryTab: LibraryTab;
   saveStampOpen: boolean;
   entityTypesOpen: boolean;
@@ -54,7 +51,6 @@ export interface UiState {
   /** Sets the mode; setting the current mode again goes back to "pick". */
   toggleTilesetMode(mode: TilesetMode): void;
   setTilesetMode(mode: TilesetMode): void;
-  setTerrainTemplate(template: TerrainTemplate): void;
   setLibraryTab(tab: LibraryTab): void;
   setSaveStampOpen(open: boolean): void;
   /** Opens / closes the entity types dialog; `startNew` opens it on a new type. */
@@ -72,7 +68,6 @@ export const useUiStore = create<UiState>()((set) => ({
   draggingFiles: false,
   startupOpening: false,
   tilesetMode: "pick",
-  terrainTemplate: DEFAULT_TERRAIN_TEMPLATE,
   libraryTab: "tileset",
   saveStampOpen: false,
   entityTypesOpen: false,
@@ -90,7 +85,6 @@ export const useUiStore = create<UiState>()((set) => ({
   setStartupOpening: (startupOpening) => set({ startupOpening }),
   toggleTilesetMode: (mode) => set((s) => ({ tilesetMode: s.tilesetMode === mode ? "pick" : mode })),
   setTilesetMode: (tilesetMode) => set({ tilesetMode }),
-  setTerrainTemplate: (terrainTemplate) => set({ terrainTemplate }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
   setEntityTypesOpen: (entityTypesOpen, startNew = false, selectId = null) =>

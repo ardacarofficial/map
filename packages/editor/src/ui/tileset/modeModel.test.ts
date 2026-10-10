@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { contextMenuEnabled, isEditMode, isStroke, tilePointerAction } from "./modeModel";
 
-const ctx = (button: number, extra: Partial<{ alt: boolean; pending: boolean; terrainId: number | null }> = {}) => ({
+const ctx = (button: number, extra: Partial<{ alt: boolean; draft: boolean; fixing: boolean }> = {}) => ({
   button,
   alt: false,
-  pending: false,
-  terrainId: null,
+  draft: false,
+  fixing: false,
   ...extra,
 });
 
@@ -33,10 +33,10 @@ describe("tileset mouse model: left adds / selects, right removes", () => {
     expect(isEditMode("terrain")).toBe(true);
   });
 
-  it("Arazi: left places; right cancels a placed block, else deletes the terrain under the cursor", () => {
-    expect(tilePointerAction("terrain", ctx(0, { terrainId: 3 }))).toEqual({ kind: "placeBlock" });
-    expect(tilePointerAction("terrain", ctx(2, { pending: true, terrainId: 3 }))).toEqual({ kind: "cancelBlock" });
-    expect(tilePointerAction("terrain", ctx(2, { terrainId: 3 }))).toEqual({ kind: "removeTerrain", terrainId: 3 });
+  it("Arazi: left drags a rough rectangle (Düzelt: tags a tile); right drops the draft", () => {
+    expect(tilePointerAction("terrain", ctx(0))).toEqual({ kind: "roughRect" });
+    expect(tilePointerAction("terrain", ctx(0, { fixing: true }))).toEqual({ kind: "tagTile" });
+    expect(tilePointerAction("terrain", ctx(2, { draft: true }))).toEqual({ kind: "cancelDraft" });
     expect(tilePointerAction("terrain", ctx(2))).toEqual({ kind: "none" });
   });
 

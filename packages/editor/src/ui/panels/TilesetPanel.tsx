@@ -14,8 +14,8 @@
  * The scroll viewport is the host of the grids (see `TilesetGrid`): it
  * owns zoom ("Tek": the map's wheel model at the cursor; "Tümü": the wheel
  * scrolls, Ctrl / pinch zooms; a global zoom plus a per-source override),
- * hand panning (Space / middle drag), keyboard routing and the placed
- * terrain block.
+ * hand panning (Space / middle drag) and keyboard routing. In ⚙ Düzenle →
+ * Arazi a rough rectangle over a block starts a terrain (see `TilesetGrid`).
  */
 import { ContextMenu } from "@base-ui/react/context-menu";
 import type { Collection, Tileset } from "@smap/core";
@@ -40,7 +40,7 @@ import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
-import { TerrainDefineBar } from "../terrain/TerrainDefineBar";
+import { clearTerrainDraft, useTerrainDraft } from "../terrain/terrainDraft";
 import { TerrainSets } from "../terrain/TerrainList";
 import { PaletteGrid, paletteKey } from "../palettes/PaletteGrid";
 import { createPalette, setPaletteColumnCount, showPalette } from "../palettes/paletteActions";
@@ -48,7 +48,7 @@ import { MAX_PALETTE_COLUMNS, MIN_PALETTE_COLUMNS } from "../palettes/paletteMod
 import { usePaletteStore } from "../palettes/paletteStore";
 import { bestMatch, effectiveZoom, filterTilesets, groupTilesets, UNGROUPED, type DropTarget } from "../tileset/libraryModel";
 import { isEditMode, MODE_HINT } from "../tileset/modeModel";
-import { GridHostContext, TilesetGrid, type GridHost, type PendingBlock } from "../tileset/TilesetGrid";
+import { GridHostContext, TilesetGrid, type GridHost } from "../tileset/TilesetGrid";
 import { ModeBar } from "../tileset/TilesetOverlays";
 import { installTilesetPickSync } from "../tileset/tilesetSelect";
 import { TilesetContextMenu, TilesetSwitcher, TilesetThumb } from "../tileset/TilesetSwitcher";
@@ -166,7 +166,8 @@ function TilesetLibrary({
   const globalZoom = useTilesetView((s) => s.globalZoom);
   const mode = useUiStore((s) => s.tilesetMode);
   const setMode = useUiStore((s) => s.setTilesetMode);
-  const template = useUiStore((s) => s.terrainTemplate);
+  const terrainEditing = useTerrainDraft((s) => s.draft !== null || s.fix !== null);
+  const fixing = useTerrainDraft((s) => s.fix !== null);
   const setActive = useUiStore((s) => s.setActiveTileset);
   const map = useEditorStore((s) => s.project?.store.document.map);
   const mapTileW = map?.tileWidth ?? 32;
@@ -179,7 +180,6 @@ function TilesetLibrary({
   const viewportRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const availWidth = Math.max(0, stack || dock ? size.width - 2 * PADDING : size.width);
-  const [pending, setPending] = useState<PendingBlock | null>(null);
   const keyHandlers = useRef(new Map<string, (e: KeyboardEvent) => boolean>());
   const pan = usePanDrag(viewportRef);
   const panRef = useRef(pan);
@@ -231,8 +231,6 @@ function TilesetLibrary({
         if (handler) keyHandlers.current.set(id, handler);
         else keyHandlers.current.delete(id);
       },
-      pending,
-      setPending,
       reveal: (grid, box, center) => {
         const vp = viewportRef.current;
         if (!vp) return;
@@ -260,13 +258,8 @@ function TilesetLibrary({
       },
       lazy: stack,
     }),
-    [pending, stack],
+    [stack],
   );
-
-  // A placed block belongs to one template; leaving terrain mode drops it.
-  useEffect(() => {
-    if (mode !== "terrain") setPending(null);
-  }, [mode]);
 
   // The "Rastgele" mode is gone: a stale value (old command, saved UI state) falls back to Seç.
   useEffect(() => {
@@ -387,10 +380,10 @@ function TilesetLibrary({
           return;
         }
       }
-      if (pending || mode !== "pick") {
+      if (terrainEditing || mode !== "pick") {
         event.preventDefault();
         event.stopPropagation();
-        if (pending) setPending(null);
+        if (terrainEditing) clearTerrainDraft();
         else setMode("pick");
       }
       return;
@@ -417,8 +410,6 @@ function TilesetLibrary({
       widenLibraryTarget(window.innerWidth, { library: wantedLibraryWidth(s, window.innerWidth), right: s.rightWidth }, widenExtra) !== null,
   );
   const solidCount = active.solidTiles?.length ?? 0;
-  const pendingTileset = (pending && tilesets.find((ts) => ts.id === pending.tilesetId)) || active;
-  const pendingCell = pending && pending.template === template ? pending.cell : null;
   const offsetOf = (scaledWidth: number) => (dock ? 0 : Math.max(0, Math.floor((availWidth - Math.round(scaledWidth)) / 2)));
   const offsetX = (ts: Tileset) => offsetOf(ts.columns * ts.tileWidth * scaleOf(ts));
   const paletteOffsetX = (p: Collection) => offsetOf(p.columns * mapTileW * scaleOfPalette(p));
@@ -497,21 +488,11 @@ function TilesetLibrary({
         </ModeBar>
       )}
       {editing && mode === "terrain" && (
-        <>
-          <TerrainDefineBar
-            tileset={pendingTileset}
-            template={template}
-            pending={pendingCell}
-            problem={null}
-            onCancel={() => setPending(null)}
-            onDone={() => setMode("pick")}
-          />
-          {!pendingCell && (
-            <div className="shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-hint>
-              {t(MODE_HINT.terrain)}
-            </div>
-          )}
-        </>
+        <ModeBar icon="terrain" tone="terrain" onDone={() => setMode("pick")}>
+          <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
+            {t(fixing ? "terrain.fixHintShort" : "terrain.hintDrag")}
+          </span>
+        </ModeBar>
       )}
     </>
   );
@@ -571,6 +552,7 @@ function TilesetLibrary({
             </div>
             <PaletteChips palettes={palettes} activeId={showingPalette ? palette.id : null} wide />
             {modeArea}
+            <TerrainSets compact />
           </aside>
           {viewport}
         </div>

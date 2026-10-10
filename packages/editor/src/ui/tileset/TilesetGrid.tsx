@@ -5,14 +5,20 @@
  * random brush, and a press on the selection drags its tiles into a
  * palette (copy; Shift = move only applies between palettes); Ctrl+C copies
  * the selection for a paste into a palette. Shared by the single view and the "Tümü" stack;
- * the host (the scroll viewport) owns zoom, panning, keyboard routing and
- * the placed terrain block, and hands them down through {@link GridHostContext}.
+ * the host (the scroll viewport) owns zoom, panning and keyboard routing,
+ * and hands them down through {@link GridHostContext}.
+ *
+ * ⚙ Düzenle → Arazi: a drag is a ROUGH rectangle over a terrain block; the
+ * program finds the template and origin (`terrainDraft.startDraft`) and the
+ * Denetçi's ARAZİ card takes it from there. The found block is outlined and
+ * the tags of the set in focus are drawn on the tiles; with "Düzelt" a click
+ * tags the corner / zone under the pointer.
  *
  * In the stack, a grid far outside the viewport keeps its size but draws
  * nothing (IntersectionObserver), so a long library stays cheap.
  */
 import { ContextMenu } from "@base-ui/react/context-menu";
-import { isTileSolid, terrainTemplateInfo, type TerrainTemplate, type Tileset } from "@smap/core";
+import { getTerrainSet, isTileSolid, terrainTemplateInfo, type TerrainSet, type Tileset } from "@smap/core";
 import {
   createContext,
   useCallback,
@@ -28,7 +34,7 @@ import {
 
 import { addTilesToRandom, inRandomSet, toggleRandomTile } from "../../commands/randomBrush";
 import { SolidStroke } from "../../commands/solidStroke";
-import { deleteTerrain, setTilesSolid, terrainBlockProblem } from "../../commands/terrainActions";
+import { setTilesSolid, toggleTerrainTag } from "../../commands/terrainActions";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { onTilesetImage } from "../../state/tilesetImages";
@@ -39,7 +45,9 @@ import { copyTilesetTiles } from "../palettes/paletteActions";
 import { itemsOfTiles } from "../palettes/paletteModel";
 import { PendingTileDrag } from "../palettes/tileDrag";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
-import { useActiveTerrainId } from "../terrain/TerrainList";
+import { clearTerrainDraft, roughRect, startDraft, useTerrainDraft } from "../terrain/terrainDraft";
+import { resolveTerrain, zoneAt, type TagZone } from "../terrain/terrainModel";
+import { TagZoneHover, TerrainTagOverlay } from "../terrain/TerrainTagOverlay";
 import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
 import { useEmptyTiles } from "./emptyTiles";
@@ -61,13 +69,6 @@ import { BlockGhost, CellLabel, drawMarks, drawTiles, SelectionOverlay } from ".
 import { commitTilesetSelection, highlightedIds } from "./tilesetSelect";
 import { useTilesetView } from "./tilesetViewStore";
 
-/** A terrain block placed with a click, waiting for its name (one per panel). */
-export interface PendingBlock {
-  readonly tilesetId: string;
-  readonly cell: Cell;
-  readonly template: TerrainTemplate;
-}
-
 /** What a grid needs from the viewport around it. */
 export interface GridHost {
   /** Focuses the viewport (keyboard). */
@@ -76,8 +77,6 @@ export interface GridHost {
   panning(): boolean;
   /** Arrow / Esc keys for this tileset (null unregisters). Returns true when handled. */
   registerKeys(tilesetId: string, handler: ((event: KeyboardEvent) => boolean) | null): void;
-  pending: PendingBlock | null;
-  setPending(block: PendingBlock | null): void;
   /** Scrolls so that `box` (px, relative to `grid`) is visible; centred when it was out of view and `center`. */
   reveal(grid: HTMLElement, box: { left: number; top: number; right: number; bottom: number }, center: boolean): void;
   /** Draw only while near the viewport (the stack). */
@@ -86,34 +85,27 @@ export interface GridHost {
 
 export const GridHostContext = createContext<GridHost | null>(null);
 
-/** Terrain whose block covers tile (`col`, `row`), or null. */
-export function terrainAt(tileset: Tileset, col: number, row: number): number | null {
-  for (const terrain of tileset.terrains ?? []) {
-    const info = terrainTemplateInfo(terrain.template);
-    if (col >= terrain.origin.col && col < terrain.origin.col + info.columns && row >= terrain.origin.row && row < terrain.origin.row + info.rows) {
-      return terrain.id;
-    }
-  }
-  return null;
+/** "Arazi başlat buradan": ⚙ Düzenle → Arazi with the block around `cell` found (or why nothing was found). */
+export function startTerrainAt(tileset: Tileset, cell: Cell): void {
+  useUiStore.getState().setTilesetMode("terrain");
+  if (!startDraft(tileset, { col: cell.col, row: cell.row, columns: 1, rows: 1 })) toast.warning(t("terrain.noCandidate"));
 }
 
-/** "Arazi başlat buradan": terrain mode with the block placed at `cell` (or why it does not fit). */
-export function startTerrainAt(host: GridHost, tileset: Tileset, cell: Cell): void {
-  const ui = useUiStore.getState();
-  ui.setTilesetMode("terrain");
-  const problem = terrainBlockProblem(tileset, ui.terrainTemplate, cell.col, cell.row);
-  if (problem) {
-    toast.warning(problem);
-    host.setPending(null);
-    return;
+/** The terrain set whose tags the grid shows in Arazi mode: the fix target's, the draft's, the brush's, else the tileset's first. */
+function focusSet(tileset: Tileset, fixSet: string | null, draftSet: string | null, brushSet: string | null): TerrainSet | undefined {
+  for (const id of [fixSet, draftSet, brushSet]) {
+    const set = id ? getTerrainSet(tileset, id) : undefined;
+    if (set) return set;
   }
-  host.setPending({ tilesetId: tileset.id, cell, template: ui.terrainTemplate });
+  return tileset.terrainSets?.[0];
 }
 
 type Drag =
   /** `alt`: the rectangle goes to the random brush; `carry`: a press on the selection that may drag its tiles into a palette. */
   | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell; alt: boolean; carry: PendingTileDrag | null }
-  | { kind: "solid"; pointerId: number };
+  | { kind: "solid"; pointerId: number }
+  /** Arazi: a rough rectangle over a terrain block. */
+  | { kind: "rough"; pointerId: number; start: Cell; cell: Cell };
 
 export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: number }) {
   const host = useContext(GridHostContext)!;
@@ -125,8 +117,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const panelSelection = useTilesetView((s) => s.selection);
   const reveal = useTilesetView((s) => s.reveal);
   const mode = useUiStore((s) => s.tilesetMode);
-  const template = useUiStore((s) => s.terrainTemplate);
-  const activeTerrainId = useActiveTerrainId();
+  const draft = useTerrainDraft((s) => (s.draft?.tilesetId === tileset.id ? s.draft : null));
+  const fixRef = useTerrainDraft((s) => (s.fix?.tilesetId === tileset.id ? s.fix : null));
+  const brushTerrain = useEditorStore((s) => (s.terrain?.tilesetId === tileset.id ? s.terrain : null));
   const empty = useEmptyTiles(tileset, image?.bitmap);
   const [imageVersion, setImageVersion] = useState(0);
   useEffect(() => onTilesetImage((id) => id === tileset.id && setImageVersion((v) => v + 1)), [tileset.id]);
@@ -136,6 +129,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const marksRef = useRef<HTMLCanvasElement>(null);
   const strokeRef = useRef<SolidStroke | null>(null);
   const [hover, setHover] = useState<Cell | null>(null);
+  const [hoverZone, setHoverZone] = useState<TagZone | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const [menuCell, setMenuCell] = useState<Cell | null>(null);
@@ -146,7 +140,8 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const cssW = Math.round(tileset.columns * cellW);
   const cssH = Math.round(tileset.rows * cellH);
 
-  const pending = host.pending && host.pending.tilesetId === tileset.id && host.pending.template === template && mode === "terrain" ? host.pending.cell : null;
+  const fix = mode === "terrain" && fixRef && resolveTerrain(store?.document, fixRef) ? fixRef : null;
+  const tagSet = mode === "terrain" ? focusSet(tileset, fix?.setId ?? null, draft?.setId ?? null, brushTerrain?.setId ?? null) : undefined;
 
   const updateDrag = (next: Drag | null) => {
     dragRef.current = next;
@@ -197,7 +192,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     const next = cellAt(p.x, p.y);
     setHover((h) => (h?.col === next?.col && h?.row === next?.row ? h : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `cellAt` only reads the grid and scale
-  }, [mode, template, cellW, cellH, cssW, tileset.columns, tileset.rows]);
+  }, [mode, cellW, cellH, cssW, tileset.columns, tileset.rows]);
 
   // ---- selection
 
@@ -263,6 +258,10 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 
   const keysRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
   keysRef.current = (event) => {
+    if (event.key === "Escape" && !dragRef.current && mode === "terrain" && (draft || fix)) {
+      clearTerrainDraft();
+      return true;
+    }
     if (event.key === "Escape" && dragRef.current) {
       strokeRef.current?.end();
       strokeRef.current = null;
@@ -297,8 +296,8 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     const action = tilePointerAction(mode, {
       button: e.button,
       alt: e.altKey,
-      pending: pending !== null,
-      terrainId: terrainAt(tileset, cell.col, cell.row),
+      draft: draft !== null,
+      fixing: fix !== null,
     });
     if (isStroke(action)) e.currentTarget.setPointerCapture(e.pointerId);
     switch (action.kind) {
@@ -328,14 +327,15 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         strokeRef.current = new SolidStroke(store, tileset.id, cell.col, cell.row, action.solid);
         updateDrag({ kind: "solid", pointerId: e.pointerId });
         return;
-      case "placeBlock":
-        if (terrainBlockProblem(tileset, template, cell.col, cell.row) === null) host.setPending({ tilesetId: tileset.id, cell, template });
+      case "roughRect":
+        e.currentTarget.setPointerCapture(e.pointerId);
+        updateDrag({ kind: "rough", pointerId: e.pointerId, start: cell, cell });
         return;
-      case "cancelBlock":
-        host.setPending(null);
+      case "tagTile":
+        if (fix) toggleTerrainTag(fix, idOf(tileset, cell), zoneAt(tagSet?.kind ?? "corner", ...fractionIn(e.clientX, e.clientY, cell)));
         return;
-      case "removeTerrain":
-        deleteTerrain(action.terrainId);
+      case "cancelDraft":
+        clearTerrainDraft();
         return;
     }
   };
@@ -346,6 +346,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     if (g?.kind === "solid" && g.pointerId === e.pointerId && strokeRef.current) {
       const c = rawCellAt(e.clientX, e.clientY);
       strokeRef.current.moveTo(c.col, c.row);
+    } else if (g?.kind === "rough" && g.pointerId === e.pointerId) {
+      const c = clampCell(tileset, rawCellAt(e.clientX, e.clientY));
+      if (c.col !== g.cell.col || c.row !== g.cell.row) updateDrag({ ...g, cell: c });
     } else if (g?.kind === "select" && g.pointerId === e.pointerId) {
       const wasActive = g.carry?.active ?? false;
       g.carry?.move(e.clientX, e.clientY, e.shiftKey);
@@ -359,6 +362,17 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     }
     const cell = cellAt(e.clientX, e.clientY);
     setHover((h) => (h?.col === cell?.col && h?.row === cell?.row ? h : cell));
+    if (fix && cell) {
+      const z = zoneAt(tagSet?.kind ?? "corner", ...fractionIn(e.clientX, e.clientY, cell));
+      setHoverZone((prev) => (prev && JSON.stringify(prev) === JSON.stringify(z) ? prev : z));
+    } else setHoverZone(null);
+  };
+
+  /** Pointer position inside tile `cell` as fractions (0..1). */
+  const fractionIn = (clientX: number, clientY: number, cell: Cell): [number, number] => {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return [0.5, 0.5];
+    return [(clientX - rect.left) / cellW - cell.col, (clientY - rect.top) / cellH - cell.row];
   };
 
   const endStroke = () => {
@@ -371,6 +385,10 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     if (!g || g.pointerId !== e.pointerId) return;
     endStroke();
     updateDrag(null);
+    if (g.kind === "rough") {
+      if (!startDraft(tileset, roughRect(g.start, g.cell))) toast.warning(t("terrain.noCandidate"));
+      return;
+    }
     if (g.kind !== "select") return;
     if (g.carry?.active) {
       g.carry.finish(e.shiftKey);
@@ -391,10 +409,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 
   // ---- render
 
-  const info = terrainTemplateInfo(template);
-  const blockAt = mode === "terrain" ? (pending ?? hover) : null;
-  const tooSmall = mode === "terrain" ? terrainBlockProblem(tileset, template, 0, 0) : null;
-  const blockProblem = blockAt ? terrainBlockProblem(tileset, template, blockAt.col, blockAt.row) : null;
+  const candidate = mode === "terrain" && draft ? (draft.candidates[draft.index] ?? null) : null;
+  const candidateInfo = candidate ? terrainTemplateInfo(candidate.template) : null;
+  const rough = drag?.kind === "rough" ? roughRect(drag.start, drag.cell) : null;
   const preview = useMemo(
     () => (drag?.kind === "select" && !drag.carry?.active ? gestureIds(tileset, drag.gesture, drag.cell) : null),
     [drag, tileset],
@@ -405,13 +422,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const shownBounds = preview ? boundsOf(tileset, preview) : null;
   const randomHere = randomSet.length >= 2 ? randomSet.filter((r) => r.tilesetId === tileset.id) : [];
   const shownSet = useMemo(() => new Set(shown), [shown]);
-  const hoverTerrain = mode === "terrain" && hover && !pending ? terrainAt(tileset, hover.col, hover.row) : null;
-  const cursor =
-    picking
-      ? "cursor-pointer"
-      : mode === "terrain" && blockProblem && hoverTerrain === null
-        ? "cursor-not-allowed"
-        : "cursor-crosshair";
+  const cursor = picking ? "cursor-pointer" : "cursor-crosshair";
   const hoverId = hover ? idOf(tileset, hover) : null;
 
   if (!image) {
@@ -437,7 +448,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             onLostPointerCapture={(e) => {
-              if (dragRef.current?.pointerId !== e.pointerId || dragRef.current.kind === "select") return;
+              if (dragRef.current?.pointerId !== e.pointerId || dragRef.current.kind === "select" || dragRef.current.kind === "rough") return;
               endStroke();
               updateDrag(null);
             }}
@@ -473,34 +484,17 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             <canvas ref={marksRef} aria-hidden className="pointer-events-none absolute inset-0 block size-full" />
           </>
         )}
-        {visible && mode !== "solid" &&
-          (tileset.terrains ?? []).map((terrain) => {
-            const ti = terrainTemplateInfo(terrain.template);
-            const strong = mode === "terrain" || terrain.id === activeTerrainId;
-            const doomed = hoverTerrain === terrain.id;
-            return (
-              <div
-                key={terrain.id}
-                aria-hidden
-                data-terrain-outline={terrain.id}
-                className={`pointer-events-none absolute ${doomed ? "bg-danger/15 outline-danger" : "outline-terrain-tint"} ${strong ? "outline-2" : "outline-1 opacity-70"}`}
-                style={{
-                  left: terrain.origin.col * cellW,
-                  top: terrain.origin.row * cellH,
-                  width: ti.columns * cellW,
-                  height: ti.rows * cellH,
-                  outlineStyle: "solid",
-                  outlineOffset: -1,
-                }}
-              >
-                <span
-                  className={`absolute top-0 left-0 max-w-full truncate rounded-br-sm px-1 text-2xs leading-[14px] font-medium text-inverse ${doomed ? "bg-danger" : "bg-terrain-tint"}`}
-                >
-                  {doomed ? t("tilesetLib.terrainRemoveHint", { name: terrain.name }) : terrain.name}
-                </span>
-              </div>
-            );
-          })}
+        {visible && tagSet && (
+          <TerrainTagOverlay
+            tileset={tileset}
+            set={tagSet}
+            cellW={cellW}
+            cellH={cellH}
+            width={cssW}
+            height={cssH}
+            focusTerrain={fix?.terrainId ?? (brushTerrain?.setId === tagSet.id ? brushTerrain.terrainId : null)}
+          />
+        )}
         {randomHere.map((r) => {
           const col = r.tileId % tileset.columns;
           const row = Math.floor(r.tileId / tileset.columns);
@@ -544,18 +538,31 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             <SelectionOverlay tileset={tileset} ids={preview} empty={empty} cellW={cellW} cellH={cellH} width={cssW} height={cssH} live />
           </div>
         )}
-        {blockAt && !tooSmall && hoverTerrain === null && (
-          <BlockGhost
-            template={template}
-            left={blockAt.col * cellW}
-            top={blockAt.row * cellH}
-            cellW={cellW}
-            cellH={cellH}
-            invalid={blockProblem !== null}
-            pinned={pending !== null}
-            columns={info.columns}
-            rows={info.rows}
+        {candidate && candidateInfo && (
+          <div data-terrain-candidate={candidate.template} data-terrain-origin={`${candidate.origin.col},${candidate.origin.row}`} className="contents">
+            <BlockGhost
+              template={candidate.template}
+              left={candidate.origin.col * cellW}
+              top={candidate.origin.row * cellH}
+              cellW={cellW}
+              cellH={cellH}
+              invalid={false}
+              pinned
+              columns={candidateInfo.columns}
+              rows={candidateInfo.rows}
+            />
+          </div>
+        )}
+        {rough && (
+          <div
+            aria-hidden
+            data-terrain-rough=""
+            className="pointer-events-none absolute bg-accent/10 outline-2 outline-accent"
+            style={{ left: rough.col * cellW, top: rough.row * cellH, width: rough.columns * cellW, height: rough.rows * cellH, outlineStyle: "dashed", outlineOffset: -1 }}
           />
+        )}
+        {fix && hover && hoverZone && (
+          <TagZoneHover zone={hoverZone} col={hover.col} row={hover.row} cellW={cellW} cellH={cellH} color={resolveTerrain(store?.document, fix)?.terrain.color ?? "#ffffff"} />
         )}
         {picking && !(drag?.kind === "select" && drag.carry?.active) && (shownBounds ? shownBounds.width * shownBounds.height > 1 : hover !== null) && (
           <CellLabel
@@ -577,7 +584,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       <ContextMenu.Portal>
         <ContextMenu.Positioner className={menuPositionerClass}>
           <ContextMenu.Popup className={menuPopupClass} data-tile-menu>
-            {menuCell && <TileMenuItems tileset={tileset} cell={menuCell} host={host} selected={highlighted} empty={empty} />}
+            {menuCell && <TileMenuItems tileset={tileset} cell={menuCell} selected={highlighted} empty={empty} />}
           </ContextMenu.Popup>
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
@@ -589,13 +596,11 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 function TileMenuItems({
   tileset,
   cell,
-  host,
   selected,
   empty,
 }: {
   tileset: Tileset;
   cell: Cell;
-  host: GridHost;
   selected: readonly number[];
   empty: ReadonlySet<number>;
 }) {
@@ -623,8 +628,8 @@ function TileMenuItems({
         <Icon name="bricks" size={15} className="text-collision-solid" />
         {solid ? t("tilesetLib.menuUnsolid") : t("tilesetLib.menuSolid")}
       </ContextMenu.Item>
-      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="terrain" onClick={() => startTerrainAt(host, tileset, cell)}>
-        <Icon name="terrain" size={15} className="text-terrain-tint" />
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="terrain" onClick={() => startTerrainAt(tileset, cell)}>
+        <Icon name="terrain" size={15} className="text-accent" />
         {t("tilesetLib.menuTerrain")}
       </ContextMenu.Item>
       <div role="separator" className={menuSeparatorClass} />

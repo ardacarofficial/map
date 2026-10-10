@@ -136,14 +136,14 @@ export function defineTerrain(def: TerrainDefinition): TerrainRef | null {
   return ref;
 }
 
-/** Defaults for a new terrain of `setId` (or a new set): name and colour. */
-export function terrainDefaults(tilesetId: string, setId: string | null): { name: string; color: string } {
+/** Defaults for a new terrain of `setId` (or a new set): a free name and a colour no terrain of the tileset uses yet. */
+export function terrainDefaults(tilesetId: string, _setId: string | null): { name: string; color: string } {
   const doc = currentStore()?.document;
   const tileset = doc?.getTileset(tilesetId);
-  const set = setId ? getTerrainSet(tileset, setId) : undefined;
-  const names = (tileset?.terrainSets ?? []).flatMap((s) => s.terrains.map((x) => x.name));
+  const all = (tileset?.terrainSets ?? []).flatMap((s) => s.terrains);
+  const names = all.map((x) => x.name);
   const n = names.length + 1;
-  return { name: uniqueName(t("terrain.newName", { n }), names), color: nextTerrainColor(set) };
+  return { name: uniqueName(t("terrain.newName", { n }), names), color: nextTerrainColor({ id: "", name: "", kind: "blob", terrains: all, tiles: [] }) };
 }
 
 /** Problem of a template block at `origin` in `tileset`, localized, or null when it fits. */

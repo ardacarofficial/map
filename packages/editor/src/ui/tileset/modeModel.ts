@@ -8,8 +8,9 @@
  *   context menu (no edit).
  * - Katı (⚙ Düzenle): left (drag) marks solid, right (drag) unmarks.
  * - (There is no "Rastgele" mode any more: a legacy "random" value acts as Seç.)
- * - Arazi (⚙ Düzenle): left places the block; right cancels a placed block, or, with
- *   none placed, removes the terrain under the cursor (undoable).
+ * - Arazi (⚙ Düzenle): left drags a rough rectangle over a terrain block
+ *   (the program finds template and origin), or — while "Düzelt" is on —
+ *   tags the clicked corner / zone; right drops the open draft.
  */
 import type { MessageKey } from "../../i18n";
 import type { TilesetMode } from "../uiStore";
@@ -20,18 +21,21 @@ export type TilePointerAction =
   /** Alt + left in Seç: a rectangle for the random brush (one cell = toggle that tile). */
   | { readonly kind: "randomRect" }
   | { readonly kind: "solid"; readonly solid: boolean }
-  | { readonly kind: "placeBlock" }
-  | { readonly kind: "cancelBlock" }
-  | { readonly kind: "removeTerrain"; readonly terrainId: number };
+  /** Arazi: drag a rough rectangle over a block. */
+  | { readonly kind: "roughRect" }
+  /** Arazi + "Düzelt": tag the clicked corner / zone. */
+  | { readonly kind: "tagTile" }
+  /** Arazi: drop the draft (right button). */
+  | { readonly kind: "cancelDraft" };
 
 export interface TilePointerContext {
   /** 0 = left, 2 = right (other buttons never reach a tile). */
   readonly button: number;
   readonly alt: boolean;
-  /** A terrain block is placed and waits for its name. */
-  readonly pending: boolean;
-  /** Terrain whose block covers the tile, if any. */
-  readonly terrainId: number | null;
+  /** A terrain draft is open (a block was found and waits for "Tanımla"). */
+  readonly draft: boolean;
+  /** "Düzelt" is on (clicks tag single tiles). */
+  readonly fixing: boolean;
 }
 
 export function tilePointerAction(mode: TilesetMode, ctx: TilePointerContext): TilePointerAction {
@@ -46,9 +50,8 @@ export function tilePointerAction(mode: TilesetMode, ctx: TilePointerContext): T
     case "solid":
       return { kind: "solid", solid: left };
     case "terrain":
-      if (left) return { kind: "placeBlock" };
-      if (ctx.pending) return { kind: "cancelBlock" };
-      return ctx.terrainId !== null ? { kind: "removeTerrain", terrainId: ctx.terrainId } : { kind: "none" };
+      if (left) return ctx.fixing ? { kind: "tagTile" } : { kind: "roughRect" };
+      return ctx.draft ? { kind: "cancelDraft" } : { kind: "none" };
   }
 }
 
