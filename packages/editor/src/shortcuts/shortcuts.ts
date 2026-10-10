@@ -54,6 +54,11 @@ export type CommandId =
   | "tileset.goto"
   | "tileset.remove"
   | "project.rename"
+  | "edit.rotateCW"
+  | "edit.rotateCCW"
+  | "map.settings"
+  | "project.settings"
+  | "view.history"
   | "stamp.saveSelection"
   | "layer.addEntity"
   | "entity.editTypes"
@@ -159,6 +164,12 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "tileset.goto", keys: [] },
   { command: "tileset.remove", keys: [] },
   { command: "project.rename", keys: [] },
+  /** Rotate the brush tile / stamp / selection 90° (opt-in; X/Y flip stays the default). */
+  { command: "edit.rotateCW", keys: ["Z"] },
+  { command: "edit.rotateCCW", keys: ["Shift+Z"] },
+  { command: "map.settings", keys: [] },
+  { command: "project.settings", keys: [] },
+  { command: "view.history", keys: [] },
   { command: "stamp.saveSelection", keys: [] },
   { command: "layer.addEntity", keys: [] },
   { command: "entity.editTypes", keys: [] },
