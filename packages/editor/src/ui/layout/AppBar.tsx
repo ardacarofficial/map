@@ -2,6 +2,7 @@ import { Menu } from "@base-ui/react/menu";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { ExportIcon } from "../../export/ExportDialog";
+import { openExportDialog } from "../../export/exportStore";
 import { getLocale, t } from "../../i18n";
 import { endProjectRename, startProjectRename, useProjectRename } from "../../io/projectRename";
 import { useSaveIndicator } from "../../io/saveIndicator";
@@ -161,7 +162,7 @@ export function AppBar() {
       <div className="flex min-w-0 items-center justify-end gap-4">
         <SaveIndicator />
         <Tooltip label={t("export.toolbarUnity")} command="file.export">
-          <Button variant="primary" className="h-8 shrink-0 gap-2 px-3 text-md" data-export-unity="" onClick={() => runCommand("file.export")}>
+          <Button variant="primary" className="h-8 shrink-0 gap-2 px-3 text-md" data-export-unity="" onClick={() => openExportDialog({ target: "unity" })}>
             <ExportIcon />
             {t("export.toolbarUnity")}
           </Button>

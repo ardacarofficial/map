@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const OUT = "/tmp/claude-0/-home-user-map/71aa0adb-d0ed-56a0-9a7b-c70c93d2a345/scratchpad/r4inspector";
 const bytes = [...readFileSync("/home/user/map/samples/tilesets/overworld-32.png")];
