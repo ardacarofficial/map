@@ -27,12 +27,8 @@ import {
   MAX_WEIGHT,
   MIN_WEIGHT,
   randomChances,
-  removeRandomStamp,
+  randomSetOf,
   removeRandomTile,
-  saveRandomSet,
-  setRandomFlip,
-  setRandomScatter,
-  setRandomStampWeight,
   setRandomWeight,
   useRandomBrush,
 } from "../../commands/randomBrush";
@@ -54,6 +50,7 @@ import { TileSwatch } from "../primitives/TileSwatch";
 import { Toggle } from "../primitives/Toggle";
 import { templateShortName } from "../terrain/TemplatePicker";
 import { terrainSwatchTile } from "../terrain/TerrainList";
+import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
 import { saveClipAsStamp } from "../tileset/SelectionSection";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { BrushPreview } from "./BrushPreview";
@@ -207,10 +204,12 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
   const selection = useEditorStore((s) => s.selection);
   const randomSet = useEditorStore((s) => s.randomSet);
   const randomStamps = useRandomBrush((s) => s.stamps);
+  const randomActive = useIsRandomBrush();
   const size = useEditorStore((s) => s.brushSize);
   const doc = ctx.doc;
   const tileset = selection ? doc.getTileset(selection.tilesetId) : undefined;
-  const random = randomSet.length + randomStamps.length >= 2 && !stamp;
+  // Same rule as the canvas (`currentRandomSet`): 2+ candidates, or one with scatter.
+  const random = randomActive && !stamp;
   const eraser = tool === "eraser";
   // A clip on the brush is placed as it is: the brush size only matters for the eraser then.
   const sized = eraser || (tool === "brush" && !stamp);
@@ -276,6 +275,13 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
       {!eraser && stamp && <StampDetails clip={stamp} doc={doc} />}
       {!eraser && !stamp && random && <RandomDetails doc={doc} />}
       {!eraser && !stamp && !random && selection && tileset && <TileDetails tileset={tileset} tileId={selection.tileId} />}
+      {!eraser && !stamp && !random && doc.randomSets.length > 0 && (
+        <PropGrid>
+          <PropRow label={t("inspector.random")}>
+            <RandomSetPicker />
+          </PropRow>
+        </PropGrid>
+      )}
     </div>
   );
 }
@@ -294,15 +300,28 @@ function ClipName({ clip }: { clip: TileClip }) {
   return <>{saved?.name ?? t("inspector.clip")}</>;
 }
 
-/** Up to 4 candidates of the random brush in a 2 × 2 grid. */
+/** True when the editor's random brush (tiles + `useRandomBrush` options) is a random brush. */
+function useIsRandomBrush(): boolean {
+  const tiles = useEditorStore((s) => s.randomSet);
+  const options = useRandomBrush();
+  return randomSetOf(tiles, options) !== null;
+}
+
+/** Up to 4 candidates of the random brush (tiles, then stamps) in a 2 × 2 grid. */
 function RandomPreview({ doc }: { doc: MapDocument }) {
   const set = useEditorStore((s) => s.randomSet);
+  const stamps = useRandomBrush((s) => s.stamps);
+  const library = useProjectLibrary((s) => s.stamps);
   const cell = PREVIEW / 2 - 2;
   return (
     <span style={{ width: PREVIEW, height: PREVIEW }} className="checker grid shrink-0 grid-cols-2 place-items-center gap-0.5 rounded-md border border-accent-line p-0.5">
       {set.slice(0, 4).map((tile) => {
         const ts = doc.getTileset(tile.tilesetId);
         return ts ? <TileSwatch key={`${tile.tilesetId}:${tile.tileId}`} tileset={ts} tileId={tile.tileId} size={cell} /> : <span key={`${tile.tilesetId}:${tile.tileId}`} />;
+      })}
+      {stamps.slice(0, Math.max(0, 4 - set.length)).map((c) => {
+        const stamp = library.find((s) => s.id === c.stampId);
+        return stamp ? <BrushPreview key={`s:${c.stampId}`} clip={stamp} doc={doc} width={cell} height={cell} /> : <Icon key={`s:${c.stampId}`} name="stamp" size={16} className="text-faint" />;
       })}
     </span>
   );
@@ -444,13 +463,14 @@ function StampNameForm({ doc, clip, onDone }: { doc: MapDocument; clip: TileClip
   );
 }
 
-/** The random brush: candidates with weights, scatter, random flip, save. */
+/**
+ * The random brush: tile candidates with weights and chances, then the
+ * shared random set controls (saved sets, save, stamp candidates, scatter,
+ * random flip — `RandomSetControls`).
+ */
 function RandomDetails({ doc }: { doc: MapDocument }) {
   const set = useEditorStore((s) => s.randomSet);
   const stamps = useRandomBrush((s) => s.stamps);
-  const scatter = useRandomBrush((s) => s.scatter);
-  const randomFlip = useRandomBrush((s) => s.randomFlip);
-  const library = useProjectLibrary((s) => s.stamps);
   const chances = randomChances([...set, ...stamps]);
   return (
     <div data-random-brush>
@@ -463,61 +483,31 @@ function RandomDetails({ doc }: { doc: MapDocument }) {
       >
         {t("inspector.random")}
       </SectionHeader>
-      <ul className="mx-3 flex max-h-[188px] flex-col gap-0.5 overflow-y-auto rounded-md border border-line bg-raised p-1">
-        {set.map((tile, i) => {
-          const tileset = doc.getTileset(tile.tilesetId);
-          return (
-            <WeightRow
-              key={`t:${tile.tilesetId}:${tile.tileId}`}
-              visual={tileset ? <TileSwatch tileset={tileset} tileId={tile.tileId} size={20} className="rounded-xs" /> : <span className="size-5 rounded-xs bg-line" />}
-              label={
-                <>
-                  <span className="font-mono tabular">#{tile.tileId}</span>
-                  {doc.tilesets.length > 1 && <span className="ml-1.5">{tileset?.name ?? tile.tilesetId}</span>}
-                </>
-              }
-              chance={chances[i] ?? 0}
-              weight={tile.weight ?? 1}
-              onWeight={(d) => setRandomWeight(tile, d)}
-              onRemove={() => removeRandomTile(tile)}
-            />
-          );
-        })}
-        {stamps.map((c, i) => {
-          const stamp = library.find((s) => s.id === c.stampId);
-          return (
-            <WeightRow
-              key={`s:${c.stampId}`}
-              visual={stamp ? <BrushPreview clip={stamp} doc={doc} width={20} height={20} /> : <Icon name="stamp" size={16} className="text-faint" />}
-              label={stamp?.name ?? c.stampId}
-              chance={chances[set.length + i] ?? 0}
-              weight={c.weight ?? 1}
-              onWeight={(d) => setRandomStampWeight(c.stampId, d)}
-              onRemove={() => removeRandomStamp(c.stampId)}
-            />
-          );
-        })}
-      </ul>
-      <PropGrid>
-        <PropRow label={t("inspector.randomScatter")}>
-          <input
-            type="range"
-            min={0}
-            max={95}
-            step={5}
-            value={Math.round(scatter * 100)}
-            aria-label={t("inspector.randomScatter")}
-            onChange={(e) => setRandomScatter(Number(e.target.value))}
-            className="h-1 min-w-0 flex-1 accent-(--color-accent)"
-          />
-          <span className="w-9 shrink-0 text-right font-mono text-sm text-muted tabular">%{Math.round(scatter * 100)}</span>
-        </PropRow>
-        <PropRow label={t("inspector.randomFlip")}>
-          <Toggle checked={randomFlip} onChange={setRandomFlip} label={t("inspector.randomFlip")} />
-        </PropRow>
-      </PropGrid>
-      <div className="px-3 pt-0.5">
-        <ActionButton icon="save" label={t("inspector.randomSave")} dataAction="saveRandomSet" onClick={() => void saveRandomSet()} />
+      {set.length > 0 && (
+        <ul className="mx-3 mb-2 flex max-h-[188px] flex-col gap-0.5 overflow-y-auto rounded-md border border-line bg-raised p-1">
+          {set.map((tile, i) => {
+            const tileset = doc.getTileset(tile.tilesetId);
+            return (
+              <WeightRow
+                key={`t:${tile.tilesetId}:${tile.tileId}`}
+                visual={tileset ? <TileSwatch tileset={tileset} tileId={tile.tileId} size={20} className="rounded-xs" /> : <span className="size-5 rounded-xs bg-line" />}
+                label={
+                  <>
+                    <span className="font-mono tabular">#{tile.tileId}</span>
+                    {doc.tilesets.length > 1 && <span className="ml-1.5">{tileset?.name ?? tile.tilesetId}</span>}
+                  </>
+                }
+                chance={chances[i] ?? 0}
+                weight={tile.weight ?? 1}
+                onWeight={(d) => setRandomWeight(tile, d)}
+                onRemove={() => removeRandomTile(tile)}
+              />
+            );
+          })}
+        </ul>
+      )}
+      <div className="px-3">
+        <RandomSetControls />
       </div>
       <p className="px-3 pt-2 text-xs leading-4 text-faint">{t("random.hint")}</p>
     </div>

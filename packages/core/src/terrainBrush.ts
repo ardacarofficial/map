@@ -343,6 +343,8 @@ export function terrainFill(
 const COST_HARD = 1000;
 /** Cost of a free corner that may not change (beyond `maxExpand`) left unmatched. */
 const COST_STUCK = 300;
+/** Tie-break cost of a corner that differs from what the cell shows now. */
+const COST_KEEP = 1;
 /** Cost per terrain-graph step when changing a free corner. */
 const COST_STEP = 10;
 /**
@@ -476,6 +478,8 @@ class Solver {
           for (let k = 0; k < 4 && cost < bestCost; k++) {
             const have = config.corners[k]!;
             const w = want[k]!;
+            // Tie-break: keep what the cell shows now.
+            if (have !== own[k]) cost += COST_KEEP;
             if (have === w) continue;
             if (isHard[k]) cost += COST_HARD;
             else if (canChange) {

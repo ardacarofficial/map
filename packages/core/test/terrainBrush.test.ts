@@ -271,7 +271,8 @@ describe("terrainPaint — corner sets with several terrains", () => {
   });
 
   it("a terrain without transitions stays where it is painted (best partial match)", () => {
-    const store = groundStore(10, 10, true, groundSet([{ tileId: 50, corners: [W, W, W, W] }]).tiles.length ? { ...groundSet(), tiles: [...groundSet().tiles.filter((t) => t.tileId < 16), { tileId: 50, corners: [W, W, W, W] }] } : groundSet());
+    const grassDirtOnly = groundSet().tiles.filter((t) => t.tileId < 16);
+    const store = groundStore(10, 10, true, { ...groundSet(), tiles: [...grassDirtOnly, { tileId: 50, corners: [W, W, W, W] }] });
     paint(store, [[5, 5]], W);
     expect(tileId(store.document, 5, 5)).toBe(50);
     for (const [x, y] of [[4, 4], [5, 4], [6, 5], [6, 6], [4, 6]] as const) expect(tileId(store.document, x, y)).toBe(15);
