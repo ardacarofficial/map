@@ -143,7 +143,7 @@ export function changeWeight(set: readonly RandomTileEntry[], tile: TileSelectio
 }
 
 /** Chance of each tile in percent (rounded), in set order. */
-export function randomChances<T extends { weight?: number }>(set: readonly T[]): number[] {
+export function randomChances(set: readonly { readonly weight?: number; readonly tilesetId?: string; readonly stampId?: string }[]): number[] {
   const total = set.reduce((sum, t) => sum + (t.weight ?? 1), 0);
   return set.map((t) => (total > 0 ? Math.round(((t.weight ?? 1) / total) * 100) : 0));
 }
