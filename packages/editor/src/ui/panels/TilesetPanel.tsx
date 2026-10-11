@@ -222,12 +222,12 @@ function TilesetLibrary({
     (src: Source) => {
       const byWidth = fitScale(availWidth, src.width, src.tileW);
       if (!dock || size.height <= 0) return byWidth;
-      // `size` is the content box (padding already off).
-      const whole = Math.min(byWidth, fitScale(size.height, src.height, src.tileH));
-      if (whole >= 1) return whole;
       const cap = Math.max(MIN_ZOOM, (size.height - 2 * PADDING) / 3 / src.tileH);
-      const step = [...ZOOM_STEPS].reverse().find((z) => z <= cap) ?? MIN_ZOOM;
-      return Math.min(byWidth, Math.max(step, MIN_ZOOM));
+      const step = Math.max([...ZOOM_STEPS].reverse().find((z) => z <= cap) ?? MIN_ZOOM, MIN_ZOOM);
+      // `size` is the content box (padding already off). Never larger than the strip cap (small tilesets / palettes).
+      const whole = Math.min(byWidth, fitScale(size.height, src.height, src.tileH));
+      if (whole >= 1) return Math.min(whole, Math.max(step, 1));
+      return Math.min(byWidth, step);
     },
     [availWidth, dock, size.height],
   );
