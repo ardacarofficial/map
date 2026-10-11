@@ -357,6 +357,54 @@ export function rotateClip<T extends TileClip>(clip: T, dir: RotateDirection): T
   return Object.freeze({ ...clip, width: nw, height: nh, palette: clip.palette, layers: Object.freeze(layers) });
 }
 
+/**
+ * The rectangle `rect` takes after turning 90° in place: width and height
+ * swap around the same centre, snapped toward the original top-left
+ * (`Math.trunc`), so four turns give `rect` back. Not clipped to the map.
+ */
+export function rotatedRect(rect: CellRect): CellRect {
+  return {
+    x: rect.x + Math.trunc((rect.width - rect.height) / 2),
+    y: rect.y + Math.trunc((rect.height - rect.width) / 2),
+    width: rect.height,
+    height: rect.width,
+  };
+}
+
+/**
+ * Turns the content of `rect` on the given layers 90° in place (`"cw"` /
+ * `"ccw"`) as ONE undo step (nested into an open transaction if any): cut,
+ * {@link rotateClip}, paste into {@link rotatedRect}. Cells that land
+ * outside the map are dropped; empty cells of the turned block do not erase
+ * what was under them. Locked layers are copied but not cleared (as
+ * {@link cutRegion}) and not written (as {@link pasteClip}); entity layers
+ * are left alone.
+ *
+ * @returns the turned rectangle clipped to the map, or null when nothing of it is inside.
+ */
+export function rotateRegion(store: MapStore, layerIds: readonly string[], rect: CellRect, dir: RotateDirection): CellRect | null {
+  assertRect(rect, "rotateRegion");
+  const target = rotatedRect(rect);
+  const nested = store.inTransaction;
+  store.beginTransaction();
+  try {
+    const clip = cutRegion(store, layerIds, rect);
+    pasteClip(store, rotateClip(clip, dir), null, target.x, target.y);
+  } catch (error) {
+    // Only a transaction of our own may be rolled back (rollback closes every level).
+    if (nested) store.commit();
+    else store.rollback();
+    throw error;
+  }
+  store.commit();
+  const { width, height } = store.document.map;
+  const x0 = Math.max(0, target.x);
+  const y0 = Math.max(0, target.y);
+  const x1 = Math.min(width, target.x + target.width);
+  const y1 = Math.min(height, target.y + target.height);
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
 /** `layer` with new cells (frozen; grid layers keep their role). */
 function withCells(layer: ClipLayer, cells: Uint32Array): ClipLayer {
   return Object.freeze(

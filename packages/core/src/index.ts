@@ -476,6 +476,8 @@ export {
   flipClip,
   rotateClip,
   clipLayerPoints,
+  rotateRegion,
+  rotatedRect,
   clipFromTileset,
   tilesetCellsInRect,
   type TilesetCell,
