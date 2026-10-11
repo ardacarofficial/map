@@ -20,12 +20,12 @@ const ICON_COLOR: Record<ToastKind, string> = {
 };
 
 /**
- * Where the stack goes: top-centre of the map canvas, just under the ruler
- * (away from where the pointer draws, clear of the minimap and the undo
- * pill at the bottom), or the window's top-centre when no canvas is shown
- * (welcome screen).
+ * Where the stack goes: the top-right corner of the map canvas, just under
+ * the ruler (away from the centre where the map is drawn, clear of the
+ * minimap and the undo pill at the bottom), or the window's top-right
+ * corner when no canvas is shown (welcome screen).
  */
-function useCanvasTop(active: boolean): CSSProperties | undefined {
+function useCanvasCorner(active: boolean): CSSProperties | undefined {
   const [corner, setCorner] = useState<CSSProperties | undefined>(undefined);
   useEffect(() => {
     if (!active) return;
@@ -33,8 +33,8 @@ function useCanvasTop(active: boolean): CSSProperties | undefined {
     const measure = () => {
       const host = document.querySelector(`[${CANVAS_HOST_ATTR}]`);
       const r = host?.getBoundingClientRect();
-      const next = r && r.width > 0 && r.height > 0 ? { left: Math.round(r.left + r.width / 2), top: Math.round(r.top + 28) } : undefined;
-      setCorner((c) => (c?.left === next?.left && c?.top === next?.top ? c : next));
+      const next = r && r.width > 0 && r.height > 0 ? { right: Math.round(window.innerWidth - r.right + 12), top: Math.round(r.top + 28) } : undefined;
+      setCorner((c) => (c?.right === next?.right && c?.top === next?.top ? c : next));
     };
     const loop = () => {
       measure();
@@ -51,19 +51,19 @@ function useCanvasTop(active: boolean): CSSProperties | undefined {
 }
 
 /**
- * Stack of auto-dismissing notifications at the canvas' top-centre. Only
+ * Stack of auto-dismissing notifications at the canvas' top-right corner. Only
  * the buttons take the pointer: a stroke that runs under a toast keeps
  * drawing (the toast pauses while a button is hovered).
  */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
-  const corner = useCanvasTop(toasts.length > 0);
+  const corner = useCanvasCorner(toasts.length > 0);
   return (
     <div
       aria-live="polite"
       data-toaster
       style={corner}
-      className="pointer-events-none fixed top-4 left-1/2 z-50 flex w-[360px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2"
+      className="pointer-events-none fixed top-4 right-4 z-50 flex w-[340px] max-w-[calc(100vw-32px)] flex-col items-end gap-2"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />
