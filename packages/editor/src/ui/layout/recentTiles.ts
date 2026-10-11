@@ -1,6 +1,7 @@
 import { cellPaletteIndex, type MapDocument, type TileClip } from "@smap/core";
 
 import { t } from "../../i18n";
+import { clipKey } from "../../state/recentItems";
 
 import { useEditorStore, type TileSelection } from "../../state/editorStore";
 import { useUiStore } from "../uiStore";
@@ -64,6 +65,14 @@ export function recentStampLabel(doc: MapDocument | undefined, clip: TileClip & 
   if (typeof clip.name === "string") return t("recent.savedStamp", { name: clip.name, ...size });
   const anchor = stampAnchorTile(clip);
   const tileset = anchor ? doc?.getTileset(anchor.tilesetId) : undefined;
-  if (!anchor || !tileset) return t("recent.stamp", size);
-  return t("recent.stampFrom", { tileset: tileset.name, id: anchor.tileId, ...size });
+  // A short content hash: two unsaved stamps of the same size and anchor tile still read differently.
+  const hash = shortClipHash(clip);
+  if (!anchor || !tileset) return t("recent.stamp", { ...size, hash });
+  return t("recent.stampFrom", { tileset: tileset.name, id: anchor.tileId, ...size, hash });
+}
+
+/** Four base-36 characters from the clip's content key ({@link clipKey}). */
+export function shortClipHash(clip: TileClip): string {
+  const h = clipKey(clip).split("|").pop() ?? "";
+  return h.padStart(4, "0").slice(-4);
 }

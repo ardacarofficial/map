@@ -21,6 +21,7 @@ import { installStampInspector } from "./StampInspector";
 import { NO_FILTER, filterStamps, pruneFilter, stampCategories, stampTags, type StampFilter } from "./stampFilters";
 import { CARD_MAX, CARD_MIN, useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
+import { askText } from "../tileset/TextPrompt";
 import { stampLayerCounts } from "./stampThumb";
 
 installStampInspector();
@@ -34,6 +35,17 @@ function useCanSave(): boolean {
 export function placeLibraryStamp(id: string): void {
   pickStamp(id);
   if (activeStampId(useEditorStore.getState().stamp) === id) useStampLibrary.getState().select(null);
+}
+
+/** "Kategori ▸ Yeni kategori…": asks for a name in a small prompt, then puts the stamp in that (new) category. */
+export async function assignNewCategory(stampId: string): Promise<void> {
+  const name = await askText({
+    title: t("stampLib.newCategoryTitle"),
+    label: t("stampLib.categoryLabel"),
+    initial: "",
+    confirm: t("stampLib.newCategoryConfirm"),
+  });
+  if (name && useProjectLibrary.getState().stamps.some((s) => s.id === stampId)) setStampMeta(stampId, { category: name });
 }
 
 /** Right-click menu of a stamp card (also the inspector's "…"). */
@@ -55,7 +67,7 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
         ),
         { type: "item", id: "category:none", label: t("stampLib.categoryPlaceholder"), checked: !stamp.category, run: () => void setStampMeta(stamp.id, { category: "" }) },
         SEPARATOR,
-        { type: "item", id: "category:new", label: t("stampLib.newCategory"), run: () => lib.requestFocus(stamp.id, "category") },
+        { type: "item", id: "category:new", label: t("stampLib.newCategory"), run: () => void assignNewCategory(stamp.id) },
       ],
     },
     { type: "item", id: "tags", label: t("stampLib.tagsMenu"), icon: "bricks", run: () => lib.requestFocus(stamp.id, "tags") },
@@ -188,9 +200,12 @@ function StampLibrary({ stamps, canSave }: { stamps: readonly Stamp[]; canSave: 
         </ul>
       )}
       <footer className="flex h-8 shrink-0 items-center gap-2 border-t border-line-subtle pr-1.5 pl-3 text-2xs text-faint">
-        <span className="min-w-0 flex-1 truncate font-mono tabular" title={t("stampLib.hint")}>
-          {filtered ? t("stampLib.count", { shown: shown.length, total: stamps.length }) : t("stampLib.hint")}
-        </span>
+        <Tooltip label={t("stampLib.hint")} side="top">
+          <span role="img" aria-label={t("stampLib.hint")} data-stamp-lib-hint="" className="grid size-5 shrink-0 cursor-help place-items-center rounded-sm text-faint hover:text-muted">
+            <Icon name="info" size={13} />
+          </span>
+        </Tooltip>
+        <span className="min-w-0 flex-1 truncate font-mono tabular">{filtered ? t("stampLib.count", { shown: shown.length, total: stamps.length }) : null}</span>
         {view === "grid" && (
           <input
             type="range"

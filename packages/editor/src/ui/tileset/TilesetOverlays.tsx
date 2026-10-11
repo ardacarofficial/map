@@ -225,15 +225,20 @@ export function ModeBar({
   icon,
   tone,
   onDone,
+  compact = false,
   children,
 }: {
   icon: "bricks" | "terrain" | "dice";
   tone: "solid" | "terrain" | "random";
   onDone(): void;
+  /** Narrow column (the dock's side column): the text gets the full width and "Bitti" wraps under it. */
+  compact?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="mx-2 mb-1 flex shrink-0 items-center gap-2 rounded-md border border-line bg-raised py-1 pr-1 pl-2">
+    <div
+      className={`flex shrink-0 items-center gap-2 rounded-md border border-line bg-raised py-1 pr-1 pl-2 ${compact ? "flex-wrap justify-end gap-y-0.5 [&>[data-tileset-hint]]:basis-[calc(100%-26px)]" : "mx-2 mb-1"}`}
+    >
       <Icon
         name={icon}
         size={14}

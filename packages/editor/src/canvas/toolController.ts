@@ -39,6 +39,8 @@ import {
   pasteClip,
   patchCellCount,
   placeStamp,
+  rotateRegion,
+  type RotateDirection,
   type TerrainBrush,
   type CellPoint,
   type CellWrite,
@@ -1105,6 +1107,35 @@ export class ToolController {
     }
     this.#markDirty();
     s.setRegion(movedRegion(region, off.x, off.y, map));
+    this.#host.requestRender();
+    return true;
+  }
+
+  /**
+   * Z / Shift+Z with the select tool: turns the selection's content 90° in
+   * place on the active layer (one undo step, core `rotateRegion`); the
+   * selection takes the turned size. False when there is no selection to
+   * turn (the brush turns instead); true when the turn was handled, also
+   * when it was refused (locked layer: the blocked hint says why). Non-square
+   * tiles are refused by the caller (`rotateCommands`).
+   */
+  rotateSelection(dir: RotateDirection): boolean {
+    const s = useEditorStore.getState();
+    const store = this.#host.scene?.store;
+    const layer = this.#activeLayer();
+    const region = s.region;
+    if (s.tool !== "select" || !region || !store || !layer || isEntityLayer(layer)) return false;
+    if (this.#gesture) return true;
+    if (this.#reportBlocked("move")) return true;
+    let next: CellRegion | null;
+    try {
+      next = rotateRegion(store, [layer.id], region, dir);
+    } catch (error) {
+      console.error("[canvas] rotate failed", error);
+      return true;
+    }
+    this.#markDirty();
+    s.setRegion(next);
     this.#host.requestRender();
     return true;
   }

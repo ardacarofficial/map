@@ -2,7 +2,7 @@ import { FLIP_D, FLIP_H, FLIP_V, MapStore, cellFlags, createDocument, makeCell, 
 import { describe, expect, it } from "vitest";
 
 import type { EditorState } from "../state/editorStore";
-import { flippedRandomBrush, rotatedBrush } from "./rotateCommands";
+import { flippedRandomBrush, rotatedBrush, rotatesSelection } from "./rotateCommands";
 
 function state(tile = 16, patch: Partial<EditorState> = {}) {
   const store = new MapStore(createDocument({ width: 8, height: 8, tileWidth: tile, tileHeight: 16 }));
@@ -57,5 +57,18 @@ describe("rotate the brush", () => {
   it("non-square tiles do not turn; nothing chosen does nothing", () => {
     expect(rotatedBrush(state(32), "cw")).toEqual({ kind: "nonSquare" });
     expect(rotatedBrush(state(16, { selection: null }), "cw")).toBeNull();
+  });
+});
+
+describe("Z with a marquee selection", () => {
+  const region = { x: 1, y: 1, width: 3, height: 2 };
+  it("turns the selection only with the select tool, a region and a cell layer", () => {
+    const base = state();
+    expect(rotatesSelection({ ...base, tool: "select", region })).toBe(true);
+    expect(rotatesSelection({ ...base, tool: "brush", region })).toBe(false);
+    expect(rotatesSelection({ ...base, tool: "select", region: null })).toBe(false);
+    const store = base.project!.store;
+    const entityId = store.dispatch({ type: "addLayer", layer: { name: "E", type: "entity" } });
+    expect(rotatesSelection({ ...base, tool: "select", region, activeLayerId: entityId })).toBe(false);
   });
 });

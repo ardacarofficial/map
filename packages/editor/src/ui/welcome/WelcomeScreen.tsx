@@ -73,7 +73,7 @@ function ActionRow({ icon, title, hint, command, onClick }: { icon: IconName; ti
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-md font-medium text-text">{title}</span>
-        <span className="truncate text-sm text-faint">{hint}</span>
+        <span className="line-clamp-2 text-sm leading-snug text-faint">{hint}</span>
       </span>
       <CommandKbd command={command} />
     </button>
@@ -99,9 +99,9 @@ function DropZone() {
       >
         <Icon name="upload" size={16} />
       </span>
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-md font-medium text-text">{dragging ? t("welcome.dropActive") : t("welcome.dropShort")}</span>
-        <span className="truncate text-sm text-faint">{t("welcome.dropShortHint")}</span>
+        <span className="line-clamp-2 text-sm leading-snug text-faint">{t("welcome.dropShortHint")}</span>
       </span>
     </button>
   );

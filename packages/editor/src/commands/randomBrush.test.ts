@@ -7,8 +7,14 @@ const b = { tilesetId: "ts", tileId: 2 };
 const c = { tilesetId: "other", tileId: 1 };
 
 describe("random brush set", () => {
-  it("starts from the selected tile", () => {
+  it("Alt + click adds only the clicked tile, not the selected one", () => {
     const r = toggleInSet([], a, b);
+    expect(r.randomSet).toEqual([]);
+    expect(r.selection).toEqual(b);
+  });
+
+  it("starts from the seed (an earlier Alt + clicked tile)", () => {
+    const r = toggleInSet([], a, b, a);
     expect(r.randomSet).toEqual([a, b]);
     expect(r.selection).toEqual(a);
   });
@@ -20,7 +26,7 @@ describe("random brush set", () => {
   });
 
   it("toggling the selected tile itself does not make a set", () => {
-    expect(toggleInSet([], a, a)).toEqual({ randomSet: [], selection: a });
+    expect(toggleInSet([], a, a, a)).toEqual({ randomSet: [], selection: a });
   });
 
   it("adds and removes; tiles of different tilesets are distinct", () => {

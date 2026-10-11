@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import { runCommand } from "../../../commands/registry";
 import { t } from "../../../i18n";
@@ -6,7 +6,7 @@ import { IconButton } from "../../primitives/Button";
 import { Icon } from "../../primitives/Icon";
 import { Tooltip } from "../../primitives/Tooltip";
 import { RecentTilesStrip } from "../RecentTilesStrip";
-import { DOCK, useLayoutStore } from "../layoutStore";
+import { DOCK, effectiveDockHeight, useLayoutStore } from "../layoutStore";
 import { dockTabs, registerDockTab, useDockVersion } from "./registry";
 // The tileset view registers its own "tileset" tab (order 10) when its module loads.
 import "../../panels/TilesetPanel";
@@ -20,15 +20,32 @@ export function showDockTab(id: string): void {
   if (s.recentHidden) s.setRecentHidden(false);
 }
 
+function subscribeResize(cb: () => void): () => void {
+  window.addEventListener("resize", cb);
+  return () => window.removeEventListener("resize", cb);
+}
+
+/** The window height (re-renders on resize). */
+function useViewportHeight(): number {
+  return useSyncExternalStore(subscribeResize, () => window.innerHeight, () => 768);
+}
+
+/** The dock height as laid out: the dragged height, or the default for the window height. */
+function useDockHeight(): number {
+  const stored = useLayoutStore((s) => s.dockHeight);
+  const viewport = useViewportHeight();
+  return effectiveDockHeight(stored, viewport);
+}
+
 /**
  * The bottom dock under the canvas: a tab strip (registered tabs, see
  * `dock/registry.ts`) over the selected tab's content. Its top edge
- * resizes it (height remembered; double-click: back to 150 px). The canvas
- * always keeps at least 160 px.
+ * resizes it (height remembered; double-click: back to the default, which
+ * follows the window height). The canvas always keeps at least 160 px.
  */
 export function BottomDock() {
   useDockVersion();
-  const height = useLayoutStore((s) => s.dockHeight);
+  const height = useDockHeight();
   const selected = useLayoutStore((s) => s.dockTab);
   const setTab = useLayoutStore((s) => s.setDockTab);
   const tabs = dockTabs();
@@ -83,7 +100,7 @@ export function BottomDock() {
 
 /** Top edge of the dock: drag to resize, double-click for the default height, arrow keys nudge. */
 function DockResizeHandle() {
-  const height = useLayoutStore((s) => s.dockHeight);
+  const height = useDockHeight();
   const setHeight = useLayoutStore((s) => s.setDockHeight);
   const drag = useRef<{ startY: number; start: number; moved: boolean } | null>(null);
 
@@ -106,7 +123,7 @@ function DockResizeHandle() {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
-    if (d.moved) setHeight(useLayoutStore.getState().dockHeight, true);
+    if (d.moved) setHeight(useLayoutStore.getState().dockHeight ?? d.start, true);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -131,7 +148,7 @@ function DockResizeHandle() {
       onPointerUp={end}
       onPointerCancel={end}
       onLostPointerCapture={end}
-      onDoubleClick={() => setHeight(DOCK.initial, true)}
+      onDoubleClick={() => setHeight(null, true)}
       onKeyDown={onKeyDown}
       className="group absolute -top-[3px] right-0 left-0 z-20 h-1.5 cursor-row-resize touch-none outline-none"
     >

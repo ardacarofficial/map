@@ -4,6 +4,8 @@
  * - a stamp / pasted clip (saved stamps stay saved stamps) → core `rotateClip`;
  * - a random brush → every candidate's flip bits (the preview shows them);
  * - a single tile → a 1×1 clip of it with the turned flip bits (like X / Y).
+ * With the select tool and a marquee selection, Z / Shift+Z turn the
+ * selected cells in place instead (`rotateSelection` on the canvas).
  * Non-square tiles cannot turn (they would not fit their cell): the canvas
  * says so next to the pointer.
  *
@@ -11,7 +13,7 @@
  * mirrors its candidates (before, X / Y turned it into a flipped single tile
  * and the preview kept showing the random set).
  */
-import { makeCell, rotateClip, type TileClip } from "@smap/core";
+import { isEntityLayer, isGridLayer, makeCell, rotateClip, type TileClip } from "@smap/core";
 
 import { canRotateTiles, flipFlags, rotateFlags, type RotateDir } from "../canvas/rotation";
 import { isRandomBrush, randomTileFlags } from "../canvas/randomPaint";
@@ -90,9 +92,31 @@ function apply(transform: BrushTransform): boolean {
   }
 }
 
-/** Z / Shift+Z: turns the brush 90°. */
+/** True when Z / Shift+Z turn the marquee selection's content instead of the brush (select tool, a selection, a cell layer). */
+export function rotatesSelection(state: Pick<EditorState, "tool" | "region" | "activeLayerId" | "project">): boolean {
+  if (state.tool !== "select" || !state.region || !state.project) return false;
+  const layer = state.activeLayerId ? state.project.store.document.getLayer(state.activeLayerId) : undefined;
+  return layer !== undefined && !isEntityLayer(layer);
+}
+
+/**
+ * Z / Shift+Z: with the select tool and a selection, turns the selected
+ * cells 90° in place (one undo step, the selection takes the turned size);
+ * otherwise turns the brush 90°.
+ */
 export function rotateBrush(dir: RotateDir): boolean {
-  return apply(rotatedBrush(useEditorStore.getState(), dir));
+  const state = useEditorStore.getState();
+  if (rotatesSelection(state)) {
+    const map = state.project!.store.document.map;
+    const layer = state.project!.store.document.getLayer(state.activeLayerId!)!;
+    if (!isGridLayer(layer) && !canRotateTiles(map.tileWidth, map.tileHeight)) {
+      getCanvasHandle()?.showHint(t("canvas.rotateNonSquare"));
+      return false;
+    }
+    const handle = getCanvasHandle();
+    if (handle?.rotateSelection(dir)) return true;
+  }
+  return apply(rotatedBrush(state, dir));
 }
 
 /** X / Y: mirrors the brush (random sets mirror their candidates; the rest as before). */
@@ -109,12 +133,16 @@ export function registerRotateCommands(): void {
   registered = true;
   const enabled = () => {
     const s = useEditorStore.getState();
+    return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
+  };
+  const flipEnabled = () => {
+    const s = useEditorStore.getState();
     return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet));
   };
   registerCommands([
     { id: "edit.rotateCW", title: "inspector.rotateCW", category: "edit", enabled, run: () => void rotateBrush("cw") },
     { id: "edit.rotateCCW", title: "inspector.rotateCCW", category: "edit", enabled, run: () => void rotateBrush("ccw") },
-    { id: "edit.flipX", title: "commands.edit.flipX", category: "edit", enabled, run: () => void flipBrush("x") },
-    { id: "edit.flipY", title: "commands.edit.flipY", category: "edit", enabled, run: () => void flipBrush("y") },
+    { id: "edit.flipX", title: "commands.edit.flipX", category: "edit", enabled: flipEnabled, run: () => void flipBrush("x") },
+    { id: "edit.flipY", title: "commands.edit.flipY", category: "edit", enabled: flipEnabled, run: () => void flipBrush("y") },
   ]);
 }

@@ -209,6 +209,12 @@ export interface CanvasHandle {
    */
   setRulersVisible(visible: boolean): void;
   areRulersVisible(): boolean;
+  /**
+   * Select tool with a selection: turns its content 90° in place on the
+   * active layer (one undo step) and resizes the selection. False when there
+   * is no selection to turn (the brush turns instead).
+   */
+  rotateSelection(dir: "cw" | "ccw"): boolean;
 }
 
 /** A rectangle in CSS pixels relative to the canvas' top-left corner. */
@@ -673,6 +679,7 @@ export class MapCanvas {
       if (!this.#destroyed) this.#applyRulers(visible);
     },
     areRulersVisible: () => this.#rulers.visible,
+    rotateSelection: (dir) => !this.#destroyed && this.#tools.rotateSelection(dir),
   };
 
   /** Shows / hides the rulers and insets the map canvas by their size (the resize observer re-sizes the view). */

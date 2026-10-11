@@ -96,7 +96,8 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, one toas
   await expect(page.locator("[data-tileset-section]")).toHaveCount(5);
 
   // In "Tümü" a plain wheel scrolls the list; Ctrl + wheel zooms (all tilesets).
-  await expect(page.locator("[data-tileset-wheel-hint]")).toContainText("Ctrl+tekerlek");
+  // The hint is an info icon with a tooltip (its label says it).
+  await expect(page.locator("[data-tileset-wheel-hint]")).toHaveAttribute("aria-label", /Ctrl\+tekerlek/);
   const list = page.locator("[data-tileset-view='all']");
   const scales = () => page.locator("[data-tileset-grid]").evaluateAll((els) => els.map((el) => el.getAttribute("data-tileset-scale")));
   const scales0 = await scales();

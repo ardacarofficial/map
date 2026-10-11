@@ -102,7 +102,7 @@ export function TilesetSwitcher({
         <TilesetThumb tileset={active} size={compact ? 24 : 20} />
       )}
       <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate text-md text-text" data-tileset-switcher-name>
+        <span className="truncate text-md text-text" title={name} data-tileset-switcher-name>
           {name}
         </span>
         {compact && meta && <span className="truncate text-2xs text-faint">{meta}</span>}

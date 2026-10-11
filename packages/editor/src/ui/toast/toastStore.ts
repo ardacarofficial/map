@@ -85,7 +85,8 @@ export const useToastStore = create<ToastState>()((set, get) => ({
 /** Shorthands usable outside React. */
 export const toast = {
   info: (message: string) => useToastStore.getState().push("info", message),
-  success: (message: string) => useToastStore.getState().push("success", message),
+  /** `duration` overrides the default (e.g. a short "Kaydedildi" whose state the app bar also shows). */
+  success: (message: string, duration?: number) => useToastStore.getState().push("success", message, duration),
   warning: (message: string) => useToastStore.getState().push("warning", message),
   error: (message: string) => useToastStore.getState().push("error", message),
   /** Info toast with a button; stays a little longer so there is time to click. */

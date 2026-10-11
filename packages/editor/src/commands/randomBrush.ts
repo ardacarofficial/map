@@ -17,9 +17,11 @@
  * loaded saved set live in {@link useRandomBrush}. {@link currentRandomSet}
  * combines both into one core `RandomSet` (for `pickRandomCandidate`).
  *
- * Rules kept from v0.6:
- * - The first Alt + click starts from the tile that is already selected,
- *   so "pick a tile, Alt+click another" gives a set of two.
+ * Rules:
+ * - Alt + click adds only the clicked tile: the tile that was selected
+ *   before (a plain click) is not pulled into the set. A set starts with
+ *   the first Alt + clicked tile (until a second one it paints as a single
+ *   tile); to turn a selection into a set, use "Rastgele yap".
  * - A brush of fewer than two candidates is not a random brush: it
  *   collapses into a plain selection of the remaining tile.
  * - Picking a tile normally clears the set (see the tileset panel).
@@ -71,16 +73,20 @@ export interface RandomToggleResult {
   selection: TileSelection | null;
 }
 
-/** Adds `tile` to the set, or removes it when it is in there (see module doc). */
+/**
+ * Adds `tile` to the set, or removes it when it is in there (see module
+ * doc). An empty set starts from `seed` (the tile of an earlier Alt + click
+ * that is still the selection) and `tile`, else from `tile` alone.
+ */
 export function toggleInSet(
   set: readonly RandomTileEntry[],
   selection: TileSelection | null,
   tile: TileSelection,
+  seed: TileSelection | null = null,
 ): RandomToggleResult {
   let next: RandomTileEntry[];
   if (set.length === 0) {
-    // Start from the selected tile; toggling the selected tile itself does nothing useful.
-    next = selection && !same(selection, tile) ? [{ ...selection }, { ...tile }] : [{ ...tile }];
+    next = seed && !same(seed, tile) ? [{ ...seed }, { ...tile }] : [{ ...tile }];
   } else if (inRandomSet(set, tile)) {
     next = set.filter((t) => !same(t, tile));
   } else {
@@ -287,17 +293,37 @@ useEditorStore.subscribe((state, prev) => {
   if (o.stamps.length > 0 || o.activeSetId !== null || o.scatter !== 0 || o.randomFlip) useRandomBrush.setState({ ...DEFAULT_OPTIONS });
 });
 
-/** Toggles `tile` in the random set; makes the brush paint with it. */
+/** The single tile an Alt + click left selected (the first tile of a set still being started). */
+let pendingSeed: TileSelection | null = null;
+
+/** The Alt + clicked tile a set is being started from, when it is still the plain selection. */
+function startedSeed(): TileSelection | null {
+  const s = useEditorStore.getState();
+  return s.randomSet.length === 0 && s.stamp === null && pendingSeed && s.selection && same(pendingSeed, s.selection) ? s.selection : null;
+}
+
+// Any other way of choosing a tile (a plain click, a recent tile, a stamp…) ends the set being started.
+useEditorStore.subscribe((state, prev) => {
+  if (!writing && (state.selection !== prev.selection || state.stamp !== prev.stamp)) pendingSeed = null;
+});
+
+/** Alt + click: toggles `tile` in the random set; makes the brush paint with it. */
 export function toggleRandomTile(tile: TileSelection): void {
   const s = useEditorStore.getState();
-  applyTiles(toggleInSet(s.randomSet, s.selection, tile));
+  const result = toggleInSet(s.randomSet, s.selection, tile, startedSeed());
+  pendingSeed = result.randomSet.length === 0 ? result.selection : null;
+  applyTiles(result);
 }
 
 /** Alt + drag: adds `tiles` to the random brush (see {@link addToSet}). */
 export function addTilesToRandom(tiles: readonly RandomTileEntry[]): void {
   if (tiles.length === 0) return;
   const s = useEditorStore.getState();
-  applyTiles(addToSet(s.randomSet, s.selection, tiles));
+  // A set being started by an Alt + click keeps that tile.
+  const seed = startedSeed();
+  const result = addToSet(seed ? [{ ...seed }] : [], s.selection, tiles);
+  pendingSeed = result.randomSet.length === 0 ? result.selection : null;
+  applyTiles(result);
 }
 
 /**

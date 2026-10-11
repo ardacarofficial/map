@@ -36,8 +36,33 @@ export const LEFT_PANEL_KEY = "smap.layout.leftPanel";
 /** localStorage key of the rulers flag. */
 export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
 
-/** Bottom dock height: default, and the range a drag may reach (CSS px, tab strip included). */
-export const DOCK = { initial: 200, min: 96, max: 480 } as const;
+/**
+ * Bottom dock height (CSS px, tab strip included): the range a drag may
+ * reach, and the range of the default height ({@link defaultDockHeight}).
+ */
+export const DOCK = { initial: 180, min: 96, max: 480, autoMax: 340 } as const;
+
+/**
+ * Space the editor keeps for everything but the dock (app bar, tabs, tool
+ * bar, status bar ≈ 146 px, canvas ≈ 445 px): the default dock grows into
+ * what is left.
+ */
+const DOCK_RESERVE = 590;
+
+/**
+ * Default dock height for a window `viewportHeight` px tall: as tall as the
+ * canvas can spare (it keeps ≈ 445 px), between 180 and 340 px — a whole
+ * 8 × 8 tileset of 32 px tiles from 900 px up, the canvas first below that.
+ */
+export function defaultDockHeight(viewportHeight: number): number {
+  if (!Number.isFinite(viewportHeight)) return DOCK.initial;
+  return Math.min(DOCK.autoMax, Math.max(DOCK.initial, Math.round(viewportHeight - DOCK_RESERVE)));
+}
+
+/** The dock height to lay out: the user's (dragged) height, or the default for the window. */
+export function effectiveDockHeight(dockHeight: number | null, viewportHeight: number): number {
+  return dockHeight ?? defaultDockHeight(viewportHeight);
+}
 
 /** What the left column shows (rail buttons): the library, or the project tree on its own. */
 export type LeftPanel = "library" | "project";
@@ -49,13 +74,14 @@ export function clampDockHeight(value: number): number {
   return Math.min(DOCK.max, Math.max(DOCK.min, Math.round(value)));
 }
 
-function readDockHeight(s: WidthStorage | null): number {
+function readDockHeight(s: WidthStorage | null): number | null {
   try {
     const raw = s?.getItem(DOCK_HEIGHT_KEY);
-    if (raw == null || raw.trim() === "") return DOCK.initial;
-    return clampDockHeight(Number(raw));
+    if (raw == null || raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? clampDockHeight(value) : null;
   } catch {
-    return DOCK.initial;
+    return null;
   }
 }
 
@@ -90,8 +116,8 @@ export interface LayoutState {
   inspectorCollapsed: boolean;
   /** Bottom dock (Tileset | Son kullanılanlar) under the canvas hidden. */
   recentHidden: boolean;
-  /** Bottom dock height (CSS px). */
-  dockHeight: number;
+  /** Bottom dock height the user dragged (CSS px); null = the default for the window ({@link effectiveDockHeight}). */
+  dockHeight: number | null;
   /** Selected bottom dock tab id (null = the first registered). */
   dockTab: string | null;
   /** What the left column shows. */
@@ -112,8 +138,8 @@ export interface LayoutState {
   setInspectorCollapsed(collapsed: boolean): void;
   toggleInspector(): void;
   setRecentHidden(hidden: boolean): void;
-  /** Sets the dock height (clamped); `commit` stores it (end of a drag). */
-  setDockHeight(height: number, commit?: boolean): void;
+  /** Sets the dock height (clamped; null = back to the default for the window); `commit` stores it (end of a drag). */
+  setDockHeight(height: number | null, commit?: boolean): void;
   setDockTab(id: string): void;
   /**
    * Rail button: shows `panel` in the left column; pressing the panel that
@@ -190,9 +216,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     writeFlag(RECENT_HIDDEN_KEY, storage(), recentHidden);
   },
   setDockHeight: (height, commit = false) => {
-    const dockHeight = clampDockHeight(height);
+    const dockHeight = height === null ? null : clampDockHeight(height);
     if (dockHeight !== get().dockHeight) set({ dockHeight });
-    if (commit) writeRaw(storage(), DOCK_HEIGHT_KEY, String(dockHeight));
+    if (commit) writeRaw(storage(), DOCK_HEIGHT_KEY, dockHeight === null ? "" : String(dockHeight));
   },
   setDockTab: (dockTab) => set({ dockTab }),
   showLeftPanel: (panel) => {
@@ -233,7 +259,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
       libraryCollapsed: false,
       inspectorCollapsed: false,
       recentHidden: false,
-      dockHeight: DOCK.initial,
+      dockHeight: null,
       leftPanel: "library",
       rulersVisible: true,
       sections: DEFAULT_SECTIONS,
@@ -244,7 +270,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     writeFlag(LIBRARY_COLLAPSED_KEY, s, false);
     writeFlag(INSPECTOR_COLLAPSED_KEY, s, false);
     writeFlag(RECENT_HIDDEN_KEY, s, false);
-    writeRaw(s, DOCK_HEIGHT_KEY, String(DOCK.initial));
+    writeRaw(s, DOCK_HEIGHT_KEY, "");
     writeRaw(s, LEFT_PANEL_KEY, "library");
     writeFlag(RULERS_HIDDEN_KEY, s, false);
     writeSections(s, DEFAULT_SECTIONS);

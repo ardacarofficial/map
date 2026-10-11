@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { useEditorStore } from "../../state/editorStore";
 import { useUiStore } from "../uiStore";
-import { pickRecentTile, recentStampLabel, stampAnchorTile } from "./recentTiles";
+import { pickRecentTile, recentStampLabel, shortClipHash, stampAnchorTile } from "./recentTiles";
 
 function openProject() {
   const store = new MapStore(createDocument({ width: 8, height: 8, tileWidth: 16, tileHeight: 16 }));
@@ -58,8 +58,10 @@ describe("recent stamp label", () => {
     const a = clip([makeCell(1), makeCell(2), 0, 0, 0, 0, 0, 0, 0], [{ tilesetId: "ts", tileId: 12 }, { tilesetId: "ts", tileId: 13 }]);
     const b = clip([0, makeCell(1, 0x8000_0000), 0, 0, 0, 0, 0, 0, 0], [{ tilesetId: "ts", tileId: 4 }]);
     expect(stampAnchorTile(a)).toEqual({ tilesetId: "ts", tileId: 12 });
-    expect(recentStampLabel(doc, a)).toBe("ts · 3×3 @ 12");
-    expect(recentStampLabel(doc, b)).toBe("ts · 3×3 @ 4");
+    expect(recentStampLabel(doc, a)).toBe(`ts · 3×3 @ 12 · #${shortClipHash(a)}`);
+    expect(recentStampLabel(doc, b)).toBe(`ts · 3×3 @ 4 · #${shortClipHash(b)}`);
+    const a2 = clip([makeCell(1), makeCell(1), 0, 0, 0, 0, 0, 0, 0], [{ tilesetId: "ts", tileId: 12 }]);
+    expect(recentStampLabel(doc, a2)).not.toBe(recentStampLabel(doc, a));
     expect(recentStampLabel(doc, a)).not.toBe(recentStampLabel(doc, b));
   });
 
@@ -67,10 +69,10 @@ describe("recent stamp label", () => {
     const doc = useEditorStore.getState().project!.store.document;
     const gridOnly: TileClip = { width: 2, height: 1, palette: [], layers: [{ layerId: "g", name: "Collision", cells: Uint32Array.from([1, 1]), grid: true }] };
     expect(stampAnchorTile(gridOnly)).toBeNull();
-    expect(recentStampLabel(doc, gridOnly)).toBe("Stamp · 2×1");
+    expect(recentStampLabel(doc, gridOnly)).toBe(`Stamp · 2×1 · #${shortClipHash(gridOnly)}`);
     const named = { ...clip([makeCell(1), 0, 0, 0, 0, 0, 0, 0, 0], [{ tilesetId: "ts", tileId: 1 }]), name: "Ev" };
     expect(recentStampLabel(doc, named)).toBe("Ev · 3×3");
     const orphan = clip([makeCell(1), 0, 0, 0, 0, 0, 0, 0, 0], [{ tilesetId: "gone", tileId: 1 }]);
-    expect(recentStampLabel(doc, orphan)).toBe("Stamp · 3×3");
+    expect(recentStampLabel(doc, orphan)).toBe(`Stamp · 3×3 · #${shortClipHash(orphan)}`);
   });
 });

@@ -20,11 +20,12 @@ const ICON_COLOR: Record<ToastKind, string> = {
 };
 
 /**
- * Where the stack goes: the bottom-left corner of the map canvas (above the
- * recent tiles strip, right of the library column), or the window's
- * bottom-left corner when no canvas is shown (welcome screen).
+ * Where the stack goes: top-centre of the map canvas, just under the ruler
+ * (away from where the pointer draws, clear of the minimap and the undo
+ * pill at the bottom), or the window's top-centre when no canvas is shown
+ * (welcome screen).
  */
-function useCanvasCorner(active: boolean): CSSProperties | undefined {
+function useCanvasTop(active: boolean): CSSProperties | undefined {
   const [corner, setCorner] = useState<CSSProperties | undefined>(undefined);
   useEffect(() => {
     if (!active) return;
@@ -32,8 +33,8 @@ function useCanvasCorner(active: boolean): CSSProperties | undefined {
     const measure = () => {
       const host = document.querySelector(`[${CANVAS_HOST_ATTR}]`);
       const r = host?.getBoundingClientRect();
-      const next = r && r.width > 0 && r.height > 0 ? { left: Math.round(r.left + 16), bottom: Math.round(window.innerHeight - r.bottom + 12) } : undefined;
-      setCorner((c) => (c?.left === next?.left && c?.bottom === next?.bottom ? c : next));
+      const next = r && r.width > 0 && r.height > 0 ? { left: Math.round(r.left + r.width / 2), top: Math.round(r.top + 28) } : undefined;
+      setCorner((c) => (c?.left === next?.left && c?.top === next?.top ? c : next));
     };
     const loop = () => {
       measure();
@@ -49,16 +50,20 @@ function useCanvasCorner(active: boolean): CSSProperties | undefined {
   return active ? corner : undefined;
 }
 
-/** Stack of auto-dismissing notifications at the canvas' bottom-left (the minimap owns its bottom-right corner). */
+/**
+ * Stack of auto-dismissing notifications at the canvas' top-centre. Only
+ * the buttons take the pointer: a stroke that runs under a toast keeps
+ * drawing (the toast pauses while a button is hovered).
+ */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
-  const corner = useCanvasCorner(toasts.length > 0);
+  const corner = useCanvasTop(toasts.length > 0);
   return (
     <div
       aria-live="polite"
       data-toaster
       style={corner}
-      className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+var(--spacing-recentstrip)+12px)] left-[calc(var(--spacing-rail)+16px)] z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col items-start gap-2"
+      className="pointer-events-none fixed top-4 left-1/2 z-50 flex w-[360px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />
@@ -94,14 +99,13 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.kind === "error" ? "alert" : "status"}
-      onPointerEnter={() => setPaused(true)}
-      onPointerLeave={() => setPaused(false)}
-      className={`pointer-events-auto flex w-full items-start gap-2.5 rounded-lg border border-line bg-popup py-2.5 pr-2 pl-3 text-md text-text shadow-toast transition-[opacity,translate] duration-200 ease-(--ease-out) ${
-        shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
+      className={`pointer-events-none flex w-full items-start gap-2.5 rounded-lg border border-line bg-popup py-2.5 pr-2 pl-3 text-md text-text shadow-toast transition-[opacity,translate] duration-200 ease-(--ease-out) ${
+        shown ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
       }`}
     >
       <Icon name={ICON[toast.kind]} size={16} className={`mt-0.5 shrink-0 ${ICON_COLOR[toast.kind]}`} />
-      <p className="min-w-0 flex-1 py-px break-words select-text">{toast.message}</p>
+      <p className="min-w-0 flex-1 py-px break-words">{toast.message}</p>
+      <span className="pointer-events-auto -my-0.5 flex shrink-0 items-center gap-0.5" onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)}>
       {action && (
         <button
           type="button"
@@ -114,7 +118,7 @@ function ToastItem({ toast }: { toast: Toast }) {
             dismiss(toast.id);
             action.run();
           }}
-          className="-my-0.5 h-6 shrink-0 rounded-sm px-2 text-md font-medium text-accent enabled:hover:bg-accent-soft disabled:cursor-default disabled:text-faint"
+          className="h-6 shrink-0 rounded-sm px-2 text-md font-medium text-accent enabled:hover:bg-accent-soft disabled:cursor-default disabled:text-faint"
         >
           {action.label}
         </button>
@@ -127,6 +131,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       >
         <Icon name="x" size={14} />
       </button>
+      </span>
     </div>
   );
 }

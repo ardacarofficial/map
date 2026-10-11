@@ -79,14 +79,21 @@ export type TilesetViewVariant = "dock" | "column";
 interface Source {
   /** Zoom / grid key: the tileset id, or `palette:<id>`. */
   readonly key: string;
-  /** Natural content width (px at zoom 1) and tile size. */
+  /** Natural content width and height (px at zoom 1) and tile size. */
   readonly width: number;
+  readonly height: number;
   readonly tileW: number;
   readonly tileH: number;
 }
 
-const tilesetSource = (ts: Tileset): Source => ({ key: ts.id, width: ts.columns * ts.tileWidth, tileW: ts.tileWidth, tileH: ts.tileHeight });
-const paletteSource = (p: Collection, tileW: number, tileH: number): Source => ({ key: paletteKey(p.id), width: p.columns * tileW, tileW, tileH });
+const tilesetSource = (ts: Tileset): Source => ({ key: ts.id, width: ts.columns * ts.tileWidth, height: ts.rows * ts.tileHeight, tileW: ts.tileWidth, tileH: ts.tileHeight });
+const paletteSource = (p: Collection, tileW: number, tileH: number): Source => ({
+  key: paletteKey(p.id),
+  width: p.columns * tileW,
+  height: p.cells.reduce((rows, c) => Math.max(rows, c.y + 1), 1) * tileH,
+  tileW,
+  tileH,
+});
 
 /** The library column tab (fallback while the bottom dock does not host the tileset view). */
 export function TilesetPanel() {
@@ -206,11 +213,18 @@ function TilesetLibrary({
     return m;
   }, [tilesets, palettes, mapTileW, mapTileH]);
 
-  /** Fit: the panel width; in the short dock also at most a third of its height per tile (a wide strip, not a giant single tileset). */
+  /**
+   * Fit: the panel width. In the dock: the whole tileset when it fits at
+   * 100 % or more (width and height), else at most a third of the dock
+   * height per tile (a wide strip, not a giant single tileset).
+   */
   const fitOf = useCallback(
     (src: Source) => {
       const byWidth = fitScale(availWidth, src.width, src.tileW);
       if (!dock || size.height <= 0) return byWidth;
+      // `size` is the content box (padding already off).
+      const whole = Math.min(byWidth, fitScale(size.height, src.height, src.tileH));
+      if (whole >= 1) return whole;
       const cap = Math.max(MIN_ZOOM, (size.height - 2 * PADDING) / 3 / src.tileH);
       const step = [...ZOOM_STEPS].reverse().find((z) => z <= cap) ?? MIN_ZOOM;
       return Math.min(byWidth, Math.max(step, MIN_ZOOM));
@@ -480,7 +494,7 @@ function TilesetLibrary({
         </div>
       )}
       {editing && mode === "solid" && (
-        <ModeBar icon="bricks" tone="solid" onDone={() => setMode("pick")}>
+        <ModeBar icon="bricks" tone="solid" compact={dock} onDone={() => setMode("pick")}>
           <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
             {t(MODE_HINT.solid)}
           </span>
@@ -488,7 +502,7 @@ function TilesetLibrary({
         </ModeBar>
       )}
       {editing && mode === "terrain" && (
-        <ModeBar icon="terrain" tone="terrain" onDone={() => setMode("pick")}>
+        <ModeBar icon="terrain" tone="terrain" compact={dock} onDone={() => setMode("pick")}>
           <span className="min-w-0 flex-1 text-xs leading-4 text-muted" data-tileset-hint>
             {t(fixing ? "terrain.fixHintShort" : "terrain.hintDrag")}
           </span>
@@ -537,12 +551,20 @@ function TilesetLibrary({
   return (
     <GridHostContext.Provider value={host}>
       <TileDragGhost />
-      {dock && dockSlot && createPortal(<div className="flex items-center gap-1" data-tileset-zoom>{zoomControls}</div>, dockSlot)}
+      {dock &&
+        dockSlot &&
+        createPortal(
+          <div className="flex items-center gap-1" data-tileset-zoom>
+            {stack && <WheelHint />}
+            {zoomControls}
+          </div>,
+          dockSlot,
+        )}
       {dock ? (
         <div className="relative flex min-h-0 min-w-0 flex-1" onKeyDown={onKeyDown} data-tileset-library="dock">
           <aside
             aria-label={t("tilesetDock.side")}
-            className="flex w-[216px] shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-line-subtle px-2 pt-2 pb-1.5 text-xs text-muted"
+            className="flex w-[clamp(216px,17vw,288px)] shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-line-subtle px-2 pt-2 pb-1.5 text-xs text-muted"
             data-tileset-side
           >
             {stack ? <LibrarySearch tilesets={tilesets} trailing={null} /> : switcher}
@@ -552,12 +574,7 @@ function TilesetLibrary({
             </div>
             <PaletteChips palettes={palettes} activeId={showingPalette ? palette.id : null} wide />
             {modeArea}
-            <TerrainSets compact />
-            {stack && (
-              <div className="mt-auto shrink-0 text-2xs leading-4 text-pretty text-faint" data-tileset-wheel-hint>
-                {t("tilesetLib.wheelHint")}
-              </div>
-            )}
+            {!showingPalette && <TerrainSets compact />}
           </aside>
           {viewport}
         </div>
@@ -573,15 +590,10 @@ function TilesetLibrary({
           </div>
           {stack && <JumpChips tilesets={tilesets} palettes={palettes} activeId={active.id} />}
           {viewport}
-          <TerrainSets />
-          {stack && (
-            // How the wheel behaves in the stacked list (it scrolls here, unlike "Tek").
-            <div className="shrink-0 border-t border-line-subtle px-3 pt-1 text-2xs leading-4 text-pretty text-faint" title={t("tilesetLib.wheelHint")} data-tileset-wheel-hint>
-              {t("tilesetLib.wheelHint")}
-            </div>
-          )}
-          <div className={`flex h-8 shrink-0 items-center gap-2 pr-1.5 pl-3 text-xs text-faint ${stack ? "" : "border-t border-line-subtle"}`} data-tileset-footer>
+          {!showingPalette && <TerrainSets />}
+          <div className="flex h-8 shrink-0 items-center gap-2 border-t border-line-subtle pr-1.5 pl-3 text-xs text-faint" data-tileset-footer>
             {stack ? <span className="min-w-0 truncate">{t("tilesetLib.count", { count: tilesets.length })}</span> : meta}
+            {stack && <WheelHint />}
             <div className="ml-auto flex shrink-0 items-center gap-1" data-tileset-zoom>
               {zoomControls}
             </div>
@@ -589,6 +601,18 @@ function TilesetLibrary({
         </div>
       )}
     </GridHostContext.Provider>
+  );
+}
+
+/** "Tümü": how the wheel behaves in the stacked list (it scrolls there, unlike "Tek") — an info icon with a tooltip. */
+function WheelHint() {
+  const label = t("tilesetLib.wheelHint");
+  return (
+    <Tooltip label={label} side="top">
+      <span role="img" aria-label={label} data-tileset-wheel-hint="" className="grid size-6 shrink-0 cursor-help place-items-center rounded-sm text-faint hover:text-muted">
+        <Icon name="info" size={13} />
+      </span>
+    </Tooltip>
   );
 }
 

@@ -67,8 +67,9 @@ export function StatusBar() {
       </Cell>
       {layer && (
         <Cell data="layer">
-          <span className="sr-only">{t("status.layer")}</span>
-          <span className="max-w-[200px] truncate">{layer.name}</span>
+          <span className="max-w-[200px] truncate" title={`${t("status.layer")}: ${layer.name}`} aria-label={`${t("status.layer")}: ${layer.name}`}>
+            {layer.name}
+          </span>
         </Cell>
       )}
       {map && (
