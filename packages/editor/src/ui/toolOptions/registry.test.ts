@@ -63,12 +63,13 @@ describe("tool options registry", () => {
 });
 
 describe("builtin transform options", () => {
-  it("shows transforms for tile, stamp, random brushes and floating clips, but not an empty brush", () => {
+  it("shows transforms on painting tools for tile, stamp, random brushes and floating clips, but not an empty brush", () => {
     registerBuiltinToolOptions();
     for (const tool of ["brush", "fill", "rect", "eraser", "select", "hand", "eyedropper", "entity"] as const) {
       for (const brush of ["tile", "stamp", "random", "none"] as const) {
         const entries = toolOptionsFor({ ...ctx(tool), brush });
-        expect(entries.some((entry) => entry.id === "builtin.transforms")).toBe(brush !== "none");
+        const paints = tool === "brush" || tool === "fill" || tool === "rect";
+        expect(entries.some((entry) => entry.id === "builtin.transforms")).toBe(paints && brush !== "none");
       }
     }
   });

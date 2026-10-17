@@ -98,6 +98,6 @@ export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
-  registerToolOptions("all", BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
+  registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
   registerToolOptions(["brush", "eraser", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }
