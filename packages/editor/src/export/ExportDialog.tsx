@@ -18,15 +18,18 @@ import {
   type ExportWarning,
   type MapDocument,
 } from "@smap/core";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 
 import { formatNumber, t, type MessageKey } from "../i18n";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
 import { getTilesetImage } from "../state/tilesetImages";
-import { backdropClass, popupClass } from "../ui/dialogs/styles";
-import { Button } from "../ui/primitives/Button";
+import { backdropClass, popupClass, dialogWidthL } from "../ui/dialogs/styles";
+import { DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "../ui/dialogs/DialogFrame";
+import { Segmented } from "../ui/primitives/Segmented";
+import { DialogToggle as Toggle } from "../ui/dialogs/DialogFrame";
+import { Button, IconButton } from "../ui/primitives/Button";
 import { Icon } from "../ui/primitives/Icon";
 import { inputClass, inputOk, NativeSelect } from "../ui/primitives/NativeSelect";
 import { toast } from "../ui/toast/toastStore";
@@ -56,6 +59,7 @@ import { replayOps } from "./pngRender";
 export { openExportDialog } from "./exportStore";
 
 export function ExportDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
   const open = useExportStore((s) => s.open);
   const setOpen = useExportStore((s) => s.setOpen);
   const project = useEditorStore((s) => s.project);
@@ -65,7 +69,7 @@ export function ExportDialog() {
     <Dialog.Root open={open && project !== null} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup initialFocus={submitRef} className={`${popupClass} w-[920px] max-w-[calc(100vw-32px)]`}>
+        <Dialog.Popup ref={popupRef} initialFocus={() => submitRef.current && !submitRef.current.disabled ? submitRef.current : popupRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), footer button:not(:disabled)') ?? popupRef.current} className={`${popupClass} ${dialogWidthL} ${dialogLayoutClass}`}>
           {open && project && <ExportForm project={project} submitRef={submitRef} onDone={() => setOpen(false)} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -73,12 +77,12 @@ export function ExportDialog() {
   );
 }
 
-const TARGETS: { id: ExportTarget; title: MessageKey; hint: MessageKey; glyph: ReactNode }[] = [
-  { id: "unity", title: "export.targetUnity", hint: "export.targetUnityHint", glyph: <CubeGlyph /> },
-  { id: "png", title: "export.targetPng", hint: "export.targetPngHint", glyph: <Icon name="image" size={14} /> },
-  { id: "json", title: "export.targetJson", hint: "export.targetJsonHint", glyph: <BracesGlyph /> },
-  { id: "tmj", title: "export.targetTmj", hint: "export.targetTmjHint", glyph: <Icon name="grid" size={14} /> },
-  { id: "zip", title: "export.targetZip", hint: "export.targetZipHint", glyph: <Icon name="folder" size={14} /> },
+const TARGETS: { id: ExportTarget; title: MessageKey; hint: MessageKey; glyph: ReactElement }[] = [
+  { id: "unity", title: "export.targetUnity", hint: "export.targetUnityHint", glyph: <Icon name="box" size={16} /> },
+  { id: "png", title: "export.targetPng", hint: "export.targetPngHint", glyph: <Icon name="image" size={16} /> },
+  { id: "json", title: "export.targetJson", hint: "export.targetJsonHint", glyph: <Icon name="file-plus" size={16} /> },
+  { id: "tmj", title: "export.targetTmj", hint: "export.targetTmjHint", glyph: <Icon name="grid" size={16} /> },
+  { id: "zip", title: "export.targetZip", hint: "export.targetZipHint", glyph: <Icon name="folder" size={16} /> },
 ];
 
 /** Everything the dialog shows for the chosen target and map, derived once per change. */
@@ -246,60 +250,17 @@ function ExportForm({
 
   const mapName = levels.find((l) => l.id === source.levelId)?.name ?? sourceLevelName(source);
   const [before, after] = t("export.prepare", { map: "\u0001" }).split("\u0001");
-  const showMap = chosen !== "zip" && levels.length > 0;
+  const showMap = chosen !== "zip" && levels.length > 1;
   const subfolder = subfolderDraft ?? current.unitySubfolder;
 
   return (
-    <form onSubmit={submit} noValidate className="flex max-h-[calc(100vh-32px)] flex-col">
-      <div className="flex items-start gap-3 px-6 pt-5">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Dialog.Title className="text-xl font-semibold text-title">
-            {chosen === "unity" ? t("export.titleUnity") : t("export.title")}
-          </Dialog.Title>
-          <Dialog.Description className="truncate text-md text-muted">
-            {chosen === "zip" ? (
-              t("export.description")
-            ) : (
-              <>
-                {before}
-                <span className="text-accent">{mapName}</span>
-                {after}
-              </>
-            )}
-          </Dialog.Description>
-        </div>
-        <Dialog.Close
-          aria-label={t("common.cancel")}
-          className="grid size-8 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
-        >
-          <Icon name="x" size={16} />
-        </Dialog.Close>
-      </div>
-
-      <div role="radiogroup" aria-label={t("export.targets")} className="mx-6 mt-4 flex gap-1 rounded-lg border border-line bg-raised p-1">
-        {TARGETS.map((item) => {
-          const selected = item.id === chosen;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              title={t(item.hint)}
-              onClick={() => setTarget(item.id)}
-              className={`flex h-8 flex-1 items-center justify-center gap-2 rounded-md text-md transition-colors ${
-                selected ? "bg-accent-soft text-text" : "text-muted hover:bg-hover hover:text-text"
-              }`}
-            >
-              <span className={selected ? "text-accent" : "text-faint"}>{item.glyph}</span>
-              {t(item.title)}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mx-6 mt-4 grid h-[540px] min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden rounded-lg border border-line">
-        <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-4" data-testid="export-form">
+    <form onSubmit={submit} noValidate className="flex min-h-0 max-h-[calc(100vh-32px)] flex-col">
+      <DialogHeader title={chosen === "unity" ? t("export.titleUnity") : t("export.title")}
+        subtitle={chosen === "zip" ? t("export.description") : <>{before}<span className="text-text">{mapName}</span>{after}</>} onClose={onDone} />
+      <Segmented<ExportTarget> size="md" label={t("export.targets")} value={chosen} onValueChange={setTarget} className="mx-4 shrink-0"
+        items={TARGETS.map(item => ({ value: item.id, label: t(item.title), tooltip: t(item.hint), icon: item.glyph }))} />
+      <DialogBody className="grid grid-cols-2 gap-4 pt-3">
+        <div className="flex min-w-0 flex-col gap-4" data-testid="export-form">
           {showMap && (
             <Section label={t("export.map")}>
               <NativeSelect
@@ -321,10 +282,10 @@ function ExportForm({
             <>
               <Section label={t("export.destination")}>
                 <FolderRow handle={current.unityDir} onPick={() => void pickFolder("unity")} />
-                <label className="mt-1 grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2">
+                <label className="mt-1 flex flex-col gap-2">
                   <span className="text-sm text-muted">{t("export.outputFolder")}</span>
                   <input
-                    className={`${inputClass} ${inputOk} ${subfolder === "" ? "" : "font-mono"}`}
+                    className={`${inputClass} ${inputOk} `}
                     value={subfolder}
                     placeholder={t("export.outputFolderPlaceholder")}
                     spellCheck={false}
@@ -332,15 +293,15 @@ function ExportForm({
                     onBlur={() => {
                       if (subfolderDraft !== null) patch({ unitySubfolder: subfolderDraft });
                     }}
+                    title={[current.unityDir?.name ?? "…", outputSubfolder(subfolder), derived.files?.mapFile].filter(Boolean).join(" / ")}
                     data-testid="export-subfolder"
                   />
                 </label>
-                <span className="truncate font-mono text-xs text-faint" title={t("export.unityFolderHint")}>
-                  {[current.unityDir?.name ?? "…", outputSubfolder(subfolder), derived.files?.mapFile].filter(Boolean).join(" / ")}
-                </span>
+
               </Section>
 
               <Section label={t("export.options")}>
+                <div className="grid grid-cols-2 gap-x-3">
                 <CheckRow checked={current.unityTiles} onChange={(unityTiles) => patch({ unityTiles })} label={t("export.optTiles")} />
                 <CheckRow
                   checked={current.unityCollision}
@@ -348,22 +309,14 @@ function ExportForm({
                   label={t("export.optCollision")}
                   meta={t("export.optCollisionCount", { count: formatNumber(derived.solidCells) })}
                 />
+                </div>
                 <CheckRow checked={current.copyTextures} onChange={(copyTextures) => patch({ copyTextures })} label={t("export.optTextures")} />
-                <span className="pl-6 text-xs text-faint">{t("export.optTexturesHint")}</span>
               </Section>
 
-              <Section label={t("export.scale")}>
-                <div className="flex items-center gap-3">
-                  <output className="flex h-7 w-16 items-center rounded-md border border-line bg-raised px-2 font-mono text-md text-text tabular" data-testid="export-ppu">
-                    {source.document.map.tileWidth}
-                  </output>
-                  <span className="text-md text-muted">{t("export.ppu")}</span>
-                  <span className="ml-auto font-mono text-xs text-faint tabular">
-                    {t("export.ppuTile", { width: source.document.map.tileWidth, height: source.document.map.tileHeight })}
-                  </span>
-                </div>
-                <span className="text-xs text-faint">{t("export.ppuHint")}</span>
-              </Section>
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <span>{t("export.ppu")}</span><output className="text-text tabular" data-testid="export-ppu">{source.document.map.tileWidth}</output>
+                <span className="ml-auto text-xs tabular">{t("export.ppuTile", { width: source.document.map.tileWidth, height: source.document.map.tileHeight })}</span>
+              </div>
             </>
           )}
 
@@ -382,7 +335,6 @@ function ExportForm({
           {chosen === "tmj" && (
             <Section label={t("export.destination")}>
               <FolderRow handle={current.tmjDir} onPick={() => void pickFolder("tmj")} />
-              <span className="text-xs text-faint">{t("export.tmjFolderHint")}</span>
             </Section>
           )}
 
@@ -395,24 +347,13 @@ function ExportForm({
             />
           )}
 
-          {chosen === "json" && (
-            <Section label={t("export.files")}>
-              <FileList paths={[`${exportBaseName(sourceLevelName(source))}.json`]} />
-              <span className="text-xs text-faint">{t("export.jsonHint")}</span>
-            </Section>
-          )}
-          {chosen === "tmj" && derived.files && (
-            <Section label={t("export.files")}>
-              <FileList paths={displayOrder(derived.files.files.map((f) => f.path), derived.files.mapFile)} />
-            </Section>
-          )}
-          {chosen === "zip" && <ZipFiles project={project} />}
+
         </div>
 
-        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line p-4">
+        <div className="flex min-w-0 flex-col gap-4 border-l border-line-subtle pl-4">
           <Section label={t("export.preview")}>
             <MapPreview document={source.document} layers={derived.exported} />
-            <span className="font-mono text-xs text-muted tabular">
+            <span className="text-xs text-muted tabular">
               {t("export.previewInfo", {
                 width: source.document.map.width,
                 height: source.document.map.height,
@@ -427,7 +368,7 @@ function ExportForm({
                 <CheckItem key={check.id} check={check} />
               ))}
             </ul>
-            <span className="text-sm text-faint" data-testid="export-ready">
+            <span className="text-sm text-muted" data-testid="export-ready">
               {!ready
                 ? chosen === "png" && !pngOk
                   ? t("export.toastPngTooLarge")
@@ -440,40 +381,38 @@ function ExportForm({
 
           <WarningsNotice warnings={derived.warnings.filter((w) => w.code === "collisionExceptions")} />
 
-          {chosen === "unity" && (
-            <div className="mt-auto flex items-center gap-3 rounded-lg border border-line bg-raised p-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-hover text-muted">
-                <Icon name="upload" size={16} />
-              </span>
-              <Toggle
-                checked={current.autoUnity && current.unityDir !== null}
-                disabled={current.unityDir === null}
-                onChange={(autoUnity) => patch({ autoUnity })}
-                label={t("export.autoUnity")}
-                hint={current.unityDir !== null ? t("export.autoUnityHint") : t("export.autoUnityNeedsFolder")}
-              />
-            </div>
+          {chosen === "json" && (
+            <Section label={t("export.files")}>
+              <FileList paths={[`${exportBaseName(sourceLevelName(source))}.json`]} />
+            </Section>
           )}
+          {(chosen === "tmj" || chosen === "unity") && derived.files && (
+            <Section label={t("export.files")}>
+              <FileList paths={displayOrder(derived.files.files.map((f) => f.path), derived.files.mapFile)} />
+            </Section>
+          )}
+          {chosen === "zip" && <ZipFiles project={project} />}
+          {chosen === "unity" && <label className="flex items-center gap-2" title={current.unityDir !== null ? t("export.autoUnityHint") : t("export.autoUnityNeedsFolder")}>
+            <Toggle checked={current.autoUnity && current.unityDir !== null} disabled={current.unityDir === null}
+              onChange={autoUnity => patch({ autoUnity })} label={t("export.autoUnity")} />
+            <span className="text-sm text-text">{t("export.autoUnity")}</span>
+          </label>}
         </div>
-      </div>
+      </DialogBody>
 
-      <div className="flex items-center gap-3 px-6 py-4">
-        <Dialog.Close render={<Button className="h-10 min-w-[120px]">{t("common.cancel")}</Button>} />
-        <span className="min-w-0 truncate font-mono text-xs text-faint tabular">
-          {chosen === "unity" && current.lastUnityAt !== null ? t("export.lastExport", { time: formatClock(new Date(current.lastUnityAt)) }) : ""}
-        </span>
+      <DialogFooter status={chosen === "unity" && current.lastUnityAt !== null ? t("export.lastExport", { time: formatClock(new Date(current.lastUnityAt)) }) : undefined}>
+        <Button variant="secondary" onClick={onDone}>{t("common.cancel")}</Button>
         <Button
           ref={submitRef}
           type="submit"
           variant="primary"
           disabled={busy || !ready}
-          className="ml-auto h-10 min-w-[200px] text-lg"
           data-testid="export-submit"
         >
+          <ExportIcon />
           {busy ? t("export.working") : t("export.exportButton")}
-          {!busy && <ExportIcon />}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
@@ -482,8 +421,8 @@ function ExportForm({
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{label}</span>
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-semibold tracking-section text-muted uppercase">{label}</span>
       {children}
     </div>
   );
@@ -503,16 +442,16 @@ function CheckRow({
   disabled?: boolean;
 }) {
   return (
-    <label className={`flex h-7 items-center gap-2.5 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
+    <label title={label} className={`flex h-control-md items-center gap-2 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-3.5 shrink-0 accent-accent"
+        className="size-4 shrink-0 accent-muted"
       />
-      <span className="min-w-0 flex-1 truncate text-md text-text">{label}</span>
-      {meta !== undefined && <span className="shrink-0 font-mono text-xs text-faint tabular">{meta}</span>}
+      <span className="min-w-0 flex-1 truncate text-sm text-text">{label}</span>
+      {meta !== undefined && <span className="shrink-0 text-xs text-muted tabular">{meta}</span>}
     </label>
   );
 }
@@ -534,7 +473,7 @@ function LayerList({
   return (
     <Section label={t("export.layers")}>
       {rows.length === 0 ? (
-        <span className="text-sm text-faint">{t("export.noLayers")}</span>
+        <span className="text-sm text-muted">{t("export.noLayers")}</span>
       ) : (
         <div className="flex flex-col" data-testid="export-layers">
           {rows.map((layer) => (
@@ -557,12 +496,10 @@ function CheckItem({ check }: { check: ExportCheck }) {
   const tone = check.state === "ok" ? "text-success" : check.state === "warn" ? "text-warning" : "text-danger";
   return (
     <li className="flex items-start gap-2" data-state={check.state}>
-      <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${tone} border-current`}>
-        <Icon name={check.state === "ok" ? "check" : "alert"} size={10} />
-      </span>
+      <Icon name={check.state === "ok" ? "tick" : "circle-alert"} size={16} className={`mt-0.5 shrink-0 ${tone}`} />
       <span className="flex min-w-0 flex-col">
         <span className="text-md text-text">{t(check.label)}</span>
-        {check.detail && <span className="text-xs break-words text-faint">{t(check.detail.key, check.detail.params)}</span>}
+        {check.detail && <span className="text-xs break-words text-muted">{t(check.detail.key, check.detail.params)}</span>}
       </span>
     </li>
   );
@@ -607,7 +544,7 @@ function MapPreview({ document, layers }: { document: MapDocument; layers: reado
     replayOps(ctx, compositeOps(list, scale), image);
   }, [document, layers]);
   return (
-    <div className="grid h-[240px] place-items-center overflow-hidden rounded-md border border-line bg-canvas">
+    <div className="grid aspect-video max-h-48 place-items-center overflow-hidden rounded-md bg-canvas">
       <canvas ref={canvasRef} aria-label={t("export.preview")} className="bg-checker-a" data-testid="export-preview" />
     </div>
   );
@@ -619,31 +556,10 @@ function PngOptions({ width, height, scale, onScale }: { width: number; height: 
   const fallback = largestFittingScale(width, height);
   return (
     <Section label={t("export.scale")}>
-      <div role="radiogroup" aria-label={t("export.scale")} className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-raised p-1">
-        {PNG_SCALES.map((option) => {
-          const selected = option === scale;
-          const optionSize = pngSize(width, height, option);
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => onScale(option)}
-              className={`flex flex-col items-center gap-0.5 rounded-md px-2 py-1.5 transition-colors ${
-                selected ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
-            >
-              <span className="text-md font-medium">{option}×</span>
-              <span className={`font-mono text-2xs tabular ${pngFits(width, height, option) ? "text-faint" : "text-warning"}`}>
-                {optionSize.width} × {optionSize.height}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Segmented size="md" label={t("export.scale")} value={String(scale)} onValueChange={value => onScale(Number(value) as PngScale)}
+        items={PNG_SCALES.map(option => ({ value: String(option), label: `${option}×`, tooltip: t("export.pngSize", pngSize(width, height, option)) }))} />
       {fits ? (
-        <span className="font-mono text-md text-text tabular" data-testid="png-size">
+        <span className="text-md text-text tabular" data-testid="png-size">
           {t("export.pngSize", { width: size.width, height: size.height })}
         </span>
       ) : (
@@ -658,7 +574,6 @@ function PngOptions({ width, height, scale, onScale }: { width: number; height: 
           </div>
         </Notice>
       )}
-      <span className="text-xs text-faint">{t("export.pngHint")}</span>
     </Section>
   );
 }
@@ -668,7 +583,6 @@ function ZipFiles({ project }: { project: OpenProject }) {
   return (
     <Section label={t("export.files")}>
       <FileList paths={[...paths, "stamps/"]} />
-      <span className="text-xs text-faint">{t("export.zipHint", { file: `${project.name}.zip` })}</span>
     </Section>
   );
 }
@@ -676,35 +590,23 @@ function ZipFiles({ project }: { project: OpenProject }) {
 function FolderRow({ handle, onPick }: { handle: FileSystemDirectoryHandle | null; onPick(): void }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-raised px-2.5">
-        <Icon name="folder" size={14} className={handle ? "shrink-0 text-accent" : "shrink-0 text-faint"} />
-        {handle ? (
-          <span className="truncate font-mono text-sm text-text" data-testid="export-folder">
-            {handle.name}
-          </span>
-        ) : (
-          <span className="truncate text-sm text-faint">{t("export.noFolder")}</span>
-        )}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Icon name="folder" size={16} className="shrink-0 text-muted" />
+        {handle ? <span className="truncate text-sm text-text" data-testid="export-folder">{handle.name}</span> : <span className="truncate text-sm text-muted">{t("export.noFolder")}</span>}
       </div>
-      <button
-        type="button"
-        onClick={onPick}
-        aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")}
-        title={handle ? t("export.changeFolder") : t("export.pickFolder")}
-        className="grid size-8 shrink-0 place-items-center rounded-md border border-line bg-raised text-muted transition-colors hover:border-line-strong hover:bg-hover hover:text-text"
-      >
+      <IconButton size="md" onClick={onPick} aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")} title={handle ? t("export.changeFolder") : t("export.pickFolder")}>
         <Icon name="folder" size={16} />
-      </button>
+      </IconButton>
     </div>
   );
 }
 
 function FileList({ paths }: { paths: readonly string[] }) {
   return (
-    <ul className="flex max-h-[96px] flex-col gap-0.5 overflow-y-auto rounded-md border border-line-subtle bg-panel px-2.5 py-2">
+    <ul className="flex max-h-24 flex-col gap-1 overflow-y-auto">
       {paths.map((path) => (
-        <li key={path} className="flex items-center gap-2 font-mono text-xs text-muted">
-          <span className="text-faint">{path.toLowerCase().endsWith(".png") ? <Icon name="image" size={12} /> : <FileGlyph />}</span>
+        <li key={path} className="flex items-center gap-2 text-xs text-muted">
+          <span className="text-muted">{path.toLowerCase().endsWith(".png") ? <Icon name="image" size={12} /> : <Icon name="file-plus" size={12} />}</span>
           <span className="truncate">{path}</span>
         </li>
       ))}
@@ -715,11 +617,11 @@ function FileList({ paths }: { paths: readonly string[] }) {
 function Notice({ tone, children }: { tone: "warning" | "info"; children: ReactNode }) {
   return (
     <div
-      className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${
-        tone === "warning" ? "bg-warning-soft text-warning" : "bg-panel text-muted"
+      className={`flex items-start gap-2 text-sm ${
+        tone === "warning" ? "text-warning" : "text-muted"
       }`}
     >
-      <Icon name={tone === "warning" ? "warning" : "info"} size={14} className="mt-px shrink-0" />
+      <Icon name={tone === "warning" ? "warning" : "info"} size={16} className="mt-px shrink-0" />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -756,100 +658,7 @@ function warningText(warning: ExportWarning): string {
   }
 }
 
-function Toggle({
-  checked,
-  disabled,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  disabled: boolean;
-  onChange(checked: boolean): void;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <label className={`flex items-start gap-3 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-[18px] w-8 shrink-0 rounded-full transition-colors duration-150 ${
-          checked ? "bg-accent" : "bg-line-strong"
-        }`}
-      >
-        <span
-          className={`absolute top-[3px] left-[3px] size-3 rounded-full bg-text transition-transform duration-150 ease-(--ease-out) ${
-            checked ? "translate-x-[14px]" : ""
-          }`}
-        />
-      </button>
-      <span className="flex flex-col gap-0.5">
-        <span className="text-md text-text">{label}</span>
-        <span className="text-xs text-faint">{hint}</span>
-      </span>
-    </label>
-  );
-}
-
-// ------------------------------------------------------------------ glyphs (Icon geometry, export-only)
-
-function Glyph({ size = 16, children }: { size?: number; children: ReactNode }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
-}
-
-function CubeGlyph() {
-  return (
-    <Glyph>
-      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-      <path d="m3.3 7 8.7 5 8.7-5" />
-      <path d="M12 22V12" />
-    </Glyph>
-  );
-}
-
-function BracesGlyph() {
-  return (
-    <Glyph>
-      <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1" />
-      <path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
-    </Glyph>
-  );
-}
-
-function FileGlyph() {
-  return (
-    <Glyph size={12}>
-      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-    </Glyph>
-  );
-}
-
-/** Toolbar icon for file.export (arrow leaving a tray). */
+/** Toolbar icon for file.export. */
 export function ExportIcon() {
-  return (
-    <Glyph>
-      <path d="M12 15V3" />
-      <path d="m7 8 5-5 5 5" />
-      <path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
-    </Glyph>
-  );
+  return <Icon name="upload" size={16} />;
 }

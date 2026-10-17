@@ -1,17 +1,20 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { entityCell, SPAWN_TYPE_ID } from "@smap/core";
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { chooseEntityType } from "../../commands/entityActions";
 import { renameLevel } from "../../commands/levelActions";
 import { moveLevelOnWorld } from "../../commands/worldActions";
-import { formatNumber, t, type MessageKey } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { describeError } from "../../io/session";
 import { useEditorStore, type OpenProject } from "../../state/editorStore";
 import { getCanvasHandle } from "../canvas/canvasHandle";
-import { backdropClass, popupClass } from "../dialogs/styles";
+import { backdropClass, popupClass, dialogWidthM } from "../dialogs/styles";
 import { arrowRotation, type Anchor } from "../dialogs/resizeMath";
+import { AdvancedDisclosure, DialogHeader, DialogBody, DialogFooter, dialogLayoutClass, FormField } from "../dialogs/DialogFrame";
+import { NumberField, themeBackground } from "../projectSettings/fields";
+import { TextField } from "../primitives/TextField";
 import { Button } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { toast } from "../toast/toastStore";
@@ -44,6 +47,7 @@ function parseInt32(text: string, min: number, max: number): number | null {
  * one undo step.
  */
 export function MapSettingsDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
   const open = useUiStore((s) => s.resizeOpen);
   const setOpen = useUiStore((s) => s.setResizeOpen);
   const project = useEditorStore((s) => s.project);
@@ -51,7 +55,7 @@ export function MapSettingsDialog() {
     <Dialog.Root open={open && project !== null} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} flex max-h-[calc(100vh-48px)] w-[560px] max-w-[calc(100vw-32px)] flex-col`} data-map-settings>
+        <Dialog.Popup ref={popupRef} initialFocus={() => popupRef.current?.querySelector<HTMLElement>(`[data-field="${useMapSettingsFocus.getState().focus === "size" ? "width" : "name"}"]`) ?? popupRef.current} className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`} data-map-settings>
           {open && project && <MapSettingsForm project={project} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -77,6 +81,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
   const [name, setName] = useState(current.name);
   const [width, setWidth] = useState(String(map.width));
   const [height, setHeight] = useState(String(map.height));
+  const [advanced, setAdvanced] = useState(false);
   const [anchor, setAnchor] = useState<Anchor>(0);
   const [bgText, setBgText] = useState(current.background ?? "");
   const [worldX, setWorldX] = useState(String(current.world?.x ?? 0));
@@ -127,16 +132,11 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5 pb-3">
-        <Dialog.Title className="text-lg font-semibold">{t("mapSettings.title")}</Dialog.Title>
-        <Dialog.Description className="text-md text-muted">{t("mapSettings.description")}</Dialog.Description>
-      </div>
-
-      <div className="flex min-h-0 flex-col overflow-y-auto px-5 pb-4">
-        <Group title={t("mapSettings.general")}>
+      <DialogHeader title={t("mapSettings.title")} onClose={closeMapSettings} />
+      <DialogBody className="flex flex-col gap-3">
           <Row label={t("mapSettings.name")}>
             {(id) => (
-              <input
+              <TextField size="md"
                 id={id}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -145,34 +145,69 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
                 spellCheck={false}
                 autoComplete="off"
                 data-field="name"
-                className={inputClass(name.trim().length > 0)}
+                aria-invalid={name.trim().length === 0 || undefined}
+                className={name.trim().length === 0 ? "[&>input]:border-danger" : ""}
               />
             )}
           </Row>
-          <Row label={t("mapSettings.tile")}>
-            {() => (
-              <span className="flex h-8 items-center gap-2 text-md text-text" title={t("mapSettings.tileReadOnly")}>
-                <span className="font-mono tabular">
-                  {map.tileWidth} × {map.tileHeight} px
-                </span>
-                <span className="text-xs text-faint">{t("mapSettings.tileReadOnly")}</span>
-              </span>
-            )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Row label={t("resize.width")} error={w === null ? sizeErr : null}>
+            {id => <NumberField id={id} label={t("resize.width")} value={width} onChange={setWidth} invalid={w === null} autoFocus={focus === "size"} field="width" width="w-full" unit={t("newProject.cellsUnit")} />}
           </Row>
+          <Row label={t("resize.height")} error={h === null ? sizeErr : null}>
+            {id => <NumberField id={id} label={t("resize.height")} value={height} onChange={setHeight} invalid={h === null} field="height" width="w-full" unit={t("newProject.cellsUnit")} />}
+          </Row>
+        </div>
+        <AnchorPicker anchor={anchor} onChange={setAnchor} />
+          {crops && (
+            <div className="mt-3 flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+              <Icon name="warning" size={16} className="mt-px shrink-0" />
+              {t("resize.cropWarning")}
+            </div>
+          )}
+        <Group title={t("mapSettings.spawn")}>
+          <div className="flex items-center gap-2" data-map-settings-spawn={spawnCell ? "set" : "none"}>
+            <Icon name="flag" size={16} className={`shrink-0 ${spawnCell ? "text-muted" : "text-warning"}`} />
+            <span className="min-w-0 flex-1 truncate text-md text-text">
+              {spawnCell ? t("mapSettings.spawnSet", { x: spawnCell.x, y: spawnCell.y }) : t("mapSettings.spawnNone")}
+            </span>
+            {spawnCell && (
+              <Button onClick={goToSpawn}>
+                <Icon name="crosshair" size={16} />
+                {t("mapSettings.spawnGo")}
+              </Button>
+            )}
+            <Button onClick={placeSpawn}>
+              {t("mapSettings.spawnPlace")}
+            </Button>
+          </div>
+        </Group>
+
+        {level && (
+          <Group title={t("mapSettings.world")}>
+            <div className="flex gap-3">
+              <NumberField value={worldX} onChange={setWorldX} prefix={t("mapSettings.x")} unit={t("newProject.pxUnit")} width="w-full" invalid={wx === null} field="worldX" label={`${t("mapSettings.world")} ${t("mapSettings.x")}`} />
+              <NumberField value={worldY} onChange={setWorldY} prefix={t("mapSettings.y")} unit={t("newProject.pxUnit")} width="w-full" invalid={wy === null} field="worldY" label={`${t("mapSettings.world")} ${t("mapSettings.y")}`} />
+            </div>
+          </Group>
+        )}
+
+        <AdvancedDisclosure open={advanced} onChange={setAdvanced} label={t("mapSettings.advanced")}>
           <Row label={t("mapSettings.background")} error={bg === undefined ? t("mapSettings.backgroundInvalid") : null}>
             {(id) => (
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <label className="relative grid size-8 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-md border border-line hover:border-line-strong">
+                <label className="relative grid size-control-md shrink-0 cursor-pointer place-items-center overflow-hidden rounded-md border border-line hover:border-line-strong">
                   <span aria-hidden className={`absolute inset-0 ${bg ? "" : "checker"}`} style={bg ? { background: bg } : undefined} />
                   <input
                     type="color"
                     aria-label={t("mapSettings.background")}
-                    value={bg ?? "#11171c"}
+                    value={bg ?? themeBackground()}
                     onChange={(e) => setBgText(e.target.value)}
                     className="absolute inset-0 cursor-pointer opacity-0"
                   />
                 </label>
-                <input
+                <TextField size="md"
                   id={id}
                   value={bgText}
                   placeholder={t("mapSettings.backgroundNone")}
@@ -180,190 +215,50 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
                   spellCheck={false}
                   autoComplete="off"
                   data-field="background"
-                  className={`${inputClass(bg !== undefined)} w-[120px] flex-none font-mono`}
+                  className="w-32 flex-none" aria-invalid={bg === undefined || undefined}
                 />
                 {bg !== null && (
-                  <Button variant="ghost" className="h-8 px-2 text-sm" onClick={() => setBgText("")}>
+                  <Button variant="ghost" className="px-2" onClick={() => setBgText("")}>
                     {t("mapSettings.backgroundClear")}
                   </Button>
                 )}
               </div>
             )}
           </Row>
-        </Group>
-
-        <Group title={t("mapSettings.size")}>
-          <div className="flex gap-5">
-            <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <Row label={t("resize.width")} error={w === null ? sizeErr : null}>
-                {(id) => (
-                  <NumberInput id={id} value={width} onChange={setWidth} unit={t("newProject.cellsUnit")} invalid={w === null} autoFocus={focus === "size"} field="width" />
-                )}
-              </Row>
-              <Row label={t("resize.height")} error={h === null ? sizeErr : null}>
-                {(id) => <NumberInput id={id} value={height} onChange={setHeight} unit={t("newProject.cellsUnit")} invalid={h === null} field="height" />}
-              </Row>
-              <span className="pl-[96px] font-mono text-xs text-faint tabular">
-                {w !== null && h !== null ? `${formatNumber(w * map.tileWidth)} × ${formatNumber(h * map.tileHeight)} px` : " "}
-              </span>
-            </div>
-            <AnchorPicker anchor={anchor} onChange={setAnchor} />
-          </div>
-          {crops && (
-            <div className="mt-3 flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
-              <Icon name="warning" size={14} className="mt-px shrink-0" />
-              {t("resize.cropWarning")}
-            </div>
-          )}
-        </Group>
-
-        <Group title={t("mapSettings.spawn")}>
-          <div className="flex items-center gap-2" data-map-settings-spawn={spawnCell ? "set" : "none"}>
-            <Icon name="flag" size={16} className={`shrink-0 ${spawnCell ? "text-entity-spawn" : "text-warning"}`} />
-            <span className="min-w-0 flex-1 truncate text-md text-text">
-              {spawnCell ? t("mapSettings.spawnSet", { x: spawnCell.x, y: spawnCell.y }) : t("mapSettings.spawnNone")}
-            </span>
-            {spawnCell && (
-              <Button className="h-7 px-2.5 text-sm" onClick={goToSpawn}>
-                <Icon name="crosshair" size={13} />
-                {t("mapSettings.spawnGo")}
-              </Button>
-            )}
-            <Button className="h-7 px-2.5 text-sm" onClick={placeSpawn}>
-              {t("mapSettings.spawnPlace")}
-            </Button>
-          </div>
-        </Group>
-
-        {level && (
-          <Group title={t("mapSettings.world")} hint={t("mapSettings.worldHint")}>
-            <div className="flex gap-3">
-              <NumberInput value={worldX} onChange={setWorldX} prefix="X" unit="px" invalid={wx === null} field="worldX" label={`${t("mapSettings.world")} X`} />
-              <NumberInput value={worldY} onChange={setWorldY} prefix="Y" unit="px" invalid={wy === null} field="worldY" label={`${t("mapSettings.world")} Y`} />
-            </div>
-          </Group>
-        )}
-
-        <details className="group mt-4 rounded-md border border-line">
-          <summary className="flex h-9 cursor-pointer list-none items-center gap-2 px-3 text-xs font-semibold tracking-[0.06em] text-muted uppercase select-none">
-            <Icon name="chevronRight" size={13} className="transition-transform group-open:rotate-90" />
-            {t("mapSettings.advanced")}
-          </summary>
-          <div className="flex flex-col gap-1 px-3 pb-3">
-            <div className="flex items-center gap-3 text-md">
-              <span className="w-[84px] shrink-0 text-muted">{t("mapSettings.seed")}</span>
-              <span className="font-mono text-text tabular select-all" data-field="seed">
-                {doc.seed}
-              </span>
-            </div>
-            <span className="text-xs leading-4 text-faint">{t("mapSettings.seedHint")}</span>
-          </div>
-        </details>
-      </div>
-
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
-        <span className="min-w-0 truncate font-mono text-xs text-faint tabular">
-          {w !== null && h !== null && (w !== map.width || h !== map.height)
+            <Row label={t("mapSettings.tile")}>{() => <span className="text-md text-text tabular" title={t("mapSettings.tileReadOnly")}>{map.tileWidth} × {map.tileHeight} {t("newProject.pxUnit")}</span>}</Row>
+            <FormField label={t("mapSettings.seed")}><span className="text-md text-text tabular select-all" data-field="seed">{doc.seed}</span></FormField>
+        </AdvancedDisclosure>
+      </DialogBody>
+      <DialogFooter status={
+          w !== null && h !== null && (w !== map.width || h !== map.height)
             ? t("resize.summary", { fromWidth: map.width, fromHeight: map.height, toWidth: w, toHeight: h })
             : valid && !dirty
               ? t("mapSettings.unchanged")
-              : " "}
-        </span>
-        <div className="ml-auto flex shrink-0 gap-2">
-          <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
-          <Button type="submit" variant="primary" disabled={!valid || !dirty} data-map-settings-apply>
-            {t("mapSettings.apply")}
-          </Button>
-        </div>
-      </div>
+              : " "
+      }>
+        <Button variant="secondary" onClick={closeMapSettings}>{t("common.cancel")}</Button>
+        <Button type="submit" variant="primary" disabled={!valid || !dirty} data-map-settings-apply>{t("mapSettings.apply")}</Button>
+      </DialogFooter>
     </form>
   );
 }
 
-function inputClass(ok: boolean): string {
-  return `h-8 min-w-0 flex-1 rounded-md border bg-raised px-2.5 text-md text-text transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none ${
-    ok ? "border-line hover:border-line-strong" : "border-danger"
-  }`;
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="flex flex-col gap-3 border-t border-line-subtle pt-3">
+    <h3 className="text-xs font-semibold tracking-section text-muted uppercase">{title}</h3>{children}
+  </section>;
 }
 
-function Group({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3 border-t border-line pt-3 pb-4 first:border-t-0 first:pt-0">
-      <div className="flex items-baseline gap-2">
-        <h3 className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{title}</h3>
-        {hint && <span className="truncate text-xs text-faint">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Row({ label, error = null, children }: { label: string; error?: string | null; children: (id: string) => ReactNode }) {
+function Row({ label, error, children }: { label: string; error?: string | null; children: (id: string) => ReactNode }) {
   const id = useId();
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-3">
-        <label htmlFor={id} className="w-[84px] shrink-0 text-md text-muted">
-          {label}
-        </label>
-        {children(id)}
-      </div>
-      {error && <span className="pl-[96px] text-xs text-danger">{error}</span>}
-    </div>
-  );
-}
-
-function NumberInput({
-  id,
-  value,
-  onChange,
-  unit,
-  prefix,
-  invalid,
-  autoFocus = false,
-  field,
-  label,
-}: {
-  id?: string;
-  value: string;
-  onChange(v: string): void;
-  unit?: string;
-  prefix?: string;
-  invalid: boolean;
-  autoFocus?: boolean;
-  field: string;
-  label?: string;
-}) {
-  return (
-    <div
-      className={`flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border bg-raised px-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft ${
-        invalid ? "border-danger" : "border-line hover:border-line-strong"
-      }`}
-    >
-      {prefix && <span className="font-mono text-xs text-faint">{prefix}</span>}
-      <input
-        id={id}
-        value={value}
-        aria-label={label}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        inputMode="numeric"
-        autoFocus={autoFocus}
-        spellCheck={false}
-        autoComplete="off"
-        data-field={field}
-        className="h-full w-full min-w-0 bg-transparent font-mono text-md text-text tabular focus-visible:outline-none"
-      />
-      {unit && <span className="shrink-0 text-xs text-faint">{unit}</span>}
-    </div>
-  );
+  return <FormField label={label} htmlFor={id} error={error}>{children(id)}</FormField>;
 }
 
 function AnchorPicker({ anchor, onChange }: { anchor: Anchor; onChange(a: Anchor): void }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-sm text-muted">{t("resize.anchor")}</span>
-      <div role="radiogroup" aria-label={t("resize.anchor")} className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-raised p-1.5">
+      <div role="radiogroup" aria-label={t("resize.anchor")} className="grid w-fit grid-cols-3 gap-1 rounded-sm border border-line bg-field p-1.5">
         {ANCHORS.map((cell) => {
           const rotation = arrowRotation(cell, anchor);
           const label = t(`resize.pos${cell}` as MessageKey);
@@ -376,24 +271,23 @@ function AnchorPicker({ anchor, onChange }: { anchor: Anchor; onChange(a: Anchor
               aria-label={t("resize.anchorCell", { position: label })}
               title={label}
               onClick={() => onChange(cell)}
-              className={`grid size-7 place-items-center rounded-sm transition-colors ${
-                cell === anchor ? "bg-accent-soft text-accent" : "text-faint hover:bg-hover hover:text-muted"
+              className={`grid size-7 place-items-center rounded-sm transition-colors duration-(--duration-fast) ${
+                cell === anchor ? "border border-line-strong bg-active text-title" : "text-muted hover:bg-hover hover:text-muted"
               }`}
             >
               {cell === anchor ? (
-                <span className="size-3 rounded-xs bg-accent" />
+                <span className="size-3 rounded-xs bg-muted" />
               ) : rotation !== null ? (
                 <span style={{ transform: `rotate(${rotation}deg)` }} className="grid place-items-center">
-                  <Icon name="arrowUp" size={13} />
+                  <Icon name="arrowUp" size={16} />
                 </span>
               ) : (
-                <span className="size-1 rounded-full bg-line-strong" />
+                <span className="size-1.5 rounded-full bg-line-strong" />
               )}
             </button>
           );
         })}
       </div>
-      <span className="max-w-[112px] text-xs leading-4 text-faint">{t("resize.anchorHint")}</span>
     </div>
   );
 }

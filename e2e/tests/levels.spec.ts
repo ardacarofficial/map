@@ -68,7 +68,7 @@ test("v1.0: two levels drawn, saved, reopened intact; v1.1 portal navigates", as
 
   // Close the program, open the project again: both levels come back.
   await page.reload();
-  await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
+  await page.getByRole("button", { name: /^Aç/ }).click();
   await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await expect(levelRow(page, "Zindan")).toBeVisible();
   await levelRow(page, "Zindan").click();

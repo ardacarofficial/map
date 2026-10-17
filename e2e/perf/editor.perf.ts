@@ -296,7 +296,7 @@ test("editor perf", async ({ browser }) => {
     await resetLog(page, false);
     if (profileName) await startProfile(cdp);
     const clickAt = await page.evaluate(() => {
-      const button = Array.from(document.querySelectorAll("button")).find((b) => /Bir proje klasörü seç/.test(b.textContent ?? ""));
+      const button = Array.from(document.querySelectorAll("button")).find((b) => /^Aç/.test((b.textContent ?? "").trim()));
       if (!button) throw new Error("open button not found");
       const t = performance.now();
       button.click();

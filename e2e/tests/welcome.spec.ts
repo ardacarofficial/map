@@ -4,7 +4,7 @@ test("welcome screen renders", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("button", { name: /Yeni proje/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Aç/ })).toBeVisible();
   await expectWelcome(page);
   await expect(page.getByText("Henüz kayıtlı proje yok")).toBeVisible();
   // Templates: Top-down, Zindan, Boş.

@@ -1,31 +1,28 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getLocale, t } from "../../i18n";
 import type { BackupEntry } from "../../io/backups";
 import { listProjectBackups, openBackup } from "../../io/session";
 import { useSaveStatus } from "../../io/saveStatus";
 import { Button } from "../primitives/Button";
-import { Icon } from "../primitives/Icon";
 import { useUiStore } from "../uiStore";
-import { backdropClass, popupClass } from "./styles";
+import { DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "./DialogFrame";
+import { backdropClass, popupClass, dialogWidthM } from "./styles";
 
 /** "Yedekten aç": the backups of the open level, newest first. Opening one replaces the map. */
 export function BackupsDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const open = useUiStore((s) => s.backupsOpen);
   const setOpen = useUiStore((s) => s.setBackupsOpen);
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} flex w-[460px] max-w-[calc(100vw-32px)] flex-col`}>
-          <div className="flex flex-col gap-1 px-5 pt-5">
-            <Dialog.Title className="text-lg font-semibold">{t("backups.title")}</Dialog.Title>
-            <Dialog.Description className="text-md text-muted">{t("backups.description")}</Dialog.Description>
-          </div>
-          {open && <BackupList onDone={() => setOpen(false)} />}
-          <div className="flex justify-end border-t border-line px-5 py-3">
-            <Dialog.Close render={<Button variant="ghost">{t("common.close")}</Button>} />
-          </div>
+        <Dialog.Popup ref={popupRef} initialFocus={() => popupRef.current?.querySelector<HTMLButtonElement>("[data-backup-row]:not(:disabled)") ?? closeRef.current} className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}>
+          <DialogHeader title={t("backups.title")} subtitle={t("backups.description")} onClose={() => setOpen(false)} />
+          <DialogBody>{open && <BackupList onDone={() => setOpen(false)} />}</DialogBody>
+          <DialogFooter><Button ref={closeRef} variant="secondary" onClick={() => setOpen(false)}>{t("common.close")}</Button></DialogFooter>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
@@ -62,41 +59,32 @@ function BackupList({ onDone }: { onDone(): void }) {
     };
   }, []);
 
-  if (!hasFolder) return <Empty icon="folder" title={t("backups.noFolder")} />;
-  if (!entries) return <div className="px-5 py-10 text-center text-md text-faint">{t("backups.loading")}</div>;
-  if (entries.length === 0) return <Empty icon="history" title={t("backups.empty")} hint={t("backups.emptyHint")} />;
+  if (!hasFolder) return <Empty title={t("backups.noFolder")} />;
+  if (!entries) return <div className="text-sm text-muted">{t("backups.loading")}</div>;
+  if (entries.length === 0) return <Empty title={t("backups.empty")} />;
 
   return (
-    <ul className="mx-3 my-4 flex max-h-[min(400px,50vh)] flex-col gap-px overflow-y-auto">
+    <ul className="flex flex-col gap-px">
       {entries.map((entry, index) => (
         <li key={entry.path}>
           <button
             type="button"
             disabled={opening !== null}
+            data-backup-row
             // The list arrives after the dialog opened (focus went to "Kapat"); the newest backup takes it.
             autoFocus={index === 0}
             onClick={() => {
               setOpening(entry.path);
               void openBackup(entry).then((ok) => (ok ? onDone() : setOpening(null)));
             }}
-            className="group flex h-11 w-full items-center gap-3 rounded-md px-2.5 text-left transition-colors hover:bg-hover disabled:opacity-60"
+            className="flex h-control-md w-full items-center gap-3 rounded-sm px-2 text-left hover:bg-hover-popup disabled:opacity-60"
           >
-            <Icon name="history" size={15} className="shrink-0 text-faint group-hover:text-accent" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-md text-text">
-                {entry.date.toLocaleString(locale(), { dateStyle: "medium", timeStyle: "medium" })}
-              </span>
-              <span className="truncate font-mono text-2xs text-faint">{entry.fileName}</span>
+            <span className="min-w-0 flex-1 truncate text-sm text-text tabular" title={entry.fileName}>
+              {entry.date.toLocaleString(locale(), { dateStyle: "medium", timeStyle: "medium" })}
             </span>
-            {index === 0 && (
-              <span className="rounded-xs bg-accent-soft px-1.5 py-px text-2xs font-medium text-accent">
-                {t("backups.latest")}
-              </span>
-            )}
-            <span className="text-sm text-faint tabular">{relative(entry.date, now)}</span>
-            <span className="text-sm font-medium text-muted transition-colors group-hover:text-accent group-focus-visible:text-accent">
-              {t("backups.open")}
-            </span>
+            {index === 0 && <span className="text-xs text-muted">{t("backups.latest")}</span>}
+            <span className="text-xs text-muted tabular">{relative(entry.date, now)}</span>
+            <span className="text-sm text-muted">{t("backups.open")}</span>
           </button>
         </li>
       ))}
@@ -104,12 +92,6 @@ function BackupList({ onDone }: { onDone(): void }) {
   );
 }
 
-function Empty({ icon, title, hint }: { icon: "folder" | "history"; title: string; hint?: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
-      <Icon name={icon} size={22} className="text-faint" />
-      <span className="text-md text-muted">{title}</span>
-      {hint && <span className="text-sm text-faint">{hint}</span>}
-    </div>
-  );
+function Empty({ title }: { title: string }) {
+  return <p className="text-sm text-muted">{title}</p>;
 }

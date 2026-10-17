@@ -1,35 +1,25 @@
+import { useRef } from "react";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-
 import { t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { useConfirmStore } from "./confirmStore";
-import { backdropClass, popupClass } from "./styles";
+import { DialogHeader, DialogFooter, dialogLayoutClass } from "./DialogFrame";
+import { backdropClass, popupClass, dialogWidthS } from "./styles";
 
-/** "Save changes?" before replacing or closing a dirty project. */
 export function UnsavedDialog() {
-  const request = useConfirmStore((s) => s.request);
-  return (
-    <AlertDialog.Root open={request !== null} onOpenChange={(open) => !open && request?.resolve("cancel")}>
-      <AlertDialog.Portal>
-        <AlertDialog.Backdrop className={backdropClass} />
-        <AlertDialog.Popup className={`${popupClass} w-[420px] max-w-[calc(100vw-32px)] p-5`}>
-          <AlertDialog.Title className="text-lg font-semibold">{t("unsaved.title")}</AlertDialog.Title>
-          <AlertDialog.Description className="mt-1.5 text-md text-muted">
-            {t("unsaved.description", { name: request?.projectName ?? "" })}
-          </AlertDialog.Description>
-          <div className="mt-5 flex gap-2">
-            <Button variant="ghost" onClick={() => request?.resolve("discard")}>
-              {t("common.dontSave")}
-            </Button>
-            <div className="ml-auto flex gap-2">
-              <Button onClick={() => request?.resolve("cancel")}>{t("common.cancel")}</Button>
-              <Button variant="primary" autoFocus onClick={() => request?.resolve("save")}>
-                {t("common.save")}
-              </Button>
-            </div>
-          </div>
-        </AlertDialog.Popup>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
-  );
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const request = useConfirmStore(s => s.request);
+  const cancel = () => request?.resolve("cancel");
+  return <AlertDialog.Root open={request !== null} onOpenChange={open => !open && cancel()}>
+    <AlertDialog.Portal><AlertDialog.Backdrop className={backdropClass} />
+      <AlertDialog.Popup initialFocus={primaryRef} className={`${popupClass} ${dialogWidthS} ${dialogLayoutClass}`}>
+        <div className="min-h-0 overflow-y-auto"><DialogHeader alert title={t("unsaved.title")} subtitle={t("unsaved.description", { name: request?.projectName ?? "" })} onClose={cancel} /></div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={cancel}>{t("common.cancel")}</Button>
+          <Button variant="secondary" onClick={() => request?.resolve("discard")}>{t("common.dontSave")}</Button>
+          <Button ref={primaryRef} variant="primary" autoFocus onClick={() => request?.resolve("save")}>{t("common.save")}</Button>
+        </DialogFooter>
+      </AlertDialog.Popup>
+    </AlertDialog.Portal>
+  </AlertDialog.Root>;
 }
