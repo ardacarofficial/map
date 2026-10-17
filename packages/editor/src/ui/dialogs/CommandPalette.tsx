@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 
 import { fuzzyFilter, type FuzzyMatch } from "../../commands/fuzzy";
 import { allCommands, isEnabled, paletteEntries, runCommand, type Command } from "../../commands/registry";
-import type { CommandId } from "../../shortcuts/shortcuts";
+import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 import { t } from "../../i18n";
-import { CommandKbd } from "../primitives/Kbd";
+import { KbdText } from "../primitives/Kbd";
 import { Icon } from "../primitives/Icon";
 import { useUiStore } from "../uiStore";
-import { backdropClass, popupTopClass } from "./styles";
+import { readPaletteRecents, rememberPaletteCommand } from "./paletteRecents";
+import { backdropClass, popupTopClass, dialogWidthM } from "./styles";
 
 /** One row: a registered command or a dynamic entry (e.g. "Level'a git: Zindan"). */
 interface PaletteItem {
@@ -43,7 +44,7 @@ export function CommandPalette() {
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup
-          className={`${popupTopClass} w-[560px] max-w-[calc(100vw-32px)] overflow-hidden`}
+          className={`${popupTopClass} ${dialogWidthM} max-w-[calc(100vw-32px)] max-h-[calc(88vh-16px)] overflow-hidden`}
         >
           <Dialog.Title className="sr-only">{t("palette.title")}</Dialog.Title>
           {open && <PaletteBody onClose={() => setOpen(false)} />}
@@ -68,7 +69,14 @@ function PaletteBody({ onClose }: { onClose(): void }) {
     ],
     [],
   );
-  const results = useMemo(() => fuzzyFilter(commands, query, label), [commands, query]);
+  const [recents] = useState(readPaletteRecents);
+  const results = useMemo(() => {
+    const filtered = fuzzyFilter(commands, query, label);
+    if (query.trim()) return filtered;
+    const recent = recents.flatMap(id => filtered.filter(result => result.item.id === id));
+    return [...recent, ...filtered.filter(result => !recents.includes(result.item.id))];
+  }, [commands, query, recents]);
+  const recentCount = query.trim() ? 0 : results.filter(result => recents.includes(result.item.id)).length;
   const current = Math.min(active, Math.max(0, results.length - 1));
 
   useEffect(() => {
@@ -77,6 +85,7 @@ function PaletteBody({ onClose }: { onClose(): void }) {
 
   const run = (item: PaletteItem | undefined) => {
     if (!item) return;
+    rememberPaletteCommand(item.id);
     onClose();
     // Run synchronously so pickers keep the user's key/click activation.
     item.run();
@@ -104,8 +113,8 @@ function PaletteBody({ onClose }: { onClose(): void }) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex h-12 items-center gap-3 border-b border-line px-4">
-        <Icon name="search" size={16} className="shrink-0 text-faint" />
+      <div className="flex h-10 items-center gap-3 border-b border-line-subtle px-4">
+        <Icon name="search" size={16} className="shrink-0 text-muted" />
         <input
           autoFocus
           value={query}
@@ -122,53 +131,40 @@ function PaletteBody({ onClose }: { onClose(): void }) {
           aria-expanded="true"
           spellCheck={false}
           autoComplete="off"
-          className="h-full min-w-0 flex-1 bg-transparent text-lg text-text placeholder:text-faint focus-visible:outline-none"
+          className="h-full min-w-0 flex-1 bg-transparent text-md text-text placeholder:text-muted focus-visible:outline-none"
         />
       </div>
 
       <div ref={listRef} id="command-list" role="listbox" className="max-h-[min(360px,50vh)] overflow-y-auto p-1.5">
         {results.length === 0 ? (
-          <div className="px-3 py-8 text-center text-md text-faint">{t("palette.empty")}</div>
+          <div className="px-3 py-4 text-sm text-muted">{t("palette.empty")}</div>
         ) : (
           results.map(({ item, match }, index) => (
-            <div
-              key={item.id}
-              id={`command-${item.id}`}
-              data-index={index}
-              role="option"
-              aria-selected={index === current}
-              onPointerMove={() => index !== current && setActive(index)}
-              onClick={() => run(item)}
-              className={`flex h-9 cursor-default items-center gap-3 rounded-md px-3 text-md ${
-                index === current ? "bg-active text-text" : "text-muted"
-              }`}
-            >
-              <Highlighted text={item.label} match={match} split={item.split} />
-              {item.command && <CommandKbd command={item.command} className="ml-auto" />}
+            <div key={item.id}>
+              {!query.trim() && (index === 0 || index === recentCount) && <div className="flex h-row items-center px-3 text-xs font-semibold tracking-section text-muted uppercase">
+                {index === 0 && recentCount > 0 ? t("palette.recent") : t("palette.all")}
+              </div>}
+              <div id={`command-${item.id}`} data-index={index} role="option" aria-selected={index === current}
+                onPointerMove={() => index !== current && setActive(index)} onClick={() => run(item)}
+                className={`flex h-control-rail cursor-default items-center gap-3 rounded-sm px-3 text-sm text-text ${index === current ? "bg-hover-popup" : ""}`}>
+                <Highlighted text={item.label} match={match} split={item.split} />
+                {item.command && keysFor(item.command)[0] && <KbdText keys={keysFor(item.command)[0]!} className="ml-auto shrink-0 !text-muted" />}
+              </div>
             </div>
           ))
         )}
       </div>
 
-      <div className="flex h-8 items-center border-t border-line px-4 text-xs text-faint">{t("palette.hint")}</div>
     </div>
   );
 }
 
-/** Category prefix in a quieter color; matched characters in the accent color. */
+/** Retain fuzzy match indices while displaying the category after the command. */
 function Highlighted({ text, match, split }: { text: string; match: FuzzyMatch; split: number }) {
   const hits = new Set(match.indices);
   const chars = [...text];
-  return (
-    <span className="min-w-0 truncate">
-      {chars.map((ch, i) => (
-        <span
-          key={i}
-          className={hits.has(i) ? "font-medium text-accent" : i < split ? "text-faint" : undefined}
-        >
-          {ch}
-        </span>
-      ))}
-    </span>
-  );
+  return <span className="flex min-w-0 items-baseline gap-2">
+    <span className="truncate">{chars.slice(split).map((ch, i) => <span key={i} className={hits.has(i + split) ? "font-medium text-title" : undefined}>{ch}</span>)}</span>
+    <span className="shrink-0 text-xs text-muted">{text.slice(0, split - 2)}</span>
+  </span>;
 }

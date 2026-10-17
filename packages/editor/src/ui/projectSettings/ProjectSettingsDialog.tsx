@@ -6,9 +6,9 @@
  * the project by the next (auto)save.
  */
 import { Dialog } from "@base-ui/react/dialog";
-import { Tabs } from "@base-ui/react/tabs";
+import { Tabs } from "../primitives/Tabs";
 import { normalizeProjectSettings, type ProjectSettings } from "@smap/core";
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { create } from "zustand";
 
 import { registerCommands, runCommand } from "../../commands/registry";
@@ -19,11 +19,12 @@ import { renameProject, updateProjectSettings } from "../../io/session";
 import { useEditorStore } from "../../state/editorStore";
 import { useAppSettings } from "../../platform/appSettings";
 import type { CommandId } from "../../shortcuts/shortcuts";
-import { backdropClass, popupClass } from "../dialogs/styles";
+import { backdropClass, popupClass, dialogWidthM } from "../dialogs/styles";
+import { DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "../dialogs/DialogFrame";
+import { TextField } from "../primitives/TextField";
 import { Button } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
-import { inputClass, inputOk } from "../primitives/NativeSelect";
-import { Toggle } from "../primitives/Toggle";
+import { DialogToggle as Toggle } from "../dialogs/DialogFrame";
 import { toast } from "../toast/toastStore";
 import {
   BackgroundField,
@@ -72,13 +73,16 @@ export function registerProjectSettingsCommands(): void {
 }
 
 export function ProjectSettingsDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
   const open = useProjectSettingsDialog((s) => s.open);
   return (
     <Dialog.Root open={open} onOpenChange={(next) => useProjectSettingsDialog.setState({ open: next })}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup
-          className={`${popupClass} flex max-h-[calc(100vh-48px)] w-[600px] max-w-[calc(100vw-32px)] flex-col`}
+          ref={popupRef}
+          initialFocus={() => popupRef.current?.querySelector<HTMLElement>('input:not(:disabled), [role="tabpanel"] button:not(:disabled), footer button:not(:disabled)') ?? popupRef.current}
+          className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}
           data-dialog="project-settings"
         >
           {open && <SettingsForm onDone={() => useProjectSettingsDialog.setState({ open: false })} />}
@@ -151,38 +155,26 @@ function SettingsForm({ onDone }: { onDone(): void }) {
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5">
-        <Dialog.Title className="text-lg font-semibold">{t("projectSettings.title")}</Dialog.Title>
-        <Dialog.Description className="text-md text-muted">{t("projectSettings.description")}</Dialog.Description>
-      </div>
-
-      <Tabs.Root
-        value={tab}
-        onValueChange={(value) => useProjectSettingsDialog.setState({ tab: value as TabId })}
-        className="flex min-h-0 flex-col"
-      >
-        <Tabs.List className="relative mt-3 flex gap-1 border-b border-line px-5">
-          <TabButton value="general">{t("projectSettings.tabGeneral")}</TabButton>
-          <TabButton value="unity">{t("projectSettings.tabUnity")}</TabButton>
-          <TabButton value="more">{t("projectSettings.tabMore")}</TabButton>
-        </Tabs.List>
-
-        <Tabs.Panel value="general" className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-4">
+      <DialogHeader title={t("projectSettings.title")} subtitle={t("projectSettings.description")} onClose={onDone} />
+      <Tabs value={tab} onValueChange={tab => useProjectSettingsDialog.setState({ tab })} label={t("projectSettings.title")}
+        items={([{ value: "general", label: t("projectSettings.tabGeneral"), attrs: { id: "project-settings-tab-general", "aria-controls": "project-settings-general" } }, { value: "unity", label: t("projectSettings.tabUnity"), attrs: { id: "project-settings-tab-unity", "aria-controls": "project-settings-unity" } }, { value: "more", label: t("projectSettings.tabMore"), attrs: { id: "project-settings-tab-more", "aria-controls": "project-settings-more" } }] as const)} />
+      <DialogBody role="tabpanel" id={`project-settings-${tab}`} aria-labelledby={`project-settings-tab-${tab}`} className="flex flex-col gap-3 pt-3">
+        {tab === "general" && <>
           <Section label={t("projectSettings.name")} htmlFor={nameId}>
-            <input
+            <TextField size="md"
               id={nameId}
               value={name}
               onChange={(e) => setName(e.target.value)}
               spellCheck={false}
               autoComplete="off"
-              className={`${inputClass} h-8 ${touched && name.trim() === "" ? "border-danger" : inputOk}`}
+              aria-invalid={touched && name.trim() === "" || undefined}
+              className={touched && name.trim() === "" ? "[&>input]:border-danger" : ""}
             />
           </Section>
-          <div className="flex flex-col gap-0.5 border-t border-line pt-3">
-            <h3 className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{t("projectSettings.newMapDefaults")}</h3>
-            <p className="text-xs text-faint">{t("projectSettings.newMapDefaultsHint")}</p>
+          <div className="flex flex-col gap-0.5 border-t border-line-subtle pt-3">
+            <h3 className="text-xs font-semibold tracking-section text-muted uppercase">{t("projectSettings.newMapDefaults")}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-3">
             <Section label={t("newProject.tileSize")}>
               <TileSizePicker value={tile} onChange={setTile} showErrors={touched} />
             </Section>
@@ -196,18 +188,16 @@ function SettingsForm({ onDone }: { onDone(): void }) {
           <Section label={t("newProject.background")} hint={t("projectSettings.backgroundHint")}>
             <BackgroundField value={background} onChange={setBackground} />
           </Section>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="unity" className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-4">
+        </>}
+        {tab === "unity" && <>
           <Section label={t("newProject.unityFolder")} htmlFor={hintId} hint={t("projectSettings.unityFolderHint")}>
-            <input
+            <TextField size="md"
               id={hintId}
               value={folderHint}
               onChange={(e) => setFolderHint(e.target.value)}
-              placeholder="Assets/Maps"
+              placeholder={t("export.outputFolderPlaceholder")}
               spellCheck={false}
               autoComplete="off"
-              className={`${inputClass} h-8 font-mono ${inputOk}`}
             />
           </Section>
           <label className="flex items-start gap-2">
@@ -216,21 +206,18 @@ function SettingsForm({ onDone }: { onDone(): void }) {
             </span>
             <span className="flex flex-col">
               <span className="text-sm text-text">{t("newProject.unityExportOnSave")}</span>
-              <span className="text-xs text-faint">{t("newProject.unityExportOnSaveHint")}</span>
             </span>
           </label>
-          <div className="flex flex-col gap-1 rounded-md border border-line bg-panel p-3">
+          <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-muted">{t("projectSettings.ppu")}</span>
-            <span className="font-mono text-md text-text tabular">{doc ? doc.map.tileWidth : "—"}</span>
-            <span className="text-xs text-faint">{t("projectSettings.ppuHint")}</span>
+            <span className="text-md text-text tabular">{doc ? doc.map.tileWidth : "—"}</span>
           </div>
           <Button className="self-start" onClick={() => go("file.export")}>
-            <Icon name="upload" size={14} />
+            <Icon name="upload" size={16} />
             {t("projectSettings.openExport")}
           </Button>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="more" className="flex min-h-0 flex-col gap-2 overflow-y-auto px-5 py-4">
+        </>}
+        {tab === "more" && <>
           <LinkRow icon="flag" title={t("projectSettings.entityTypes")} hint={t("projectSettings.entityTypesHint")} onClick={() => go("entity.editTypes")} />
           <LinkRow icon="image" title={t("projectSettings.tilesets")} hint={t("projectSettings.tilesetsHint")} onClick={() => go("tileset.goto")} />
           <LinkRow
@@ -242,27 +229,14 @@ function SettingsForm({ onDone }: { onDone(): void }) {
               setTimeout(() => useAppSettings.getState().setDialogOpen(true), 0);
             }}
           />
-        </Tabs.Panel>
-      </Tabs.Root>
+        </>}
+      </DialogBody>
 
-      <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
-        <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
-        <Button type="submit" variant="primary" disabled={touched && !valid}>
-          {t("common.save")}
-        </Button>
-      </div>
+      <DialogFooter>
+        <Button variant="secondary" onClick={onDone}>{t("common.cancel")}</Button>
+        <Button type="submit" variant="primary" disabled={touched && !valid}>{t("common.save")}</Button>
+      </DialogFooter>
     </form>
-  );
-}
-
-function TabButton({ value, children }: { value: TabId; children: ReactNode }) {
-  return (
-    <Tabs.Tab
-      value={value}
-      className="-mb-px h-8 border-b-2 border-transparent px-2.5 text-sm text-muted transition-colors hover:text-text data-active:border-accent data-active:text-text"
-    >
-      {children}
-    </Tabs.Tab>
   );
 }
 
@@ -271,14 +245,14 @@ function LinkRow({ icon, title, hint, onClick }: { icon: IconName; title: string
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2.5 text-left transition-colors hover:border-line-strong hover:bg-hover"
+      title={hint}
+      className="group flex h-control-md items-center gap-3 rounded-sm px-2 text-left hover:bg-hover-popup"
     >
-      <Icon name={icon} size={16} className="shrink-0 text-muted group-hover:text-accent" />
+      <Icon name={icon} size={16} className="shrink-0 text-muted group-hover:text-text" />
       <span className="flex min-w-0 flex-col">
-        <span className="text-md text-text">{title}</span>
-        <span className="truncate text-xs text-faint">{hint}</span>
+        <span className="text-sm text-text">{title}</span>
       </span>
-      <Icon name="chevronRight" size={14} className="ml-auto shrink-0 text-faint" />
+      <Icon name="chevronRight" size={16} className="ml-auto shrink-0 text-muted" />
     </button>
   );
 }

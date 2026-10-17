@@ -6,8 +6,12 @@
 import { useId, type ReactNode } from "react";
 
 import { t } from "../../i18n";
+import { FormField } from "../dialogs/DialogFrame";
+import { Button, IconButton } from "../primitives/Button";
+import { Segmented } from "../primitives/Segmented";
+import { TextField } from "../primitives/TextField";
 import { Icon } from "../primitives/Icon";
-import { inputBad, inputClass, inputOk, NativeSelect } from "../primitives/NativeSelect";
+import { NativeSelect } from "../primitives/NativeSelect";
 import {
   MAP_MAX,
   MAP_MIN,
@@ -25,87 +29,32 @@ import {
 } from "./projectTemplates";
 
 export function Section({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-sm font-medium text-muted">
-        {label}
-      </label>
-      {children}
-      {hint && <div className="text-xs text-faint">{hint}</div>}
-    </div>
-  );
+  return <FormField label={label} htmlFor={htmlFor} title={typeof hint === "string" ? hint : undefined}>{children}</FormField>;
 }
 
-/** A row of toggle chips; one is pressed. */
-export function ChipRow<T extends string | number>({
-  options,
-  value,
-  onChange,
-  label,
-  mono = false,
-}: {
+/** Compatibility wrapper: shared neutral radio segments for small enums. */
+export function ChipRow<T extends string | number>({ options, value, onChange, label }: {
   options: readonly { value: T; label: string; title?: string }[];
-  value: T | null;
-  onChange(value: T): void;
-  label: string;
-  mono?: boolean;
+  value: T | null; onChange(value: T): void; label: string; mono?: boolean;
 }) {
-  return (
-    <div role="group" aria-label={label} className="flex flex-wrap gap-1">
-      {options.map((option) => {
-        const on = option.value === value;
-        return (
-          <button
-            key={String(option.value)}
-            type="button"
-            aria-pressed={on}
-            title={option.title}
-            onClick={() => onChange(option.value)}
-            className={`h-7 min-w-9 rounded-sm border px-2 text-sm transition-colors ${mono ? "font-mono tabular" : ""} ${
-              on ? "border-accent-line bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:bg-hover hover:text-text"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <Segmented size="md" label={label} value={String(value)} className="max-w-full tabular"
+    onValueChange={(next) => { const option = options.find(o => String(o.value) === next); if (option) onChange(option.value); }}
+    items={options.map(option => ({ value: String(option.value), label: option.label, ...(option.title ? { tooltip: option.title } : {}) }))} />;
 }
 
-/** Small numeric input with a unit / prefix, in the shared input style. */
-export function NumberBox({
-  value,
-  onChange,
-  prefix,
-  label,
-  invalid,
-  width = "w-20",
-}: {
-  value: string;
-  onChange(value: string): void;
-  prefix?: string;
-  label: string;
-  invalid: boolean;
-  width?: string;
+/** Shared editable number, used by project and map settings. */
+export function NumberField({ value, onChange, prefix, label, invalid, width = "w-20", id, autoFocus, field, unit }: {
+  value: string; onChange(value: string): void; prefix?: string; label: string; invalid: boolean;
+  width?: string; id?: string; autoFocus?: boolean; field?: string; unit?: string;
 }) {
-  return (
-    <span className={`relative flex items-center ${width}`}>
-      {prefix && <span className="pointer-events-none absolute left-2 text-xs text-faint">{prefix}</span>}
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        inputMode="numeric"
-        aria-label={label}
-        aria-invalid={invalid || undefined}
-        spellCheck={false}
-        autoComplete="off"
-        className={`${inputClass} font-mono tabular ${prefix ? "pl-6" : ""} ${invalid ? inputBad : inputOk}`}
-      />
-    </span>
-  );
+  return <TextField size="md" id={id} value={value} onChange={e => onChange(e.target.value)}
+    onFocus={e => e.currentTarget.select()} inputMode="numeric" aria-label={label}
+    aria-invalid={invalid || undefined} autoFocus={autoFocus} spellCheck={false} autoComplete="off"
+    data-field={field} className={`${width} tabular ${invalid ? "[&>input]:border-danger" : ""}`}
+    {...(prefix ? { leadingIcon: <span className="text-sm text-muted">{prefix}</span> } : {})}
+    trailing={unit ? <span className="text-xs text-muted">{unit}</span> : undefined} />;
 }
+export const NumberBox = NumberField;
 
 // ------------------------------------------------------------------ tile size
 
@@ -136,7 +85,6 @@ export function TileSizePicker({ value, onChange, showErrors }: { value: TileSiz
     <div className="flex flex-col gap-1.5">
       <ChipRow
         label={t("newProject.tileSize")}
-        mono
         value={value.chip}
         onChange={(chip) => onChange(chip === "custom" ? { ...value, chip } : { chip, width: String(chip), height: String(chip) })}
         options={[...TILE_SIZE_CHIPS.map((n) => ({ value: n as number | "custom", label: String(n) })), { value: "custom", label: t("newProject.custom") }]}
@@ -150,7 +98,7 @@ export function TileSizePicker({ value, onChange, showErrors }: { value: TileSiz
             onChange={(width) => onChange({ ...value, width })}
             invalid={showErrors && parsed === null}
           />
-          <span className="text-faint">×</span>
+          <span className="text-muted">×</span>
           <NumberBox
             label={t("newProject.height")}
             prefix={t("newProject.tileHeightShort")}
@@ -158,10 +106,10 @@ export function TileSizePicker({ value, onChange, showErrors }: { value: TileSiz
             onChange={(height) => onChange({ ...value, height })}
             invalid={showErrors && parsed === null}
           />
-          <span className="text-sm text-faint">{t("newProject.pxUnit")}</span>
+          <span className="text-sm text-muted">{t("newProject.pxUnit")}</span>
         </div>
       )}
-      {showErrors && parsed === null && <span className="text-xs text-danger">{t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX })}</span>}
+      {showErrors && parsed === null && <span className="text-sm text-danger">{t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX })}</span>}
     </div>
   );
 }
@@ -210,7 +158,7 @@ export function MapSizePicker({ value, onChange, showErrors }: { value: MapSizeV
           onChange={(width) => onChange({ preset: mapPresetOf(Number(width), Number(value.height)), width, height: value.height })}
           invalid={showErrors && parsed === null}
         />
-        <span className="text-faint">×</span>
+        <span className="text-muted">×</span>
         <NumberBox
           label={t("newProject.height")}
           prefix={t("newProject.tileHeightShort")}
@@ -218,9 +166,9 @@ export function MapSizePicker({ value, onChange, showErrors }: { value: MapSizeV
           onChange={(height) => onChange({ preset: mapPresetOf(Number(value.width), Number(height)), width: value.width, height })}
           invalid={showErrors && parsed === null}
         />
-        <span className="text-sm text-faint">{t("newProject.cellsUnit")}</span>
+        <span className="text-sm text-muted">{t("newProject.cellsUnit")}</span>
       </div>
-      {showErrors && parsed === null && <span className="text-xs text-danger">{t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX })}</span>}
+      {showErrors && parsed === null && <span className="text-sm text-danger">{t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX })}</span>}
     </div>
   );
 }
@@ -245,7 +193,7 @@ export function kindLabel(kind: LayerKind): string {
 }
 
 export function LayerKindIcon({ kind, className = "" }: { kind: LayerKind; className?: string }) {
-  return <Icon name={KIND_ICON[kind]} size={13} className={className} />;
+  return <Icon name={KIND_ICON[kind]} size={16} className={className} />;
 }
 
 export function LayerTemplatePicker({ value, onChange }: { value: LayerTemplateValue; onChange(value: LayerTemplateValue): void }) {
@@ -282,21 +230,22 @@ export function LayerListEditor({ layers, onChange }: { layers: LayerSpec[]; onC
   };
   const order = layers.map((_, i) => layers.length - 1 - i);
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-line bg-raised p-1.5">
+    <div className="flex flex-col gap-1 rounded-sm border border-line bg-field p-1.5">
       <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto">
         {order.map((index) => {
           const layer = layers[index]!;
           return (
             <li key={index} className="flex items-center gap-1">
-              <LayerKindIcon kind={layer.kind} className="mx-1 shrink-0 text-faint" />
-              <input
+              <LayerKindIcon kind={layer.kind} className="mx-1 shrink-0 text-muted" />
+              <TextField size="md"
                 value={layer.name}
                 onChange={(e) => set(index, { name: e.target.value })}
                 placeholder={t("newProject.layerNamePlaceholder")}
                 aria-label={t("newProject.layerNamePlaceholder")}
                 spellCheck={false}
                 autoComplete="off"
-                className={`${inputClass} ${layer.name.trim() === "" ? inputBad : inputOk}`}
+                aria-invalid={layer.name.trim() === "" || undefined}
+                className={layer.name.trim() === "" ? "[&>input]:border-danger" : ""}
               />
               <NativeSelect
                 className="w-28 shrink-0"
@@ -317,30 +266,18 @@ export function LayerListEditor({ layers, onChange }: { layers: LayerSpec[]; onC
           );
         })}
       </ul>
-      <button
-        type="button"
-        onClick={() => onChange([...layers, { name: "", kind: "tile" }])}
-        className="flex h-7 items-center gap-1.5 rounded-sm px-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text"
-      >
-        <Icon name="plus" size={13} />
-        {t("newProject.addLayer")}
-      </button>
+      <Button variant="ghost" size="sm" className="self-start" onClick={() => onChange([...layers, { name: "", kind: "tile" }])}>
+        <Icon name="plus" size={16} />{t("newProject.addLayer")}
+      </Button>
     </div>
   );
 }
 
 function RowButton({ label, icon, disabled, onClick }: { label: string; icon: "arrowUp" | "arrowDown" | "x"; disabled: boolean; onClick(): void }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid size-7 shrink-0 place-items-center rounded-sm text-faint transition-colors hover:bg-hover hover:text-text disabled:pointer-events-none disabled:opacity-30"
-    >
-      <Icon name={icon} size={13} />
-    </button>
+    <IconButton size="sm" aria-label={label} title={label} disabled={disabled} onClick={onClick}>
+      <Icon name={icon} size={16} />
+    </IconButton>
   );
 }
 
@@ -353,25 +290,30 @@ export function BackgroundField({ value, onChange }: { value: string | null; onC
     <div className="flex items-center gap-2">
       <label
         htmlFor={id}
-        className="relative size-7 shrink-0 cursor-pointer overflow-hidden rounded-md border border-line hover:border-line-strong"
+        className="relative size-control-md shrink-0 cursor-pointer overflow-hidden rounded-md border border-line hover:border-line-strong"
         style={{ background: value ?? "var(--color-canvas)" }}
         title={t("newProject.background")}
       >
         <input
           id={id}
           type="color"
-          value={value ?? "#0b1217"}
+          value={value ?? themeBackground()}
           onChange={(e) => onChange(parseHexColor(e.target.value))}
           className="absolute inset-0 cursor-pointer opacity-0"
           aria-label={t("newProject.background")}
         />
       </label>
-      <span className="font-mono text-sm text-muted tabular">{value ?? t("newProject.backgroundNone")}</span>
+      <span className="text-sm text-muted tabular">{value ?? t("newProject.backgroundNone")}</span>
       {value !== null && (
-        <button type="button" onClick={() => onChange(null)} className="text-xs text-faint underline-offset-2 hover:text-text hover:underline">
+        <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
           {t("newProject.backgroundReset")}
-        </button>
+        </Button>
       )}
     </div>
   );
+}
+
+/** Native colour inputs need a resolved colour; the theme remains the source. */
+export function themeBackground(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue("--color-canvas").trim();
 }

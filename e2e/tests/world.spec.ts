@@ -97,7 +97,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
 
   // ---- Reopen: the position is still there, and the world view shows it.
   await page.reload();
-  await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
+  await page.getByRole("button", { name: /^Aç/ }).click();
   // The tree can render before the canvas handle is ready to accept W.
   await expect
     .poll(() => page.evaluate(async () => {

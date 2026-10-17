@@ -6,13 +6,14 @@ import { create } from "zustand";
 import { t } from "../../i18n";
 import { confirmDiscard, describeError, newProject, planStartingTileset, type PlannedTileset } from "../../io/session";
 import { FolderTakenError, getPlatform, type ProjectLocation } from "../../platform";
-import { Button } from "../primitives/Button";
+import { TextField } from "../primitives/TextField";
+import { AdvancedDisclosure, DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "./DialogFrame";
+import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
-import { Toggle } from "../primitives/Toggle";
+import { DialogToggle as Toggle } from "./DialogFrame";
 import { pickFiles } from "../pickFiles";
 import {
   BackgroundField,
-  LayerKindIcon,
   LayerTemplatePicker,
   MapSizePicker,
   Section,
@@ -28,7 +29,7 @@ import {
 } from "../projectSettings/fields";
 import { cleanLayers, fitPreview, projectTemplate, templateIdOf, type ProjectTemplateId } from "../projectSettings/projectTemplates";
 import { useUiStore } from "../uiStore";
-import { backdropClass, popupClass } from "./styles";
+import { backdropClass, popupClass, dialogWidthM } from "./styles";
 
 export { parseIntInRange } from "../projectSettings/projectTemplates";
 
@@ -48,6 +49,7 @@ export function openNewProjectDialog(template: ProjectTemplateId | null = null):
 }
 
 export function NewProjectDialog() {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const open = useUiStore((s) => s.newProjectOpen);
   const setOpen = useUiStore((s) => s.setNewProjectOpen);
   return (
@@ -61,7 +63,9 @@ export function NewProjectDialog() {
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup
-          className={`${popupClass} flex max-h-[calc(100vh-48px)] w-[640px] max-w-[calc(100vw-32px)] flex-col`}
+          ref={dialogRef}
+          initialFocus={() => dialogRef.current?.querySelector<HTMLElement>("input:not(:disabled)") ?? dialogRef.current}
+          className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}
           data-dialog="new-project"
         >
           {open && <NewProjectForm onDone={() => setOpen(false)} />}
@@ -221,15 +225,11 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
 
   return (
     <form ref={popupRef} onSubmit={submit} noValidate className="flex min-h-0 flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5">
-        <Dialog.Title className="text-lg font-semibold">{t("newProject.title")}</Dialog.Title>
-        <Dialog.Description className="text-md text-muted">{t("newProject.description")}</Dialog.Description>
-      </div>
+      <DialogHeader title={t("newProject.title")} subtitle={t("newProject.description")} onClose={onDone} />
+      <DialogBody className="flex flex-col gap-3">
 
-      <div className="grid min-h-0 grid-cols-[1fr_232px] gap-5 overflow-y-auto px-5 py-4">
-        <div className="flex min-w-0 flex-col gap-4">
           <Section label={t("newProject.name")} htmlFor={nameId}>
-            <input
+            <TextField size="md"
               id={nameId}
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -238,11 +238,9 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
               spellCheck={false}
               autoComplete="off"
               aria-invalid={touched && !nameOk ? true : undefined}
-              className={`h-8 w-full rounded-md border bg-panel px-2.5 text-md text-text transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none ${
-                touched && !nameOk ? "border-danger" : "border-line hover:border-line-strong"
-              }`}
+              className={touched && !nameOk ? "[&>input]:border-danger" : ""}
             />
-            {touched && !nameOk && <span className="text-xs text-danger">{t("newProject.errName")}</span>}
+            {touched && !nameOk && <span className="text-sm text-danger">{t("newProject.errName")}</span>}
           </Section>
 
           <Section label={t("newProject.location")}>
@@ -267,12 +265,10 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
           <Section label={t("newProject.layerTemplate")}>
             <LayerTemplatePicker value={layers} onChange={setLayers} />
           </Section>
-        </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
           <Preview tile={tileSize} size={mapSize} layers={cleanLayers(layerList)} background={background} />
 
-          <Section label={t("newProject.startTileset")} hint={tileset ? null : t("newProject.startTilesetHint")}>
+          <Section label={t("newProject.startTileset")}>
             <TilesetDrop
               tileset={tileset}
               busy={tilesetBusy}
@@ -284,28 +280,17 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
             />
           </Section>
 
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setAdvanced((v) => !v)}
-              aria-expanded={advanced}
-              className="flex items-center gap-1 self-start text-sm font-medium text-muted hover:text-text"
-            >
-              <Icon name="chevronRight" size={13} className={`transition-transform ${advanced ? "rotate-90" : ""}`} />
-              {t("newProject.advanced")}
-            </button>
-            {advanced && (
-              <div className="flex flex-col gap-3 rounded-md border border-line bg-panel p-3">
+          <AdvancedDisclosure open={advanced} onChange={setAdvanced} label={t("newProject.advanced")}>
                 <Section label={t("newProject.background")}>
                   <BackgroundField value={background} onChange={setBackground} />
                 </Section>
                 {typeof window !== "undefined" && "showDirectoryPicker" in window && (
                   <Section label={t("newProject.unityFolder")}>
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className={`min-w-0 flex-1 truncate text-sm ${unityDir ? "text-text" : "text-faint"}`}>
+                      <span className={`min-w-0 flex-1 truncate text-sm ${unityDir ? "text-text" : "text-muted"}`}>
                         {unityDir?.name ?? t("newProject.unityFolderNone")}
                       </span>
-                      <Button className="h-7 shrink-0 px-2 text-sm" onClick={() => void pickUnityFolder()}>
+                      <Button className="shrink-0" onClick={() => void pickUnityFolder()}>
                         {t("newProject.unityFolderPick")}
                       </Button>
                     </div>
@@ -315,25 +300,14 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
                   <span className="pt-0.5">
                     <Toggle checked={exportOnSave} onChange={setExportOnSave} label={t("newProject.unityExportOnSave")} />
                   </span>
-                  <span className="flex flex-col">
-                    <span className="text-sm text-text">{t("newProject.unityExportOnSave")}</span>
-                    <span className="text-xs text-faint">{t("newProject.unityExportOnSaveHint")}</span>
-                  </span>
+                  <span className="text-sm text-text">{t("newProject.unityExportOnSave")}</span>
                 </label>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
-        <div className="ml-auto flex gap-2">
-          <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
-          <Button type="submit" variant="primary" disabled={touched && !valid}>
-            {t("common.create")}
-          </Button>
-        </div>
-      </div>
+          </AdvancedDisclosure>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="secondary" onClick={onDone}>{t("common.cancel")}</Button>
+        <Button type="submit" variant="primary" disabled={touched && !valid}>{t("common.create")}</Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -353,14 +327,14 @@ function FolderRow({
   onLater(): void;
   error: string | null;
 }) {
-  if (!supported) return <div className="text-xs text-faint">{t("newProject.folderUnsupported")}</div>;
+  if (!supported) return <Button variant="ghost" className="self-start" title={t("newProject.folderUnsupported")} onClick={onLater}>{t("newProject.pickLater")}</Button>;
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2">
         {state.kind === "picked" ? (
           <>
-            <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-raised px-2.5">
-              <Icon name="folder" size={14} className="shrink-0 text-accent" />
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Icon name="folder" size={16} className="shrink-0 text-muted" />
               <span className="min-w-0 truncate text-sm text-text" title={state.location.label}>
                 {state.location.label}
               </span>
@@ -371,28 +345,15 @@ function FolderRow({
           </>
         ) : (
           <>
-            <Button variant={state.kind === "unset" ? "primary" : "secondary"} onClick={onPick} disabled={busy}>
-              <Icon name="folder" size={14} />
+            <Button variant="secondary" onClick={onPick} disabled={busy}>
+              <Icon name="folder" size={16} />
               {t("newProject.pickFolder")}
             </Button>
-            <button
-              type="button"
-              onClick={onLater}
-              aria-pressed={state.kind === "later"}
-              className={`h-8 rounded-md px-2.5 text-sm transition-colors ${
-                state.kind === "later" ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"
-              }`}
-            >
-              {t("newProject.pickLater")}
-            </button>
+            <Button variant="ghost" onClick={onLater} aria-pressed={state.kind === "later"}>{t("newProject.pickLater")}</Button>
           </>
         )}
       </div>
-      {error ? (
-        <span className="text-xs text-danger">{error}</span>
-      ) : (
-        <span className="text-xs text-faint">{state.kind === "later" ? t("newProject.laterHint") : t("newProject.folderHint")}</span>
-      )}
+      {error && <span className="text-sm text-danger">{error}</span>}
     </div>
   );
 }
@@ -409,66 +370,30 @@ function Preview({
   layers: readonly { name: string; kind: "tile" | "collision" | "entity" }[];
   background: string | null;
 }) {
-  const BOX_W = 232;
-  const BOX_H = 150;
   const ok = tile !== null && size !== null;
-  const box = ok ? fitPreview(size.width * tile.width, size.height * tile.height, BOX_W, BOX_H) : { width: BOX_W, height: BOX_H };
-  // Grid lines every `step` cells so they never get denser than ~5 px.
-  const cellW = ok ? box.width / size.width : 0;
-  const cellH = ok ? box.height / size.height : 0;
-  const step = ok ? Math.max(1, Math.ceil(5 / Math.max(0.01, Math.min(cellW, cellH)))) : 1;
-  const gridStyle = ok
-    ? {
-        backgroundImage:
-          "linear-gradient(to right, var(--color-tile-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--color-tile-grid) 1px, transparent 1px)",
-        backgroundSize: `${cellW * step}px ${cellH * step}px`,
-      }
-    : {};
-  return (
-    <div className="flex flex-col gap-2" aria-label={t("newProject.preview")}>
-      <div className="grid h-[150px] place-items-center rounded-md border border-line bg-bg">
-        <div
-          className="rounded-[2px] border border-line-strong"
-          style={{ width: box.width, height: box.height, background: background ?? "var(--color-canvas)", ...gridStyle }}
-        />
-      </div>
-      <div className="flex flex-col gap-0.5">
-        <span className="font-mono text-xs text-text tabular">
-          {ok ? t("newProject.previewSummary", { width: size.width * tile.width, height: size.height * tile.height, layers: layers.length }) : " "}
-        </span>
-        <span className="font-mono text-xs text-faint tabular">
-          {ok ? t("newProject.previewCells", { width: size.width, height: size.height, tile: tile.width === tile.height ? tile.width : `${tile.width}×${tile.height}` }) : " "}
-        </span>
-      </div>
-      <ul className="flex flex-col gap-px">
-        {[...layers].reverse().map((layer, i) => (
-          <li key={i} className="flex h-6 items-center gap-2 rounded-sm px-1.5 text-sm text-muted">
-            <LayerKindIcon kind={layer.kind} className="shrink-0 text-faint" />
-            <span className="truncate">{layer.name}</span>
-          </li>
-        ))}
-      </ul>
+  const box = ok ? fitPreview(size.width * tile.width, size.height * tile.height, 80, 56) : { width: 80, height: 56 };
+  return <div className="flex items-center gap-3" aria-label={t("newProject.preview")}>
+    <div className="grid h-16 w-24 shrink-0 place-items-center rounded-sm bg-canvas">
+      <div className="rounded-xs border border-line-strong" style={{ width: box.width, height: box.height, background: background ?? "var(--color-map-bg)" }} />
     </div>
-  );
+    <div className="flex min-w-0 flex-col gap-1 tabular">
+      <span className="text-sm text-text">{ok ? t("newProject.previewSummary", { width: size.width * tile.width, height: size.height * tile.height, layers: layers.length }) : " "}</span>
+      <span className="text-xs text-muted">{ok ? t("newProject.previewCells", { width: size.width, height: size.height, tile: tile.width === tile.height ? tile.width : `${tile.width}×${tile.height}` }) : " "}</span>
+    </div>
+  </div>;
 }
 
 function TilesetDrop({ tileset, busy, onPick, onRemove }: { tileset: PlannedTileset | null; busy: boolean; onPick(): void; onRemove(): void }) {
   if (tileset) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-line bg-raised p-2">
-        <Icon name="image" size={15} className="shrink-0 text-accent" />
+      <div className="flex h-control-md items-center gap-2">
+        <Icon name="image" size={16} className="shrink-0 text-muted" />
         <span className="min-w-0 flex-1 truncate text-sm text-text" title={tileset.png.file.name}>
           {t("newProject.startTilesetInfo", { name: tileset.name, width: tileset.spec.tileWidth, height: tileset.spec.tileHeight })}
         </span>
-        <button
-          type="button"
-          aria-label={t("newProject.startTilesetRemove")}
-          title={t("newProject.startTilesetRemove")}
-          onClick={onRemove}
-          className="grid size-6 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
-        >
-          <Icon name="x" size={13} />
-        </button>
+        <IconButton size="sm" aria-label={t("newProject.startTilesetRemove")} title={t("newProject.startTilesetRemove")} onClick={onRemove}>
+          <Icon name="x" size={16} />
+        </IconButton>
       </div>
     );
   }
@@ -477,9 +402,9 @@ function TilesetDrop({ tileset, busy, onPick, onRemove }: { tileset: PlannedTile
       type="button"
       onClick={onPick}
       disabled={busy}
-      className="flex h-16 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong text-sm text-muted transition-colors hover:border-faint hover:bg-hover hover:text-text disabled:opacity-60"
+      className="flex h-12 items-center justify-center gap-2 rounded-md border border-dashed border-line-strong text-sm text-muted transition-colors duration-(--duration-fast) hover:border-line-strong hover:bg-hover hover:text-text disabled:opacity-60"
     >
-      <Icon name="upload" size={15} />
+      <Icon name="upload" size={16} />
       {t("newProject.startTilesetDrop")}
     </button>
   );
@@ -503,36 +428,12 @@ export function Field({
   autoFocus?: boolean;
 }) {
   const id = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-muted">
-        {label}
-      </label>
-      <div
-        className={`flex h-8 items-center rounded-md border bg-panel px-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft ${
-          error ? "border-danger" : "border-line hover:border-line-strong"
-        }`}
-      >
-        <input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={(e) => e.currentTarget.select()}
-          autoFocus={autoFocus}
-          inputMode={numeric ? "numeric" : "text"}
-          spellCheck={false}
-          autoComplete="off"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
-          className={`h-full min-w-0 flex-1 bg-transparent text-md text-text focus-visible:outline-none ${numeric ? "font-mono tabular" : ""}`}
-        />
-        {unit && <span className="pl-2 text-sm text-faint">{unit}</span>}
-      </div>
-      {error && (
-        <span id={`${id}-error`} className="text-xs text-danger">
-          {error}
-        </span>
-      )}
-    </div>
-  );
+  return <Section label={label} htmlFor={id}>
+    <TextField size="md" id={id} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.currentTarget.select()}
+      autoFocus={autoFocus} inputMode={numeric ? "numeric" : "text"} spellCheck={false} autoComplete="off"
+      aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}
+      className={`${numeric ? "tabular" : ""} ${error ? "[&>input]:border-danger" : ""}`}
+      trailing={unit ? <span className="text-sm text-muted">{unit}</span> : undefined} />
+    {error && <span id={`${id}-error`} className="text-sm text-danger">{error}</span>}
+  </Section>;
 }

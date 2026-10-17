@@ -12,7 +12,9 @@ import type { TileGridSpec } from "@smap/core";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { t } from "../../i18n";
-import { backdropClass, popupClass } from "../dialogs/styles";
+import { backdropClass, popupClass, dialogWidthL } from "../dialogs/styles";
+import { DialogHeader, DialogBody, DialogFooter, FormField, dialogLayoutClass } from "../dialogs/DialogFrame";
+import { TextField as InputField } from "../primitives/TextField";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
@@ -52,6 +54,7 @@ export function TilesetImportDialog() {
 }
 
 function SingleCardDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
   const request = useTilesetCard((s) => s.request);
   const close = useTilesetCard((s) => s.close);
   return (
@@ -59,8 +62,10 @@ function SingleCardDialog() {
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup
+          ref={popupRef}
+          initialFocus={() => popupRef.current?.querySelector<HTMLElement>("input:not(:disabled)") ?? popupRef.current}
           data-testid="tileset-card"
-          className={`${popupClass} flex h-[min(640px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] overflow-hidden`}
+          className={`${popupClass} ${dialogWidthL} ${dialogLayoutClass} h-[min(640px,calc(100vh-32px))]`}
         >
           {request && <TilesetCard key={`${request.fileName}:${request.mode.kind}`} request={request} onClose={close} />}
         </Dialog.Popup>
@@ -112,18 +117,11 @@ export function TilesetCard({
   const primary = confirmLabel ?? (edit ? t("tilesetImport.apply") : request.mode.kind === "new" ? t("tilesetImport.create") : t("tilesetImport.import"));
 
   return (
-    <form onSubmit={submit} noValidate className="flex min-w-0 flex-1">
-      <Preview request={request} spec={parsed.spec} summary={summary} />
-
-      <div className="flex w-[324px] shrink-0 flex-col border-l border-line">
-        <div className="flex flex-col gap-1 px-5 pt-5">
-          <Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>
-          <Dialog.Description className="text-md text-muted">
-            {edit ? request.initial.name : t("tilesetImport.description")}
-          </Dialog.Description>
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+    <form onSubmit={submit} noValidate className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <DialogHeader title={title} subtitle={edit ? request.initial.name : t("tilesetImport.description")} onClose={() => close(null)} />
+      <DialogBody className="flex min-h-0 flex-1 gap-4">
+        <Preview request={request} spec={parsed.spec} summary={summary} />
+        <div className="flex min-h-0 w-80 shrink-0 flex-col gap-3 overflow-y-auto">
           {!edit && (
             <TextField
               label={t("tilesetImport.name")}
@@ -140,11 +138,10 @@ export function TilesetCard({
               <IconButton
                 aria-label={t("tilesetImport.linked")}
                 aria-pressed={draft.linked}
-                active={draft.linked}
-                className="mb-0"
+                className={draft.linked ? "bg-active !text-title" : ""}
                 onClick={() => setDraft((d) => setDraftLinked(d, !d.linked))}
               >
-                <Icon name="link" size={15} />
+                <Icon name="link" size={16} />
               </IconButton>
             </Tooltip>
             <NumberField label={t("tilesetImport.tileHeight")} {...field("tileHeight")} />
@@ -166,14 +163,14 @@ export function TilesetCard({
                       type="button"
                       aria-pressed={on}
                       onClick={() => setDraft((d) => applySpec(d, chip.spec))}
-                      className={`flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors ${
+                      className={`flex h-control-sm items-center gap-1 rounded-sm border px-2 text-sm transition-colors duration-(--duration-fast) ${
                         on
-                          ? "border-accent-line bg-accent-soft text-accent"
-                          : "border-line text-muted hover:border-line-strong hover:bg-hover hover:text-text"
+                          ? "border-line-strong bg-active text-title"
+                          : "border-line bg-field text-muted hover:border-line-strong hover:bg-hover-popup hover:text-text"
                       }`}
                     >
-                      <span className="font-mono tabular">{chip.size}</span>
-                      <span className={on ? "text-accent/80" : "text-faint"}>· {chip.reason}</span>
+                      <span className="tabular">{chip.size}</span>
+                      <span className="text-xs text-muted">· {chip.reason}</span>
                     </button>
                   );
                 })}
@@ -182,7 +179,7 @@ export function TilesetCard({
           )}
 
           <div className="flex flex-col gap-2">
-            <div data-testid="tileset-card-summary" className="font-mono text-md text-text tabular">
+            <div data-testid="tileset-card-summary" className="text-md text-text tabular">
               {parsed.spec === null ? (
                 <span className="text-danger">{t("tilesetImport.invalid")}</span>
               ) : summary === null ? (
@@ -218,27 +215,14 @@ export function TilesetCard({
                 })}
               </Note>
             )}
-            {edit && <Note tone="info">{t("tilesetImport.editNote")}</Note>}
           </div>
         </div>
-
-        <div className="flex flex-col gap-2 border-t border-line px-5 py-3">
-          {edit && (
-            <Button variant="ghost" className="-ml-2 self-start" onClick={() => close({ kind: "replaceImage" })}>
-              <Icon name="image" size={15} />
-              {t("tilesetImport.replaceImage")}
-            </Button>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => close(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {primary}
-            </Button>
-          </div>
-        </div>
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        {edit && <Button variant="ghost" onClick={() => close({ kind: "replaceImage" })}><Icon name="image" size={16} />{t("tilesetImport.replaceImage")}</Button>}
+        <Button variant="secondary" onClick={() => close(null)}>{t("common.cancel")}</Button>
+        <Button type="submit" variant="primary" disabled={!canSubmit}>{primary}</Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -247,11 +231,11 @@ function Note({ tone, children, testId }: { tone: "warning" | "info"; children: 
   return (
     <div
       data-testid={testId}
-      className={`flex gap-2 rounded-md px-2.5 py-2 text-sm leading-snug ${
-        tone === "warning" ? "bg-warning-soft text-warning" : "bg-hover text-muted"
+      className={`flex items-start gap-2 text-sm ${
+        tone === "warning" ? "text-warning" : "text-muted"
       }`}
     >
-      <Icon name={tone === "warning" ? "warning" : "info"} size={14} className="mt-0.5 shrink-0" />
+      <Icon name={tone === "warning" ? "warning" : "info"} size={16} className="mt-0.5 shrink-0" />
       <div className="flex min-w-0 flex-col">{children}</div>
     </div>
   );
@@ -271,77 +255,30 @@ function TextField({
   onChange(value: string): void;
 }) {
   const id = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-muted">
-        {label}
-      </label>
-      <input
-        id={id}
-        value={value}
-        autoFocus={autoFocus}
-        spellCheck={false}
-        autoComplete="off"
-        aria-invalid={invalid || undefined}
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => onChange(e.target.value)}
-        className={`h-8 rounded-md border bg-panel px-2.5 text-md text-text transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none ${
-          invalid ? "border-danger" : "border-line hover:border-line-strong"
-        }`}
-      />
-    </div>
-  );
+  return <FormField label={label} htmlFor={id}>
+    <InputField size="md" id={id} value={value} autoFocus={autoFocus} spellCheck={false} autoComplete="off"
+      aria-invalid={invalid || undefined} onFocus={e => e.currentTarget.select()} onChange={e => onChange(e.target.value)}
+      className={invalid ? "[&>input]:border-danger" : ""} />
+  </FormField>;
 }
 
 /** Numeric field: ArrowUp / ArrowDown step by 1 (Shift: 8). */
-function NumberField({
-  label,
-  value,
-  invalid,
-  autoFocus,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  invalid: boolean;
-  autoFocus?: boolean;
-  onChange(value: string): void;
-}) {
+function NumberField({ label, value, invalid, autoFocus, onChange }: { label: string; value: string; invalid: boolean; autoFocus?: boolean; onChange(value: string): void }) {
   const id = useId();
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-      <label htmlFor={id} className="truncate text-sm font-medium text-muted">
-        {label}
-      </label>
-      <div
-        className={`flex h-8 items-center rounded-md border bg-panel px-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft ${
-          invalid ? "border-danger" : "border-line hover:border-line-strong"
-        }`}
-      >
-        <input
-          id={id}
-          value={value}
-          autoFocus={autoFocus}
-          inputMode="numeric"
-          spellCheck={false}
-          autoComplete="off"
-          aria-invalid={invalid || undefined}
-          onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-            e.preventDefault();
-            const n = Number(value);
-            if (!Number.isFinite(n)) return;
-            const step = (e.shiftKey ? 8 : 1) * (e.key === "ArrowUp" ? 1 : -1);
-            onChange(String(Math.max(0, Math.round(n) + step)));
-          }}
-          className="h-full min-w-0 flex-1 bg-transparent font-mono text-md text-text tabular focus-visible:outline-none"
-        />
-        <span className="pl-1.5 text-sm text-faint">px</span>
-      </div>
-    </div>
-  );
+  return <div className="min-w-0 flex-1"><FormField label={label} htmlFor={id}>
+    <InputField size="md" id={id} value={value} autoFocus={autoFocus} inputMode="numeric" spellCheck={false} autoComplete="off"
+      aria-invalid={invalid || undefined} onFocus={e => e.currentTarget.select()} onChange={e => onChange(e.target.value)}
+      trailing={<span className="text-xs text-muted">{t("newProject.pxUnit")}</span>}
+      className={`tabular ${invalid ? "[&>input]:border-danger" : ""}`}
+      onKeyDown={e => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        const n = Number(value);
+        if (!Number.isFinite(n)) return;
+        const step = (e.shiftKey ? 8 : 1) * (e.key === "ArrowUp" ? 1 : -1);
+        onChange(String(Math.max(0, Math.round(n) + step)));
+      }} />
+  </FormField></div>;
 }
 
 // ------------------------------------------------------------------ preview
@@ -443,18 +380,19 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
 
   const z = zoom ?? 1;
   return (
-    <div className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md bg-canvas">
       <div
         ref={scrollRef}
         tabIndex={-1}
         className={`min-h-0 flex-1 overflow-auto outline-none ${pan.cursor}`}
+        data-import-preview
         data-testid="tileset-card-preview"
         {...pan.handlers}
       >
         <div className="flex min-h-full min-w-full items-center justify-center" style={{ padding: PAD, width: "max-content", height: "max-content" }}>
           <div
             ref={imageRef}
-            className="checker relative shrink-0 shadow-popup"
+            className="checker relative shrink-0"
             style={{ width: width * z, height: height * z, visibility: zoom === null ? "hidden" : undefined }}
           >
             <canvas ref={canvasRef} width={width} height={height} className="pixelated absolute inset-0 size-full" />
@@ -463,20 +401,20 @@ function Preview({ request, spec, summary }: { request: CardRequest; spec: TileG
         </div>
       </div>
       <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex items-center justify-between">
-        <span className="rounded-md bg-panel/90 px-2 py-1 font-mono text-xs text-muted tabular">
+        <span className="text-xs text-muted tabular">
           {t("tilesetImport.imageSize", { width, height })}
         </span>
-        <div className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-line bg-panel/95 p-0.5 shadow-popup">
-          <IconButton aria-label={t("commands.view.zoomOut")} className="size-6" onClick={() => step(-1)}>
-            <Icon name="minus" size={14} />
+        <div className="pointer-events-auto flex items-center gap-0.5 rounded-sm bg-panel p-0.5">
+          <IconButton aria-label={t("commands.view.zoomOut")} size="sm" onClick={() => step(-1)}>
+            <Icon name="minus" size={16} />
           </IconButton>
           <Tooltip label={t("tilesetImport.zoomHint")} side="top">
-            <span className="w-12 text-center font-mono text-xs text-muted tabular" data-testid="tileset-card-zoom" aria-label={t("tilesetImport.zoom", { zoom: `${Math.round(z * 100)}%` })}>
+            <span className="w-12 text-center text-xs text-muted tabular" data-testid="tileset-card-zoom" aria-label={t("tilesetImport.zoom", { zoom: `${Math.round(z * 100)}%` })}>
               {Math.round(z * 100)}%
             </span>
           </Tooltip>
-          <IconButton aria-label={t("commands.view.zoomIn")} className="size-6" onClick={() => step(1)}>
-            <Icon name="plus" size={14} />
+          <IconButton aria-label={t("commands.view.zoomIn")} size="sm" onClick={() => step(1)}>
+            <Icon name="plus" size={16} />
           </IconButton>
         </div>
       </div>

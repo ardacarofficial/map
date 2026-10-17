@@ -1,14 +1,18 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { getLocale, t } from "../i18n";
 import { SHORTCUTS } from "../shortcuts/shortcuts";
-import { backdropClass, popupClass } from "../ui/dialogs/styles";
+import { backdropClass, popupClass, dialogWidthM } from "../ui/dialogs/styles";
+import { DialogHeader, DialogBody, DialogFooter, FormField, dialogLayoutClass } from "../ui/dialogs/DialogFrame";
+import { LanguageSwitch } from "./LanguageSwitch";
 import { Button } from "../ui/primitives/Button";
 import { toast } from "../ui/toast/toastStore";
 import { readSettingsText, saveSettingsText, useAppSettings } from "./appSettings";
 import { getPlatform } from "./index";
-import { defaultSettingsText } from "./settings";
+import { defaultSettingsText, parseSettings, withLocale } from "./settings";
+
+const SETTINGS_FOCUS_SELECTOR = '[role="radio"][aria-checked="true"]:not(:disabled), textarea:not(:disabled)';
 
 /**
  * The settings file as plain JSON (CLAUDE.md: no shortcut editor screen, a
@@ -16,13 +20,22 @@ import { defaultSettingsText } from "./settings";
  * app config folder; in the browser the same JSON lives in localStorage.
  */
 export function SettingsDialog() {
+  const popupRef = useRef<HTMLDivElement>(null);
   const open = useAppSettings((s) => s.dialogOpen);
   const setOpen = useAppSettings((s) => s.setDialogOpen);
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} flex max-h-[calc(100vh-64px)] w-[640px] max-w-[calc(100vw-32px)] flex-col`}>
+        <Dialog.Popup
+          ref={popupRef}
+          initialFocus={() => popupRef.current?.querySelector<HTMLElement>(SETTINGS_FOCUS_SELECTOR) ?? popupRef.current}
+          onFocus={(event) => {
+            // Loading can finish before Base UI applies its queued initial focus.
+            if (event.target === event.currentTarget) event.currentTarget.querySelector<HTMLElement>(SETTINGS_FOCUS_SELECTOR)?.focus();
+          }}
+          className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}
+        >
           {open && <SettingsForm onDone={() => setOpen(false)} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -31,6 +44,7 @@ export function SettingsDialog() {
 }
 
 function SettingsForm({ onDone }: { onDone(): void }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +57,16 @@ function SettingsForm({ onDone }: { onDone(): void }) {
       alive = false;
     };
   }, []);
+
+  // The settings load asynchronously. Focus the first control once it is enabled,
+  // provided the user has not already moved focus away from the popup itself.
+  useEffect(() => {
+    if (text === null) return;
+    const popup = formRef.current?.closest('[role="dialog"]');
+    if (document.activeElement === popup) {
+      formRef.current?.querySelector<HTMLElement>(SETTINGS_FOCUS_SELECTOR)?.focus();
+    }
+  }, [text]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -57,15 +81,11 @@ function SettingsForm({ onDone }: { onDone(): void }) {
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} noValidate className="flex min-h-0 flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5">
-        <Dialog.Title className="text-lg font-semibold">{t("settings.dialogTitle")}</Dialog.Title>
-        <Dialog.Description className="text-md text-muted">{t("settings.dialogDescription")}</Dialog.Description>
-        <span className="truncate font-mono text-xs text-faint" title={getPlatform().settingsLocation()}>
-          {t("settings.dialogLocation", { path: getPlatform().settingsLocation() })}
-        </span>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 px-5 pt-4">
+    <form ref={formRef} onSubmit={(e) => void submit(e)} noValidate className="flex min-h-0 flex-col">
+      <DialogHeader title={t("settings.dialogTitle")} subtitle={t("settings.dialogDescription")} onClose={onDone} />
+      <DialogBody className="flex flex-col gap-3">
+        <FormField label={t("settings.languageLabel")}><LanguageSwitch size="md" value={parseSettings(text ?? "", SHORTCUTS, getLocale()).settings.locale} disabled={text === null || withLocale(text, getLocale(), SHORTCUTS) === null} onValueChange={locale => setText(withLocale(text, locale, SHORTCUTS))} /></FormField>
+        <FormField label={t("settings.fileLabel")} title={t("settings.dialogLocation", { path: getPlatform().settingsLocation() })}>
         <textarea
           aria-label={t("settings.dialogTitle")}
           spellCheck={false}
@@ -75,21 +95,15 @@ function SettingsForm({ onDone }: { onDone(): void }) {
             setText(e.target.value);
             setError(null);
           }}
-          className="h-[420px] min-h-[160px] w-full resize-none rounded-md border border-line bg-panel p-3 font-mono text-sm text-text outline-none focus:border-accent-line"
+          className="h-64 min-h-32 w-full resize-none rounded-sm border border-line bg-field p-2 font-mono text-sm text-text outline-none focus:border-accent-line"
         />
+        </FormField>
         {error && <p className="text-sm text-danger">{error}</p>}
-      </div>
-      <div className="flex justify-between gap-2 px-5 py-4">
-        <Button variant="ghost" onClick={() => setText(defaultSettingsText(SHORTCUTS, getLocale()))}>
-          {t("settings.dialogDefaults")}
-        </Button>
-        <div className="flex gap-2">
-          <Button onClick={onDone}>{t("settings.dialogCancel")}</Button>
-          <Button variant="primary" type="submit" disabled={text === null}>
-            {t("settings.dialogSave")}
-          </Button>
-        </div>
-      </div>
+      </DialogBody>
+      <DialogFooter left={<Button variant="ghost" onClick={() => setText(defaultSettingsText(SHORTCUTS, getLocale()))}>{t("settings.dialogDefaults")}</Button>}>
+        <Button variant="secondary" onClick={onDone}>{t("settings.dialogCancel")}</Button>
+        <Button variant="primary" type="submit" disabled={text === null}>{t("settings.dialogSave")}</Button>
+      </DialogFooter>
     </form>
   );
 }

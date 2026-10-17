@@ -58,7 +58,7 @@ test("v0.1: drop tileset, draw, save, reload, open -> same map", async ({ page }
   // "Close the program": reload (OPFS persists), then open the project.
   await page.reload();
   await expectWelcome(page);
-  await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
+  await page.getByRole("button", { name: /^Aç/ }).click();
   await expect(canvas).toBeVisible();
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
 
