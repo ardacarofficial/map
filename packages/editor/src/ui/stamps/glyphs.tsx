@@ -1,49 +1,49 @@
-/** Small line glyphs of the stamp library that the shared icon set does not have (24×24 grid, `currentColor`). */
+import type { ReactNode } from "react";
 
-const common = {
-  viewBox: "0 0 24 24",
-  stroke: "currentColor",
-  strokeWidth: 1.75,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
-};
-
-/** ★ — filled when `on`. */
-export function StarGlyph({ on = false, size = 14, className }: { on?: boolean; size?: number; className?: string }) {
+/** Local Lucide geometry for glyphs not yet included in the shared Icon primitive. */
+function Glyph({ size = 16, className, filled = false, children }: { size?: 12 | 16; className?: string; filled?: boolean; children: ReactNode }) {
   return (
-    <svg {...common} width={size} height={size} fill={on ? "currentColor" : "none"} className={className}>
-      <path d="M11.5 2.8a.6.6 0 0 1 1 0l2.6 5.3 5.8.8a.6.6 0 0 1 .3 1l-4.2 4.1 1 5.8a.6.6 0 0 1-.8.6L12 17.7l-5.2 2.7a.6.6 0 0 1-.8-.6l1-5.8-4.2-4.1a.6.6 0 0 1 .3-1l5.8-.8z" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={(1.5 * 24) / size}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      {children}
     </svg>
   );
 }
 
-export function TagGlyph({ size = 12, className }: { size?: number; className?: string }) {
+/** Monochrome favourite star, filled only when enabled. */
+export function StarGlyph({ on = false, ...props }: { on?: boolean; size?: 12 | 16; className?: string }) {
   return (
-    <svg {...common} width={size} height={size} fill="none" className={className}>
-      <path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
-      <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" />
-    </svg>
+    <Glyph {...props} filled={on}>
+      <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" />
+    </Glyph>
   );
 }
 
-export function ListGlyph({ size = 14, className }: { size?: number; className?: string }) {
+/** Lucide tag geometry for metadata chips. */
+export function TagGlyph(props: { size?: 12 | 16; className?: string }) {
   return (
-    <svg {...common} width={size} height={size} fill="none" className={className}>
-      <rect x="3" y="4" width="5" height="5" rx="1" />
-      <rect x="3" y="15" width="5" height="5" rx="1" />
-      <path d="M11 6.5h10M11 17.5h10" />
-    </svg>
+    <Glyph {...props}>
+      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8Z" />
+      <path d="M7 7h.01" />
+    </Glyph>
   );
 }
 
-export function TilesGlyph({ size = 14, className }: { size?: number; className?: string }) {
+/** Lucide list geometry for the library view toggle. */
+export function ListGlyph(props: { size?: 12 | 16; className?: string }) {
   return (
-    <svg {...common} width={size} height={size} fill="none" className={className}>
-      <rect x="3" y="3" width="7.5" height="7.5" rx="1.2" />
-      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2" />
-      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2" />
-      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2" />
-    </svg>
+    <Glyph {...props}>
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </Glyph>
   );
 }

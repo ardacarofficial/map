@@ -14,7 +14,11 @@ import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import type { CommandId } from "../../shortcuts/shortcuts";
 import { useEditorStore } from "../../state/editorStore";
-import { ActionButton, CardDivider, PropGrid, PropRow, ReadField, SectionHeader, SquareAction, TransformGlyph } from "../inspector/parts";
+import { Button, IconButton } from "../primitives/Button";
+import { Divider } from "../primitives/Divider";
+import { PropRow, PropValue } from "../primitives/PropRow";
+import { SectionHeader } from "../primitives/SectionHeader";
+import { TextField } from "../primitives/TextField";
 import { registerInspectorSection } from "../inspector/registry";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
@@ -23,7 +27,6 @@ import { StarGlyph, TagGlyph } from "./glyphs";
 import { parseTags, stampCategories } from "./stampFilters";
 import { useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
-import { stampLayerCounts } from "./stampThumb";
 
 function selectedStamp(): Stamp | undefined {
   const id = useStampLibrary.getState().selectedId;
@@ -70,107 +73,118 @@ function transformStamp(stamp: Stamp, command: CommandId): void {
 }
 
 function StampCard({ stamp }: { stamp: Stamp }) {
-  const counts = stampLayerCounts(stamp);
-  const onBrush = useEditorStore((s) => activeStampId(s.stamp) === stamp.id);
   const rotate = !!getCommand("edit.rotateCW");
   const place = () => {
     pickStamp(stamp.id);
     if (activeStampId(useEditorStore.getState().stamp) === stamp.id) useStampLibrary.getState().select(null);
   };
+  const layers = stamp.layers.map((l) => l.name).join(", ") || t("stamps.layers", { count: 0 });
+  const transforms = [
+    {
+      command: "edit.flipX",
+      icon: "flip-horizontal-2",
+      label: t("inspector.flipX"),
+    },
+    {
+      command: "edit.flipY",
+      icon: "flip-vertical-2",
+      label: t("inspector.flipY"),
+    },
+    {
+      command: "edit.rotateCCW",
+      icon: "rotate-ccw",
+      label: rotate ? t("inspector.rotateCCW") : t("inspector.rotateUnavailable"),
+      disabled: !rotate,
+    },
+    {
+      command: "edit.rotateCW",
+      icon: "rotate-cw",
+      label: rotate ? t("inspector.rotateCW") : t("inspector.rotateUnavailable"),
+      disabled: !rotate,
+    },
+  ] as const;
   return (
     <section aria-label={t("stampLib.section")} data-stamp-inspector={stamp.id}>
       <SectionHeader
-        extra={
-          <Tooltip label={t("stampLib.deselect")}>
-            <button
-              type="button"
-              aria-label={t("stampLib.deselect")}
-              onClick={() => useStampLibrary.getState().select(null)}
-              className="grid size-6 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
-            >
-              <Icon name="x" size={13} />
-            </button>
-          </Tooltip>
+        title={t("stampLib.section")}
+        padding={12}
+        actions={
+          <>
+            <Tooltip label={stamp.favorite ? t("stampLib.unfavorite") : t("stampLib.favorite")}>
+              <IconButton
+                size="sm"
+                aria-label={stamp.favorite ? t("stampLib.unfavorite") : t("stampLib.favorite")}
+                aria-pressed={!!stamp.favorite}
+                data-stamp-inspector-star=""
+                onClick={() => toggleStampFavorite(stamp.id)}
+                className={stamp.favorite ? "text-text" : ""}
+              >
+                <StarGlyph on={!!stamp.favorite} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip label={t("stampLib.deselect")}>
+              <IconButton size="sm" aria-label={t("stampLib.deselect")} onClick={() => useStampLibrary.getState().select(null)}>
+                <Icon name="x" size={16} />
+              </IconButton>
+            </Tooltip>
+          </>
         }
-      >
-        {t("stampLib.section")}
-      </SectionHeader>
-      <div className="px-3 pt-1">
-        <div className="overflow-hidden rounded-md border border-line">
-          <StampThumb stamp={stamp} height={156} pad={8} className="rounded-none" />
+      />
+      <div className="flex flex-col gap-2 px-3 pb-3">
+        <div className="overflow-hidden rounded-sm border border-line-subtle">
+          <StampThumb stamp={stamp} height={120} pad={8} />
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon name="stamp" size={16} className="shrink-0 text-muted" />
+          <span className="truncate text-md font-semibold text-title" data-inspector-title>
+            {stamp.name}
+          </span>
+        </div>
+        <div>
+          <PropRow label={t("stampLib.sizeLabel")}>
+            <PropValue align="left">{t("stamps.size", { width: stamp.width, height: stamp.height })}</PropValue>
+          </PropRow>
+          <PropRow label={t("stampLib.layersLabel")}>
+            <PropValue align="left" title={layers}>
+              {layers}
+            </PropValue>
+          </PropRow>
+          <PropRow label={t("stampLib.categoryLabel")}>
+            <CategoryField stamp={stamp} />
+          </PropRow>
+          {/* Tags wrap onto several lines, so this row grows instead of using the fixed-height PropRow. */}
+          <div className="flex items-start gap-2 py-0.5">
+            <span className="w-proplabel shrink-0 truncate text-sm leading-6 text-muted">{t("stampLib.tagsLabel")}</span>
+            <div className="min-w-0 flex-1">
+              <TagsField stamp={stamp} />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" data-action="placeStamp" onClick={place}>
+            {t("stampLib.placeAsStamp")}
+          </Button>
+          <Button size="sm" variant="secondary" data-action="editStamp" onClick={() => void openStampEditor(stamp.id)}>
+            {t("stampLib.edit")}
+          </Button>
+        </div>
+        <Divider />
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-semibold text-muted uppercase">{t("inspector.transform")}</span>
+          <div className="flex items-center gap-1">
+            {transforms.map((item, index) => (
+              <span key={item.command} className="flex items-center gap-1">
+                {index === 2 && <Divider orientation="vertical" length={16} />}
+                <Tooltip label={item.label} command={item.command}>
+                  <IconButton size="sm" aria-label={item.label} disabled={"disabled" in item && item.disabled} onClick={() => transformStamp(stamp, item.command)}>
+                    <Icon name={item.icon} size={16} />
+                  </IconButton>
+                </Tooltip>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 px-3 pt-2.5">
-        <span className="min-w-0 flex-1 truncate text-[16px] leading-[22px] font-semibold text-title" data-inspector-title>
-          {stamp.name}
-        </span>
-        <Tooltip label={stamp.favorite ? t("stampLib.unfavorite") : t("stampLib.favorite")}>
-          <button
-            type="button"
-            aria-label={stamp.favorite ? t("stampLib.unfavorite") : t("stampLib.favorite")}
-            aria-pressed={!!stamp.favorite}
-            data-stamp-inspector-star=""
-            onClick={() => toggleStampFavorite(stamp.id)}
-            className={`grid size-7 shrink-0 place-items-center rounded-sm transition-colors hover:bg-hover ${stamp.favorite ? "text-warning" : "text-faint hover:text-text"}`}
-          >
-            <StarGlyph on={!!stamp.favorite} size={16} />
-          </button>
-        </Tooltip>
-      </div>
-      <PropGrid>
-        <PropRow label={t("stampLib.sizeLabel")}>
-          <ReadField>{t("stamps.size", { width: stamp.width, height: stamp.height })}</ReadField>
-        </PropRow>
-        <PropRow label={t("stampLib.layersLabel")}>
-          <ReadField mono={false}>
-            <span className="truncate">{stamp.layers.map((l) => l.name).join(", ") || t("stamps.layers", { count: 0 })}</span>
-            {counts.grid > 0 && <Icon name="shield" size={12} className="ml-1.5 shrink-0 text-collision-solid/80" />}
-          </ReadField>
-        </PropRow>
-        <PropRow label={t("stampLib.categoryLabel")}>
-          <CategoryField stamp={stamp} />
-        </PropRow>
-      </PropGrid>
-      <div className="flex flex-col gap-1.5 px-3 pt-0.5 pb-1.5">
-        <span className="text-md text-muted">{t("stampLib.tagsLabel")}</span>
-        <TagsField stamp={stamp} />
-      </div>
-      <div className="flex flex-col gap-2 px-3 pt-2">
-        <ActionButton icon="stamp" tone="primary" label={t("stampLib.placeAsStamp")} dataAction="placeStamp" onClick={place} />
-        <ActionButton icon="pencil" label={t("stampLib.edit")} dataAction="editStamp" onClick={() => void openStampEditor(stamp.id)} />
-      </div>
-      <CardDivider />
-      <PropGrid>
-        <PropRow label={t("inspector.transform")}>
-          <SquareAction label={t("inspector.flipX")} command="edit.flipX" onClick={() => transformStamp(stamp, "edit.flipX")}>
-            <TransformGlyph kind="flipX" />
-          </SquareAction>
-          <SquareAction label={t("inspector.flipY")} command="edit.flipY" onClick={() => transformStamp(stamp, "edit.flipY")}>
-            <TransformGlyph kind="flipY" />
-          </SquareAction>
-          <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
-          <SquareAction
-            label={rotate ? t("inspector.rotateCCW") : t("inspector.rotateUnavailable")}
-            command="edit.rotateCCW"
-            disabled={!rotate}
-            onClick={() => transformStamp(stamp, "edit.rotateCCW")}
-          >
-            <TransformGlyph kind="rotateCCW" />
-          </SquareAction>
-          <SquareAction
-            label={rotate ? t("inspector.rotateCW") : t("inspector.rotateUnavailable")}
-            command="edit.rotateCW"
-            disabled={!rotate}
-            onClick={() => transformStamp(stamp, "edit.rotateCW")}
-          >
-            <TransformGlyph kind="rotateCW" />
-          </SquareAction>
-        </PropRow>
-      </PropGrid>
-      <p className="flex items-start gap-1.5 px-3 pt-1 text-xs leading-4 text-faint">
-        <Icon name="info" size={12} className="mt-0.5 shrink-0" />
-        <span>{onBrush ? t("stamps.hint") : t("stampLib.flatNote")}</span>
-      </p>
     </section>
   );
 }
@@ -189,9 +203,6 @@ function useFocusRequest(stampId: string, field: "category" | "tags", ref: RefOb
   }, [tick, ref]);
 }
 
-const inputClass =
-  "h-7 min-w-0 flex-1 rounded-md border border-line bg-raised px-2 text-md text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none";
-
 function CategoryField({ stamp }: { stamp: Stamp }) {
   const ref = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -205,7 +216,8 @@ function CategoryField({ stamp }: { stamp: Stamp }) {
   };
   return (
     <>
-      <input
+      <TextField
+        size="sm"
         ref={ref}
         value={value}
         list={listId}
@@ -228,7 +240,7 @@ function CategoryField({ stamp }: { stamp: Stamp }) {
             e.currentTarget.blur();
           }
         }}
-        className={inputClass}
+        className="flex-1"
       />
       <datalist id={listId}>
         {stampCategories(all).map((c) => (
@@ -266,23 +278,23 @@ function TagsField({ stamp }: { stamp: Stamp }) {
   };
   return (
     <div
-      className="flex min-h-8 flex-wrap items-center gap-1 rounded-md border border-line bg-raised p-1 focus-within:border-accent"
+      className="flex min-h-6 w-full flex-wrap items-center gap-1 rounded-sm border border-line bg-field p-0.5 focus-within:border-accent"
       data-stamp-tags-editor=""
       onClick={(e) => {
         if (e.target === e.currentTarget) ref.current?.focus();
       }}
     >
       {tags.map((tag) => (
-        <span key={tag} className="flex h-5 max-w-full items-center gap-1 rounded-full bg-active pr-0.5 pl-1.5 text-2xs text-text" data-stamp-tag={tag}>
-          <TagGlyph size={10} className="shrink-0 text-faint" />
+        <span key={tag} className="flex h-5 max-w-full items-center gap-1 rounded-sm bg-active pr-0.5 pl-1.5 text-xs text-text" data-stamp-tag={tag}>
+          <TagGlyph size={12} className="shrink-0 text-faint" />
           <span className="truncate">{tag}</span>
           <button
             type="button"
             aria-label={t("stampLib.removeTag", { tag })}
             onClick={() => remove(tag)}
-            className="grid size-4 shrink-0 place-items-center rounded-full text-faint hover:bg-hover hover:text-text"
+            className="grid size-4 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
           >
-            <Icon name="x" size={10} />
+            <Icon name="x" size={12} />
           </button>
         </span>
       ))}

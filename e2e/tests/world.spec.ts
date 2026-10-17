@@ -40,6 +40,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await confirmTilesetCard(page);
   await expect(page.getByRole("grid", { name: /overworld/i })).toBeVisible();
   // The PROJE tree lists the single map, active.
+  await page.locator("[data-library-tab-button='project']").click();
   await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
 
   await page.getByRole("button", { name: "Yeni harita" }).first().click();
@@ -97,6 +98,14 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // ---- Reopen: the position is still there, and the world view shows it.
   await page.reload();
   await page.getByRole("button", { name: /Aç.*Bir proje klasörü seç/ }).click();
+  // The tree can render before the canvas handle is ready to accept W.
+  await expect
+    .poll(() => page.evaluate(async () => {
+      const { getCanvasHandle } = await import(/* @vite-ignore */ String("/src/ui/canvas/canvasHandle.ts"));
+      return getCanvasHandle() !== null;
+    }))
+    .toBe(true);
+  await page.locator("[data-library-tab-button='project']").click();
   await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await page.locator("[data-canvas-host]").focus();
   await page.keyboard.press("w");
@@ -111,10 +120,11 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("[data-status-world]")).toBeHidden();
 
-  // ---- Levels panel click while in the world view opens that level too.
+  // ---- Double-clicking a project row in the world view opens that level too.
   await page.keyboard.press("w");
   await expect(page.locator("[data-status-world]")).toBeVisible();
-  await levelRow(page, "Ana harita").click();
+  await levelRow(page, "Ana harita").dblclick();
+  await page.locator("[data-library-tab-button='project']").click();
   await expect(levelRow(page, "Ana harita")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("[data-status-world]")).toBeHidden();
 

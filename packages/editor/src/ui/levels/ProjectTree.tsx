@@ -8,7 +8,6 @@ import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
 import { RowContextMenu } from "../contextMenus/RowContextMenu";
-import { useLayoutStore } from "../layout/layoutStore";
 import { dropIndex, rowShift } from "../panels/layerOrder";
 import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
@@ -16,8 +15,8 @@ import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { mapItems, showMap } from "./DocumentTabs";
 
-/** Row height in px (keep in sync with `h-7`). */
-const ROW = 28;
+/** Row height in px (keep in sync with `h-6`). */
+const ROW = 24;
 /** Pointer travel before a press turns into a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -30,15 +29,35 @@ interface Drag {
 }
 
 /** A folder row ("Haritalar", "Stamp'ler"): click folds it. */
-function Folder({ label, count, open, onToggle, actions, children }: { label: string; count: number; open: boolean; onToggle(): void; actions?: ReactNode; children: ReactNode }) {
+function Folder({
+  label,
+  count,
+  open,
+  onToggle,
+  actions,
+  children,
+}: {
+  label: string;
+  count: number;
+  open: boolean;
+  onToggle(): void;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div role="group" aria-label={label} className="flex flex-col">
-      <div className="group flex h-7 shrink-0 items-center gap-1 rounded-md pr-1 text-md text-muted hover:bg-hover hover:text-text">
-        <button type="button" aria-expanded={open} onClick={onToggle} data-tree-folder={label} className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-1 text-left">
-          <Icon name={open ? "chevronDown" : "chevronRight"} size={13} className="shrink-0 text-faint" />
-          <Icon name="folder" size={14} className="shrink-0 text-faint" />
+      <div className="group flex h-6 shrink-0 items-center gap-1 rounded-sm pr-1 text-sm text-muted hover:bg-hover hover:text-text">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          data-tree-folder={label}
+          className="flex h-full min-w-0 flex-1 items-center gap-1 text-left"
+        >
+          <Icon name={open ? "chevronDown" : "chevronRight"} size={12} className="shrink-0 text-faint" />
+          <Icon name="folder" size={16} className="shrink-0 text-muted" />
           <span className="truncate">{label}</span>
-          <span className="font-mono text-2xs text-faint tabular">{count}</span>
+          <span className="text-xs text-faint tabular">{count}</span>
         </button>
         {actions}
       </div>
@@ -47,54 +66,15 @@ function Folder({ label, count, open, onToggle, actions, children }: { label: st
   );
 }
 
-/**
- * The PROJE tree: Haritalar (the project's maps: click opens it as a tab,
- * double-click renames, drag reorders, right-click: map actions; a dot
- * marks unsaved maps) and Stamp'ler (click puts the stamp on the brush).
- * `fill` lets it take the whole column (Proje panel) instead of sitting
- * under the library.
- */
-export function ProjectTree({ fill = false }: { fill?: boolean }) {
-  const collapsed = useLayoutStore((s) => s.sections.levels.collapsed === true);
+/** Project tree with maps opened by double-click/Enter and stamps placed by click. */
+export function ProjectTree({ fill: _fill }: { fill?: boolean }) {
   const levelsCount = useProjectLibrary((s) => s.levels.length);
-  const toggle = () => useLayoutStore.getState().setSectionCollapsed("levels", !collapsed);
-  const folded = collapsed && !fill;
   return (
-    <section
-      aria-label={t("project.title")}
-      data-project-tree=""
-      className={`flex min-h-0 flex-col ${fill ? "flex-1" : "shrink-0 border-t border-line"}`}
-      style={fill || folded ? undefined : { maxHeight: "45%" }}
-    >
-      <header className="flex h-9 shrink-0 items-center gap-1 pr-1.5 pl-3">
-        {fill ? (
-          <h2 className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{t("project.title")}</h2>
-        ) : (
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={!folded}
-            data-section-toggle=""
-            className="-ml-1 flex h-6 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-[0.06em] text-muted uppercase hover:bg-hover hover:text-text"
-          >
-            <Icon name={folded ? "chevronRight" : "chevronDown"} size={13} className="shrink-0 text-faint" />
-            {t("project.title")}
-          </button>
-        )}
-        <div className="ml-auto flex items-center">
-          <Tooltip label={t("levels.add")} command="level.new">
-            <IconButton aria-label={t("levels.add")} className="size-7" onClick={() => openNewLevelDialog()}>
-              <Icon name="plus" size={15} />
-            </IconButton>
-          </Tooltip>
-        </div>
-      </header>
-      {!folded && (
-        <div className="flex min-h-0 flex-col overflow-y-auto px-1.5 pb-2" data-levels-count={levelsCount}>
-          <MapsFolder />
-          <StampsFolder />
-        </div>
-      )}
+    <section aria-label={t("project.title")} data-project-tree="" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-col overflow-y-auto p-2" data-levels-count={levelsCount}>
+        <MapsFolder />
+        <StampsFolder />
+      </div>
     </section>
   );
 }
@@ -107,11 +87,13 @@ function MapsFolder() {
   const world = useWorldView((s) => s.view === "world");
   const [open, setOpen] = useState(true);
   const count = levels.length;
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [settling, setSettling] = useState(false);
   const dragRef = useRef<Drag | null>(null);
   const dirty = new Set(dirtyIds);
+  const focusId = levels.some((level) => level.id === focusedId) ? focusedId : levels.some((level) => level.id === activeId) ? activeId : levels[0]?.id;
 
   useEffect(() => {
     if (!settling) return;
@@ -141,15 +123,12 @@ function MapsFolder() {
     dragRef.current = next;
     setDrag(next);
   };
-  const onPointerUp = (level: ProjectLevel) => {
+  const onPointerUp = () => {
     const current = dragRef.current;
     dragRef.current = null;
     setDrag(null);
     if (!current) return;
-    if (!current.active) {
-      showMap(level.id);
-      return;
-    }
+    if (!current.active) return;
     const target = dropIndex(current.from, current.dy, ROW, count);
     if (target !== current.from) {
       setSettling(true);
@@ -162,7 +141,19 @@ function MapsFolder() {
   };
 
   return (
-    <Folder label={t("levels.title")} count={count} open={open} onToggle={() => setOpen(!open)}>
+    <Folder
+      label={t("levels.title")}
+      count={count}
+      open={open}
+      onToggle={() => setOpen(!open)}
+      actions={
+        <Tooltip label={t("levels.add")} command="level.new">
+          <IconButton size="sm" aria-label={t("levels.add")} onClick={() => openNewLevelDialog()}>
+            <Icon name="plus" size={16} />
+          </IconButton>
+        </Tooltip>
+      }
+    >
       <ul role="listbox" aria-label={t("levels.title")} className="relative flex flex-col">
         {levels.map((level, index) => {
           const isActive = !world && level.id === activeId;
@@ -180,23 +171,44 @@ function MapsFolder() {
                   role="option"
                   aria-selected={isActive}
                   data-level-id={level.id}
-                  title={t("levels.rowHint")}
+                  tabIndex={level.id === focusId ? 0 : -1}
+                  onFocus={() => setFocusedId(level.id)}
+                  onClick={(e) => {
+                    if (!e.currentTarget.contains(e.target as Node) || (e.target as HTMLElement).closest("input, button")) return;
+                    e.currentTarget.focus();
+                  }}
+                  onKeyDown={(e) => {
+                    if (editing || picking || e.target !== e.currentTarget) return;
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      showMap(level.id);
+                    } else if (e.key === "F2") {
+                      e.preventDefault();
+                      setEditingId(level.id);
+                    } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+                      e.preventDefault();
+                      const rows = [...e.currentTarget.parentElement!.querySelectorAll<HTMLElement>("[data-level-id]")];
+                      const next =
+                        e.key === "Home" ? 0 : e.key === "End" ? count - 1 : Math.max(0, Math.min(count - 1, index + (e.key === "ArrowDown" ? 1 : -1)));
+                      rows[next]?.focus();
+                    }
+                  }}
                   onPointerDown={(e) => onPointerDown(e, level, index)}
                   onPointerMove={onPointerMove}
-                  onPointerUp={() => onPointerUp(level)}
+                  onPointerUp={onPointerUp}
                   onPointerCancel={onPointerCancel}
                   onDoubleClick={(e) => {
                     if (!e.currentTarget.contains(e.target as Node)) return;
-                    if (!picking && !(e.target as HTMLElement).closest("button")) setEditingId(level.id);
+                    if (!picking && !(e.target as HTMLElement).closest("button, input")) showMap(level.id);
                   }}
                   style={{ transform: y ? `translateY(${y}px)` : undefined }}
-                  className={`group relative flex h-7 shrink-0 items-center gap-2 rounded-md pr-1.5 pl-9 text-md select-none ${
-                    dragged ? "z-10 cursor-grabbing bg-active shadow-popup" : settling ? "" : "transition-transform duration-150 ease-(--ease-out)"
-                  } ${isActive ? "bg-accent-soft text-title" : "text-muted hover:bg-hover hover:text-text"}`}
+                  className={`group relative flex h-6 shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-line items-center gap-1 rounded-sm pr-1.5 pl-8 text-sm select-none ${
+                    dragged ? "z-10 cursor-grabbing bg-active" : settling ? "" : "transition-transform duration-150 ease-(--ease-out)"
+                  } ${isActive ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"}`}
                 />
               }
             >
-              <Icon name="map" size={14} className={`shrink-0 ${isActive ? "text-accent" : "text-faint"}`} />
+              <Icon name="map" size={16} className={`shrink-0 ${isActive ? "text-accent" : "text-muted"}`} />
               {editing ? (
                 <RenameInput
                   initial={level.name}
@@ -227,7 +239,7 @@ function StampsFolder() {
   return (
     <Folder label={t("project.stamps")} count={stamps.length} open={open} onToggle={() => setOpen(!open)}>
       {stamps.length === 0 ? (
-        <span className="h-7 pl-9 text-sm leading-7 text-faint">{t("project.noStamps")}</span>
+        <span className="h-6 pl-4 text-sm leading-6 text-faint">{t("project.noStamps")}</span>
       ) : (
         <ul aria-label={t("project.stamps")} className="flex flex-col">
           {stamps.map((stamp) => {
@@ -251,9 +263,9 @@ function TreeButton({ icon, label, on, onClick, data }: { icon: IconName; label:
       aria-pressed={on}
       data-tree-stamp={data}
       onClick={onClick}
-      className={`flex h-7 w-full items-center gap-2 rounded-md pr-1.5 pl-9 text-left text-md ${on ? "bg-accent-soft text-title" : "text-muted hover:bg-hover hover:text-text"}`}
+      className={`flex h-6 w-full items-center gap-1 rounded-sm pr-1.5 pl-8 text-left text-sm ${on ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"}`}
     >
-      <Icon name={icon} size={14} className={`shrink-0 ${on ? "text-accent" : "text-faint"}`} />
+      <Icon name={icon} size={16} className={`shrink-0 ${on ? "text-accent" : "text-muted"}`} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   );

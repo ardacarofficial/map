@@ -2,13 +2,10 @@ import type { Stamp } from "@smap/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { addStampToRandomSet } from "../../commands/randomBrush";
-import { runCommand } from "../../commands/registry";
-import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, setStampMeta, stampRegion, toggleStampFavorite } from "../../commands/stampActions";
+import { activeStampId, deleteStamp, duplicateStamp, pickStamp, renameStamp, setStampMeta, toggleStampFavorite } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
-import { LibraryTabs } from "../panels/LibraryPanel";
-import { PanelSection } from "../panels/PanelSection";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { RowContextMenu } from "../contextMenus/RowContextMenu";
@@ -16,7 +13,8 @@ import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { openStampEditor } from "../stampEditor/stampEditorSession";
-import { ListGlyph, StarGlyph, TagGlyph, TilesGlyph } from "./glyphs";
+import { StarGlyph, TagGlyph, ListGlyph } from "./glyphs";
+import { TextField } from "../primitives/TextField";
 import { installStampInspector } from "./StampInspector";
 import { NO_FILTER, filterStamps, pruneFilter, stampCategories, stampTags, type StampFilter } from "./stampFilters";
 import { CARD_MAX, CARD_MIN, useStampLibrary } from "./stampLibraryStore";
@@ -25,11 +23,6 @@ import { askText } from "../tileset/TextPrompt";
 import { stampLayerCounts } from "./stampThumb";
 
 installStampInspector();
-
-/** True while the map has a marquee to save. */
-function useCanSave(): boolean {
-  return useEditorStore((s) => s.project !== null && s.region !== null && stampRegion() !== null);
-}
 
 /** "Yerleştir": the stamp goes on the brush (one click places it with all its layers); the card selection makes way for the brush card. */
 export function placeLibraryStamp(id: string): void {
@@ -52,9 +45,27 @@ export async function assignNewCategory(stampId: string): Promise<void> {
 export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry[] {
   const lib = useStampLibrary.getState();
   return [
-    { type: "item", id: "place", label: t("stampLib.place"), icon: "stamp", run: () => placeLibraryStamp(stamp.id) },
-    { type: "item", id: "edit", label: t("stampLib.edit"), icon: "pencil", run: () => void openStampEditor(stamp.id) },
-    { type: "item", id: "rename", label: t("stamps.rename"), icon: "pencilLine", run: onRename },
+    {
+      type: "item",
+      id: "place",
+      label: t("stampLib.place"),
+      icon: "stamp",
+      run: () => placeLibraryStamp(stamp.id),
+    },
+    {
+      type: "item",
+      id: "edit",
+      label: t("stampLib.edit"),
+      icon: "pencil",
+      run: () => void openStampEditor(stamp.id),
+    },
+    {
+      type: "item",
+      id: "rename",
+      label: t("stamps.rename"),
+      icon: "pencilLine",
+      run: onRename,
+    },
     SEPARATOR,
     {
       type: "item",
@@ -63,14 +74,37 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
       icon: "folder",
       submenu: [
         ...stampCategories(useProjectLibrary.getState().stamps).map(
-          (c): ContextEntry => ({ type: "item", id: `category:${c.name}`, label: c.name, checked: stamp.category === c.name, run: () => void setStampMeta(stamp.id, { category: c.name }) }),
+          (c): ContextEntry => ({
+            type: "item",
+            id: `category:${c.name}`,
+            label: c.name,
+            checked: stamp.category === c.name,
+            run: () => void setStampMeta(stamp.id, { category: c.name }),
+          }),
         ),
-        { type: "item", id: "category:none", label: t("stampLib.categoryPlaceholder"), checked: !stamp.category, run: () => void setStampMeta(stamp.id, { category: "" }) },
+        {
+          type: "item",
+          id: "category:none",
+          label: t("stampLib.categoryPlaceholder"),
+          checked: !stamp.category,
+          run: () => void setStampMeta(stamp.id, { category: "" }),
+        },
         SEPARATOR,
-        { type: "item", id: "category:new", label: t("stampLib.newCategory"), run: () => void assignNewCategory(stamp.id) },
+        {
+          type: "item",
+          id: "category:new",
+          label: t("stampLib.newCategory"),
+          run: () => void assignNewCategory(stamp.id),
+        },
       ],
     },
-    { type: "item", id: "tags", label: t("stampLib.tagsMenu"), icon: "bricks", run: () => lib.requestFocus(stamp.id, "tags") },
+    {
+      type: "item",
+      id: "tags",
+      label: t("stampLib.tagsMenu"),
+      icon: "bricks",
+      run: () => lib.requestFocus(stamp.id, "tags"),
+    },
     {
       type: "item",
       id: "favorite",
@@ -79,10 +113,29 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
       run: () => toggleStampFavorite(stamp.id),
     },
     SEPARATOR,
-    { type: "item", id: "duplicate", label: t("contextMenu.duplicate"), icon: "copy", run: () => void duplicateStamp(stamp.id) },
-    { type: "item", id: "addToRandom", label: t("randomSets.addStamp"), icon: "dice", run: () => addStampToRandomSet(stamp.id) },
+    {
+      type: "item",
+      id: "duplicate",
+      label: t("contextMenu.duplicate"),
+      icon: "copy",
+      run: () => void duplicateStamp(stamp.id),
+    },
+    {
+      type: "item",
+      id: "addToRandom",
+      label: t("randomSets.addStamp"),
+      icon: "dice",
+      run: () => addStampToRandomSet(stamp.id),
+    },
     SEPARATOR,
-    { type: "item", id: "delete", label: t("stamps.delete"), icon: "trash", danger: true, run: () => deleteStamp(stamp.id) },
+    {
+      type: "item",
+      id: "delete",
+      label: t("stamps.delete"),
+      icon: "trash",
+      danger: true,
+      run: () => deleteStamp(stamp.id),
+    },
   ];
 }
 
@@ -94,41 +147,19 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
  */
 export function StampsPanel() {
   const stamps = useProjectLibrary((s) => s.stamps);
-  const canSave = useCanSave();
-  return (
-    <PanelSection
-      title={t("panels.stamps")}
-      heading={<LibraryTabs />}
-      className="min-h-[160px] flex-1"
-      actions={
-        <Tooltip label={canSave ? t("stamps.save") : t("stamps.saveDisabled")}>
-          <IconButton aria-label={t("stamps.save")} className="size-7" aria-disabled={!canSave} onClick={() => runCommand("stamp.saveSelection")}>
-            <Icon name="plus" size={15} className={canSave ? "" : "opacity-40"} />
-          </IconButton>
-        </Tooltip>
-      }
-    >
-      {stamps.length === 0 ? <EmptyStamps canSave={canSave} /> : <StampLibrary stamps={stamps} canSave={canSave} />}
-    </PanelSection>
-  );
+  return <StampLibrary stamps={stamps} />;
 }
 
-function EmptyStamps({ canSave }: { canSave: boolean }) {
+function EmptyStamps() {
   return (
-    <div className="mx-3 mb-3 flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-5 text-center">
-      <Icon name="stamp" size={22} className="text-faint" />
-      <div className="text-md text-muted">{t("stamps.empty")}</div>
-      <div className="text-xs leading-4 text-faint">{t("stamps.emptyHint")}</div>
-      <Button variant={canSave ? "primary" : "secondary"} className="mt-1 h-7 px-2.5 text-sm" disabled={!canSave} onClick={() => runCommand("stamp.saveSelection")}>
-        <Icon name="stamp" size={14} />
-        {t("stamps.saveShort")}
-      </Button>
-      {!canSave && <div className="text-2xs text-faint">{t("stamps.saveDisabled")}</div>}
+    <div className="flex flex-col gap-2 p-2 pt-4">
+      <p className="text-sm text-muted">{t("stamps.empty")}</p>
+      <p className="text-xs text-faint">{t("stamps.emptyHint")}</p>
     </div>
   );
 }
 
-function StampLibrary({ stamps, canSave }: { stamps: readonly Stamp[]; canSave: boolean }) {
+function StampLibrary({ stamps }: { stamps: readonly Stamp[] }) {
   const filter = useStampLibrary((s) => s.filter);
   const view = useStampLibrary((s) => s.view);
   const cardSize = useStampLibrary((s) => s.cardSize);
@@ -149,21 +180,41 @@ function StampLibrary({ stamps, canSave }: { stamps: readonly Stamp[]; canSave: 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-stamp-library="">
-      {canSave && (
-        <div className="mx-2 mb-2 flex shrink-0 items-center gap-2 rounded-md border border-accent-line bg-accent-soft py-1 pr-1 pl-2">
-          <Icon name="select" size={14} className="shrink-0 text-accent" />
-          <span className="min-w-0 flex-1 truncate text-xs text-muted">{t("stamps.save")}</span>
-          <Button variant="primary" className="h-6 shrink-0 px-2 text-sm" onClick={() => runCommand("stamp.saveSelection")}>
-            {t("common.save")}
-          </Button>
+      {stamps.length > 0 && <FilterBar stamps={stamps} filter={filter} />}
+      {stamps.length > 0 && (
+        <div className="mb-2 flex h-6 shrink-0 items-center gap-2 px-2">
+          {filtered && (
+            <span className="text-xs text-faint tabular">
+              {t("stampLib.count", {
+                shown: shown.length,
+                total: stamps.length,
+              })}
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            {view === "grid" && (
+              <input
+                type="range"
+                min={CARD_MIN}
+                max={CARD_MAX}
+                step={4}
+                value={cardSize}
+                aria-label={t("stampLib.cardSize")}
+                data-stamp-card-size=""
+                onChange={(e) => useStampLibrary.getState().setCardSize(Number(e.target.value))}
+                className="h-1 w-16 cursor-pointer accent-accent"
+              />
+            )}
+            <ViewToggle view={view} />
+          </div>
         </div>
       )}
-      <FilterBar stamps={stamps} filter={filter} />
-      {shown.length === 0 ? (
-        <div className="mx-3 my-2 flex flex-1 flex-col items-center justify-center gap-2 text-center" data-stamp-nomatch="">
-          <Icon name="search" size={20} className="text-faint" />
-          <span className="text-md text-muted">{t("stampLib.noMatch")}</span>
-          <Button className="h-7 px-2.5 text-sm" onClick={() => useStampLibrary.getState().setFilter(NO_FILTER)}>
+      {stamps.length === 0 ? (
+        <EmptyStamps />
+      ) : shown.length === 0 ? (
+        <div className="flex flex-col items-start gap-2 p-2" data-stamp-nomatch="">
+          <span className="text-sm text-muted">{t("stampLib.noMatch")}</span>
+          <Button variant="ghost" size="sm" onClick={() => useStampLibrary.getState().setFilter(NO_FILTER)}>
             {t("stampLib.resetFilters")}
           </Button>
         </div>
@@ -178,12 +229,14 @@ function StampLibrary({ stamps, canSave }: { stamps: readonly Stamp[]; canSave: 
               useStampLibrary.getState().select(null);
             }
           }}
-          className={
+          className={view === "grid" ? "grid min-h-0 flex-1 auto-rows-min gap-1.5 overflow-y-auto px-2 pb-2" : "flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 pb-2"}
+          style={
             view === "grid"
-              ? "grid min-h-0 flex-1 auto-rows-min gap-1.5 overflow-y-auto px-2 pb-2"
-              : "flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 pb-2"
+              ? {
+                  gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))`,
+                }
+              : undefined
           }
-          style={view === "grid" ? { gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` } : undefined}
         >
           {shown.map((stamp) => (
             <StampItem
@@ -199,29 +252,6 @@ function StampLibrary({ stamps, canSave }: { stamps: readonly Stamp[]; canSave: 
           ))}
         </ul>
       )}
-      <footer className="flex h-8 shrink-0 items-center gap-2 border-t border-line-subtle pr-1.5 pl-3 text-2xs text-faint">
-        <Tooltip label={t("stampLib.hint")} side="top">
-          <span role="img" aria-label={t("stampLib.hint")} data-stamp-lib-hint="" className="grid size-5 shrink-0 cursor-help place-items-center rounded-sm text-faint hover:text-muted">
-            <Icon name="info" size={13} />
-          </span>
-        </Tooltip>
-        <span className="min-w-0 flex-1 truncate font-mono tabular">{filtered ? t("stampLib.count", { shown: shown.length, total: stamps.length }) : null}</span>
-        {view === "grid" && (
-          <input
-            type="range"
-            min={CARD_MIN}
-            max={CARD_MAX}
-            step={4}
-            value={cardSize}
-            aria-label={t("stampLib.cardSize")}
-            title={t("stampLib.cardSize")}
-            data-stamp-card-size=""
-            onChange={(e) => useStampLibrary.getState().setCardSize(Number(e.target.value))}
-            className="h-1 w-20 shrink-0 cursor-pointer accent-accent"
-          />
-        )}
-        <ViewToggle view={view} />
-      </footer>
     </div>
   );
 }
@@ -230,22 +260,15 @@ function ViewToggle({ view }: { view: "grid" | "list" }) {
   const set = useStampLibrary.getState().setView;
   const item = (id: "grid" | "list", label: string, glyph: ReactNode) => (
     <Tooltip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        aria-pressed={view === id}
-        data-stamp-view-button={id}
-        onClick={() => set(id)}
-        className={`grid size-6 place-items-center rounded-sm transition-colors ${view === id ? "bg-active text-accent" : "text-faint hover:bg-hover hover:text-text"}`}
-      >
+      <IconButton size="sm" active={view === id} aria-label={label} aria-pressed={view === id} data-stamp-view-button={id} onClick={() => set(id)}>
         {glyph}
-      </button>
+      </IconButton>
     </Tooltip>
   );
   return (
     <div className="flex shrink-0 items-center gap-0.5">
-      {item("grid", t("stampLib.gridView"), <TilesGlyph size={13} />)}
-      {item("list", t("stampLib.listView"), <ListGlyph size={13} />)}
+      {item("grid", t("stampLib.gridView"), <Icon name="grid-3x3" size={16} />)}
+      {item("list", t("stampLib.listView"), <ListGlyph size={16} />)}
     </div>
   );
 }
@@ -257,48 +280,46 @@ function FilterBar({ stamps, filter }: { stamps: readonly Stamp[]; filter: Stamp
   const tags = useMemo(() => stampTags(stamps), [stamps]);
   const favorites = stamps.filter((s) => s.favorite).length;
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 px-2 pb-2" data-stamp-filters="">
+    <div className="flex shrink-0 flex-col gap-2 p-2" data-stamp-filters="">
       <div className="flex items-center gap-1.5">
-        <label className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-raised px-2 focus-within:border-accent">
-          <Icon name="search" size={13} className="shrink-0 text-faint" />
-          <input
-            value={filter.query}
-            onChange={(e) => setFilter({ query: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && filter.query !== "") {
-                e.preventDefault();
-                e.stopPropagation();
-                setFilter({ query: "" });
-              }
-            }}
-            placeholder={t("stampLib.search")}
-            aria-label={t("stampLib.search")}
-            data-stamp-search=""
-            spellCheck={false}
-            autoComplete="off"
-            className="h-full min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-faint focus:outline-none"
-          />
-          {filter.query !== "" && (
-            <button type="button" aria-label={t("stampLib.clearSearch")} onClick={() => setFilter({ query: "" })} className="grid size-4 place-items-center rounded-xs text-faint hover:text-text">
-              <Icon name="x" size={11} />
-            </button>
-          )}
-        </label>
+        <TextField
+          size="sm"
+          leadingIcon="search"
+          className="flex-1"
+          value={filter.query}
+          onChange={(e) => setFilter({ query: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && filter.query !== "") {
+              e.preventDefault();
+              e.stopPropagation();
+              setFilter({ query: "" });
+            }
+          }}
+          placeholder={t("stampLib.search")}
+          aria-label={t("stampLib.search")}
+          data-stamp-search=""
+          spellCheck={false}
+          autoComplete="off"
+          trailing={
+            filter.query !== "" && (
+              <button type="button" aria-label={t("stampLib.clearSearch")} onClick={() => setFilter({ query: "" })} className="text-faint hover:text-text">
+                <Icon name="x" size={12} />
+              </button>
+            )
+          }
+        />
         <Tooltip label={t("stampLib.favoritesOnly")}>
-          <button
-            type="button"
+          <IconButton
+            size="sm"
+            active={filter.favoritesOnly}
             aria-label={t("stampLib.favoritesOnly")}
             aria-pressed={filter.favoritesOnly}
             data-stamp-favorites=""
             disabled={favorites === 0 && !filter.favoritesOnly}
             onClick={() => setFilter({ favoritesOnly: !filter.favoritesOnly })}
-            className={`flex h-7 shrink-0 items-center gap-1 rounded-md border px-1.5 text-2xs transition-colors disabled:opacity-40 ${
-              filter.favoritesOnly ? "border-accent-line bg-accent-soft text-warning" : "border-line bg-raised text-faint hover:border-line-strong hover:text-text"
-            }`}
           >
-            <StarGlyph on={filter.favoritesOnly} size={13} />
-            <span className="font-mono tabular">{favorites}</span>
-          </button>
+            <StarGlyph on={filter.favoritesOnly} size={16} />
+          </IconButton>
         </Tooltip>
       </div>
       {categories.length > 0 && (
@@ -307,7 +328,17 @@ function FilterBar({ stamps, filter }: { stamps: readonly Stamp[]; filter: Stamp
             {t("stampLib.all")}
           </Chip>
           {categories.map((c) => (
-            <Chip key={c.name} on={filter.category === c.name} count={c.count} onClick={() => setFilter({ category: filter.category === c.name ? null : c.name })} data={c.name}>
+            <Chip
+              key={c.name}
+              on={filter.category === c.name}
+              count={c.count}
+              onClick={() =>
+                setFilter({
+                  category: filter.category === c.name ? null : c.name,
+                })
+              }
+              data={c.name}
+            >
               {c.name}
             </Chip>
           ))}
@@ -322,11 +353,11 @@ function FilterBar({ stamps, filter }: { stamps: readonly Stamp[]; filter: Stamp
               aria-pressed={filter.tag === tag.name}
               data-stamp-tag-chip={tag.name}
               onClick={() => setFilter({ tag: filter.tag === tag.name ? null : tag.name })}
-              className={`flex h-5 max-w-full items-center gap-1 rounded-full px-1.5 text-2xs transition-colors ${
-                filter.tag === tag.name ? "bg-accent text-on-accent" : "bg-raised text-muted hover:bg-hover hover:text-text"
+              className={`flex h-5 max-w-full items-center gap-1 rounded-sm border px-2 text-sm transition-colors ${
+                filter.tag === tag.name ? "border-accent-line bg-accent-soft text-title" : "border-line-subtle text-muted hover:bg-hover hover:text-text"
               }`}
             >
-              <TagGlyph size={10} className="shrink-0" />
+              <TagGlyph size={12} className="shrink-0" />
               <span className="truncate">{tag.name}</span>
             </button>
           ))}
@@ -343,12 +374,12 @@ function Chip({ on, count, onClick, data, children }: { on: boolean; count: numb
       aria-pressed={on}
       data-stamp-category-chip={data}
       onClick={onClick}
-      className={`flex h-6 max-w-full items-center gap-1.5 rounded-md border px-2 text-sm transition-colors ${
-        on ? "border-accent-line bg-accent-soft text-accent" : "border-line-subtle text-muted hover:border-line-strong hover:text-text"
+      className={`flex h-6 max-w-full items-center gap-1.5 rounded-sm border px-2 text-sm transition-colors ${
+        on ? "border-accent-line bg-accent-soft text-title" : "border-line-subtle text-muted hover:bg-hover hover:text-text"
       }`}
     >
       <span className="truncate">{children}</span>
-      <span className={`font-mono text-2xs tabular ${on ? "text-accent/80" : "text-faint"}`}>{count}</span>
+      <span className="text-xs text-faint tabular">{count}</span>
     </button>
   );
 }
@@ -376,7 +407,6 @@ function StampItem({
     <RenameInput
       initial={stamp.name}
       label={t("stamps.nameLabel")}
-      className="h-5 text-sm"
       onDone={(next) => {
         onEdit(false);
         if (next !== null) renameStamp(stamp.id, next);
@@ -386,11 +416,11 @@ function StampItem({
     <span className={`min-w-0 flex-1 truncate text-sm ${selected || onBrush ? "text-title" : "text-text"}`}>{stamp.name}</span>
   );
   const meta = (
-    <span className="flex min-w-0 items-center gap-1 font-mono text-2xs text-faint tabular">
+    <span className="flex min-w-0 items-center gap-1 text-xs text-faint tabular">
       {t("stamps.size", { width: stamp.width, height: stamp.height })}
       <span aria-hidden>·</span>
       <span className="truncate font-sans">{t("stamps.layers", { count: counts.tile + counts.grid })}</span>
-      {counts.grid > 0 && <Icon name="shield" size={10} className="shrink-0 text-collision-solid/80" />}
+      {counts.grid > 0 && <Icon name="shield" size={12} className="shrink-0 text-muted" />}
       {view === "list" && stamp.category && (
         <>
           <span aria-hidden>·</span>
@@ -411,12 +441,19 @@ function StampItem({
       }}
       onDoubleClick={(e) => e.stopPropagation()}
       className={`grid size-6 shrink-0 place-items-center rounded-sm transition-colors hover:bg-active ${
-        stamp.favorite ? "text-warning" : "text-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 hover:text-text focus-visible:opacity-100"
+        stamp.favorite ? "text-text" : "text-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 hover:text-text focus-visible:opacity-100"
       } ${selected && !stamp.favorite ? "opacity-100" : ""}`}
     >
-      <StarGlyph on={!!stamp.favorite} size={13} />
+      <StarGlyph on={!!stamp.favorite} size={16} />
     </button>
   );
+  const active = onBrush ? (
+    <Tooltip label={t("stamps.active")}>
+      <span role="img" aria-label={t("stamps.active")} className="shrink-0 text-accent">
+        <Icon name="stamp" size={12} />
+      </span>
+    </Tooltip>
+  ) : null;
   return (
     <RowContextMenu
       disabled={editing}
@@ -456,11 +493,9 @@ function StampItem({
           onFocus={(e) => {
             if (e.target === e.currentTarget) select();
           }}
-          className={`group relative flex min-w-0 cursor-default rounded-md border transition-colors focus-visible:outline-offset-0 ${
-            view === "grid" ? "flex-col gap-1 p-1" : "items-center gap-2 p-1 pr-0.5"
-          } ${selected ? "border-accent bg-accent-soft" : onBrush ? "border-accent-line" : "border-transparent hover:border-line-strong hover:bg-hover"} ${
-            view === "grid" && !selected && !onBrush ? "border-line-subtle" : ""
-          }`}
+          className={`group relative flex min-w-0 cursor-default rounded-md border transition-colors outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-line ${
+            view === "grid" ? "flex-col gap-1 p-1" : "h-10 items-center gap-2 p-1"
+          } ${selected ? "border-accent-line bg-accent-soft" : onBrush ? "border-accent-line" : "border-transparent hover:bg-hover"}`}
         />
       }
     >
@@ -469,24 +504,24 @@ function StampItem({
           <StampThumb stamp={stamp} height={thumbHeight} />
           <div className="flex min-w-0 items-start gap-0.5 pb-0.5 pl-0.5">
             <div className="flex min-w-0 flex-1 flex-col">
-              {name}
+              <span className="flex min-w-0 items-center gap-1">
+                {name}
+                {active}
+              </span>
               {meta}
             </div>
             {star}
           </div>
-          {onBrush && (
-            <span className="absolute top-1.5 left-1.5 rounded-xs bg-accent px-1 text-2xs leading-[14px] font-medium text-on-accent">{t("stamps.active")}</span>
-          )}
         </>
       ) : (
         <>
           <div className="w-12 shrink-0">
-            <StampThumb stamp={stamp} height={36} pad={2} />
+            <StampThumb stamp={stamp} height={30} pad={2} />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-1.5">
               {name}
-              {onBrush && <span className="shrink-0 rounded-xs bg-accent px-1 text-2xs leading-[14px] font-medium text-on-accent">{t("stamps.active")}</span>}
+              {active}
             </span>
             {meta}
           </div>

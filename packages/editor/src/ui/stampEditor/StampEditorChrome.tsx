@@ -9,8 +9,8 @@ import { useEffect } from "react";
 import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { backdropClass, popupClass } from "../dialogs/styles";
-import { Button } from "../primitives/Button";
+import { backdropClass, popupClass, dialogWidthS } from "../dialogs/styles";
+import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import {
@@ -39,7 +39,7 @@ function useSessionView() {
   return { session, active: active && !world, dirty: isStampSessionDirty(session), name: session ? sessionStampName(session) : "" };
 }
 
-/** The open stamp's document tab (after the map tabs). */
+/** The open stamp's document tab; its 180px cap follows the document-tab layout. */
 export function StampDocTab({ disabled }: { disabled: boolean }) {
   const { session, active, dirty, name } = useSessionView();
   if (!session) return null;
@@ -68,25 +68,23 @@ export function StampDocTab({ disabled }: { disabled: boolean }) {
           void closeStampEditor();
         }
       }}
-      className={`group relative flex max-w-[240px] min-w-0 shrink-0 cursor-default items-center gap-2 border-r border-line pr-1.5 pl-3 text-md transition-colors duration-100 outline-none focus-visible:bg-hover ${
+      className={`group relative flex h-7 max-w-[180px] min-w-0 shrink-0 cursor-default items-center gap-2 border-r border-line pr-1.5 pl-3 text-sm transition-colors duration-100 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-line ${
         active ? "bg-panel text-title" : "text-muted hover:bg-hover hover:text-text"
       }`}
     >
-      <Icon name="stamp" size={13} className={active ? "shrink-0 text-accent" : "shrink-0 text-faint"} />
+      <Icon name="stamp" size={16} className={active ? "shrink-0 text-accent" : "shrink-0 text-muted"} />
       <span className="min-w-0 truncate">{label}</span>
       {dirty && <span role="img" aria-label={t("levels.unsaved")} title={t("levels.unsaved")} className="size-1.5 shrink-0 rounded-full bg-warning" />}
-      <button
-        type="button"
+      <IconButton
+        size="sm"
         aria-label={t("stampEditor.close", { name })}
         title={t("docTabs.close")}
         disabled={disabled}
         onClick={() => void closeStampEditor()}
-        className={`grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-active hover:text-text disabled:invisible ${
-          active ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-        }`}
+        className={`disabled:invisible ${active ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
       >
         <Icon name="x" size={12} />
-      </button>
+      </IconButton>
       {active && <span aria-hidden className="absolute right-0 bottom-0 left-0 h-0.5 bg-accent" />}
     </div>
   );
@@ -101,24 +99,22 @@ export function StampEditorBanner() {
       role="region"
       aria-label={t("stampEditor.banner")}
       data-stamp-banner=""
-      className="flex h-9 shrink-0 items-center gap-3 border-b border-accent-line bg-accent-soft pr-2 pl-3 text-md"
+      className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel px-2 text-sm"
     >
-      <Icon name="stamp" size={15} className="shrink-0 text-accent" />
-      <span className="shrink-0 font-semibold text-title">{t("stampEditor.banner")}</span>
+      <Icon name="stamp" size={16} className="shrink-0 text-accent" />
+      <Tooltip label={t("stampEditor.note")}>
+        <span className="shrink-0 font-medium text-title">{t("stampEditor.banner")}</span>
+      </Tooltip>
       <span className="min-w-0 shrink truncate text-text">{name}</span>
-      <span aria-hidden className="text-faint">·</span>
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
-        <Icon name="info" size={13} className="shrink-0" />
-        <span className="truncate">{t("stampEditor.note")}</span>
-      </span>
+      <span className="flex-1" />
       <Tooltip label={t("stampEditor.discardHint")}>
-        <Button variant="ghost" className="h-7 shrink-0 px-2.5 text-sm" onClick={() => discardStampEditor()} data-stamp-discard="">
+        <Button variant="ghost" size="sm" onClick={() => discardStampEditor()} data-stamp-discard="">
           {t("stampEditor.discard")}
         </Button>
       </Tooltip>
       <Tooltip label={t("stampEditor.saveHint")}>
-        <Button variant="primary" className="h-7 shrink-0 px-3 text-sm" onClick={() => saveStampEditor()} data-stamp-save="">
-          <Icon name="check" size={14} />
+        <Button variant="primary" size="sm" onClick={() => saveStampEditor()} data-stamp-save="">
+          <Icon name="check" size={16} />
           {dirty ? t("stampEditor.save") : t("stampEditor.done")}
         </Button>
       </Tooltip>
@@ -133,10 +129,21 @@ export function StampCloseDialog() {
     <AlertDialog.Root open={request !== null} onOpenChange={(open) => !open && request?.resolve("cancel")}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className={backdropClass} />
-        <AlertDialog.Popup className={`${popupClass} w-[420px] max-w-[calc(100vw-32px)] p-5`} data-stamp-close-dialog="">
-          <AlertDialog.Title className="text-lg font-semibold">{t("stampEditor.closeTitle")}</AlertDialog.Title>
-          <AlertDialog.Description className="mt-1.5 text-md text-muted">{t("stampEditor.closeDescription", { name: request?.name ?? "" })}</AlertDialog.Description>
-          <div className="mt-5 flex gap-2">
+        <AlertDialog.Popup className={`${popupClass} ${dialogWidthS} p-4`} data-stamp-close-dialog="">
+          <div className="flex items-center gap-2">
+            <AlertDialog.Title className="min-w-0 flex-1 text-lg font-semibold text-title">{t("stampEditor.closeTitle")}</AlertDialog.Title>
+            <AlertDialog.Close
+              render={
+                <IconButton size="sm" aria-label={t("common.close")}>
+                  <Icon name="x" size={16} />
+                </IconButton>
+              }
+            />
+          </div>
+          <AlertDialog.Description className="mt-2 text-md text-muted">
+            {t("stampEditor.closeDescription", { name: request?.name ?? "" })}
+          </AlertDialog.Description>
+          <div className="mt-4 flex gap-2">
             <Button variant="ghost" onClick={() => request?.resolve("discard")}>
               {t("common.dontSave")}
             </Button>
