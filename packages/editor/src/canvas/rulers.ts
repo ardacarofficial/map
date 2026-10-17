@@ -1,6 +1,6 @@
 /**
  * Tile-coordinate rulers along the top and left edges of the map canvas
- * (20 CSS px, mono 10 px, faint). Plain DOM: two 2D canvases and a corner
+ * (20 CSS px, sans 10 px, faint). Plain DOM: two 2D canvases and a corner
  * square in the canvas container; the map canvas is inset by the ruler size
  * while they are shown. Redrawn only when the camera, the hovered cell or
  * the map size changes. The hovered cell is highlighted on both rulers.
@@ -36,15 +36,14 @@ interface RulerColors {
 
 function readColors(el: Element): RulerColors {
   const style = getComputedStyle(el);
-  const v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
-  const mono = v("--font-mono", "ui-monospace, monospace");
+  const v = (name: string) => style.getPropertyValue(name).trim();
   return {
-    bg: v("--color-panel", "#19191c"),
-    line: v("--color-line", "#2a2a30"),
-    tick: v("--color-line-strong", "#3a3a42"),
-    text: v("--color-faint", "#6c6c76"),
-    accent: v("--color-accent", "#3dd6b0"),
-    font: `10px ${mono}`,
+    bg: v("--color-bg"),
+    line: v("--color-line"),
+    tick: v("--color-line-subtle"),
+    text: v("--color-faint"),
+    accent: v("--color-accent"),
+    font: `10px ${v("--font-sans")}`,
   };
 }
 
@@ -117,7 +116,7 @@ export class Rulers {
     this.#corner.remove();
   }
 
-  /** One ruler: `length` CSS px along its axis (`vertical`: the left ruler, labels turned -90°). */
+  /** One ruler: `length` CSS px along its axis (`vertical`: the left ruler, long labels turned -90°). */
   #drawOne(
     canvas: HTMLCanvasElement,
     length: number,
@@ -143,7 +142,7 @@ export class Rulers {
     const px = 1 / res;
     // Inner edge line (towards the map).
     ctx.fillStyle = c.line;
-    ctx.fillRect(0, RULER_SIZE - px, length, px);
+    ctx.fillRect(0, RULER_SIZE - 1, length, 1);
     if (!axis) return;
     const span = cellSpan(axis.origin, axis.cell, length, axis.hover, axis.cells);
     if (span) {
@@ -181,8 +180,8 @@ export class Rulers {
 
 /**
  * A cell number just after the tick at `at` (along the ruler). On the left
- * ruler it is turned to read bottom-to-top (the drawing space there is
- * mirrored, so a mirror back is a quarter turn).
+ * ruler short numbers stay horizontal; longer numbers read bottom-to-top
+ * (the mirrored drawing space makes a mirror back a quarter turn).
  */
 function label(ctx: CanvasRenderingContext2D, text: string, at: number, vertical: boolean): void {
   if (!vertical) {
@@ -191,9 +190,16 @@ function label(ctx: CanvasRenderingContext2D, text: string, at: number, vertical
     return;
   }
   ctx.save();
-  ctx.translate(at + 3, 4);
-  ctx.scale(-1, 1);
-  ctx.textAlign = "right";
-  ctx.fillText(text, 0, 0);
+  if (ctx.measureText(text).width <= 16) {
+    // Undo the vertical ruler's along/across transform for horizontal digits.
+    ctx.transform(0, 1, 1, 0, 0, 0);
+    ctx.textAlign = "center";
+    ctx.fillText(text, RULER_SIZE / 2, at + 3);
+  } else {
+    ctx.translate(at + 3, 4);
+    ctx.scale(-1, 1);
+    ctx.textAlign = "right";
+    ctx.fillText(text, 0, 0);
+  }
   ctx.restore();
 }

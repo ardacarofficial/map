@@ -1,6 +1,7 @@
 import { useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import { t } from "../../i18n";
+import { Tooltip } from "../primitives/Tooltip";
 import { COLUMNS, type ColumnId } from "./columns";
 import { useLayoutStore } from "./layoutStore";
 
@@ -49,7 +50,7 @@ export function ResizeHandle({ column, edge, width }: { column: ColumnId; edge: 
   };
 
   return (
-    <div
+    <Tooltip label={t("layout.resizeHint")} side={edge === "right" ? "right" : "left"}><div
       role="separator"
       aria-orientation="vertical"
       aria-label={t("layout.resize")}
@@ -57,7 +58,6 @@ export function ResizeHandle({ column, edge, width }: { column: ColumnId; edge: 
       aria-valuemax={spec.max}
       aria-valuenow={width}
       tabIndex={0}
-      title={t("layout.resizeHint")}
       data-resize-handle={column}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -67,10 +67,10 @@ export function ResizeHandle({ column, edge, width }: { column: ColumnId; edge: 
       onDoubleClick={() => reset(column)}
       onKeyDown={onKeyDown}
       className={`group absolute top-0 bottom-0 z-20 w-1.5 cursor-col-resize touch-none outline-none ${
-        edge === "right" ? "-right-[3px]" : "-left-[3px]"
+        edge === "right" ? "-right-0.5" : "-left-0.5"
       }`}
     >
-      <div className="mx-auto h-full w-px bg-transparent transition-colors duration-100 group-hover:bg-accent-line group-focus-visible:bg-accent group-active:bg-accent" />
-    </div>
+      <div className="mx-auto h-full w-px bg-transparent transition-colors duration-(--duration-fast) group-hover:bg-accent-line group-focus-visible:bg-accent group-active:bg-accent" />
+    </div></Tooltip>
   );
 }

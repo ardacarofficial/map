@@ -31,7 +31,7 @@ export const INSPECTOR_COLLAPSED_KEY = "smap.layout.inspectorCollapsed";
 export const RECENT_HIDDEN_KEY = "smap.layout.recentHidden";
 /** localStorage key of the bottom dock's height. */
 export const DOCK_HEIGHT_KEY = "smap.layout.dockHeight";
-/** localStorage key of the left panel the rail shows. */
+/** localStorage key shared by the library tabs and legacy leftPanel API. */
 export const LEFT_PANEL_KEY = "smap.layout.leftPanel";
 /** localStorage key of the rulers flag. */
 export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
@@ -40,23 +40,15 @@ export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
  * Bottom dock height (CSS px, tab strip included): the range a drag may
  * reach, and the range of the default height ({@link defaultDockHeight}).
  */
-export const DOCK = { initial: 180, min: 96, max: 480, autoMax: 340 } as const;
+export const DOCK = { initial: 324, min: 96, max: 480 } as const;
 
-/**
- * Space the editor keeps for everything but the dock (app bar, tabs, tool
- * bar, status bar ≈ 146 px, canvas ≈ 445 px): the default dock grows into
- * what is left.
- */
-const DOCK_RESERVE = 590;
+/** Dock chrome: 28px tabs, 32px controls and 8px padding. */
+const DOCK_RESERVE = 28 + 32 + 8;
 
-/**
- * Default dock height for a window `viewportHeight` px tall: as tall as the
- * canvas can spare (it keeps ≈ 445 px), between 180 and 340 px — a whole
- * 8 × 8 tileset of 32 px tiles from 900 px up, the canvas first below that.
- */
+/** Eight 32px tile rows plus chrome, capped at 40% of the viewport. */
 export function defaultDockHeight(viewportHeight: number): number {
   if (!Number.isFinite(viewportHeight)) return DOCK.initial;
-  return Math.min(DOCK.autoMax, Math.max(DOCK.initial, Math.round(viewportHeight - DOCK_RESERVE)));
+  return clampDockHeight(Math.min(8 * 32 + DOCK_RESERVE, 0.4 * viewportHeight));
 }
 
 /** The dock height to lay out: the user's (dragged) height, or the default for the window. */
@@ -64,8 +56,9 @@ export function effectiveDockHeight(dockHeight: number | null, viewportHeight: n
   return dockHeight ?? defaultDockHeight(viewportHeight);
 }
 
-/** What the left column shows (rail buttons): the library, or the project tree on its own. */
+/** Legacy left-panel names; library corresponds to the stamps tab. */
 export type LeftPanel = "library" | "project";
+export type LeftPanelTab = "stamps" | "project";
 /** Right column tabs. */
 export type RightTab = "inspector" | "history";
 
@@ -122,6 +115,10 @@ export interface LayoutState {
   dockTab: string | null;
   /** What the left column shows. */
   leftPanel: LeftPanel;
+  /** Library tabs, persisted under LEFT_PANEL_KEY; kept in sync with leftPanel (stamps ⇔ library). */
+  leftPanelTab: LeftPanelTab;
+  /** Selects and persists a tab; opens a collapsed column and never collapses it. */
+  setLeftPanelTab(tab: LeftPanelTab): void;
   /** Selected right column tab. */
   rightTab: RightTab;
   /** Rulers along the canvas' top and left edges. */
@@ -183,6 +180,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
   dockHeight: readDockHeight(storage()),
   dockTab: null,
   leftPanel: readLeftPanel(storage()),
+  leftPanelTab: readLeftPanel(storage()) === "project" ? "project" : "stamps",
   rightTab: "inspector",
   rulersVisible: !readFlag(RULERS_HIDDEN_KEY, storage()),
   sections: readSections(storage()),
@@ -221,13 +219,19 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     if (commit) writeRaw(storage(), DOCK_HEIGHT_KEY, dockHeight === null ? "" : String(dockHeight));
   },
   setDockTab: (dockTab) => set({ dockTab }),
+  setLeftPanelTab: (leftPanelTab) => {
+    const leftPanel = leftPanelTab === "stamps" ? "library" : "project";
+    set({ leftPanelTab, leftPanel, libraryCollapsed: false });
+    writeRaw(storage(), LEFT_PANEL_KEY, leftPanelTab);
+    writeFlag(LIBRARY_COLLAPSED_KEY, storage(), false);
+  },
   showLeftPanel: (panel) => {
     const s = get();
     if (s.leftPanel === panel && !s.libraryCollapsed) {
       s.setLibraryCollapsed(true);
       return;
     }
-    set({ leftPanel: panel });
+    set({ leftPanel: panel, leftPanelTab: panel === "library" ? "stamps" : "project" });
     writeRaw(storage(), LEFT_PANEL_KEY, panel);
     if (s.libraryCollapsed) s.setLibraryCollapsed(false);
   },
@@ -261,6 +265,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
       recentHidden: false,
       dockHeight: null,
       leftPanel: "library",
+      leftPanelTab: "stamps",
       rulersVisible: true,
       sections: DEFAULT_SECTIONS,
     });
@@ -271,7 +276,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     writeFlag(INSPECTOR_COLLAPSED_KEY, s, false);
     writeFlag(RECENT_HIDDEN_KEY, s, false);
     writeRaw(s, DOCK_HEIGHT_KEY, "");
-    writeRaw(s, LEFT_PANEL_KEY, "library");
+    writeRaw(s, LEFT_PANEL_KEY, "stamps");
     writeFlag(RULERS_HIDDEN_KEY, s, false);
     writeSections(s, DEFAULT_SECTIONS);
   },

@@ -7,8 +7,9 @@ import { openRecentProject } from "../../io/session";
 import { forgetRecentProject, useRecentProjects } from "../../platform/recentProjects";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { Icon } from "../primitives/Icon";
-import { Kbd } from "../primitives/Kbd";
-import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { Tooltip } from "../primitives/Tooltip";
+import { KbdText } from "../primitives/Kbd";
+import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass, menuShortcutClass, menuDangerItemClass } from "../primitives/menuStyles";
 import { MENUS, resolveMenu, type CommandLookup, type MenuDef } from "./menuModel";
 
 /** Live registry + shortcut list (read each time a menu opens). */
@@ -30,7 +31,7 @@ const registryLookup: CommandLookup = {
  */
 export function MenuBar() {
   return (
-    <Menubar modal={false} className="flex h-full items-center gap-0.5" aria-label={t("menu.bar")}>
+    <Menubar modal={false} className="flex h-full shrink-0 items-center" aria-label={t("menu.bar")}>
       {MENUS.map((menu) => (
         <MenuBarMenu key={menu.id} menu={menu} />
       ))}
@@ -43,13 +44,13 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
     <Menu.Root>
       <Menu.Trigger
         data-menu={menu.id}
-        className="flex h-7 items-center rounded-md px-2 text-md text-muted outline-none transition-colors duration-100 hover:bg-hover hover:text-text focus-visible:bg-hover data-popup-open:bg-active data-popup-open:text-text"
+        className="flex h-control-md items-center rounded-sm px-2 text-sm text-muted outline-none transition-colors duration-(--duration-fast) hover:bg-hover hover:text-text focus-visible:bg-hover data-popup-open:bg-active data-popup-open:text-text"
       >
         {t(menu.label)}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} min-w-[240px]`}>
+          <Menu.Popup className={`${menuPopupClass} min-w-56`}>
             <MenuItems menu={menu} />
           </Menu.Popup>
         </Menu.Positioner>
@@ -61,8 +62,8 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
 /** Check mark slot of menus that have toggle items (keeps labels aligned). */
 function CheckSlot({ on }: { on: boolean }) {
   return (
-    <span aria-hidden className="grid size-4 shrink-0 place-items-center text-accent">
-      {on && <Icon name="check" size={13} />}
+    <span aria-hidden className="grid size-4 shrink-0 place-items-center text-muted">
+      {on && <Icon name="tick" size={12} />}
     </span>
   );
 }
@@ -77,7 +78,7 @@ function MenuItems({ menu }: { menu: MenuDef }) {
       <>
         {checks && <CheckSlot on={entry.checked === true} />}
         <span className="min-w-0 flex-1 truncate">{t(entry.title)}</span>
-        {entry.shortcut && <Kbd keys={entry.shortcut} className="ml-6 shrink-0" />}
+        {entry.shortcut && <KbdText keys={entry.shortcut} className={`${menuShortcutClass} shrink-0 pl-6`} />}
       </>
     );
     const item =
@@ -89,7 +90,7 @@ function MenuItems({ menu }: { menu: MenuDef }) {
           checked={entry.checked}
           closeOnClick
           onCheckedChange={() => runCommand(entry.command)}
-          className={`${menuItemClass} py-1 text-sm`}
+          className={menuItemClass}
         >
           {label}
         </Menu.CheckboxItem>
@@ -98,7 +99,7 @@ function MenuItems({ menu }: { menu: MenuDef }) {
           key={entry.command}
           data-command={entry.command}
           disabled={!entry.enabled}
-          className={`${menuItemClass} py-1 text-sm`}
+          className={`${menuItemClass} ${entry.command === "layer.remove" || entry.command === "level.remove" ? menuDangerItemClass : ""}`}
           onClick={() => runCommand(entry.command)}
         >
           {label}
@@ -115,15 +116,15 @@ function RecentProjectsSubmenu() {
   if (!supported) return null;
   return (
     <Menu.SubmenuRoot>
-      <Menu.SubmenuTrigger data-submenu="recentProjects" className={`${menuItemClass} py-1 text-sm data-popup-open:bg-hover`}>
+      <Menu.SubmenuTrigger data-submenu="recentProjects" className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
         <span className="min-w-0 flex-1 truncate">{t("appBar.recentProjects")}</span>
-        <Icon name="chevronRight" size={13} className="ml-6 shrink-0 text-faint" />
+        <Icon name="chevronRight" size={12} className="ml-6 shrink-0 text-faint" />
       </Menu.SubmenuTrigger>
       <Menu.Portal>
         <Menu.Positioner side="right" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} max-w-[360px] min-w-[220px]`}>
+          <Menu.Popup className={`${menuPopupClass} max-w-90 min-w-56`}>
             {entries.length === 0 ? (
-              <Menu.Item disabled className={`${menuItemClass} py-1 text-sm`}>
+              <Menu.Item disabled className={menuItemClass}>
                 {t("appBar.recentEmpty")}
               </Menu.Item>
             ) : (
@@ -131,20 +132,18 @@ function RecentProjectsSubmenu() {
                 <Menu.Item
                   key={entry.key}
                   data-recent-project={entry.key}
-                  title={entry.location}
-                  className={`${menuItemClass} flex-col items-start gap-0 py-1 text-sm ${entry.exists ? "" : "opacity-60"}`}
+                  className={`${menuItemClass} h-auto min-h-row flex-col items-start gap-0 py-1 ${entry.exists ? "" : "opacity-60"}`}
                   onClick={() => void openRecentProject(entry)}
                 >
                   <span className="flex w-full items-center gap-2">
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="max-w-full truncate">{entry.name}</span>
-                      <span className="max-w-full truncate text-2xs text-faint">{entry.location}</span>
+                      <span className="max-w-full truncate text-xs text-faint">{entry.location}</span>
                     </span>
-                    <span
+                    <Tooltip label={t("contextMenu.recentRemove")}><span
                       role="button"
                       tabIndex={-1}
                       aria-label={t("contextMenu.recentRemove")}
-                      title={t("contextMenu.recentRemove")}
                       data-recent-forget=""
                       onClick={(e) => {
                         e.stopPropagation();
@@ -154,7 +153,7 @@ function RecentProjectsSubmenu() {
                       className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-active hover:text-text"
                     >
                       <Icon name="x" size={12} />
-                    </span>
+                    </span></Tooltip>
                   </span>
                 </Menu.Item>
               ))

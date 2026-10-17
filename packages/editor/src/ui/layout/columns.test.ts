@@ -18,10 +18,10 @@ const throwing: WidthStorage = {
 
 describe("column widths", () => {
   it("clamps to min / max and rounds", () => {
-    expect(clampWidth(COLUMNS.library, 100)).toBe(240);
-    expect(clampWidth(COLUMNS.library, 9999)).toBe(520);
+    expect(clampWidth(COLUMNS.library, 100)).toBe(220);
+    expect(clampWidth(COLUMNS.library, 9999)).toBe(400);
     expect(clampWidth(COLUMNS.library, 300.6)).toBe(301);
-    expect(clampWidth(COLUMNS.right, 200)).toBe(280);
+    expect(clampWidth(COLUMNS.right, 200)).toBe(260);
     expect(clampWidth(COLUMNS.right, Number.NaN)).toBe(COLUMNS.right.initial);
   });
 
@@ -31,8 +31,8 @@ describe("column widths", () => {
     writeWidth(COLUMNS.library, store, 400);
     expect(readWidth(COLUMNS.library, store)).toBe(400);
     writeWidth(COLUMNS.library, store, 5000);
-    expect(store.data[COLUMNS.library.key]).toBe("520");
-    expect(readWidth(COLUMNS.library, memory({ [COLUMNS.library.key]: "12" }))).toBe(240);
+    expect(store.data[COLUMNS.library.key]).toBe("400");
+    expect(readWidth(COLUMNS.library, memory({ [COLUMNS.library.key]: "12" }))).toBe(220);
     expect(readWidth(COLUMNS.library, memory({ [COLUMNS.library.key]: "abc" }))).toBe(COLUMNS.library.initial);
     expect(readWidth(COLUMNS.library, memory({ [COLUMNS.library.key]: "" }))).toBe(COLUMNS.library.initial);
   });
@@ -54,11 +54,11 @@ describe("column widths", () => {
   });
 
   it("when the window is too small the wider column gives way first, never below its min", () => {
-    const fit = fitColumns(1366, { library: 520, right: 440 });
-    expect(1366 - RAIL_WIDTH - fit.library - fit.right).toBe(MIN_CANVAS);
-    expect(fit.library).toBeGreaterThanOrEqual(240);
-    expect(fit.right).toBeGreaterThanOrEqual(280);
-    expect(fitColumns(800, { library: 520, right: 440 })).toEqual({ library: 240, right: 280 });
+    const fit = fitColumns(1100, { library: 400, right: 420 });
+    expect(1100 - RAIL_WIDTH - fit.library - fit.right).toBe(MIN_CANVAS);
+    expect(fit.library).toBeGreaterThanOrEqual(220);
+    expect(fit.right).toBeGreaterThanOrEqual(260);
+    expect(fitColumns(800, { library: 520, right: 440 })).toEqual({ library: 220, right: 260 });
   });
 
   it("hidden columns take no width", () => {
@@ -81,10 +81,9 @@ describe("column widths", () => {
 });
 
 describe("library default and smart widen", () => {
-  it("is wider by default on wide screens", () => {
+  it("uses 260px at every viewport", () => {
     expect(defaultLibraryWidth(1366)).toBe(COLUMNS.library.initial);
-    expect(defaultLibraryWidth(1920)).toBeGreaterThanOrEqual(340);
-    expect(defaultLibraryWidth(1920)).toBeLessThanOrEqual(360);
+    expect(defaultLibraryWidth(1920)).toBe(260);
   });
 
   it("widens by the missing width when it fits", () => {
@@ -94,9 +93,9 @@ describe("library default and smart widen", () => {
 
   it("refuses past the column max or into the canvas minimum", () => {
     expect(widenLibraryTarget(1920, { library: 352, right: 288 }, 400)).toBeNull();
-    // 1100 px window: 1100 − 48 − 288 − 400 = 364 px at most.
+    // 1100 px window: 1100 − 40 − 288 − 400 = 372 px at most.
     expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 112)).toBeNull();
-    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 76)).toBe(364);
+    expect(widenLibraryTarget(1100, { library: 288, right: 288 }, 84)).toBe(372);
     expect(widenLibraryTarget(1366, { library: 288, right: 288 }, 0)).toBeNull();
   });
 

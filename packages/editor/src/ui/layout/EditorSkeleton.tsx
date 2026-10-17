@@ -7,16 +7,17 @@
  */
 export function EditorSkeleton() {
   return (
-    <div aria-busy="true" className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-      <div className="h-toolbar border-b border-line bg-panel" />
-      <div className="h-optionsbar border-b border-line bg-panel" />
-      <div className="flex min-h-0">
-        <div className="w-rail shrink-0 border-r border-line bg-panel" />
-        <div className="w-sidebar shrink-0 border-r border-line bg-panel max-lg:hidden" />
-        <div className="min-w-0 flex-1 bg-canvas" />
-        <div className="w-sidebar shrink-0 border-l border-line bg-panel" />
+    <div aria-busy="true" className="flex h-full flex-col">
+      <div className="h-toolbar shrink-0 border-b border-line bg-bg" />
+      <div className="flex min-h-0 flex-1">
+        <div className="w-rail shrink-0 border-r border-line bg-bg" />
+        <div className="w-sidebar shrink-0 border-r border-line bg-panel" />
+        <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+          <div className="h-optionsbar border-b border-line bg-panel" />
+        </div>
+        <div className="w-rightbar shrink-0 border-l border-line bg-panel" />
       </div>
-      <div className="h-statusbar border-t border-line bg-panel" />
+      <div className="h-statusbar shrink-0 border-t border-line bg-bg" />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Document tabs: which maps (levels) are "open" as tabs above the canvas.
+ * Document tabs: which maps (levels) are "open" as tabs in the app bar.
  * Only one map is loaded at a time (the session switches); the tabs are a
  * shortcut list the user keeps, like an editor's open files. Pure helpers
  * are exported for tests; the store is UI-only and not saved.
