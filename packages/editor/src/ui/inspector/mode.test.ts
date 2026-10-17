@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { brushContent, inspectorMode, type ModeInput } from "./mode";
+import { brushContent, inspectorMode, terrainEditActive, type ModeInput } from "./mode";
 
 const base: ModeInput = { entitySelected: false, layer: "tile", tool: "brush", region: false, brush: "tile" };
 const mode = (patch: Partial<ModeInput>) => inspectorMode({ ...base, ...patch });
@@ -43,5 +43,21 @@ describe("inspector mode (first match wins)", () => {
     expect(brushContent({ stamp: null, randomSet: [1, 2], selection: {} })).toBe("random");
     expect(brushContent({ stamp: null, randomSet: [1], selection: {} })).toBe("tile");
     expect(brushContent({ stamp: null, randomSet: [], selection: null })).toBe("none");
+  });
+});
+
+describe("terrain edit context", () => {
+  it("opens the terrain card as soon as the dock enters terrain mode, before a draft exists", () => {
+    const terrainEdit = terrainEditActive("terrain", false);
+    expect(terrainEdit).toBe(true);
+    expect(mode({ terrainEdit, brush: "none", tool: "select", region: true, layer: "collision" })).toBe("terrain");
+    expect(mode({ terrainEdit, entitySelected: true })).toBe("entity");
+  });
+
+  it("keeps draft/fix editing active in other dock modes", () => {
+    for (const dockMode of ["pick", "solid", "random"] as const) {
+      expect(terrainEditActive(dockMode, true)).toBe(true);
+      expect(terrainEditActive(dockMode, false)).toBe(false);
+    }
   });
 });

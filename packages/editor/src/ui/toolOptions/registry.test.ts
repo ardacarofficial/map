@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { describe, expect, it } from "vitest";
 
+import { registerBuiltinToolOptions } from "./builtins";
 import { stepBrushSize } from "./brushSize";
 import { registerToolOptions, subscribeToolOptions, toolOptionsFor, toolOptionsVersion, type ToolOptionsContext } from "./registry";
 
@@ -9,6 +10,7 @@ const B: ComponentType = () => null;
 const C: ComponentType = () => null;
 const ctx = (tool: ToolOptionsContext["tool"], layer?: unknown): ToolOptionsContext => ({
   tool,
+  brush: "none",
   doc: undefined,
   layer: layer as ToolOptionsContext["layer"],
 });
@@ -57,6 +59,18 @@ describe("tool options registry", () => {
     registerToolOptions("fill", A)();
     expect(calls).toBe(2);
     expect(toolOptionsVersion()).toBe(before + 4);
+  });
+});
+
+describe("builtin transform options", () => {
+  it("shows transforms for tile, stamp, random brushes and floating clips, but not an empty brush", () => {
+    registerBuiltinToolOptions();
+    for (const tool of ["brush", "fill", "rect", "eraser", "select", "hand", "eyedropper", "entity"] as const) {
+      for (const brush of ["tile", "stamp", "random", "none"] as const) {
+        const entries = toolOptionsFor({ ...ctx(tool), brush });
+        expect(entries.some((entry) => entry.id === "builtin.transforms")).toBe(brush !== "none");
+      }
+    }
   });
 });
 

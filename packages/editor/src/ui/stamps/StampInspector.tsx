@@ -1,21 +1,17 @@
 /**
  * Denetçi section of the stamp selected in the library (round 5): large
  * preview, size and layers, category and tags (saved with the project in
- * `stamps/<id>.json`), ★, "Stamp olarak yerleştir", "Düzenle" and
- * flip / rotate (which put the stamp on the brush first). Stamps are flat
- * copies: nothing here refers to maps that already hold one.
+ * `stamps/<id>.json`), ★, "Stamp olarak yerleştir" and "Düzenle".
+ * Stamps are flat copies: nothing here refers to maps that already hold one.
  */
 import type { Stamp } from "@smap/core";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 
-import { getCommand, runCommand } from "../../commands/registry";
 import { activeStampId, pickStamp, setStampMeta, toggleStampFavorite } from "../../commands/stampActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import type { CommandId } from "../../shortcuts/shortcuts";
 import { useEditorStore } from "../../state/editorStore";
 import { Button, IconButton } from "../primitives/Button";
-import { Divider } from "../primitives/Divider";
 import { PropRow, PropValue } from "../primitives/PropRow";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { TextField } from "../primitives/TextField";
@@ -66,43 +62,12 @@ function StampSection() {
   return <StampCard key={stamp.id} stamp={stamp} />;
 }
 
-/** Puts the stamp on the brush (when it is not there yet), then runs a brush transform command. */
-function transformStamp(stamp: Stamp, command: CommandId): void {
-  if (activeStampId(useEditorStore.getState().stamp) !== stamp.id) pickStamp(stamp.id);
-  if (activeStampId(useEditorStore.getState().stamp) === stamp.id) runCommand(command);
-}
-
 function StampCard({ stamp }: { stamp: Stamp }) {
-  const rotate = !!getCommand("edit.rotateCW");
   const place = () => {
     pickStamp(stamp.id);
     if (activeStampId(useEditorStore.getState().stamp) === stamp.id) useStampLibrary.getState().select(null);
   };
   const layers = stamp.layers.map((l) => l.name).join(", ") || t("stamps.layers", { count: 0 });
-  const transforms = [
-    {
-      command: "edit.flipX",
-      icon: "flip-horizontal-2",
-      label: t("inspector.flipX"),
-    },
-    {
-      command: "edit.flipY",
-      icon: "flip-vertical-2",
-      label: t("inspector.flipY"),
-    },
-    {
-      command: "edit.rotateCCW",
-      icon: "rotate-ccw",
-      label: rotate ? t("inspector.rotateCCW") : t("inspector.rotateUnavailable"),
-      disabled: !rotate,
-    },
-    {
-      command: "edit.rotateCW",
-      icon: "rotate-cw",
-      label: rotate ? t("inspector.rotateCW") : t("inspector.rotateUnavailable"),
-      disabled: !rotate,
-    },
-  ] as const;
   return (
     <section aria-label={t("stampLib.section")} data-stamp-inspector={stamp.id}>
       <SectionHeader
@@ -167,22 +132,6 @@ function StampCard({ stamp }: { stamp: Stamp }) {
           <Button size="sm" variant="secondary" data-action="editStamp" onClick={() => void openStampEditor(stamp.id)}>
             {t("stampLib.edit")}
           </Button>
-        </div>
-        <Divider />
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-muted uppercase">{t("inspector.transform")}</span>
-          <div className="flex items-center gap-1">
-            {transforms.map((item, index) => (
-              <span key={item.command} className="flex items-center gap-1">
-                {index === 2 && <Divider orientation="vertical" length={16} />}
-                <Tooltip label={item.label} command={item.command}>
-                  <IconButton size="sm" aria-label={item.label} disabled={"disabled" in item && item.disabled} onClick={() => transformStamp(stamp, item.command)}>
-                    <Icon name={item.icon} size={16} />
-                  </IconButton>
-                </Tooltip>
-              </span>
-            ))}
-          </div>
         </div>
       </div>
     </section>

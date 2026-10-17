@@ -11,7 +11,6 @@ import { useUiStore, type LibraryTab } from "../uiStore";
 import { useLayoutStore } from "../layout/layoutStore";
 import { useWorldView as useWorldViewStore } from "../../commands/worldActions";
 import { Tabs } from "../primitives/Tabs";
-import { SectionHeader } from "../primitives/SectionHeader";
 import { ProjectTree } from "../levels/ProjectTree";
 
 /** What a tab's `visible` / `auto` sees. */
@@ -74,21 +73,11 @@ registerLibraryTab({
   id: "entities",
   label: "panels.entities",
   order: 30,
-  Component: EntityTab,
+  Component: EntityPalette,
   // Only next to an entity layer (tiles cannot go there); selected when one becomes active.
   visible: ({ layer }) => isEntityLayer(layer),
   auto: ({ layer }) => isEntityLayer(layer),
 });
-
-/** Supplies the title while legacy contents still pass the null LibraryTabs shim as a React element. */
-function EntityTab() {
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col [&:has(>section>header>h2)>header]:hidden">
-      <SectionHeader title={t("panels.entities")} className="pointer-events-none absolute inset-x-0 top-0 pr-8" />
-      <EntityPalette />
-    </div>
-  );
-}
 
 function useLibraryTabs(): { listed: LibraryTabDef[]; ctx: LibraryTabContext } {
   const store = useEditorStore((s) => s.project?.store);
@@ -144,8 +133,7 @@ export function LibraryPanel() {
         label={t("library.tabs")}
         value={value}
         onValueChange={(id) => {
-          const nextPanel = id === "project" ? "project" : "library";
-          if (useLayoutStore.getState().leftPanel !== nextPanel) useLayoutStore.getState().showLeftPanel(nextPanel);
+          useLayoutStore.getState().setLeftPanelTab(id === "project" ? "project" : "stamps");
           if (id !== "project") setTab(id);
         }}
         items={[
@@ -177,9 +165,4 @@ function Badge({ useCount }: { useCount: () => number }) {
       {count}
     </span>
   ) : null;
-}
-
-/** Deprecated: LibraryPanel renders the tab strip itself; tab contents should not pass it as heading. */
-export function LibraryTabs() {
-  return null;
 }

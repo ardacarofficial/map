@@ -13,7 +13,7 @@ function Cell({ children, data, className = "" }: { children: ReactNode; data?: 
 }
 
 /** Read one tile through the document API; painting elsewhere causes no React render. */
-function useHoveredTileId(): number | null {
+function useHoveredTileId(): number | "empty" | null {
   const store = useEditorStore((s) => s.project?.store);
   const hover = useEditorStore((s) => s.hoverCell);
   const layerId = useEditorStore((s) => s.activeLayerId);
@@ -22,7 +22,8 @@ function useHoveredTileId(): number | null {
     const doc = store?.document;
     const layer = layerId ? doc?.getLayer(layerId) : undefined;
     if (!doc || !hover || !isTileLayer(layer) || hover.x < 0 || hover.y < 0 || hover.x >= doc.map.width || hover.y >= doc.map.height) return null;
-    return doc.palette.get(cellPaletteIndex(layer.getCell(hover.x, hover.y)))?.tileId ?? null;
+    const index = cellPaletteIndex(layer.getCell(hover.x, hover.y));
+    return index === 0 ? "empty" : doc.palette.get(index)?.tileId ?? null;
   });
 }
 
@@ -61,7 +62,7 @@ export function StatusBar() {
     <footer aria-label={t("layout.statusBar")} data-status-bar className="flex h-statusbar shrink-0 items-center border-t border-line bg-bg text-xs text-muted [&>*+*]:border-l [&>*+*]:border-line-subtle">
       {world ? <Cell data="world"><span>{t("world.status")}</span><span className="text-faint">·</span><span className="tabular">{t("world.levelCount", { count: levelCount })}</span></Cell> : <>
         <Cell data="cell" className="gap-3 font-mono tabular"><span className="flex gap-1"><span className="text-faint">{t("status.x")}</span><span className="text-text">{hover?.x ?? t("status.noCell")}</span></span><span className="flex gap-1"><span className="text-faint">{t("status.y")}</span><span className="text-text">{hover?.y ?? t("status.noCell")}</span></span></Cell>
-        {tileId !== null && <Cell data="tile-id" className="font-mono tabular">{t("status.tileId", { id: tileId })}</Cell>}
+        {tileId !== null && <Cell data="tile-id" className={`font-mono tabular ${tileId === "empty" ? "text-faint" : ""}`}>{tileId === "empty" ? t("status.noCell") : t("status.tileId", { id: tileId })}</Cell>}
         {layer && <Cell data="layer"><span className="max-w-50 truncate">{t("status.layerName", { name: layer.name })}</span></Cell>}
         {map && <><Cell data="map" className="tabular">{t("status.mapSize", { width: map.width, height: map.height })}</Cell><Cell data="tile" className="tabular">{map.tileWidth === map.tileHeight ? t("common.px", { value: map.tileWidth }) : t("status.tileSize", { width: map.tileWidth, height: map.tileHeight })}</Cell></>}
       </>}

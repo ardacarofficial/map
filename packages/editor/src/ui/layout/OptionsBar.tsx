@@ -20,23 +20,6 @@ import { toolIcon } from "./tools";
 
 registerRulerCommands();
 
-/** Lucide "ruler" (not in the shared Icon set), drawn with the same 1.5 px absolute stroke at 16 px. */
-function RulerIcon() {
-  return (
-    <svg aria-hidden width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
-      <path d="m14.5 12.5 2-2" />
-      <path d="m11.5 9.5 2-2" />
-      <path d="m8.5 6.5 2-2" />
-      <path d="m17.5 15.5 2-2" />
-    </svg>
-  );
-}
-
-function ToggleIcon({ icon }: { icon: IconName | "ruler" }) {
-  return icon === "ruler" ? <RulerIcon /> : <Icon name={icon} size={16} />;
-}
-
 /** Options follow the active tool; view controls fold based on this bar's own width. */
 export function OptionsBar() {
   const tool = useEditorStore((s) => s.tool);
@@ -55,7 +38,7 @@ export function OptionsBar() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const toggles: { command: CommandId; icon: IconName | "ruler"; label: string; on: boolean }[] = [
+  const toggles: { command: CommandId; icon: IconName; label: string; on: boolean }[] = [
     { command: "view.toggleGrid", icon: "grid-3x3", label: t("toolOptions.grid"), on: grid },
     { command: "view.toggleCollision", icon: "brick-wall", label: t("toolOptions.collisionView"), on: collision },
     { command: "view.toggleRulers", icon: "ruler", label: t("toolOptions.rulers"), on: rulers },
@@ -89,7 +72,7 @@ export function OptionsBar() {
                   {toggles.map(({ command, icon, label, on }) => (
                     <Menu.CheckboxItem key={command} checked={on} disabled={world} closeOnClick data-view-toggle={command} data-command={command} className={menuItemClass} onCheckedChange={() => runCommand(command)}>
                       <span className="grid size-4 place-items-center">{on && <Icon name="tick" size={12} />}</span>
-                      <span className="text-muted"><ToggleIcon icon={icon} /></span><span>{label}</span>
+                      <span className="text-muted"><Icon name={icon} size={16} /></span><span>{label}</span>
                       {keysFor(command)[0] && <KbdText keys={keysFor(command)[0]!} className={`${menuShortcutClass} shrink-0 pl-6`} />}
                     </Menu.CheckboxItem>
                   ))}
@@ -99,7 +82,7 @@ export function OptionsBar() {
           </Menu.Root>
         ) : toggles.map(({ command, icon, label, on }) => (
           <Tooltip key={command} label={label} command={command}>
-            <IconButton size="md" aria-label={label} active={on} aria-pressed={on} disabled={world} data-view-toggle={command} onClick={() => runCommand(command)}><ToggleIcon icon={icon} /></IconButton>
+            <IconButton size="md" aria-label={label} active={on} aria-pressed={on} disabled={world} data-view-toggle={command} onClick={() => runCommand(command)}><Icon name={icon} size={16} /></IconButton>
           </Tooltip>
         ))}
       </div>

@@ -1,16 +1,13 @@
-import { useLayoutEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import { t } from "../../../i18n";
-import { useEditorStore } from "../../../state/editorStore";
-import { useStructureVersion } from "../../hooks";
 import { IconButton } from "../../primitives/Button";
 import { Icon } from "../../primitives/Icon";
 import { Tooltip } from "../../primitives/Tooltip";
 import { Tabs } from "../../primitives/Tabs";
-import { contentDockHeight, wantedTilesetBodyHeight } from "./contentHeight";
 import { useDockContent } from "./dockContentStore";
 import { RecentTilesStrip } from "../RecentTilesStrip";
-import { DOCK, useLayoutStore } from "../layoutStore";
+import { DOCK, effectiveDockHeight, useLayoutStore } from "../layoutStore";
 import { dockTabs, registerDockTab, useDockVersion } from "./registry";
 // The tileset view registers its own "tileset" tab (order 10) when its module loads.
 import "../../panels/TilesetPanel";
@@ -33,9 +30,7 @@ function useViewportHeight(): number {
 function useDockHeight(): number {
   const stored = useLayoutStore((s) => s.dockHeight);
   const viewport = useViewportHeight();
-  const wanted = useDockContent((s) => s.wanted);
-  // Count the section border once, inside the same cap as the dock content.
-  return stored ?? contentDockHeight(wanted + 1, viewport);
+  return effectiveDockHeight(stored, viewport);
 }
 
 /**
@@ -46,10 +41,6 @@ function useDockHeight(): number {
  */
 export function BottomDock() {
   useDockVersion();
-  const store = useEditorStore((s) => s.project?.store);
-  useStructureVersion(store);
-  const wanted = wantedTilesetBodyHeight(store?.document.tilesets ?? []);
-  useLayoutEffect(() => { useDockContent.getState().setWanted(wanted); }, [wanted]);
   const height = useDockHeight();
   const collapsed = useDockContent((s) => s.collapsed);
   const setCollapsed = useDockContent((s) => s.setCollapsed);

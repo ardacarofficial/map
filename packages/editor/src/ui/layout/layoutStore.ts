@@ -45,10 +45,10 @@ export const DOCK = { initial: 324, min: 96, max: 480 } as const;
 /** Dock chrome: 28px tabs, 32px controls and 8px padding. */
 const DOCK_RESERVE = 28 + 32 + 8;
 
-/** Eight 32px tile rows plus chrome, capped at 40% of the viewport. */
+/** Eight 32px tile rows plus chrome, capped at 30% of the viewport. */
 export function defaultDockHeight(viewportHeight: number): number {
   if (!Number.isFinite(viewportHeight)) return DOCK.initial;
-  return clampDockHeight(Math.min(8 * 32 + DOCK_RESERVE, 0.4 * viewportHeight));
+  return clampDockHeight(Math.min(8 * 32 + DOCK_RESERVE, 0.3 * viewportHeight));
 }
 
 /** The dock height to lay out: the user's (dragged) height, or the default for the window. */

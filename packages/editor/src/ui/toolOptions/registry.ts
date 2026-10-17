@@ -11,10 +11,13 @@ import type { MapDocument, TileLayer } from "@smap/core";
 import type { ComponentType } from "react";
 
 import type { ToolId } from "../../state/editorStore";
+import type { BrushContent } from "../inspector/mode";
 
 /** What an entry's `when` sees. */
 export interface ToolOptionsContext {
   tool: ToolId;
+  /** Current brush content, including floating paste clips. */
+  brush: BrushContent;
   doc: MapDocument | undefined;
   /** The active layer, if any. */
   layer: TileLayer | undefined;

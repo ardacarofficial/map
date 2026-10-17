@@ -169,8 +169,3 @@ export function SquareAction({ label, command, onClick, children, disabled = fal
     </Tooltip>
   );
 }
-
-export function TransformGlyph({ kind }: { kind: "flipX" | "flipY" | "rotateCW" | "rotateCCW" }) {
-  const icons = { flipX: "flip-horizontal-2", flipY: "flip-vertical-2", rotateCW: "rotate-cw", rotateCCW: "rotate-ccw" } as const;
-  return <Icon name={icons[kind]} size={16} />;
-}

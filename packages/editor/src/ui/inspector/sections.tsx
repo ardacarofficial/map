@@ -62,7 +62,6 @@ import {
   ReadField,
   SectionHeader,
   SquareAction,
-  TransformGlyph,
 } from "./parts";
 import { registerInspectorSection, type InspectorContext } from "./registry";
 
@@ -257,41 +256,6 @@ function RandomPreview({ doc }: { doc: MapDocument }) {
   );
 }
 
-function OrientationRow() {
-  const rotate = !!getCommand("edit.rotateCW");
-  const enabled = (id: CommandId) => {
-    const c = getCommand(id);
-    return !!c && isEnabled(c);
-  };
-  return (
-    <PropRow label={t("inspector.flip")}>
-      <SquareAction label={t("inspector.flipX")} command="edit.flipX" disabled={!enabled("edit.flipX")} onClick={() => runCommand("edit.flipX")}>
-        <TransformGlyph kind="flipX" />
-      </SquareAction>
-      <SquareAction label={t("inspector.flipY")} command="edit.flipY" disabled={!enabled("edit.flipY")} onClick={() => runCommand("edit.flipY")}>
-        <TransformGlyph kind="flipY" />
-      </SquareAction>
-      <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
-      <SquareAction
-        label={rotate ? t("inspector.rotateCCW") : t("inspector.rotateUnavailable")}
-        command="edit.rotateCCW"
-        disabled={!enabled("edit.rotateCCW")}
-        onClick={() => runCommand("edit.rotateCCW")}
-      >
-        <TransformGlyph kind="rotateCCW" />
-      </SquareAction>
-      <SquareAction
-        label={rotate ? t("inspector.rotateCW") : t("inspector.rotateUnavailable")}
-        command="edit.rotateCW"
-        disabled={!enabled("edit.rotateCW")}
-        onClick={() => runCommand("edit.rotateCW")}
-      >
-        <TransformGlyph kind="rotateCW" />
-      </SquareAction>
-    </PropRow>
-  );
-}
-
 function TileDetails({ tileset, tileId }: { tileset: Tileset; tileId: number }) {
   const pos = tilePosition(tileset, tileId);
   const solid = isTileSolid(tileset, tileId);
@@ -311,15 +275,13 @@ function TileDetails({ tileset, tileId }: { tileset: Tileset; tileId: number }) 
         </PropRow>
         <PropRow label={t("properties.solid")}>
           <Toggle checked={solid} onChange={(checked) => setTilesSolid(tileset.id, [tileId], checked)} label={t("properties.solid")} />
-          <span className={`text-sm ${solid ? "text-text" : "text-muted"}`}>{solid ? t("properties.yes") : t("properties.no")}</span>
         </PropRow>
-        <OrientationRow />
       </PropGrid>
     </>
   );
 }
 
-/** A clip / stamp on the brush: size, layers, flip / rotate, save as stamp, make random. */
+/** A clip / stamp on the brush: size, layers, save as stamp, make random. */
 function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
   const stampId = activeStampId(clip);
   const [naming, setNaming] = useState<TileClip | null>(null);
@@ -337,7 +299,6 @@ function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
             {gridLayers > 0 && <Icon name="shield" size={12} className="ml-1.5 text-muted" />}
           </ReadField>
         </PropRow>
-        <OrientationRow />
       </PropGrid>
       <div className="flex flex-col gap-2 px-3 pt-1.5">
         {stampId ? (

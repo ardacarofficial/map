@@ -5,9 +5,10 @@ import { clampRegion } from "../../commands/enablement";
 import { useRandomBrush } from "../../commands/randomBrush";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { useUiStore } from "../uiStore";
 import { useTerrainDraft } from "../terrain/terrainDraft";
 import { resolveTerrain } from "../terrain/terrainModel";
-import { brushContent, inspectorMode, type LayerKind } from "./mode";
+import { brushContent, inspectorMode, terrainEditActive, type LayerKind } from "./mode";
 import { inspectorSectionsFor, inspectorVersion, subscribeInspector, type InspectorContext } from "./registry";
 import { registerBuiltinInspectorSections } from "./sections";
 
@@ -29,6 +30,7 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
   const brush = useEditorStore((s) => brushContent(s));
   const randomStamps = useRandomBrush((s) => s.stamps.length);
   const terrainBrush = useEditorStore((s) => s.terrainActive && resolveTerrain(doc, s.terrain) !== null);
+  const tilesetMode = useUiStore((s) => s.tilesetMode);
   const terrainEdit = useTerrainDraft((s) => s.draft !== null || resolveTerrain(doc, s.fix) !== null);
   const layer = activeLayerId ? doc.getLayer(activeLayerId) : undefined;
   const found = selectedEntityId ? doc.findEntity(selectedEntityId) : undefined;
@@ -41,7 +43,7 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
     // Stamps alone make a random brush too (tileset agent's random sets).
     brush: brush === "tile" && randomStamps > 0 ? "random" : brush,
     terrainBrush,
-    terrainEdit,
+    terrainEdit: terrainEditActive(tilesetMode, terrainEdit),
   });
   return {
     doc,

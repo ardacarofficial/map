@@ -71,6 +71,7 @@ function OptionsBrushSize() {
 const TRANSFORMS: readonly { command: CommandId; icon: IconName; title: MessageKey }[] = [
   { command: "edit.flipX", icon: "flip-horizontal-2", title: "commands.edit.flipX" },
   { command: "edit.flipY", icon: "flip-vertical-2", title: "commands.edit.flipY" },
+  { command: "edit.rotateCCW", icon: "rotate-ccw", title: "inspector.rotateCCW" },
   { command: "edit.rotateCW", icon: "rotate-cw", title: "inspector.rotateCW" },
 ];
 
@@ -97,6 +98,6 @@ export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
-  registerToolOptions("brush", BrushTransforms, { id: "builtin.transforms", order: 40 });
+  registerToolOptions("all", BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
   registerToolOptions(["brush", "eraser", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }

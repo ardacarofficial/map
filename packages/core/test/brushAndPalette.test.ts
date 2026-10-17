@@ -81,12 +81,17 @@ describe("brushFootprint", () => {
         const keys = new Set(fp.map((p) => `${p.x},${p.y}`));
         expect(keys.size).toBe(fp.length);
         expect(keys.has("0,0")).toBe(true);
-        for (const p of fp) {
-          expect(p.x).toBeGreaterThanOrEqual(-Math.floor(n / 2));
-          expect(p.x).toBeLessThan(-Math.floor(n / 2) + n);
-          if (n % 2 === 1) expect(keys.has(`${-p.x},${-p.y}`)).toBe(true);
-          expect(keys.has(`${p.y},${p.x}`)).toBe(true);
-        }
+        // Plain checks per cell, one assertion at the end: thousands of
+        // `expect` calls per run made this property time out under load.
+        const lo = -Math.floor(n / 2);
+        const bad = fp.filter(
+          (p) =>
+            p.x < lo ||
+            p.x >= lo + n ||
+            (n % 2 === 1 && !keys.has(`${-p.x},${-p.y}`)) ||
+            !keys.has(`${p.y},${p.x}`),
+        );
+        expect(bad).toEqual([]);
         if (shape === "square") expect(fp).toHaveLength(n * n);
       }),
     );

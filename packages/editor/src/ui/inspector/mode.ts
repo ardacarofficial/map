@@ -12,6 +12,7 @@
  * 7. otherwise                            → "map"
  */
 import type { ToolId } from "../../state/editorStore";
+import type { TilesetMode } from "../uiStore";
 
 export type InspectorMode = "entity" | "region" | "brush" | "terrain" | "collision" | "map";
 
@@ -32,6 +33,11 @@ export interface ModeInput {
   terrainBrush?: boolean;
   /** A terrain is being defined or fixed in the tileset (⚙ Düzenle → Arazi). */
   terrainEdit?: boolean;
+}
+
+/** The dock mode opens terrain editing even before a draft or fix exists. */
+export function terrainEditActive(tilesetMode: TilesetMode, definingOrFixing: boolean): boolean {
+  return tilesetMode === "terrain" || definingOrFixing;
 }
 
 /** Tools that put the brush on the map. */
