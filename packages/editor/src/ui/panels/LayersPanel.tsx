@@ -27,18 +27,19 @@ import { useLayerFlash } from "../feedback/layerFlash";
 import { useStructureVersion } from "../hooks";
 import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
-import { CommandKbd } from "../primitives/Kbd";
-import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
+import { KbdText } from "../primitives/Kbd";
+import { keysFor } from "../../shortcuts/shortcuts";
+import { SectionHeader } from "../primitives/SectionHeader";
+import { menuItemClass, menuPopupClass, menuPositionerClass, menuShortcutClass } from "../primitives/menuStyles";
 import { RenameInput } from "../primitives/RenameInput";
 import { Tooltip } from "../primitives/Tooltip";
 import { PointMenu, RowContextMenu, type MenuPoint } from "../contextMenus/RowContextMenu";
 import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import type { SectionPanelProps } from "../layout/RightColumn";
 import { dropIndex, rowShift } from "./layerOrder";
-import { PanelSection } from "./PanelSection";
 
-/** Row height in px (keep in sync with `h-8`). */
-const ROW = 29;
+/** Row height in px (keep in sync with `h-layerrow`). */
+const ROW = 28;
 /** Pointer travel before a press turns into a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -154,31 +155,31 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
   };
 
   return (
-    <PanelSection
-      title={t("panels.layers")}
-      className="flex-auto"
-      collapsed={collapsed}
-      extra={extra}
-      {...(onToggleCollapsed ? { onToggleCollapsed } : {})}
-      actions={
-        <>
+    <section aria-label={t("layers.title")} className="flex min-h-0 flex-auto flex-col">
+      <SectionHeader
+        title={t("layers.title")}
+        collapsible={!!onToggleCollapsed}
+        collapsed={collapsed}
+        {...(onToggleCollapsed ? { onToggleCollapsed } : {})}
+        actions={<>
           <AddLayerMenu />
           <Tooltip label={t("layers.remove")}>
-            <IconButton aria-label={t("layers.remove")} className="size-7" disabled={removeDisabled} onClick={removeActive}>
-              <Icon name="trash" size={14} />
+            <IconButton size="sm" aria-label={t("layers.remove")} disabled={removeDisabled} onClick={removeActive}>
+              <Icon name="trash-2" size={16} />
             </IconButton>
           </Tooltip>
-        </>
-      }
-    >
+          {extra}
+        </>}
+      />
+      {!collapsed && <>
       {opacityLayer && <OpacityRow layer={opacityLayer} />}
       <ul
         ref={listRef}
         role="listbox"
-        aria-label={t("panels.layers")}
+        aria-label={t("layers.title")}
         onContextMenu={onListContextMenu}
         data-layers-list=""
-        className="relative flex min-h-[40px] flex-auto flex-col overflow-y-auto px-1.5 pb-1.5"
+        className="relative flex min-h-0 flex-auto flex-col overflow-y-auto px-1 pb-1"
       >
         {rows.map((row) => {
           const { layer } = row;
@@ -205,18 +206,18 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                 if (!(e.target as HTMLElement).closest("button")) setEditingId(layer.id);
               }}
               style={{ transform: y ? `translateY(${y}px)` : undefined }}
-              className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 pl-1 text-md ${
+              className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 pl-1 text-sm ${
                 dragged
-                  ? "z-10 cursor-grabbing bg-active shadow-popup"
+                  ? "z-10 cursor-grabbing bg-active"
                   : settling
                     ? ""
-                    : "transition-[transform,background-color,box-shadow] duration-150 ease-(--ease-out)"
+                    : "transition-[transform,background-color] duration-150 ease-(--ease-out)"
               } ${
                 flashed
-                  ? "bg-accent-soft text-text shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
+                  ? "bg-accent-soft text-text ring-1 ring-inset ring-accent-line"
                   : isActive
-                    ? "bg-accent-soft text-title shadow-[inset_0_0_0_1px_var(--color-accent-line)]"
-                    : "text-muted hover:bg-hover hover:text-text"
+                    ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line"
+                    : "text-text hover:bg-hover"
               }`}
             />
           );
@@ -231,9 +232,9 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                   if (event.altKey) soloLayer(layer.id);
                   else setUnitProps(layer.id, { visible: !visible });
                 }}
-                persistent={!visible}
+                persistent={true}
               />
-              <Icon name={layerIcon(layer)} size={14} className={`shrink-0 ${layerTint(layer, isActive)}`} />
+              <Icon name={layerIcon(layer)} size={16} className="shrink-0 text-muted" />
               {editingId === layer.id ? (
                 <RenameInput
                   initial={layer.name}
@@ -246,13 +247,13 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
               ) : (
                 <span
                   title={t("layers.renameHint")}
-                  className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${visible ? "" : "text-faint line-through decoration-line-strong"}`}
+                  className={`flex min-w-0 flex-1 items-baseline gap-1.5 ${visible ? "" : "text-muted"}`}
                 >
-                  <span className="min-w-0 shrink truncate">{layer.name}</span>
+                  <span className={`min-w-0 shrink truncate ${isActive ? "font-medium" : ""}`}>{layer.name}</span>
                 </span>
               )}
               {layer.opacity < 1 && editingId !== layer.id && (
-                <span className="font-mono text-2xs text-faint tabular">{Math.round(layer.opacity * 100)}%</span>
+                <span className="text-xs text-faint tabular">{Math.round(layer.opacity * 100)}%</span>
               )}
               <RowToggle
                 on={locked}
@@ -277,7 +278,8 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
         })}
       </ul>
       <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
-    </PanelSection>
+    </>}
+    </section>
   );
 }
 
@@ -317,14 +319,7 @@ function layersEmptyItems(): ContextEntry[] {
 
 function layerIcon(layer: TileLayer): IconName {
   if (isEntityLayer(layer)) return "box";
-  return isGridLayer(layer) ? "shield" : "layers";
-}
-
-/** Role colour of the row icon: full when active, dimmed otherwise; plain tile layers stay neutral until active. */
-function layerTint(layer: TileLayer, active: boolean): string {
-  if (isGridLayer(layer)) return active ? "text-collision-solid" : "text-collision-solid opacity-70";
-  if (isEntityLayer(layer)) return active ? "text-warning" : "text-warning opacity-70";
-  return active ? "text-accent" : "text-faint";
+  return isGridLayer(layer) ? "brick-wall" : "layers";
 }
 
 /** "+" in the layers header: tile layer or collision (exceptions) layer. */
@@ -334,36 +329,27 @@ function AddLayerMenu() {
       <Tooltip label={t("layers.add")} command="layer.add">
         <Menu.Trigger
           render={
-            <IconButton aria-label={t("layers.add")} className="size-7 data-popup-open:bg-hover data-popup-open:text-text">
-              <Icon name="plus" size={15} />
+            <IconButton aria-label={t("layers.add")} size="sm" className="data-popup-open:bg-hover data-popup-open:text-text">
+              <Icon name="plus" size={16} />
             </IconButton>
           }
         />
       </Tooltip>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} w-[260px]`}>
-            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addLayer()}>
-              <Icon name="layers" size={15} className="mt-0.5 shrink-0 text-muted" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span>{t("layers.addTile")}</span>
-                <span className="text-xs text-faint">{t("layers.addTileHint")}</span>
-              </span>
-              <CommandKbd command="layer.add" className="mt-0.5" />
+          <Menu.Popup className={`${menuPopupClass} min-w-64`}>
+            <Menu.Item className={menuItemClass} aria-label={t("layers.addTile")} title={t("layers.addTileHint")} onClick={() => void addLayer()}>
+              <Icon name="layers" size={16} className="text-muted" />
+              <span className="flex-1">{t("layers.addTile")}</span>
+              <KbdText keys={keysFor("layer.add")[0] ?? ""} className={menuShortcutClass} />
             </Menu.Item>
-            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addCollisionLayer()}>
-              <Icon name="shield" size={15} className="mt-0.5 shrink-0 text-collision-solid" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span>{t("layers.addCollision")}</span>
-                <span className="text-xs text-faint">{t("layers.addCollisionHint")}</span>
-              </span>
+            <Menu.Item className={menuItemClass} aria-label={t("layers.addCollision")} title={t("layers.addCollisionHint")} onClick={() => void addCollisionLayer()}>
+              <Icon name="brick-wall" size={16} className="text-muted" />
+              <span className="flex-1">{t("layers.addCollision")}</span>
             </Menu.Item>
-            <Menu.Item className={`${menuItemClass} items-start`} onClick={() => void addEntityLayer()}>
-              <Icon name="box" size={15} className="mt-0.5 shrink-0 text-warning" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span>{t("layers.addEntity")}</span>
-                <span className="text-xs text-faint">{t("layers.addEntityHint")}</span>
-              </span>
+            <Menu.Item className={menuItemClass} aria-label={t("layers.addEntity")} title={t("layers.addEntityHint")} onClick={() => void addEntityLayer()}>
+              <Icon name="box" size={16} className="text-muted" />
+              <span className="flex-1">{t("layers.addEntity")}</span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
@@ -389,18 +375,16 @@ function RowToggle({
   persistent: boolean;
 }) {
   return (
-    <button
-      type="button"
+    <IconButton
+      size="sm"
       aria-label={label}
       title={title ?? label}
       aria-pressed={on}
       onClick={onClick}
-      className={`grid size-6 shrink-0 place-items-center rounded-sm transition-colors duration-100 hover:bg-hover hover:text-text ${
-        persistent ? "text-text" : "text-faint group-hover:text-muted group-aria-selected:text-muted"
-      }`}
+      className={persistent ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}
     >
-      <Icon name={icon} size={14} />
-    </button>
+      <Icon name={icon} size={16} />
+    </IconButton>
   );
 }
 
@@ -424,9 +408,8 @@ function OpacityRow({ layer }: { layer: TileLayer }) {
     };
   }, []);
   return (
-    <div ref={rowRef} data-layer-opacity="" className="flex h-8 shrink-0 items-center gap-3 pr-3 pl-3">
-      <span className="text-sm text-muted">{t("layers.opacity")}</span>
-      <span className="w-9 font-mono text-sm text-text tabular">{formatNumber(percent)}%</span>
+    <div ref={rowRef} data-layer-opacity="" className="flex h-control-md shrink-0 items-center gap-2 px-2">
+      <span className="w-proplabel shrink-0 text-sm text-muted">{t("layers.opacity")}</span>
       <Slider.Root
         value={percent}
         min={0}
@@ -437,15 +420,16 @@ function OpacityRow({ layer }: { layer: TileLayer }) {
         className="flex-1"
       >
         <Slider.Control className="flex h-5 w-full touch-none items-center select-none">
-          <Slider.Track className="h-1 w-full rounded-full bg-line select-none">
-            <Slider.Indicator className="rounded-full bg-accent select-none" />
+          <Slider.Track className="h-0.5 w-full rounded-xs bg-line-strong select-none">
+            <Slider.Indicator className="bg-accent select-none" />
             <Slider.Thumb
               aria-label={t("layers.opacity")}
-              className="size-3 rounded-full bg-text shadow-popup transition-transform select-none hover:scale-110 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
+              className="size-3 rounded-full bg-text select-none has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
             />
           </Slider.Track>
         </Slider.Control>
       </Slider.Root>
+      <span className="w-9 shrink-0 text-right text-sm text-faint tabular">{t("layers.percent", { value: formatNumber(percent) })}</span>
     </div>
   );
 }

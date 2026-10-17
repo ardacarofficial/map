@@ -5,6 +5,7 @@ import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { bindHistoryLabels, historyLabelsVersion, sharedHistoryLabels, subscribeHistoryLabels } from "../feedback/sharedHistoryLabels";
 import { Icon, type IconName } from "../primitives/Icon";
+import { historyVerbs } from "./historyVerbs";
 import { registerHistoryCommands } from "./historyCommands";
 import { applyJump, historyRows, jumpFor, type HistoryRow } from "./historyModel";
 
@@ -61,7 +62,7 @@ export function HistoryPanel() {
   useEffect(() => bindHistoryLabels(store), [store]);
   const listRef = useRef<HTMLOListElement>(null);
 
-  const rows = store ? historyRows(store.historyEntries(), (id) => sharedHistoryLabels.labelOf(id)) : [];
+  const rows = store ? historyRows(store.historyEntries(), (id) => sharedHistoryLabels.labelOf(id), (id) => historyVerbs.labelOf(id)) : [];
   const currentIndex = rows.findIndex((r) => r.state === "current");
   const steps = rows.length - 1;
 
@@ -79,11 +80,8 @@ export function HistoryPanel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-history-panel>
-      <div className="flex h-8 shrink-0 items-center px-3 pt-1 text-xs text-faint">
-        <span className="font-semibold tracking-[0.06em] text-muted uppercase">{t("history.title")}</span>
-        {steps > 0 && <span className="ml-auto font-mono tabular">{t("history.count", { count: formatNumber(steps) })}</span>}
-      </div>
-      <ol ref={listRef} role="listbox" aria-label={t("history.title")} className={`flex min-h-0 flex-col overflow-y-auto px-1.5 pb-2 ${steps > 0 ? "flex-1" : ""}`}>
+      {steps > 0 && <div className="flex h-row shrink-0 items-center px-3 text-xs text-faint tabular">{t("history.count", { count: formatNumber(steps) })}</div>}
+      {steps > 0 && <ol ref={listRef} role="listbox" aria-label={t("history.title")} className={`flex min-h-0 flex-col overflow-y-auto px-1.5 pb-2 ${steps > 0 ? "flex-1" : ""}`}>
         {rows.map((row, index) => (
           <li key={row.id ?? "initial"} role="option" aria-selected={row.state === "current"}>
             <button
@@ -93,24 +91,21 @@ export function HistoryPanel() {
               data-history-state={row.state}
               title={row.id === null ? t("history.initialHint") : row.state === "undone" ? t("history.redoable") : row.state === "current" ? t("history.current") : t("history.goTo")}
               onClick={() => go(index)}
-              className={`group flex h-[29px] w-full items-center gap-2 rounded-sm px-2 text-left text-md transition-colors duration-100 ${
+              className={`group flex h-row w-full items-center gap-2 rounded-sm px-2 text-left text-sm transition-colors duration-100 ${
                 row.state === "current"
-                  ? "bg-accent-soft text-text shadow-[inset_2px_0_0_var(--color-accent)]"
+                  ? "bg-accent-soft text-title"
                   : row.state === "undone"
                     ? "text-faint hover:bg-hover hover:text-muted"
                     : "text-text hover:bg-hover"
               }`}
             >
-              <Icon name={rowIcon(row)} size={14} className={`shrink-0 ${row.state === "current" ? "text-accent" : row.state === "undone" ? "opacity-60" : "text-muted"}`} />
-              <span className={`min-w-0 flex-1 truncate ${row.state === "undone" ? "italic" : ""}`}>{row.label}</span>
-              {row.state === "current" && (
-                <span className="shrink-0 rounded-xs bg-accent/15 px-1.5 text-2xs font-medium text-accent">{t("history.current")}</span>
-              )}
+              <Icon name={rowIcon(row)} size={16} className={`shrink-0 ${row.state === "undone" ? "text-faint" : "text-muted"}`} />
+              <span className="min-w-0 flex-1 truncate">{row.label}</span>
             </button>
           </li>
         ))}
-      </ol>
-      {steps === 0 && <p className="px-3 pb-3 text-sm leading-5 text-faint">{t("history.empty")}</p>}
+      </ol>}
+      {steps === 0 && <p className="px-3 py-2 text-sm text-muted">{t("history.empty")}</p>}
     </div>
   );
 }
