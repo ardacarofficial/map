@@ -204,9 +204,9 @@ test("dock: compact header, searchable switcher, content default and remembered 
   await search.press("Enter");
   await expect(search).toBeHidden();
   await expect(page.locator("[data-tileset-switcher-name]")).toHaveText("overworld-32");
-  const viewport = page.locator("[data-tileset-viewport]");
-  await expect.poll(() => viewport.evaluate((el) => el.clientHeight - 16 >= el.querySelector<HTMLElement>("[data-tileset-grid]")!.offsetHeight)).toBe(true);
+  // Default dock height: min(content, 30% of the window) — 270 px at 1440×900; the grid scrolls inside.
   const defaultHeight = await dock.evaluate((el) => el.getBoundingClientRect().height);
+  expect(defaultHeight).toBe(Math.round(0.3 * 900));
   await resize.focus();
   await resize.press("ArrowUp");
   await expect.poll(() => dock.evaluate((el) => el.getBoundingClientRect().height)).toBe(defaultHeight + 16);

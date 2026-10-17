@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LIBRARY_COLLAPSED_KEY } from "./columns";
-import { clampDockHeight, defaultDockHeight, DOCK, effectiveDockHeight, DOCK_HEIGHT_KEY, LEFT_PANEL_KEY } from "./layoutStore";
+import { contentDockHeight } from "./dock/contentHeight";
+import { clampDockHeight, DOCK, DOCK_HEIGHT_KEY, LEFT_PANEL_KEY } from "./layoutStore";
 
 function memory(initial: Record<string, string> = {}) {
   const data = { ...initial };
@@ -70,18 +71,10 @@ describe("left panel tab compatibility", () => {
 });
 
 describe("dock default height", () => {
-  it("fits eight tile rows plus the new chrome, capped at thirty percent of the viewport", () => {
-    expect(defaultDockHeight(1200)).toBe(324);
-    expect(defaultDockHeight(900)).toBe(270);
-    expect(defaultDockHeight(768)).toBe(230);
-    expect(defaultDockHeight(500)).toBe(150);
-    expect(defaultDockHeight(100)).toBe(DOCK.min);
-    expect(defaultDockHeight(Number.NaN)).toBe(DOCK.initial);
-  });
-
+  // An 8-row 32px tileset wants 305px of body (see contentHeight.test.ts).
   it.each([[900, 480], [768, 360]])("leaves enough canvas height at viewport height %i", (height, minimum) => {
     const chrome = 36 + 36 + 24 + 20;
-    expect(height - chrome - defaultDockHeight(height)).toBeGreaterThanOrEqual(minimum);
+    expect(height - chrome - contentDockHeight(305, height)).toBeGreaterThanOrEqual(minimum);
   });
 
   it("loads and persists the dragged height across viewport sizes", async () => {
@@ -89,15 +82,13 @@ describe("dock default height", () => {
     vi.stubGlobal("localStorage", storage);
     vi.resetModules();
     const { useLayoutStore: store } = await import("./layoutStore");
-    expect(effectiveDockHeight(store.getState().dockHeight, 768)).toBe(400);
+    expect(store.getState().dockHeight).toBe(400);
     store.getState().setDockHeight(350, true);
     expect(storage.data[DOCK_HEIGHT_KEY]).toBe("350");
-    expect(effectiveDockHeight(store.getState().dockHeight, 900)).toBe(350);
+    expect(store.getState().dockHeight).toBe(350);
   });
 
-  it("keeps manually resized heights and the drag bounds", () => {
-    expect(effectiveDockHeight(null, 768)).toBe(230);
-    expect(effectiveDockHeight(400, 768)).toBe(400);
+  it("keeps the drag bounds", () => {
     expect(clampDockHeight(12)).toBe(DOCK.min);
     expect(clampDockHeight(900)).toBe(DOCK.max);
   });

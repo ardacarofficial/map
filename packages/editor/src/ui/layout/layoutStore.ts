@@ -38,23 +38,9 @@ export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
 
 /**
  * Bottom dock height (CSS px, tab strip included): the range a drag may
- * reach, and the range of the default height ({@link defaultDockHeight}).
+ * reach (the default height is content-based, see dock/contentHeight.ts).
  */
 export const DOCK = { initial: 324, min: 96, max: 480 } as const;
-
-/** Dock chrome: 28px tabs, 32px controls and 8px padding. */
-const DOCK_RESERVE = 28 + 32 + 8;
-
-/** Eight 32px tile rows plus chrome, capped at 30% of the viewport. */
-export function defaultDockHeight(viewportHeight: number): number {
-  if (!Number.isFinite(viewportHeight)) return DOCK.initial;
-  return clampDockHeight(Math.min(8 * 32 + DOCK_RESERVE, 0.3 * viewportHeight));
-}
-
-/** The dock height to lay out: the user's (dragged) height, or the default for the window. */
-export function effectiveDockHeight(dockHeight: number | null, viewportHeight: number): number {
-  return dockHeight ?? defaultDockHeight(viewportHeight);
-}
 
 /** Legacy left-panel names; library corresponds to the stamps tab. */
 export type LeftPanel = "library" | "project";
@@ -109,7 +95,7 @@ export interface LayoutState {
   inspectorCollapsed: boolean;
   /** Bottom dock (Tileset | Son kullanılanlar) under the canvas hidden. */
   recentHidden: boolean;
-  /** Bottom dock height the user dragged (CSS px); null = the default for the window ({@link effectiveDockHeight}). */
+  /** Bottom dock height the user dragged (CSS px); null = the content-based default (dock/contentHeight.ts). */
   dockHeight: number | null;
   /** Selected bottom dock tab id (null = the first registered). */
   dockTab: string | null;
