@@ -6,7 +6,7 @@ export interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
-  /** Auto-dismiss delay in ms. */
+  /** Auto-dismiss delay in ms; zero or Infinity stays until dismissed. */
   duration: number;
   /** Optional button (e.g. "Geri al"); running it dismisses the toast. */
   action?: ToastAction;
@@ -34,10 +34,10 @@ interface ToastState {
 }
 
 const DEFAULT_DURATION: Record<ToastKind, number> = {
-  info: 3000,
-  success: 2500,
-  warning: 6000,
-  error: 7000,
+  info: 4000,
+  success: 4000,
+  warning: 4000,
+  error: Infinity,
 };
 
 const MAX_TOASTS = 4;
@@ -56,13 +56,14 @@ function pruneWatchers(toasts: readonly Toast[]): void {
 
 export const useToastStore = create<ToastState>()((set, get) => ({
   toasts: [],
-  push: (kind, message, duration = DEFAULT_DURATION[kind], action) => {
+  push: (kind, message, duration, action) => {
+    const delay = duration ?? (kind === "error" ? Infinity : action ? 8000 : DEFAULT_DURATION[kind]);
     const id = nextId++;
     if (action?.spent?.()) return id;
     set((s) => {
       // Same message twice in a row: replace instead of stacking duplicates.
       const rest = s.toasts.filter((t) => t.message !== message);
-      return { toasts: [...rest, { id, kind, message, duration, ...(action ? { action } : {}) }].slice(-MAX_TOASTS) };
+      return { toasts: [...rest, { id, kind, message, duration: delay, ...(action ? { action } : {}) }].slice(-MAX_TOASTS) };
     });
     pruneWatchers(get().toasts);
     const { spent, watch } = action ?? {};
@@ -90,5 +91,5 @@ export const toast = {
   warning: (message: string) => useToastStore.getState().push("warning", message),
   error: (message: string) => useToastStore.getState().push("error", message),
   /** Info toast with a button; stays a little longer so there is time to click. */
-  withAction: (message: string, action: ToastAction) => useToastStore.getState().push("info", message, 6000, action),
+  withAction: (message: string, action: ToastAction) => useToastStore.getState().push("info", message, undefined, action),
 };

@@ -67,6 +67,7 @@ export class MapScene {
   readonly store: MapStore;
   readonly #layers = new Container();
   readonly #background = new Graphics();
+  readonly #backgroundColor: number;
   readonly #views = new Map<string, LayerView>();
   readonly #atlases = new Map<string, { atlas: TilesetAtlas; groupBase: number }>();
   /** Texture per quad group (global atlas page id). */
@@ -82,8 +83,9 @@ export class MapScene {
   readonly #unsubscribe: () => void;
   readonly #onChange: () => void;
 
-  constructor(store: MapStore, images: ImageLookup, onChange: () => void) {
+  constructor(store: MapStore, images: ImageLookup, onChange: () => void, backgroundColor = CANVAS_COLORS.mapBackground) {
     this.store = store;
+    this.#backgroundColor = backgroundColor;
     this.#images = images;
     this.#onChange = onChange;
     this.root.addChild(this.#background, this.#layers);
@@ -264,7 +266,7 @@ export class MapScene {
 
   #drawBackground(): void {
     const { width, height, tileWidth, tileHeight } = this.store.document.map;
-    this.#background.clear().rect(0, 0, width * tileWidth, height * tileHeight).fill(CANVAS_COLORS.mapBackground);
+    this.#background.clear().rect(0, 0, width * tileWidth, height * tileHeight).fill(this.#backgroundColor);
   }
 
   #inRange(layer: TileLayer, key: ChunkKey): boolean {

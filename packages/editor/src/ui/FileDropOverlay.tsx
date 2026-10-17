@@ -66,13 +66,13 @@ export function FileDropOverlay() {
 
   if (!dragging || !hasProject) return null;
   return (
-    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-overlay p-6">
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-accent-line bg-accent-soft">
-        <div className="grid size-12 place-items-center rounded-full bg-raised text-accent shadow-popup">
-          <Icon name="upload" size={22} />
+    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-overlay p-4">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-accent-line bg-accent-soft/30">
+        <div className="flex items-center gap-2">
+          <Icon name="upload" size={16} className="shrink-0 text-muted" />
+          <div className="text-lg font-semibold whitespace-nowrap text-title">{count > 1 ? t("drop.overlayMany", { count }) : t("drop.overlay")}</div>
         </div>
-        <div className="text-lg font-medium text-text">{count > 1 ? t("drop.overlayMany", { count }) : t("drop.overlay")}</div>
-        <div className="text-md text-muted">{count > 1 ? t("drop.overlayHintMany") : t("drop.overlayHint")}</div>
+        <div className="text-sm text-muted">{count > 1 ? t("drop.overlayHintMany") : t("drop.overlayHint")}</div>
       </div>
     </div>
   );
