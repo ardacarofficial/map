@@ -4,11 +4,14 @@ import { describe, expect, it } from "vitest";
 import { cellSpan, labelStep, niceStep, rulerTicks, tickStep } from "./rulerMath";
 
 describe("ruler steps", () => {
-  it("labels every cell when cells are wide, fewer when they are narrow", () => {
-    expect(labelStep(64)).toBe(1);
-    expect(labelStep(32)).toBe(2);
-    expect(labelStep(16)).toBe(5);
+  it("labels every ten tiles when spacing fits, otherwise uses nice steps", () => {
+    expect(labelStep(64)).toBe(10);
+    expect(labelStep(32)).toBe(10);
+    expect(labelStep(16)).toBe(10);
+    expect(labelStep(4.4)).toBe(10);
     expect(labelStep(4)).toBe(20);
+    expect(tickStep(5)).toBe(1);
+    expect(tickStep(32)).toBe(1);
     expect(labelStep(0.5)).toBe(100);
   });
 
@@ -41,7 +44,7 @@ describe("rulerTicks", () => {
     expect(ticks.map((t) => [t.pos, t.cell, t.major])).toEqual([
       [10, 0, true],
       [42, 1, false],
-      [74, 2, true],
+      [74, 2, false],
     ]);
   });
 

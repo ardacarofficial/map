@@ -2,8 +2,9 @@ import { Menu } from "@base-ui/react/menu";
 
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
+import { Tooltip } from "../primitives/Tooltip";
 import { Icon } from "../primitives/Icon";
-import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { menuItemClass, menuPopupClass, menuPositionerClass } from "../primitives/menuStyles";
 import { BRUSH_PRESETS, MAX_BRUSH, MIN_BRUSH, stepBrushSize } from "../toolOptions/brushSize";
 import { Segmented, StepButton } from "../toolOptions/parts";
 
@@ -29,35 +30,34 @@ export function BrushSizeChip({ withShape = true, showLabel = true }: { withShap
       className={`flex min-w-0 items-center gap-1.5 transition-opacity ${unused ? "opacity-45" : ""}`}
       data-tool-option="brush-size"
       data-size-expanded={expanded || undefined}
-      title={unused ? t("toolOptions.sizeUnusedStamp") : undefined}
     >
-      <div className="flex h-7 items-center rounded-md border border-line bg-raised">
+      <div className="flex h-control-sm items-center rounded-sm border border-line bg-field hover:border-line-strong">
         {expanded && (
           <StepButton icon="minus" label={t("toolOptions.brushSmaller")} command="brush.smaller" disabled={size <= MIN_BRUSH} onClick={() => setSize(stepBrushSize(size, -1))} />
         )}
         <Menu.Root>
+          <Tooltip label={unused ? t("toolOptions.sizeUnusedStamp") : t("toolOptions.sizeKeys")}>
           <Menu.Trigger
             aria-label={t("toolOptions.size")}
             data-size-chip
             className={`flex h-full items-center gap-1 px-2 text-sm text-text outline-none hover:bg-hover data-popup-open:bg-hover ${
-              expanded ? "border-x border-line" : "rounded-md"
+              expanded ? "border-x border-line" : "rounded-sm"
             }`}
           >
-            {showLabel && <span className="text-faint">{t("toolOptions.size")}</span>}
-            <span className="font-mono tabular">{size}</span>
+            {showLabel && <span className="text-muted">{t("toolOptions.size")}</span>}
+            <span className="tabular">{size}</span>
             <Icon name="chevronDown" size={12} className="text-faint" />
           </Menu.Trigger>
+          </Tooltip>
           <Menu.Portal>
             <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-              <Menu.Popup className={`${menuPopupClass} min-w-[140px]`}>
+              <Menu.Popup className={`${menuPopupClass} min-w-48`}>
                 {BRUSH_PRESETS.map((preset) => (
-                  <Menu.Item key={preset} className={`${menuItemClass} py-1 font-mono text-sm tabular`} onClick={() => setSize(preset)}>
-                    <Icon name="check" size={13} className={preset === size ? "text-accent" : "invisible"} />
+                  <Menu.Item key={preset} className={`${menuItemClass} tabular`} onClick={() => setSize(preset)}>
+                    <span className="grid size-4 place-items-center"><Icon name="tick" size={12} className={preset === size ? "" : "invisible"} /></span>
                     {t("toolOptions.sizeValue", { size: preset })}
                   </Menu.Item>
                 ))}
-                <Menu.Separator className={menuSeparatorClass} />
-                <div className="px-2 pt-0.5 pb-1 text-2xs text-faint">{t("toolOptions.sizeKeys")}</div>
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>
@@ -81,8 +81,8 @@ export function BrushShapeChoice() {
       value={shape}
       onChange={setShape}
       options={[
-        { value: "square", label: t("toolOptions.square"), glyph: <span className="size-2.5 rounded-[1px] border-[1.5px] border-current" /> },
-        { value: "circle", label: t("toolOptions.circle"), glyph: <span className="size-2.5 rounded-full border-[1.5px] border-current" /> },
+        { value: "square", label: t("toolOptions.square"), glyph: <Icon name="square" size={12} /> },
+        { value: "circle", label: t("toolOptions.circle"), glyph: <span className="size-3 rounded-full border border-current" /> },
       ]}
     />
   );

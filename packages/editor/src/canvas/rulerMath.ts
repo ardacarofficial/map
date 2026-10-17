@@ -32,7 +32,7 @@ export function niceStep(cellPx: number, minPx: number): number {
 
 /** Cells between labels for cells `cellPx` CSS px wide. */
 export function labelStep(cellPx: number): number {
-  return niceStep(cellPx, MIN_LABEL_PX);
+  return cellPx * 10 >= MIN_LABEL_PX ? 10 : niceStep(cellPx, MIN_LABEL_PX);
 }
 
 /** Cells between minor ticks: a divisor of the label step (5, 2 or 1 parts) at least {@link MIN_TICK_PX} apart, or the label step. */

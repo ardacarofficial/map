@@ -116,6 +116,8 @@ test("stamp library: search, category chips, ★, Kategori submenu, place from c
   await page.locator("[data-stamp-view-button='list']").click();
   await expect(lib.locator("[data-stamp-view='list']")).toBeVisible();
   await page.locator("[data-stamp-view-button='grid']").click();
+  // Smallest cards first: at the 260 px default library width the default size already fills one column.
+  await page.locator("[data-stamp-card-size]").fill("88");
   const width0 = (await cards.first().boundingBox())!.width;
   await page.locator("[data-stamp-card-size]").fill("200");
   await expect.poll(async () => (await cards.first().boundingBox())!.width).toBeGreaterThan(width0);
