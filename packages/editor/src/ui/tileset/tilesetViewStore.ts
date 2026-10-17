@@ -59,9 +59,6 @@ interface TilesetViewState {
   reveal: RevealRequest | null;
   setZoom(tilesetId: string, zoom: number | null): void;
   setSelection(selection: PanelSelection | null): void;
-  /** Element in the dock's tab strip where the tileset view puts its zoom controls (null = not mounted). */
-  dockSlot: HTMLElement | null;
-  setDockSlot(el: HTMLElement | null): void;
   requestReveal(tilesetId: string, ids: readonly number[]): void;
 }
 
@@ -157,7 +154,5 @@ export const useTilesetView = create<TilesetViewState>()((set, get) => ({
     writeZoom(next);
   },
   setSelection: (selection) => set({ selection }),
-  dockSlot: null,
-  setDockSlot: (dockSlot) => set({ dockSlot }),
   requestReveal: (tilesetId, ids) => set({ reveal: { tilesetId, ids: [...ids], nonce: ++nonce } }),
 }));

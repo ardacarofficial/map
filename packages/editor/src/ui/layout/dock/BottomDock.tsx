@@ -1,24 +1,23 @@
-import { useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
-import { runCommand } from "../../../commands/registry";
 import { t } from "../../../i18n";
+import { useEditorStore } from "../../../state/editorStore";
+import { useStructureVersion } from "../../hooks";
 import { IconButton } from "../../primitives/Button";
 import { Icon } from "../../primitives/Icon";
 import { Tooltip } from "../../primitives/Tooltip";
+import { Tabs } from "../../primitives/Tabs";
+import { contentDockHeight, wantedTilesetBodyHeight } from "./contentHeight";
+import { useDockContent } from "./dockContentStore";
 import { RecentTilesStrip } from "../RecentTilesStrip";
-import { DOCK, effectiveDockHeight, useLayoutStore } from "../layoutStore";
+import { DOCK, useLayoutStore } from "../layoutStore";
 import { dockTabs, registerDockTab, useDockVersion } from "./registry";
 // The tileset view registers its own "tileset" tab (order 10) when its module loads.
 import "../../panels/TilesetPanel";
 
 registerDockTab({ id: "recent", label: "recent.title", order: 20, Component: RecentTilesStrip });
 
-/** Selects a dock tab and makes sure the dock is shown (e.g. a tileset card in the library). */
-export function showDockTab(id: string): void {
-  const s = useLayoutStore.getState();
-  s.setDockTab(id);
-  if (s.recentHidden) s.setRecentHidden(false);
-}
+export { showDockTab } from "./dockActions";
 
 function subscribeResize(cb: () => void): () => void {
   window.addEventListener("resize", cb);
@@ -30,22 +29,30 @@ function useViewportHeight(): number {
   return useSyncExternalStore(subscribeResize, () => window.innerHeight, () => 768);
 }
 
-/** The dock height as laid out: the dragged height, or the default for the window height. */
+/** The dock height as laid out: the dragged height, or the content default for the window height. */
 function useDockHeight(): number {
   const stored = useLayoutStore((s) => s.dockHeight);
   const viewport = useViewportHeight();
-  return effectiveDockHeight(stored, viewport);
+  const wanted = useDockContent((s) => s.wanted);
+  // Count the section border once, inside the same cap as the dock content.
+  return stored ?? contentDockHeight(wanted + 1, viewport);
 }
 
 /**
  * The bottom dock under the canvas: a tab strip (registered tabs, see
  * `dock/registry.ts`) over the selected tab's content. Its top edge
  * resizes it (height remembered; double-click: back to the default, which
- * follows the window height). The canvas always keeps at least 160 px.
+ * fits the tileset content and window height). The canvas always keeps at least 160 px.
  */
 export function BottomDock() {
   useDockVersion();
+  const store = useEditorStore((s) => s.project?.store);
+  useStructureVersion(store);
+  const wanted = wantedTilesetBodyHeight(store?.document.tilesets ?? []);
+  useLayoutEffect(() => { useDockContent.getState().setWanted(wanted); }, [wanted]);
   const height = useDockHeight();
+  const collapsed = useDockContent((s) => s.collapsed);
+  const setCollapsed = useDockContent((s) => s.setCollapsed);
   const selected = useLayoutStore((s) => s.dockTab);
   const setTab = useLayoutStore((s) => s.setDockTab);
   const tabs = dockTabs();
@@ -58,40 +65,25 @@ export function BottomDock() {
       aria-label={t("layout.dock")}
       data-dock=""
       data-dock-tab={tab.id}
-      style={{ height, maxHeight: "calc(100% - 160px)" }}
+      style={{ height: collapsed ? 29 : height, maxHeight: "calc(100% - 160px)" }}
       className="relative flex shrink-0 flex-col border-t border-line bg-panel"
     >
-      <DockResizeHandle />
-      <div className="flex h-dockbar shrink-0 items-center gap-1 border-b border-line-subtle pr-1 pl-2">
-        <div role="tablist" aria-label={t("layout.dock")} className="flex h-full min-w-0 items-stretch gap-1 overflow-x-auto">
-          {tabs.map((x) => {
-            const on = x.id === tab.id;
-            return (
-              <button
-                key={x.id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                data-dock-tab-button={x.id}
-                onClick={() => setTab(x.id)}
-                className={`relative flex shrink-0 items-center px-2.5 text-sm transition-colors ${on ? "text-text" : "text-faint hover:text-muted"}`}
-              >
-                {t(x.label)}
-                {on && <span aria-hidden className="absolute right-1.5 bottom-0 left-1.5 h-0.5 rounded-full bg-accent" />}
-              </button>
-            );
-          })}
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+      {!collapsed && <DockResizeHandle />}
+      <Tabs
+        label={t("layout.dock")}
+        value={tab.id}
+        onValueChange={(id) => { setTab(id); setCollapsed(false); }}
+        items={tabs.map((x) => ({ value: x.id, label: t(x.label), attrs: { "data-dock-tab-button": x.id } }))}
+        trailing={<>
           {Actions && <Actions />}
-          <Tooltip label={t("layout.hideDock")} command="view.toggleRecent">
-            <IconButton aria-label={t("layout.hideDock")} className="size-7" data-dock-hide="" onClick={() => runCommand("view.toggleRecent")}>
-              <Icon name="chevronDown" size={14} />
+          <Tooltip label={t(collapsed ? "tilesetDock.expand" : "tilesetDock.collapse")}>
+            <IconButton size="sm" aria-label={t(collapsed ? "tilesetDock.expand" : "tilesetDock.collapse")} data-dock-hide="" onClick={() => setCollapsed(!collapsed)}>
+              <Icon name={collapsed ? "chevron-up" : "chevron-down"} size={16} />
             </IconButton>
           </Tooltip>
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col">
+        </>}
+      />
+      <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>
         <Content />
       </div>
     </section>

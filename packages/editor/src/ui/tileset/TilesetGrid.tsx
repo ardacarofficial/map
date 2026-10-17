@@ -8,7 +8,7 @@
  * the host (the scroll viewport) owns zoom, panning and keyboard routing,
  * and hands them down through {@link GridHostContext}.
  *
- * ⚙ Düzenle → Arazi: a drag is a ROUGH rectangle over a terrain block; the
+ * Arazi mode: a drag is a ROUGH rectangle over a terrain block; the
  * program finds the template and origin (`terrainDraft.startDraft`) and the
  * Denetçi's ARAZİ card takes it from there. The found block is outlined and
  * the tags of the set in focus are drawn on the tiles; with "Düzelt" a click
@@ -20,7 +20,6 @@
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { getTerrainSet, isTileSolid, terrainTemplateInfo, type TerrainSet, type Tileset } from "@smap/core";
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -68,24 +67,12 @@ import {
 import { BlockGhost, CellLabel, drawMarks, drawTiles, SelectionOverlay } from "./TilesetOverlays";
 import { commitTilesetSelection, highlightedIds } from "./tilesetSelect";
 import { useTilesetView } from "./tilesetViewStore";
+import { GridHostContext } from "./view/gridHost";
 
 /** What a grid needs from the viewport around it. */
-export interface GridHost {
-  /** Focuses the viewport (keyboard). */
-  focus(): void;
-  /** True while Space is held or a pan drag runs: the left button pans instead. */
-  panning(): boolean;
-  /** Arrow / Esc keys for this tileset (null unregisters). Returns true when handled. */
-  registerKeys(tilesetId: string, handler: ((event: KeyboardEvent) => boolean) | null): void;
-  /** Scrolls so that `box` (px, relative to `grid`) is visible; centred when it was out of view and `center`. */
-  reveal(grid: HTMLElement, box: { left: number; top: number; right: number; bottom: number }, center: boolean): void;
-  /** Draw only while near the viewport (the stack). */
-  lazy: boolean;
-}
+export { GridHostContext, type GridHost } from "./view/gridHost";
 
-export const GridHostContext = createContext<GridHost | null>(null);
-
-/** "Arazi başlat buradan": ⚙ Düzenle → Arazi with the block around `cell` found (or why nothing was found). */
+/** "Arazi başlat buradan": Arazi mode with the block around `cell` found (or why nothing was found). */
 export function startTerrainAt(tileset: Tileset, cell: Cell): void {
   useUiStore.getState().setTilesetMode("terrain");
   if (!startDraft(tileset, { col: cell.col, row: cell.row, columns: 1, rows: 1 })) toast.warning(t("terrain.noCandidate"));
@@ -503,12 +490,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
               key={r.tileId}
               aria-hidden
               data-random-tile={r.tileId}
-              className="pointer-events-none absolute rounded-[1px] outline-2 outline-accent"
+              className="pointer-events-none absolute rounded-xs outline-1 outline-accent"
               style={{ left: col * cellW, top: row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
             >
               {cellW >= 14 && (
-                <span className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-accent text-on-accent shadow-popup">
-                  <Icon name="dice" size={9} />
+                <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-sm bg-popup text-accent">
+                  <Icon name="dice" size={16} />
                 </span>
               )}
             </div>
@@ -517,17 +504,17 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         {picking && hover && hoverId !== null && !shownSet.has(hoverId) && !drag && (
           <div
             aria-hidden
-            className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
+            className="pointer-events-none absolute outline outline-1 outline-(--color-hover-tile) shadow-[0_0_0_2px_rgb(0_0_0_/_0.6)]"
             style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH }}
           />
         )}
         {mode === "solid" && hover && (
           <div
             aria-hidden
-            className={`pointer-events-none absolute outline-2 outline-collision-solid ${
+            className={`pointer-events-none absolute outline-1 outline-collision-solid ${
               isTileSolid(tileset, hover.row * tileset.columns + hover.col) ? "" : "bg-collision-solid/20"
             }`}
-            style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -2 }}
+            style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
           />
         )}
         {shown.length > 0 && (
@@ -557,12 +544,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
           <div
             aria-hidden
             data-terrain-rough=""
-            className="pointer-events-none absolute bg-accent/10 outline-2 outline-accent"
+            className="pointer-events-none absolute bg-accent-soft/30 outline-1 outline-accent"
             style={{ left: rough.col * cellW, top: rough.row * cellH, width: rough.columns * cellW, height: rough.rows * cellH, outlineStyle: "dashed", outlineOffset: -1 }}
           />
         )}
         {fix && hover && hoverZone && (
-          <TagZoneHover zone={hoverZone} col={hover.col} row={hover.row} cellW={cellW} cellH={cellH} color={resolveTerrain(store?.document, fix)?.terrain.color ?? "#ffffff"} />
+          <TagZoneHover zone={hoverZone} col={hover.col} row={hover.row} cellW={cellW} cellH={cellH} color={resolveTerrain(store?.document, fix)?.terrain.color ?? "var(--color-text)"} />
         )}
         {picking && !(drag?.kind === "select" && drag.carry?.active) && (shownBounds ? shownBounds.width * shownBounds.height > 1 : hover !== null) && (
           <CellLabel
@@ -620,21 +607,21 @@ function TileMenuItems({
       <div className="px-2 pt-1 pb-1.5 font-mono text-2xs text-faint tabular">{t("tilesetPanel.hover", { id: tileId, col: cell.col, row: cell.row })}</div>
       <AddToPaletteMenu items={paletteItems} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="random" onClick={() => toggleRandomTile(tile)}>
-        <Icon name="dice" size={15} className="text-accent" />
+        <Icon name="dice" size={16} className="text-accent" />
         {inRandom ? t("tilesetLib.menuRandomRemove") : t("tilesetLib.menuRandomAdd")}
       </ContextMenu.Item>
       <div role="separator" className={menuSeparatorClass} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="solid" onClick={() => setTilesSolid(tileset.id, [tileId], !solid)}>
-        <Icon name="bricks" size={15} className="text-collision-solid" />
+        <Icon name="bricks" size={16} className="text-collision-solid" />
         {solid ? t("tilesetLib.menuUnsolid") : t("tilesetLib.menuSolid")}
       </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="terrain" onClick={() => startTerrainAt(tileset, cell)}>
-        <Icon name="terrain" size={15} className="text-accent" />
+        <Icon name="terrain" size={16} className="text-accent" />
         {t("tilesetLib.menuTerrain")}
       </ContextMenu.Item>
       <div role="separator" className={menuSeparatorClass} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="copy" onClick={copy}>
-        <Icon name="copy" size={15} className="text-muted" />
+        <Icon name="copy" size={16} className="text-muted" />
         {t("tilesetLib.menuCopyId")}
       </ContextMenu.Item>
     </>

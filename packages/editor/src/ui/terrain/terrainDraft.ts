@@ -1,5 +1,5 @@
 /**
- * State of "Arazi tanımla" (tileset ⚙ Düzenle → Arazi) and of "Düzelt".
+ * State of "Arazi tanımla" (tileset Arazi mode) and of "Düzelt".
  *
  * Define: the user drags a ROUGH rectangle over a terrain block; core
  * `detectTerrainBlock` finds the template and the exact origin from the
@@ -14,6 +14,9 @@ import { detectTerrainBlock, type DetectedTerrainBlock, type TileGridRect, type 
 import { create } from "zustand";
 
 import { terrainDefaults } from "../../commands/terrainActions";
+import { showDockTab } from "../layout/dock/dockActions";
+import { useTilesetView } from "../tileset/tilesetViewStore";
+import { showPalette } from "../palettes/paletteActions";
 import { useUiStore } from "../uiStore";
 import { kindOfTemplate, type TerrainRef } from "./terrainModel";
 import { tilesetPixels } from "./tilesetPixels";
@@ -120,18 +123,26 @@ export function clearTerrainDraft(): void {
   if (s.fix) s.setFix(null);
 }
 
-/** "Düzelt" on `ref`: opens the tileset's ⚙ Düzenle → Arazi with clicks tagging that terrain. */
+/** "Düzelt" on `ref`: opens the tileset's Arazi mode with clicks tagging that terrain. */
 export function startFix(ref: TerrainRef): void {
+  showDockTab("tileset");
+  showPalette(null);
   const ui = useUiStore.getState();
   ui.setActiveTileset(ref.tilesetId);
+  useTilesetView.getState().requestJump(ref.tilesetId);
   ui.setTilesetMode("terrain");
   useTerrainDraft.setState({ draft: null, fix: ref });
 }
 
-/** "+" in the Araziler list: opens ⚙ Düzenle → Arazi ready for a rough rectangle. */
+/** "+" in the Araziler list: opens Arazi mode ready for a rough rectangle. */
 export function startDefine(tilesetId?: string): void {
+  showDockTab("tileset");
+  showPalette(null);
   const ui = useUiStore.getState();
-  if (tilesetId) ui.setActiveTileset(tilesetId);
+  if (tilesetId) {
+    ui.setActiveTileset(tilesetId);
+    useTilesetView.getState().requestJump(tilesetId);
+  }
   ui.setTilesetMode("terrain");
   useTerrainDraft.setState({ fix: null });
 }

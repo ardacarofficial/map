@@ -36,6 +36,11 @@ export function fitScale(available: number, contentWidth: number, tileWidth: num
   return Math.min(MAX_FIT_SCALE, tilePx / tileWidth);
 }
 
+/** Largest crisp step up to 2× that keeps a tile at most 32 CSS px tall. */
+export function naturalScale(tileHeight: number): number {
+  return [...ZOOM_STEPS].reverse().find((scale) => scale <= 2 && tileHeight * scale <= 32) ?? MIN_ZOOM;
+}
+
 /** Next zoom step above (`direction` 1) or below (-1) `current`; stays put at the ends. */
 export function stepZoom(current: number, direction: 1 | -1): number {
   if (direction > 0) return ZOOM_STEPS.find((s) => s > current + 1e-6) ?? Math.max(current, MAX_ZOOM);

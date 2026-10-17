@@ -2,6 +2,7 @@
 import { FLIP_D, FLIP_H, FLIP_V, tileRect, type Tileset } from "@smap/core";
 
 import { getTilesetImage } from "../../state/tilesetImages";
+import { cssColor } from "../tileset/cssColor";
 import type { PaletteData } from "./paletteModel";
 
 /**
@@ -29,7 +30,7 @@ export function drawPalette(
     const tileset = getTileset(c.tilesetId);
     const image = tileset ? getTilesetImage(tileset.id) : undefined;
     if (!tileset || !image || c.tileId >= tileset.columns * tileset.rows) {
-      ctx.strokeStyle = "rgba(240,80,80,0.8)";
+      ctx.strokeStyle = cssColor("--color-danger");
       ctx.lineWidth = Math.max(1, slotW / 16);
       ctx.beginPath();
       ctx.moveTo(x + slotW * 0.3, y + slotH * 0.3);

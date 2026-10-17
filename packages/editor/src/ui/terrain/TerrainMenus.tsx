@@ -10,12 +10,12 @@ import type { ReactNode } from "react";
 import { chooseTerrain } from "../../commands/terrainActions";
 import { t } from "../../i18n";
 import { Icon } from "../primitives/Icon";
-import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { menuGroupLabelClass, menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { TerrainDot, TerrainSwatch } from "./TerrainList";
 import { resolveTerrain, sameTerrain, terrainSetEntries, type TerrainRef } from "./terrainModel";
 
 export const selectTriggerClass =
-  "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-raised px-2 text-md text-text outline-none transition-colors hover:border-line-strong data-popup-open:border-line-strong focus-visible:border-accent";
+  "flex h-control-sm min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-field px-2 text-sm text-text outline-none transition-colors hover:border-line-strong data-popup-open:border-line-strong focus-visible:border-accent";
 
 /** Every terrain of the project; picking one chooses it for the brush. */
 export function TerrainPickerMenu({
@@ -45,22 +45,22 @@ export function TerrainPickerMenu({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} max-h-[360px] min-w-[200px] overflow-y-auto`} data-terrain-menu="">
+          <Menu.Popup className={`${menuPopupClass} max-h-90 min-w-50 overflow-y-auto`} data-terrain-menu="">
             {entries.map(({ tileset, set }, gi) => (
               <Menu.Group key={`${tileset.id}/${set.id}`}>
                 {gi > 0 && <Menu.Separator className={menuSeparatorClass} />}
-                <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-2xs font-semibold tracking-wide text-faint">
+                <Menu.GroupLabel className={menuGroupLabelClass}>
                   {set.name}
                   {several ? ` · ${tileset.name}` : ""}
                 </Menu.GroupLabel>
                 {set.terrains.map((terrain) => {
                   const ref = { tilesetId: tileset.id, setId: set.id, terrainId: terrain.id };
                   return (
-                    <Menu.Item key={terrain.id} className={`${menuItemClass} py-1 text-sm`} data-terrain-option={terrain.name} onClick={() => chooseTerrain(ref)}>
-                      <TerrainSwatch tileset={tileset} set={set} terrainId={terrain.id} size={18} />
+                    <Menu.Item key={terrain.id} className={menuItemClass} data-terrain-option={terrain.name} onClick={() => chooseTerrain(ref)}>
+                      <TerrainSwatch tileset={tileset} set={set} terrainId={terrain.id} size={16} />
                       <span className="min-w-0 flex-1 truncate">{terrain.name}</span>
                       <TerrainDot color={terrain.color} />
-                      {sameTerrain(ref, value) && <Icon name="check" size={13} className="text-accent" />}
+                      {sameTerrain(ref, value) && <Icon name="tick" size={12} className="text-accent" />}
                     </Menu.Item>
                   );
                 })}
@@ -106,13 +106,13 @@ export function MenuSelect<V extends string | number>({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} max-h-[320px] min-w-[200px] overflow-y-auto`}>
+          <Menu.Popup className={`${menuPopupClass} max-h-80 min-w-50 overflow-y-auto`}>
             {options.map((o) => (
-              <Menu.Item key={String(o.value)} className={`${menuItemClass} py-1 text-sm`} data-select-option={String(o.value)} onClick={() => onChange(o.value)}>
+              <Menu.Item key={String(o.value)} className={menuItemClass} data-select-option={String(o.value)} onClick={() => onChange(o.value)}>
                 {o.leading}
                 <span className="min-w-0 flex-1 truncate">{o.label}</span>
                 {o.detail && <span className="shrink-0 font-mono text-2xs text-faint tabular">{o.detail}</span>}
-                {o.value === value && <Icon name="check" size={13} className="text-accent" />}
+                {o.value === value && <Icon name="tick" size={12} className="text-accent" />}
               </Menu.Item>
             ))}
           </Menu.Popup>
