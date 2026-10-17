@@ -508,7 +508,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             >
               {cellW >= 14 && (
                 <span className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-accent text-on-accent shadow-popup">
-                  <Icon name="dice" size={9} strokeWidth={2.5} />
+                  <Icon name="dice" size={9} />
                 </span>
               )}
             </div>

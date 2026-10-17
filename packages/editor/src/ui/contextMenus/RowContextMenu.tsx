@@ -55,7 +55,7 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
       >
         {anyCheck ? (
           <span aria-hidden className="grid size-[15px] shrink-0 place-items-center text-accent">
-            {entry.checked && <Icon name="check" size={13} strokeWidth={2.25} />}
+            {entry.checked && <Icon name="check" size={13} />}
           </span>
         ) : (
           entry.icon && <Icon name={entry.icon} size={15} className={`shrink-0 ${entry.danger ? "" : "text-muted"}`} />

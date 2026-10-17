@@ -40,7 +40,7 @@ export function StepButton({
         onClick={onClick}
         className="grid h-full w-6 place-items-center text-muted transition-colors hover:text-text disabled:opacity-30"
       >
-        <Icon name={icon} size={12} strokeWidth={2.25} />
+        <Icon name={icon} size={12} />
       </button>
     </Tooltip>
   );

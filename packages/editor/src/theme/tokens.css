@@ -23,35 +23,43 @@
   --color-bg: #11171c; /* app bar, rails, canvas surround */
   --color-canvas: #0b1217; /* behind the map */
   --color-panel: #1b212a; /* side panels, dock, tool bar */
-  --color-raised: #121b21; /* inputs, fields, cards (sunken into the panel) */
+  --color-field: #141a21;
+  /* Compatibility alias: literal hex for getComputedStyle consumers. */
+  --color-raised: #141a21; /* inputs, fields, cards (sunken into the panel) */
   --color-popup: #212932; /* menus, tooltips, popovers */
-  --color-hover: #242a30; /* hovered rows and buttons */
-  --color-active: #2a3139; /* pressed buttons, neutral selected state */
-  --color-tab-row: #21272d; /* tab strips (document tabs, panel tabs) */
+  --color-hover: #262e38; /* hovered rows and buttons */
+  --color-hover-popup: #2c3540;
+  --color-active: #2a323c; /* pressed buttons, neutral selected state */
+  --color-tab-row: #161c22; /* tab strips (document tabs, panel tabs) */
   --color-overlay: rgb(5 9 12 / 0.62); /* modal backdrop */
 
   /* ---- Lines */
   --color-line-subtle: #262d34;
-  --color-line: #30383f;
-  --color-line-strong: #373f46;
+  --color-line: #323b45;
+  --color-line-strong: #414b56;
+
+  --color-control-border: #64707c;
 
   /* ---- Text */
   --color-title: #f7fbff; /* inspector titles, project name */
-  --color-text: #e9eef3;
-  --color-muted: #a4abb4;
-  --color-faint: #6f7881;
+  --color-text: #e6ebf0;
+  --color-muted: #a4adb7;
+  --color-faint: #838c96;
   --color-inverse: #0b1217;
 
   /* ---- The single accent color */
   --color-accent: #69c9ae; /* sea green */
   --color-accent-hover: #86d8c0;
-  --color-accent-soft: #2a4b4b; /* selected row / active tool background */
+  --color-accent-press: #55b39a;
+  --color-accent-soft: #1f3a3a; /* selected row / tile background */
   --color-accent-line: #5b7679; /* outline of the selected row */
   --color-on-accent: #0b2a24; /* text on an accent fill */
 
   /* ---- Status (toasts, validation) */
   --color-danger: #f0707a;
   --color-danger-soft: rgb(240 112 122 / 0.12);
+  --color-info: #5cb2ff;
+  --color-info-soft: rgb(92 178 255 / 0.12);
   --color-warning: #e7b75f;
   --color-warning-soft: rgb(231 183 95 / 0.12);
   /* Built-in entity types on the canvas (read with getComputedStyle; keep #rrggbb). */
@@ -67,6 +75,7 @@
   --color-checker-b: #1f2830;
 
   /* ---- Map overlays (canvas + tileset panel). Opaque hex; alpha is applied where drawn. */
+  --color-map-bg: #151c23;
   --color-collision-solid: #ff5468; /* solid tiles / cells: warm red, reads on dark and on grass */
   --color-collision-pass: #5cb2ff; /* "force passable" exception cells: sky blue (≠ teal accent) */
   --color-terrain-tint: #c39bff; /* terrain blocks and painted terrain cells: soft violet (≠ accent) */
@@ -74,6 +83,10 @@
   /* ---- Type */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
 
   --text-2xs: 10px;
   --text-2xs--line-height: 14px;
@@ -85,38 +98,53 @@
   --text-md--line-height: 20px;
   --text-lg: 15px;
   --text-lg--line-height: 22px;
-  --text-title: 16px;
-  --text-title--line-height: 22px;
+  /* deprecated → text-md font-semibold */
+  --text-title: 13px;
+  --text-title--line-height: 20px;
   --text-xl: 22px;
   --text-xl--line-height: 28px;
 
   /* ---- Radii */
-  --radius-xs: 3px;
+  --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-xl: 8px; /* deprecated → radius-lg */
   --radius-full: 9999px;
 
   /* ---- Elevation */
-  --shadow-popup: 0 0 0 1px rgb(0 0 0 / 0.35), 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
-  --shadow-toast: 0 0 0 1px rgb(0 0 0 / 0.35), 0 8px 24px -6px rgb(0 0 0 / 0.55);
+  --shadow-popup: 0 8px 24px -6px rgb(0 0 0 / 0.55);
+  --shadow-toast: 0 8px 24px -6px rgb(0 0 0 / 0.55);
 
   /* ---- Spacing unit (Tailwind `p-1` = 4px) */
   --spacing: 4px;
 
   /* ---- Layout (frame sizes; live column widths: ui/layout/columns.ts) */
-  --spacing-toolbar: 44px; /* app bar (menus, project name, save state, export) */
-  --spacing-tabrow: 34px; /* document tabs (open maps) */
-  --spacing-optionsbar: 40px; /* tool bar above the canvas */
+  --spacing-toolbar: 36px; /* app bar (menus, project name, save state, export) */
+  --spacing-tabrow: 28px; /* document tabs (open maps) */
+  --spacing-optionsbar: 36px; /* tool bar above the canvas */
   --spacing-recentstrip: 40px; /* compact recent strip (dock tab content row) */
-  --spacing-dockbar: 32px; /* bottom dock tab strip */
-  --spacing-statusbar: 28px;
-  --spacing-rail: 48px; /* left panel switcher */
-  --spacing-sidebar: 288px; /* skeleton column width */
-  --spacing-rightbar: 320px; /* skeleton right column width */
-  --spacing-layerrow: 29px; /* layer list row */
+  --spacing-dockbar: 28px; /* bottom dock tab strip */
+  --spacing-statusbar: 24px;
+  --spacing-rail: 40px; /* tool rail */
+  --spacing-sidebar: 260px; /* skeleton column width */
+  --spacing-rightbar: 296px; /* skeleton right column width */
+  --spacing-layerrow: 28px; /* layer list row */
+
+  /* ---- Primitive dimensions */
+  --spacing-control-sm: 24px;
+  --spacing-control-md: 28px;
+  --spacing-control-rail: 32px;
+  --spacing-row: 24px;
+  --spacing-proplabel: 72px;
+  --spacing-dialog-s: 400px;
+  --spacing-dialog-m: 560px;
+  --spacing-dialog-l: 880px;
+  --tracking-section: 0.02em;
 
   /* ---- Motion */
+  --duration-fast: 80ms;
+  --duration-ui: 120ms;
+  --duration-panel: 150ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }

@@ -552,7 +552,7 @@ function WeightRow({
 function StepGlyph({ icon, label, disabled, onClick }: { icon: "plus" | "minus"; label: string; disabled: boolean; onClick(): void }) {
   return (
     <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick} className="grid size-5 place-items-center text-muted transition-colors hover:text-text disabled:opacity-30">
-      <Icon name={icon} size={11} strokeWidth={2.25} />
+      <Icon name={icon} size={11} />
     </button>
   );
 }

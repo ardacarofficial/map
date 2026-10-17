@@ -62,7 +62,7 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
 function CheckSlot({ on }: { on: boolean }) {
   return (
     <span aria-hidden className="grid size-4 shrink-0 place-items-center text-accent">
-      {on && <Icon name="check" size={13} strokeWidth={2.25} />}
+      {on && <Icon name="check" size={13} />}
     </span>
   );
 }

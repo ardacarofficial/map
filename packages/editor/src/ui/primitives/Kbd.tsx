@@ -1,20 +1,24 @@
+/** Kbd renders boxed shortcut keys; KbdText renders an unboxed menu shortcut. */
+import type { HTMLAttributes } from "react";
+
 import { chordLabels, isMac } from "../../commands/keymap";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 
-/** Renders one key string ("Ctrl+K") as separate key caps. */
-export function Kbd({ keys, className = "" }: { keys: string; className?: string }) {
+type KbdProps = HTMLAttributes<HTMLSpanElement> & { keys: string };
+export function Kbd({ keys, className = "", ...rest }: KbdProps) {
   return (
-    <span className={`inline-flex items-center gap-0.5 ${className}`}>
+    <span {...rest} className={`inline-flex items-center gap-0.5 ${className}`}>
       {chordLabels(keys, isMac()).map((label, i) => (
-        <kbd
-          key={i}
-          className="inline-grid h-[18px] min-w-[18px] place-items-center rounded-xs border border-line bg-panel px-1 font-sans text-2xs font-medium text-muted"
-        >
+        <kbd key={i} className="inline-grid h-4 min-w-4 place-items-center rounded-xs border border-line-strong px-1 font-mono text-xs font-normal text-muted">
           {label}
         </kbd>
       ))}
     </span>
   );
+}
+
+export function KbdText({ keys, className = "", ...rest }: KbdProps) {
+  return <span {...rest} className={`font-mono text-xs text-faint ${className}`}>{chordLabels(keys, isMac()).join(" ")}</span>;
 }
 
 /** First shortcut of a command, or nothing if it has none. */

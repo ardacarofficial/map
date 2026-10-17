@@ -135,7 +135,7 @@ export function ZoomControl() {
                       onClick={() => getCanvasHandle()?.setZoom(value)}
                     >
                       <span aria-hidden className="grid size-4 shrink-0 place-items-center text-accent">
-                        {on && <Icon name="check" size={13} strokeWidth={2.25} />}
+                        {on && <Icon name="check" size={13} />}
                       </span>
                       <span className="flex-1">{formatZoomPercent(value, locale)}%</span>
                     </Menu.Item>

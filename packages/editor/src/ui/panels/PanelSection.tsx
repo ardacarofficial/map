@@ -40,13 +40,13 @@ export function PanelSection({
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
         data-section-toggle=""
-        className="-ml-1 flex h-6 min-w-0 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-[0.06em] text-muted uppercase hover:bg-hover hover:text-text"
+        className="-ml-1 flex h-6 min-w-0 items-center gap-1 rounded-sm pr-1.5 pl-0.5 text-xs font-semibold tracking-section text-muted uppercase hover:bg-hover hover:text-text"
       >
-        <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={13} className="shrink-0 text-faint" />
+        <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={12} className="shrink-0 text-faint" />
         <span className="truncate">{title}</span>
       </button>
     ) : (
-      <h2 className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">{title}</h2>
+      <h2 className="text-xs font-semibold tracking-section text-muted uppercase">{title}</h2>
     ));
   if (bare) {
     return (
@@ -56,8 +56,8 @@ export function PanelSection({
     );
   }
   return (
-    <section aria-label={title} data-collapsed={collapsed ? "" : undefined} className={`flex min-h-0 flex-col border-b border-line last:border-b-0 ${className}`}>
-      <header className="flex h-9 shrink-0 items-center gap-1 pr-1.5 pl-3">
+    <section aria-label={title} data-collapsed={collapsed ? "" : undefined} className={`flex min-h-0 flex-col border-b border-line-subtle last:border-b-0 ${className}`}>
+      <header className="flex h-control-md shrink-0 items-center gap-1 px-2">
         {title_}
         <div className="ml-auto flex items-center gap-0.5">
           {actions}

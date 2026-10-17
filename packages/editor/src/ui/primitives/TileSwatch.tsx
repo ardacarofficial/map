@@ -1,5 +1,6 @@
+/** Tile thumbnail: tileset, tileId, size and canvas props; checker background, crisp pixels. */
 import { tileRect, type Tileset } from "@smap/core";
-import { useEffect, useRef } from "react";
+import { useEffect, useImperativeHandle, useRef, type ComponentPropsWithRef } from "react";
 
 import { useTilesetImage } from "../hooks";
 
@@ -9,13 +10,17 @@ export function TileSwatch({
   tileId,
   size,
   className = "",
-}: {
+  ref: forwardedRef,
+  style,
+  ...rest
+}: ComponentPropsWithRef<"canvas"> & {
   tileset: Tileset;
   tileId: number;
   size: number;
   className?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  useImperativeHandle(forwardedRef, () => ref.current!);
   const image = useTilesetImage(tileset.id);
 
   useEffect(() => {
@@ -35,5 +40,5 @@ export function TileSwatch({
     ctx.drawImage(image.bitmap, r.x, r.y, r.width, r.height, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   }, [image, tileset, tileId, size]);
 
-  return <canvas ref={ref} aria-hidden style={{ width: size, height: size }} className={`checker shrink-0 pixelated ${className}`} />;
+  return <canvas {...rest} ref={ref} aria-hidden style={{ width: size, height: size, ...style }} className={`checker shrink-0 rounded-xs pixelated ${className}`} />;
 }

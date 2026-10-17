@@ -1,13 +1,15 @@
-/** Shared classes for modal dialogs (tokens only). */
-// A closing dialog (fade-out) must not swallow the next click / stroke on the canvas.
+/** Shared modal classes and S/M/L widths (400/560/880px). */
+// A closing dialog must not swallow the next click / stroke on the canvas.
 export const backdropClass =
-  "fixed inset-0 z-40 bg-overlay transition-opacity duration-150 data-ending-style:pointer-events-none data-ending-style:opacity-0 data-starting-style:opacity-0";
+  "fixed inset-0 z-40 bg-overlay transition-opacity duration-(--duration-ui) data-ending-style:pointer-events-none data-ending-style:opacity-0 data-starting-style:opacity-0";
 
 const popupBase =
-  "fixed left-1/2 z-50 -translate-x-1/2 rounded-xl border border-line bg-popup text-text shadow-popup outline-none transition-[opacity,scale] duration-150 ease-(--ease-out) data-ending-style:pointer-events-none data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0";
+  "fixed left-1/2 z-50 -translate-x-1/2 rounded-lg border border-line-strong bg-popup text-text shadow-popup outline-none transition-opacity duration-(--duration-ui) ease-out data-ending-style:pointer-events-none data-ending-style:opacity-0 data-starting-style:opacity-0";
 
 /** Vertically centered dialog. */
 export const popupClass = `${popupBase} top-1/2 -translate-y-1/2`;
-
-/** Dialog anchored near the top (command palette: the list grows downwards without jumping). */
-export const popupTopClass = `${popupBase} top-[16%]`;
+/** Top-anchored command palette, allowing its list to grow downwards. */
+export const popupTopClass = `${popupBase} top-[12vh]`;
+export const dialogWidthS = "w-dialog-s";
+export const dialogWidthM = "w-dialog-m";
+export const dialogWidthL = "w-dialog-l";

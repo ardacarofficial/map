@@ -34,7 +34,7 @@ export function TypeMark({ type, size = 18 }: { type: EntityType | undefined; si
       className="grid shrink-0 place-items-center rounded-sm text-inverse"
       style={{ width: size, height: size, background: type?.color ?? "var(--color-line-strong)" }}
     >
-      <Icon name={entityTypeIcon(type)} size={Math.round(size * 0.66)} strokeWidth={2.25} />
+      <Icon name={entityTypeIcon(type)} size={Math.round(size * 0.66)} />
     </span>
   );
 }
@@ -271,7 +271,7 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
             className="grid size-[18px] shrink-0 place-items-center rounded-sm text-inverse transition-transform duration-100 hover:scale-110"
             style={{ background: color }}
           >
-            <Icon name="box" size={12} strokeWidth={2.25} />
+            <Icon name="box" size={12} />
           </button>
         </Tooltip>
         <input

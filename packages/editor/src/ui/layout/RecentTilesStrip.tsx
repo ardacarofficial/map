@@ -173,7 +173,7 @@ function StampMini({ doc, clip }: { doc: MapDocument; clip: TileClip }) {
       <canvas ref={ref} aria-hidden style={{ width: cssW, height: ITEM }} className="checker block rounded-xs pixelated" />
       {/* Marks a stamp among single tiles. */}
       <span aria-hidden className="absolute right-0 bottom-0 grid size-[11px] place-items-center rounded-tl-xs rounded-br-xs bg-panel/90 text-muted">
-        <Icon name="stamp" size={9} strokeWidth={2.25} />
+        <Icon name="stamp" size={9} />
       </span>
     </span>
   );
