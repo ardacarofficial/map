@@ -507,7 +507,7 @@ export class MapCanvas {
         },
         camera: () => ({ camera: this.#camera.camera, viewW: this.#camera.viewW, viewH: this.#camera.viewH }),
         centerOnWorld: (x, y) => this.#camera.centerOnWorld(x, y),
-        colors: () => ({ accent: this.#colors.accent, background: CANVAS_COLORS.mapBackground }),
+        colors: () => ({ accent: this.#colors.accent, background: this.#colors.mapBackground }),
         wheel: (e) => {
           if (this.#view === "level") this.#input.wheel(e, this.#camera.viewCenter());
         },
@@ -879,6 +879,7 @@ export class MapCanvas {
         project.store,
         (id) => getTilesetImage(id)?.bitmap,
         () => this.#requestRender(),
+        this.#colors.mapBackground,
       );
       this.#gridOverlays = new GridOverlays(project.store, gridOverlayColors(this.#colors), () => this.#requestRender());
       this.#thumb = new MapThumbnail(project.store, (id) => getTilesetImage(id)?.bitmap, () => this.#scheduleThumbnail());

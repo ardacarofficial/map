@@ -8,20 +8,21 @@
  * zooms the map.
  */
 import type { Camera } from "./camera";
+import { readThemeColors } from "./colors";
 import { minimapLayout, minimapToWorld, viewportRect, type MinimapLayout } from "./minimapMath";
 import { downscaleOver, type Pixels } from "./thumbnailRaster";
 
-/** Largest minimap drawing area, CSS px. */
-const MAX_W = 200;
-const MAX_H = 150;
+/** Largest minimap frame, CSS px (including its border). */
+const MAX_W = 176;
+const MAX_H = 120;
 /** Below this canvas width (e.g. 1366 px screens) the minimap shrinks so the map keeps the room. */
 const NARROW_VIEW = 1000;
 const NARROW_SCALE = 0.72;
-const MARGIN = 12;
+const MARGIN = 8;
 /** Padding + border around the drawing area, CSS px per side. */
-const FRAME = 4 + 1;
-/** Resting opacity: the map shows through a little; hovering or dragging makes it opaque. */
-const REST_OPACITY = "0.72";
+const FRAME = 1;
+/** Keep the popup fill and border opaque at rest, too. */
+const REST_OPACITY = "1";
 
 /** What the minimap needs of `MapThumbnail`. */
 export interface MinimapThumbnail {
@@ -58,6 +59,8 @@ export class Minimap {
   /** Thumbnail scaled to the minimap size (redrawn when the thumbnail changes). */
   readonly #cache = document.createElement("canvas");
   readonly #host: MinimapHost;
+  readonly #accentCss: string;
+  readonly #keylineCss: string;
   #visible = true;
   #autoHidden = false;
   #layout: MinimapLayout = { width: 0, height: 0, scale: 0 };
@@ -73,6 +76,9 @@ export class Minimap {
 
   constructor(container: HTMLElement, host: MinimapHost, signal: AbortSignal) {
     this.#host = host;
+    const colors = readThemeColors(container);
+    this.#accentCss = css(colors.accent);
+    this.#keylineCss = css(colors.cursorShadow, 0.6);
     const el = this.element;
     el.setAttribute("data-minimap", "");
     el.setAttribute("aria-hidden", "true");
@@ -80,11 +86,9 @@ export class Minimap {
       position: "absolute",
       right: `${MARGIN}px`,
       bottom: `${MARGIN}px`,
-      padding: "4px",
-      borderRadius: "8px",
-      background: "var(--color-panel, #19191c)",
-      border: "1px solid var(--color-line, #2a2a30)",
-      boxShadow: "0 4px 16px rgb(0 0 0 / 0.35)",
+      borderRadius: "6px",
+      background: css(colors.popup),
+      border: `1px solid ${css(colors.lineStrong)}`,
       display: "none",
       zIndex: "1",
       lineHeight: "0",
@@ -92,7 +96,7 @@ export class Minimap {
       opacity: REST_OPACITY,
       transition: "opacity 120ms ease-out",
     } satisfies Partial<CSSStyleDeclaration>);
-    Object.assign(this.#canvas.style, { display: "block", cursor: "pointer", touchAction: "none", borderRadius: "4px" });
+    Object.assign(this.#canvas.style, { display: "block", cursor: "pointer", touchAction: "none", borderRadius: "5px" });
     el.appendChild(this.#canvas);
     container.appendChild(el);
     const c = this.#canvas;
@@ -156,7 +160,7 @@ export class Minimap {
   /** Drawing area for a map of `size` map px: smaller in a narrow canvas. */
   #layoutFor(size: { width: number; height: number }): MinimapLayout {
     const k = this.#host.camera().viewW < NARROW_VIEW ? NARROW_SCALE : 1;
-    return minimapLayout(size.width, size.height, Math.round(MAX_W * k), Math.round(MAX_H * k));
+    return minimapLayout(size.width, size.height, Math.round(MAX_W * k) - 2 * FRAME, Math.round(MAX_H * k) - 2 * FRAME);
   }
 
   /** Shown right now: the user's choice and not auto-hidden. */
@@ -272,15 +276,13 @@ export class Minimap {
       ctx.rect(x0, y0, x1 - x0, y1 - y0);
       ctx.fill("evenodd");
     }
-    const lw = Math.max(1, Math.round(1.5 * dpr));
-    ctx.strokeStyle = css(colors.accent);
+    // One device pixel outside the accent frame keeps it visible on light tiles.
+    const lw = 1;
     ctx.lineWidth = lw;
-    ctx.strokeRect(
-      Math.min(bw - lw, x0 + lw / 2),
-      Math.min(bh - lw, y0 + lw / 2),
-      Math.max(1, x1 - x0 - lw),
-      Math.max(1, y1 - y0 - lw),
-    );
+    ctx.strokeStyle = this.#keylineCss;
+    ctx.strokeRect(x0 - lw / 2, y0 - lw / 2, Math.max(1, x1 - x0 + lw), Math.max(1, y1 - y0 + lw));
+    ctx.strokeStyle = this.#accentCss;
+    ctx.strokeRect(x0 + lw / 2, y0 + lw / 2, Math.max(1, x1 - x0 - lw), Math.max(1, y1 - y0 - lw));
   }
 
   #panTo(e: PointerEvent): void {

@@ -85,6 +85,8 @@ const ANTS_STEP_MS = 125;
 const OUTLINE_MIN_CELL_DEVICE_PX = 6;
 /** ...and at most this many cells are on screen. */
 const OUTLINE_MAX_CELLS = 40_000;
+/** Reused on the pointer path; the keyline sits immediately outside the colour line. */
+const FOOTPRINT_KEYLINE = { color: CANVAS_COLORS.cursorShadow, alpha: 0.6 };
 
 interface FillCache {
   readonly layer: TileLayer;
@@ -137,8 +139,10 @@ export class OverlayRenderer {
   readonly #readoutBg = new Graphics();
   readonly #readoutText = new Text({
     text: "",
-    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.cursor },
+    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.text },
   });
+  readonly #bubbleFill = { color: CANVAS_COLORS.popup, alpha: 0.96 };
+  readonly #bubbleBorder = { color: CANVAS_COLORS.lineStrong, width: 1, alignment: 1 };
   #readoutUntil = 0;
   #readoutTimer: ReturnType<typeof setTimeout> | null = null;
   /** Screen-space hint next to the pointer ("Katman kilitli", ...). */
@@ -146,7 +150,7 @@ export class OverlayRenderer {
   readonly #hintBg = new Graphics();
   readonly #hintText = new Text({
     text: "",
-    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.cursor },
+    style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.text },
   });
   #hintUntil = 0;
   #hintAt: Point | null = null;
@@ -204,6 +208,10 @@ export class OverlayRenderer {
   /** Applies theme colours read at mount. */
   setColors(colors: CanvasColors): void {
     this.#fillPreview.sprite.tint = colors.accent;
+    this.#readoutText.style.fill = colors.text;
+    this.#hintText.style.fill = colors.text;
+    this.#bubbleFill.color = colors.popup;
+    this.#bubbleBorder.color = colors.lineStrong;
   }
 
   /** Forgets cached previews (project changed). */
@@ -257,7 +265,7 @@ export class OverlayRenderer {
       for (const y of grid.ys) gg.rect(grid.left * px, y * px, w, px);
       if (grid.xs.length + grid.ys.length > 0) {
         gg.fill(CANVAS_COLORS.grid);
-        this.#gridFilter.alpha = CANVAS_COLORS.gridAlpha * grid.alpha;
+        this.#gridFilter.alpha = grid.alpha;
         gg.visible = true;
       }
     }
@@ -492,7 +500,7 @@ export class OverlayRenderer {
     else this.#drawCellCursor({ x: cell.x, y: cell.y, width: 1, height: 1 });
   }
 
-  /** Crisp outline (white with a dark halo) around the union of `cells`, clipped to the view. */
+  /** Crisp outline (accent / danger with a dark keyline) around the union of `cells`, clipped to the view. */
   #drawCellsOutline(cells: readonly CellPoint[], fill?: number): void {
     const bounds = cellsBounds(cells);
     if (!bounds) return;
@@ -527,17 +535,17 @@ export class OverlayRenderer {
       }
       g.fill({ color: fill, alpha: CANVAS_COLORS.gridBrushAlpha });
     }
-    this.#drawEdges(solidEdges(x0, y0, x1, y1, inside), CANVAS_COLORS.cursor, 0.9);
+    this.#drawEdges(solidEdges(x0, y0, x1, y1, inside), useEditorStore.getState().tool === "eraser" ? this.#host.colors.danger : this.#host.colors.accent);
   }
 
   /** Edges of a cell area: dark halo outside, `color` line inside (see `solidEdges`). */
-  #drawEdges(edges: readonly Edge[], color: number, alpha: number): void {
+  #drawEdges(edges: readonly Edge[], color: number): void {
     if (edges.length === 0) return;
     const g = this.overlay;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
-    for (const pass of [0, 1] as const) {
+    for (let pass = 0; pass < 2; pass++) {
       for (const e of edges) {
         const solidAfter = e.inside === "after";
         const offset = solidAfter === (pass === 1) ? 0 : -k;
@@ -549,8 +557,8 @@ export class OverlayRenderer {
           g.rect((a.x0 + offset) * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
         }
       }
-      if (pass === 0) g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.6 });
-      else g.fill({ color, alpha });
+      if (pass === 0) g.fill(FOOTPRINT_KEYLINE);
+      else g.fill(color);
     }
   }
 
@@ -594,8 +602,8 @@ export class OverlayRenderer {
     const padY = 4;
     const w = Math.ceil(text.width) + 2 * padX;
     const h = Math.ceil(text.height) + 2 * padY;
-    this.#hintBg.clear().roundRect(0, 0, w, h, 5).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.85 });
-    this.#hintBg.roundRect(0, 0, w, h, 5).stroke({ color: this.#host.colors.danger, width: 1, alpha: 0.9, alignment: 1 });
+    this.#hintBg.clear().roundRect(0, 0, w, h, 4).fill(this.#bubbleFill);
+    this.#hintBg.roundRect(0, 0, w, h, 4).stroke(this.#bubbleBorder);
     text.position.set(padX, padY);
     const x = Math.max(4, Math.min(p.x + 16, cam.viewW - w - 4));
     const y = Math.max(4, Math.min(p.y - h - 10, cam.viewH - h - 4));
@@ -618,7 +626,8 @@ export class OverlayRenderer {
     const padY = 3;
     const w = Math.ceil(text.width) + 2 * padX;
     const h = Math.ceil(text.height) + 2 * padY;
-    this.#readoutBg.clear().roundRect(0, 0, w, h, 4).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.8 });
+    this.#readoutBg.clear().roundRect(0, 0, w, h, 4).fill(this.#bubbleFill);
+    this.#readoutBg.roundRect(0, 0, w, h, 4).stroke(this.#bubbleBorder);
     text.position.set(padX, padY);
     // Below-right of the pointer, kept inside the view; whole device pixels.
     const cam = this.#host.camera;
@@ -711,15 +720,15 @@ export class OverlayRenderer {
   // ------------------------------------------------------------------ primitives
 
   /** Accent outline with a dark halo just outside (rectangle drag, grid footprint). */
-  #drawAccentOutline(r: CellRegion): void {
+  #drawAccentOutline(r: CellRegion, color = this.#host.colors.accent): void {
     const g = this.overlay;
     const px = 1 / this.#host.camera.resolution;
     const box = this.#host.camera.cellBox(r);
     const k = this.#host.camera.lineWidth();
     rectOutline(g, box.x0 - k, box.y0 - k, box.x1 + k, box.y1 + k, k, px);
-    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.45 });
+    g.fill(FOOTPRINT_KEYLINE);
     rectOutline(g, box.x0, box.y0, box.x1, box.y1, k, px);
-    g.fill(this.#host.colors.accent);
+    g.fill(color);
   }
 
   /**
@@ -764,7 +773,7 @@ export class OverlayRenderer {
     const danger = this.#host.colors.danger;
     g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px).fill({ color: danger, alpha: 0.16 });
     rectOutline(g, b.x0 - k, b.y0 - k, b.x1 + k, b.y1 + k, k, px);
-    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.5 });
+    g.fill(FOOTPRINT_KEYLINE);
     rectOutline(g, b.x0, b.y0, b.x1, b.y1, k, px);
     g.fill(danger);
   }
@@ -790,16 +799,9 @@ export class OverlayRenderer {
     g.fill(CANVAS_COLORS.cursor);
   }
 
-  /** White cell outline with a dark halo (eraser, fill, select, pick cursors). */
+  /** Cell / stamp footprint with a one-device-pixel colour line and outer keyline. */
   #drawCellCursor(r: CellRegion): void {
-    const g = this.overlay;
-    const px = 1 / this.#host.camera.resolution;
-    const k = this.#host.camera.lineWidth();
-    const { x0, y0, x1, y1 } = this.#host.camera.cellBox(r);
-    rectOutline(g, x0 - k, y0 - k, x1 + k, y1 + k, k, px);
-    g.fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.8 });
-    rectOutline(g, x0, y0, x1, y1, k, px);
-    g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.9 });
+    this.#drawAccentOutline(r, useEditorStore.getState().tool === "eraser" ? this.#host.colors.danger : this.#host.colors.accent);
   }
 
   // ------------------------------------------------------------------ tile previews

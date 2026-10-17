@@ -50,14 +50,14 @@ export interface EntityRendererHost {
 
 const LABEL_STYLE = new TextStyle({
   fontFamily: "Inter Variable, Inter, system-ui, sans-serif",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: "500",
-  fill: 0xffffff,
-  stroke: { color: 0x000000, width: 3, join: "round" },
+  fill: CANVAS_COLORS.text,
+  stroke: { color: CANVAS_COLORS.cursorShadow, width: 3, join: "round" },
 });
 
-/** Label styles by fill colour (white, or the danger colour of a broken link). */
-const labelStyles = new Map<number, TextStyle>([[0xffffff, LABEL_STYLE]]);
+/** Label styles by fill colour (text, or the danger colour of a broken link). */
+const labelStyles = new Map<number, TextStyle>([[CANVAS_COLORS.text, LABEL_STYLE]]);
 
 function labelStyle(fill: number): TextStyle {
   let style = labelStyles.get(fill);
@@ -215,7 +215,7 @@ export class EntityRenderer {
     for (const p of placed) {
       const label = p.item.look.label;
       if (!label) continue;
-      const fill = p.item.look.broken ? p.item.look.color : 0xffffff;
+      const fill = p.item.look.broken ? p.item.look.color : this.#host.colors.text;
       const key = `${fill}|${label}`;
       const n = used.get(key) ?? 0;
       used.set(key, n + 1);

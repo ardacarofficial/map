@@ -15,18 +15,19 @@ export interface GridLayout {
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
-  /** 0..1 fade factor (0 = do not draw). */
+  /** Final grid opacity (0 = do not draw). */
   readonly alpha: number;
 }
 
-/** Below this many CSS pixels per cell the grid is hidden; it fades in up to `GRID_FULL_PX`. */
+/** Cells this small in CSS pixels remain too dense to show a grid. */
 export const GRID_HIDE_PX = 6;
-export const GRID_FULL_PX = 16;
 
-export function gridAlpha(cellCssPx: number): number {
-  if (cellCssPx <= GRID_HIDE_PX) return 0;
-  if (cellCssPx >= GRID_FULL_PX) return 1;
-  return (cellCssPx - GRID_HIDE_PX) / (GRID_FULL_PX - GRID_HIDE_PX);
+/** Grid opacity by camera zoom, with an optional tiny-cell guard. */
+export function gridAlpha(zoom: number, cellCssPx = Infinity): number {
+  if (cellCssPx <= GRID_HIDE_PX || zoom <= 0.5) return 0;
+  if (zoom <= 1) return (zoom - 0.5) * 0.2;
+  if (zoom < 2) return 0.1 + (zoom - 1) * 0.04;
+  return 0.14;
 }
 
 /**
@@ -55,7 +56,7 @@ export function gridLayout(
   const top = Math.max(0, oy);
   const right = Math.min(vw, Math.round(ox + mapW * cw));
   const bottom = Math.min(vh, Math.round(oy + mapH * ch));
-  const alpha = gridAlpha(Math.min(cw, ch) / resolution);
+  const alpha = gridAlpha(cam.zoom, Math.min(cw, ch) / resolution);
   const xs: number[] = [];
   const ys: number[] = [];
   if (alpha > 0 && right > left && bottom > top) {

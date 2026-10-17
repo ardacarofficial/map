@@ -8,10 +8,10 @@ import { describeEntry, historyMessage, nextBurst, type Burst, type HistoryMove 
 import { hudBottom } from "./hudStack";
 import { bindHistoryLabels, recordStrokeLabel, sharedHistoryLabels } from "./sharedHistoryLabels";
 
-/** How long the pill stays after the last undo / redo (ms). */
+/** How long the HUD stays after the last undo / redo (ms). */
 const SHOW_MS = 1400;
-/** Pill's distance from the canvas bottom when nothing is in the way (CSS px, `bottom-4`). */
-const BASE_BOTTOM = 16;
+/** Distance above the canvas bottom; the status bar is outside the canvas. */
+const BASE_BOTTOM = 12;
 
 interface Shown {
   move: HistoryMove;
@@ -20,11 +20,11 @@ interface Shown {
 }
 
 /**
- * Brief "Geri alındı: Kalem (12 hücre)" / "Yinelendi: …" pill at the bottom
+ * Brief "Geri alındı: Kalem (12 hücre)" / "Yinelendi: …" HUD at the bottom
  * centre of the canvas after every undo / redo, whatever ran it (Ctrl+Z,
- * menu, toolbar). Holding Ctrl+Z updates one pill ("Geri alındı: 7 adım")
+ * menu, toolbar). Holding Ctrl+Z updates one HUD ("Geri alındı: 7 adım")
  * instead of stacking messages. Mount inside the canvas area. When toasts
- * share its columns the pill sits above them, never on top of them.
+ * share its columns the HUD sits above them, never on top of them.
  */
 export function UndoHud() {
   const store = useEditorStore((s) => s.project?.store);
@@ -58,7 +58,7 @@ export function UndoHud() {
     let off: (() => void) | undefined;
     const unwatch = watchCanvasHandle((handle) => {
       off?.();
-      // Named once for the pill and the Geçmiş tab (shared labels of the bound store).
+      // Named once for the HUD and the Geçmiş tab (shared labels of the bound store).
       off = handle?.onStrokeCommitted((summary) => recordStrokeLabel(summary));
     });
     return () => {
@@ -76,16 +76,16 @@ export function UndoHud() {
   const bottom = useStackedBottom(rowRef, pillRef, shown !== null);
 
   return (
-    <div ref={rowRef} aria-live="polite" style={{ bottom }} className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 transition-[bottom] duration-150 ease-(--ease-out)">
+    <div ref={rowRef} aria-live="polite" style={{ bottom }} className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 transition-[bottom] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none">
       {shown && (
         <div
           ref={pillRef}
           data-undo-hud={shown.move}
-          className={`flex max-w-full items-center gap-2 rounded-full border border-line bg-raised/95 py-1.5 pr-3.5 pl-2.5 text-sm text-text shadow-toast backdrop-blur-sm transition-[opacity,translate] duration-200 ease-(--ease-out) ${
+          className={`flex h-8 max-w-full items-center gap-2 rounded-md border border-line-strong bg-popup px-3 text-sm text-text shadow-popup transition-[opacity,translate] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none ${
             visible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
           }`}
         >
-          <Icon name={shown.move === "undo" ? "undo" : "redo"} size={14} className="shrink-0 text-accent" />
+          <Icon name={shown.move === "undo" ? "undo-2" : "redo-2"} size={16} className="shrink-0 text-muted" />
           <span className="truncate">{shown.message}</span>
         </div>
       )}
@@ -94,8 +94,8 @@ export function UndoHud() {
 }
 
 /**
- * The pill's bottom offset: kept clear of the toast stack (measured, since
- * the stack is a window-level layer) while the pill is shown.
+ * The HUD's bottom offset: kept clear of the toast stack (measured, since
+ * the stack is a window-level layer) while the HUD is shown.
  */
 function useStackedBottom(row: RefObject<HTMLDivElement | null>, pill: RefObject<HTMLDivElement | null>, active: boolean): number {
   const toastCount = useToastStore((s) => s.toasts.length);

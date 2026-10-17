@@ -6,8 +6,8 @@ import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { t } from "../../i18n";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { Icon } from "../primitives/Icon";
-import { Kbd } from "../primitives/Kbd";
-import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { KbdText } from "../primitives/Kbd";
+import { menuDangerItemClass, menuShortcutClass, menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { resolveContextItems, type ContextEntry, type ContextLookup, type ResolvedContextEntry } from "./contextItems";
 
 /** The live command registry for context menus. */
@@ -28,18 +28,18 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
       <div key={`sep-${i}`} role="separator" className={menuSeparatorClass} />
     ) : entry.submenu ? (
       <Menu.SubmenuRoot key={entry.id}>
-        <Menu.SubmenuTrigger data-context-item={entry.id} disabled={!entry.enabled} className={`${menuItemClass} py-1 text-sm`}>
+        <Menu.SubmenuTrigger data-context-item={entry.id} disabled={!entry.enabled} className={menuItemClass}>
           {anyCheck ? (
-            <span aria-hidden className="size-[15px] shrink-0" />
+            <span aria-hidden className="size-4 shrink-0" />
           ) : (
-            entry.icon && <Icon name={entry.icon} size={15} className="shrink-0 text-muted" />
+            entry.icon && <Icon name={entry.icon} size={16} className="shrink-0 text-muted" />
           )}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-          <Icon name="chevronRight" size={13} className="ml-4 shrink-0 text-faint" />
+          <Icon name="chevronRight" size={12} className="ml-4 shrink-0 text-faint" />
         </Menu.SubmenuTrigger>
         <Menu.Portal>
           <Menu.Positioner side="right" align="start" sideOffset={-2} className={menuPositionerClass}>
-            <Menu.Popup className={`${menuPopupClass} max-h-[320px] min-w-[180px] overflow-y-auto`} data-context-submenu={entry.id}>
+            <Menu.Popup className={`${menuPopupClass} max-h-80 overflow-y-auto`} data-context-submenu={entry.id}>
               <Items entries={entry.submenu} Item={Item} />
             </Menu.Popup>
           </Menu.Positioner>
@@ -51,17 +51,17 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
         data-context-item={entry.id}
         disabled={!entry.enabled}
         onClick={entry.run}
-        className={`${menuItemClass} py-1 text-sm ${entry.danger ? "text-danger data-highlighted:bg-danger-soft" : ""}`}
+        className={`${menuItemClass} ${entry.danger ? `${menuDangerItemClass} data-highlighted:bg-danger-soft!` : ""}`}
       >
         {anyCheck ? (
-          <span aria-hidden className="grid size-[15px] shrink-0 place-items-center text-accent">
-            {entry.checked && <Icon name="check" size={13} />}
+          <span aria-hidden className="grid size-4 shrink-0 place-items-center text-muted">
+            {entry.checked && <Icon name="tick" size={12} />}
           </span>
         ) : (
-          entry.icon && <Icon name={entry.icon} size={15} className={`shrink-0 ${entry.danger ? "" : "text-muted"}`} />
+          entry.icon && <Icon name={entry.icon} size={16} className="shrink-0 text-muted" />
         )}
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-        {entry.shortcut && <Kbd keys={entry.shortcut} className="ml-6 shrink-0" />}
+        {entry.shortcut && <KbdText keys={entry.shortcut} className={menuShortcutClass} />}
       </Item>
     ),
   );
@@ -102,7 +102,7 @@ export function RowContextMenu({
       <ContextMenu.Trigger render={render}>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner className={menuPositionerClass}>
-          <ContextMenu.Popup className={`${menuPopupClass} min-w-[220px]`} data-context-menu="">
+          <ContextMenu.Popup className={menuPopupClass} data-context-menu="">
             <OpenItems items={items} Item={ContextMenu.Item} />
           </ContextMenu.Popup>
         </ContextMenu.Positioner>
@@ -139,7 +139,7 @@ export function PointMenu({ at, items, onClose }: { at: MenuPoint | null; items:
     >
       <Menu.Portal>
         <Menu.Positioner anchor={anchor} side="bottom" align="start" sideOffset={2} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} min-w-[220px]`} data-context-menu="">
+          <Menu.Popup className={menuPopupClass} data-context-menu="">
             {at && <OpenItems items={items} Item={Menu.Item} />}
           </Menu.Popup>
         </Menu.Positioner>

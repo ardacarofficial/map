@@ -109,6 +109,7 @@ const WORLD_THUMB_MAX_PX = 1024;
 const THUMB_BUDGET_MS = 6;
 /** Label strip above a level (CSS px): counts for hit testing. */
 const LABEL_STRIP_PX = 18;
+const FRAME_KEYLINE = { color: CANVAS_COLORS.cursorShadow, alpha: 0.6 };
 /** Size of a level whose document is not loaded yet (map px) when nothing better is known. */
 const PLACEHOLDER_SIZE = { width: 1024, height: 768 };
 
@@ -679,18 +680,20 @@ export class WorldView {
       // Plain frames go under the pictures (an overlapping level covers them);
       // the active / dragged / hovered highlight stays on top.
       if (id === activeId || (pressId === id && this.#press?.dragging)) {
-        frame(over, q.x0 - 2 * k, q.y0 - 2 * k, q.x1 + 2 * k, q.y1 + 2 * k, 2 * k, px);
+        frame(over, q.x0 - 2 * k, q.y0 - 2 * k, q.x1 + 2 * k, q.y1 + 2 * k, k, px);
+        over.fill(FRAME_KEYLINE);
+        frame(over, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
         over.fill(colors.accent);
       } else if (failed) {
         frame(over, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
         over.fill(colors.danger);
       } else {
         frame(under, q.x0 - k, q.y0 - k, q.x1 + k, q.y1 + k, k, px);
-        under.fill({ color: colors.mapBorder, alpha: 1 });
+        under.fill(colors.lineStrong);
       }
       if (id === this.#hover && id !== activeId) {
         frame(over, q.x0 - 2 * k, q.y0 - 2 * k, q.x1 + 2 * k, q.y1 + 2 * k, k, px);
-        over.fill({ color: 0xffffff, alpha: 0.7 });
+        over.fill({ color: colors.text, alpha: 0.7 });
       }
     }
 
@@ -727,7 +730,7 @@ export class WorldView {
       if (!item.text.text) continue;
       if (item.text.resolution !== res) item.text.resolution = res;
       const isActive = q.box.id === activeId;
-      item.text.tint = isActive ? colors.accent : q.box.id === this.#hover ? 0xffffff : 0xb4b4bc;
+      item.text.tint = isActive ? colors.accent : q.box.id === this.#hover ? colors.text : colors.muted;
       item.text.visible = true;
       item.text.position.set(q.x0 * px, (q.y0 - (isActive ? 3 : 2) * k) * px - 3);
     }
