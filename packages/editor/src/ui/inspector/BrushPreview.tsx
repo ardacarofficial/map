@@ -45,5 +45,5 @@ export function BrushPreview({ clip, doc, width, height }: { clip: TileClip; doc
     ctx.drawImage(off, Math.floor((canvas.width - w) / 2), Math.floor((canvas.height - h) / 2));
   }, [clip, doc, width, height, images]);
 
-  return <canvas ref={ref} aria-hidden style={{ width, height }} className="checker shrink-0 rounded-md border border-line pixelated" />;
+  return <canvas ref={ref} aria-hidden style={{ width, height }} className="checker shrink-0 rounded-sm border border-line pixelated" />;
 }

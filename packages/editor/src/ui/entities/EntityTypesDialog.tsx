@@ -11,7 +11,8 @@ import { backdropClass, popupClass } from "../dialogs/styles";
 import { useStructureVersion } from "../hooks";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
-import { inputBad, inputClass, inputOk, NativeSelect } from "../primitives/NativeSelect";
+import { inputBad, inputOk, NativeSelect } from "../primitives/NativeSelect";
+import { TextField } from "../primitives/TextField";
 import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
 import { TypeMark } from "./EntityPalette";
@@ -40,7 +41,7 @@ export function EntityTypesDialog() {
     <Dialog.Root open={show} onOpenChange={(next) => setOpen(next)}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} flex h-[min(600px,calc(100vh-48px))] w-[760px] max-w-[calc(100vw-32px)] flex-col`}>
+        <Dialog.Popup className={`${popupClass} flex h-[min(600px,calc(100vh-48px))] w-dialog-l max-w-[calc(100vw-32px)] flex-col`}>
           {show && <TypesEditor />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -86,12 +87,12 @@ function TypesEditor() {
 
   return (
     <>
-      <div className="flex flex-col gap-1 border-b border-line px-5 pt-5 pb-4">
-        <Dialog.Title className="text-lg font-semibold">{t("entities.typesTitle")}</Dialog.Title>
-        <Dialog.Description className="text-md text-muted">{t("entities.typesDescription")}</Dialog.Description>
-      </div>
+      <header className="flex items-center gap-3 border-b border-line px-4 py-3">
+        <Dialog.Title className="flex-1 text-lg font-semibold text-title">{t("entities.typesTitle")}</Dialog.Title>
+        <Dialog.Close render={<IconButton size="md" aria-label={t("common.close")}><Icon name="x" size={16} /></IconButton>} />
+      </header>
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[208px] shrink-0 flex-col border-r border-line">
+        <nav className="flex w-52 shrink-0 flex-col border-r border-line">
           <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
             <ListLabel>{t("entities.builtin")}</ListLabel>
             {all
@@ -117,11 +118,11 @@ function TypesEditor() {
                 onClick={() => setSelected(NEW_KEY)}
               />
             )}
-            {doc.entityTypes.length === 0 && !drafts[NEW_KEY] && <div className="px-2 py-1 text-xs text-faint">{t("entities.noCustom")}</div>}
+            {doc.entityTypes.length === 0 && !drafts[NEW_KEY] && <div className="px-2 py-1 text-xs text-muted">{t("entities.noCustom")}</div>}
           </div>
           <div className="border-t border-line p-2">
-            <Button className="h-7 w-full text-sm" onClick={startNew}>
-              <Icon name="plus" size={14} />
+            <Button className="h-control-md w-full text-sm" onClick={startNew}>
+              <Icon name="plus" size={16} />
               {t("entities.newType")}
             </Button>
           </div>
@@ -157,7 +158,7 @@ function TypesEditor() {
 }
 
 function ListLabel({ children }: { children: ReactNode }) {
-  return <div className="px-2 pt-2 pb-1 text-2xs font-semibold tracking-wide text-faint first:pt-0">{children}</div>;
+  return <div className="flex h-row items-center px-2 text-xs font-semibold tracking-section text-muted uppercase">{children}</div>;
 }
 
 function TypeRow({
@@ -179,44 +180,43 @@ function TypeRow({
       aria-current={active || undefined}
       data-type-row={type.id}
       onClick={onClick}
-      className={`relative flex h-8 shrink-0 items-center gap-2 rounded-md pr-2 pl-2 text-left text-md ${
-        active ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"
+      className={`relative flex h-control-md shrink-0 items-center gap-2 rounded-sm pr-2 pl-2 text-left text-md ${
+        active ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"
       }`}
     >
-      {active && <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
       <TypeMark type={type} size={16} />
       <span className="min-w-0 flex-1 truncate">{entityTypeName(type)}</span>
-      {locked && <Icon name="lock" size={12} className="shrink-0 text-faint" />}
-      {dirty && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent" />}
+      {locked && <Icon name="lock" size={12} className="shrink-0 text-muted" />}
+      {dirty && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />}
     </button>
   );
 }
 
 function BuiltinView({ type }: { type: EntityType }) {
   return (
-    <div className="flex flex-col gap-4 overflow-y-auto p-5">
+    <div className="flex flex-col gap-4 overflow-y-auto p-4">
       <div className="flex items-center gap-3">
-        <TypeMark type={type} size={32} />
+        <TypeMark type={type} size={16} />
         <div className="flex min-w-0 flex-col">
           <span className="text-lg font-semibold">{entityTypeName(type)}</span>
-          <span className="font-mono text-xs text-faint">{type.id}</span>
+          <span className="font-mono text-xs text-muted">{type.id}</span>
         </div>
       </div>
-      <div className="flex items-start gap-2 rounded-md border border-line bg-panel px-3 py-2 text-sm text-muted">
-        <Icon name="lock" size={14} className="mt-px shrink-0 text-faint" />
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <Icon name="lock" size={16} className="mt-px shrink-0 text-muted" />
         {t("entities.builtinReadOnly")}
       </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-muted">{t("entities.fields")}</span>
         {type.fields.length === 0 ? (
-          <span className="text-sm text-faint">—</span>
+          <span className="text-sm text-muted">—</span>
         ) : (
-          <ul className="flex flex-col divide-y divide-line-subtle rounded-md border border-line">
+          <ul className="flex flex-col divide-y divide-line-subtle">
             {type.fields.map((f) => (
-              <li key={f.name} className="flex h-8 items-center gap-3 px-3 text-sm">
+              <li key={f.name} className="flex h-control-md items-center gap-3 px-3 text-sm">
                 <span className="min-w-0 flex-1 truncate text-text">{entityFieldLabel(type.id, f.name)}</span>
-                <span className="font-mono text-2xs text-faint">{f.name}</span>
-                <span className="w-24 text-right text-faint">{t(`entities.ftype_${f.type}` as MessageKey)}</span>
+                <span className="font-mono text-2xs text-muted">{f.name}</span>
+                <span className="w-24 text-right text-muted">{t(`entities.ftype_${f.type}` as MessageKey)}</span>
               </li>
             ))}
           </ul>
@@ -287,11 +287,11 @@ function DraftForm({
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
-        <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,0.5fr)] gap-3">
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-medium text-muted">{t("entities.name")}</span>
-            <input
+            <TextField size="md"
               value={draft.name}
               onChange={(e) => onChange({ ...draft, name: e.target.value })}
               autoFocus={!saved}
@@ -300,17 +300,17 @@ function DraftForm({
               spellCheck={false}
               autoComplete="off"
               aria-invalid={nameError ? true : undefined}
-              className={`${inputClass} h-8 ${nameError ? inputBad : inputOk}`}
+              className={nameError ? "[&>input]:border-danger" : ""}
             />
             {nameError && <span className="text-xs text-danger">{nameError}</span>}
           </label>
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-medium text-muted">{t("entities.color")}</span>
-            <span className={`flex h-8 items-center gap-2 rounded-md border bg-panel pr-2 pl-1 focus-within:border-accent ${colorError ? inputBad : inputOk}`}>
+            <span className={`flex h-control-md items-center gap-2 rounded-sm border bg-panel pr-2 pl-1 focus-within:border-accent ${colorError ? inputBad : inputOk}`}>
               <input
                 type="color"
                 aria-label={t("entities.color")}
-                value={colorError ? "#000000" : draft.color.toLowerCase()}
+                value={colorError ? TYPE_COLORS[0]! : draft.color.toLowerCase()}
                 onChange={(e) => onChange({ ...draft, color: e.target.value })}
                 className="size-6 shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0"
               />
@@ -327,7 +327,7 @@ function DraftForm({
             {colorError && <span className="text-xs text-danger">{colorError}</span>}
           </label>
         </div>
-        <div className="-mt-2 flex items-center gap-2 text-xs text-faint">
+        <div className="-mt-2 flex items-center gap-2 text-xs text-muted">
           <span>{t("entities.id")}</span>
           <span className="font-mono text-muted">{draft.id ?? (result.ok ? result.type.id : "—")}</span>
           {!draft.id && <span>· {t("entities.idPending")}</span>}
@@ -336,21 +336,15 @@ function DraftForm({
         <div className="flex flex-col gap-2">
           <div className="flex items-center">
             <span className="text-sm font-medium text-muted">{t("entities.fields")}</span>
-            <Button variant="ghost" className="ml-auto h-7 px-2 text-sm" onClick={addField}>
-              <Icon name="plus" size={14} />
+            <Button variant="ghost" className="ml-auto h-control-md px-2 text-sm" onClick={addField}>
+              <Icon name="plus" size={16} />
               {t("entities.addField")}
             </Button>
           </div>
           {draft.fields.length === 0 ? (
-            <div className="rounded-md border border-dashed border-line-strong px-3 py-3 text-center text-sm text-faint">{t("entities.noFields")}</div>
+            <div className="py-2 text-sm text-muted">{t("entities.noFields")}</div>
           ) : (
-            <div className="flex flex-col rounded-md border border-line">
-              <div className="grid grid-cols-[minmax(0,1.1fr)_118px_minmax(0,1.3fr)_28px] gap-2 border-b border-line px-2.5 py-1.5 text-2xs font-semibold tracking-wide text-faint">
-                <span>{t("entities.fieldName")}</span>
-                <span>{t("entities.fieldType")}</span>
-                <span>{t("entities.fieldDefault")}</span>
-                <span />
-              </div>
+            <div className="flex flex-col rounded-sm border border-line">
               {draft.fields.map((field, index) => (
                 <FieldRowEditor
                   key={field.key}
@@ -365,37 +359,23 @@ function DraftForm({
             </div>
           )}
         </div>
-        {count > 0 && (
-          <div className="flex items-start gap-2 text-xs leading-4 text-faint">
-            <Icon name="info" size={13} className="mt-px shrink-0" />
-            {t("entities.inUse", { count })}
-          </div>
-        )}
+
       </div>
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+      <div className="flex items-center gap-2 border-t border-line px-4 py-3">
         {saved && (
-          <Button variant="ghost" className="text-danger hover:text-danger" onClick={remove}>
-            <Icon name="trash" size={14} />
+          <Button variant="ghost" title={count > 0 ? t("entities.inUse", { count }) : undefined} className="text-danger! hover:text-danger!" onClick={remove}>
+            <Icon name="trash" size={16} />
             {t("entities.deleteType")}
           </Button>
         )}
         {footerError && <span className="min-w-0 truncate text-xs text-danger" title={footerError}>{footerError.startsWith("entities.") ? t(footerError as MessageKey) : footerError}</span>}
         <div className="ml-auto flex gap-2">
-          {changed && (
-            <Button variant="ghost" onClick={onDiscard}>
-              {t("entities.discard")}
-            </Button>
-          )}
-          {!changed && saved ? (
-            <span className="flex h-8 items-center gap-1.5 px-2 text-sm text-faint">
-              <Icon name="check" size={14} />
-              {t("entities.saved")}
-            </span>
-          ) : (
-            <Button type="submit" variant="primary" disabled={!result.ok || !changed || badInputs.size > 0}>
-              {t("entities.saveType")}
-            </Button>
-          )}
+          <Button variant="secondary" onClick={() => { onDiscard(); useUiStore.getState().setEntityTypesOpen(false); }}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" disabled={!result.ok || !changed || badInputs.size > 0}>
+            {t("entities.saveType")}
+          </Button>
         </div>
       </div>
     </form>
@@ -423,8 +403,10 @@ function FieldRowEditor({
   const enumBad = problem === "entities.errEnumEmpty" || problem === "entities.errEnumDup";
   return (
     <div className="flex flex-col gap-1.5 border-b border-line-subtle px-2.5 py-2 last:border-b-0" data-field-row={field.name}>
-      <div className="grid grid-cols-[minmax(0,1.1fr)_118px_minmax(0,1.3fr)_28px] items-start gap-2">
-        <input
+      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_var(--spacing-control-md)] items-start gap-2">
+        <label className="flex min-w-0 flex-col gap-1 text-sm text-muted">
+          <span>{t("entities.fieldName")}</span>
+        <TextField size="md"
           value={field.name}
           aria-label={t("entities.fieldName")}
           onChange={(e) => onChange({ ...field, name: e.target.value })}
@@ -432,8 +414,11 @@ function FieldRowEditor({
           spellCheck={false}
           autoComplete="off"
           aria-invalid={nameBad || undefined}
-          className={`${inputClass} font-mono ${nameBad ? inputBad : inputOk}`}
+          className={nameBad ? "[&>input]:border-danger" : ""}
         />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-sm text-muted">
+          <span>{t("entities.fieldType")}</span>
         <NativeSelect
           aria-label={t("entities.fieldType")}
           value={field.type}
@@ -445,7 +430,11 @@ function FieldRowEditor({
             </option>
           ))}
         </NativeSelect>
+        </label>
+        <div className="flex min-w-0 flex-col gap-1 text-sm text-muted">
+          <span>{t("entities.fieldDefault")}</span>
         <FieldValueEditor
+          size="md"
           live
           field={{ type: field.type, enumValues: parseEnumValues(field.enumText) }}
           value={field.default}
@@ -454,25 +443,26 @@ function FieldRowEditor({
           onValidity={reportValidity}
           onCommit={(value) => onChange({ ...field, default: value })}
         />
-        <IconButton aria-label={t("entities.removeField")} title={t("entities.removeField")} className="size-7 hover:text-danger" onClick={onRemove}>
-          <Icon name="x" size={14} />
+        </div>
+        <IconButton size="md" aria-label={t("entities.removeField")} title={t("entities.removeField")} className="mt-5 hover:text-danger!" onClick={onRemove}>
+          <Icon name="x" size={16} />
         </IconButton>
       </div>
       {field.type === "enum" && (
-        <label className="flex items-center gap-2 pl-0.5">
-          <span className="shrink-0 text-2xs text-faint">{t("entities.enumValues")}</span>
-          <input
+        <label className="flex flex-col gap-1 text-sm text-muted">
+          <span className="text-sm text-muted">{t("entities.enumValues")}</span>
+          <TextField size="md"
             value={field.enumText}
             aria-label={t("entities.enumValues")}
             onChange={(e) => onChange(withEnumText(field, e.target.value))}
             spellCheck={false}
             autoComplete="off"
             aria-invalid={enumBad || undefined}
-            className={`${inputClass} ${enumBad ? inputBad : inputOk}`}
+            className={enumBad ? "[&>input]:border-danger" : ""}
           />
         </label>
       )}
-      {problem && <span className="text-2xs leading-[14px] text-danger">{t(problem)}</span>}
+      {problem && <span className="text-2xs  text-danger">{t(problem)}</span>}
     </div>
   );
 }

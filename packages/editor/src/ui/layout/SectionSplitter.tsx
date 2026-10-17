@@ -60,10 +60,10 @@ export function SectionSplitter({
       <div
         role="separator"
         aria-orientation="horizontal"
-        aria-label={t("layout.resizeSection")}
+        aria-label={t("inspector.resizeSection")}
         aria-valuemin={SECTION_MIN[section]}
         tabIndex={0}
-        title={t("layout.resizeSectionHint")}
+        title={t("inspector.resizeSectionHint")}
         data-section-splitter={`${above}:${below}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -72,9 +72,9 @@ export function SectionSplitter({
         onLostPointerCapture={end}
         onDoubleClick={() => setHeight(section, null, true)}
         onKeyDown={onKeyDown}
-        className="group absolute inset-x-0 -top-[3px] z-20 h-1.5 cursor-row-resize touch-none outline-none"
+        className="group absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 items-center cursor-row-resize touch-none outline-none"
       >
-        <div className="my-auto h-px w-full translate-y-[2.5px] bg-transparent transition-colors duration-100 group-hover:bg-accent-line group-focus-visible:bg-accent group-active:bg-accent" />
+        <div className="h-px w-full bg-line transition-colors duration-100 group-hover:bg-accent-line group-focus-visible:bg-accent-line group-active:bg-accent-line" />
       </div>
     </div>
   );

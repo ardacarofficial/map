@@ -4,12 +4,14 @@ import { runCommand } from "../../commands/registry";
 import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
+import "../history/historyVerbs";
 import { HistoryPanel } from "../history/HistoryPanel";
 import { WorldHint } from "../levels/WorldHint";
 import { LayersPanel } from "../panels/LayersPanel";
 import { InspectorBody } from "../inspector/Inspector";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
+import { Tabs } from "../primitives/Tabs";
 import { Tooltip } from "../primitives/Tooltip";
 import { useLayoutStore, type RightTab } from "./layoutStore";
 import { ResizeHandle } from "./ResizeHandle";
@@ -24,9 +26,9 @@ export interface SectionPanelProps {
   extra?: ReactNode;
 }
 
-const TABS: readonly { id: RightTab; label: "layout.inspector" | "layout.history" }[] = [
-  { id: "inspector", label: "layout.inspector" },
-  { id: "history", label: "layout.history" },
+const TABS: readonly { id: RightTab; label: "inspector.title" | "history.title" }[] = [
+  { id: "inspector", label: "inspector.title" },
+  { id: "history", label: "history.title" },
 ];
 
 /** "Denetçi | Geçmiş": the tab strip over the selected tab's panel. */
@@ -34,35 +36,14 @@ function RightTabs({ collapsed, onToggleCollapsed }: SectionPanelProps) {
   const tab = useLayoutStore((s) => s.rightTab);
   const setTab = useLayoutStore((s) => s.setRightTab);
   return (
-    <section aria-label={t(tab === "history" ? "layout.history" : "layout.inspector")} className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-9 shrink-0 items-stretch border-b border-line-subtle pr-1.5">
-        <div role="tablist" aria-label={t("layout.inspector")} className="flex min-w-0 flex-1 items-stretch">
-          {TABS.map(({ id, label }) => {
-            const on = id === tab;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                data-right-tab={id}
-                onClick={() => {
-                  setTab(id);
-                  if (collapsed) onToggleCollapsed();
-                }}
-                onDoubleClick={onToggleCollapsed}
-                className={`relative flex min-w-0 flex-1 items-center justify-center px-3 text-md transition-colors ${on ? "text-accent" : "text-muted hover:text-text"}`}
-              >
-                {t(label)}
-                {on && !collapsed && <span aria-hidden className="absolute right-0 bottom-0 left-0 h-0.5 bg-accent" />}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center pl-1">
-          <HideInspectorButton />
-        </div>
-      </header>
+    <section aria-label={t(tab === "history" ? "history.title" : "inspector.title")} className="flex min-h-0 flex-1 flex-col">
+      <Tabs
+        value={tab}
+        label={t("inspector.title")}
+        onValueChange={(id) => { setTab(id); if (collapsed) onToggleCollapsed(); }}
+        items={TABS.map(({ id, label }) => ({ value: id, label: t(label), attrs: { "data-right-tab": id, onDoubleClick: onToggleCollapsed } }))}
+        trailing={<HideInspectorButton />}
+      />
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col" data-right-tab-body={tab}>
           {tab === "history" ? <HistoryPanel /> : <InspectorBody />}
@@ -80,9 +61,9 @@ const PANELS: Record<"properties" | "layers", (props: SectionPanelProps) => Reac
 /** "Denetçiyi gizle" in the top section's header. */
 export function HideInspectorButton() {
   return (
-    <Tooltip label={t("layout.hideInspector")} command="view.toggleInspector">
-      <IconButton aria-label={t("layout.hideInspector")} className="size-7" data-inspector-toggle onClick={() => runCommand("view.toggleInspector")}>
-        <Icon name="panels" size={14} />
+    <Tooltip label={t("inspector.hide")} command="view.toggleInspector">
+      <IconButton aria-label={t("inspector.hide")} size="sm" data-inspector-toggle onClick={() => runCommand("view.toggleInspector")}>
+        <Icon name="panel-right" size={16} />
       </IconButton>
     </Tooltip>
   );
@@ -124,7 +105,7 @@ export function RightColumn({ width, visible }: { width: number; visible: boolea
   return (
     <aside
       ref={columnRef}
-      aria-label={t("layout.inspector")}
+      aria-label={t("inspector.title")}
       style={{ width }}
       data-right-column=""
       className={`relative shrink-0 flex-col border-l border-line bg-panel ${visible ? "flex" : "hidden"}`}
@@ -169,13 +150,13 @@ function AllHidden() {
     for (const id of ["properties", "layers"] as const) s.setSectionHidden(id, false);
   };
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="ml-auto -mt-2 -mr-4 self-start">
+    <div className="flex items-center gap-2 p-2">
+      <div className="order-last ml-auto">
         <HideInspectorButton />
       </div>
-      <span className="text-sm text-faint">{t("layout.sectionsHidden")}</span>
-      <Button className="h-7 px-2.5 text-sm" onClick={show}>
-        {t("layout.showSections")}
+      <span className="min-w-0 truncate text-sm text-muted">{t("inspector.sectionsHidden")}</span>
+      <Button size="sm" onClick={show}>
+        {t("inspector.showSections")}
       </Button>
     </div>
   );

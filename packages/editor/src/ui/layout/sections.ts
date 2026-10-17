@@ -21,14 +21,14 @@ export const SECTION_ORDER: readonly SectionId[] = ["properties", "layers"];
 /** Which expanded section takes the remaining height, in order of preference. */
 const FILLER_PREFERENCE: readonly SectionId[] = ["properties", "layers"];
 
-/** Height of a section header (keep in sync with `h-9` in PanelSection). */
-export const SECTION_HEADER = 36;
+/** Height of the right-column tab strip and section headers. */
+export const SECTION_HEADER = 28;
 
 /** Smallest useful height of an expanded section (header included). */
 export const SECTION_MIN: Record<SectionId, number> = {
   levels: SECTION_HEADER + 32 + 6,
   properties: 120,
-  layers: SECTION_HEADER + 32 + 2 * 29 + 6,
+  layers: SECTION_HEADER + 28 + 5 * 28,
 };
 
 export interface SectionState {
@@ -36,7 +36,7 @@ export interface SectionState {
   hidden: boolean;
   /** Folded to its header. `null` (levels only) = automatic (open). */
   collapsed: boolean | null;
-  /** Height the user dragged it to (CSS px, header included); `null` = as tall as its content. */
+  /** Height the user dragged it to (CSS px, header included); `null` = default (layers: 40% of the column). */
   height: number | null;
 }
 
@@ -131,7 +131,7 @@ export function sectionFlex(id: SectionId, sections: SectionsState, ctx: Section
   if (isCollapsed(id, state, ctx)) return { flex: "0 0 auto", minHeight: SECTION_HEADER };
   if (fillerSection(sections, ctx) === id) return { flex: "1 1 0px", minHeight: SECTION_MIN[id] };
   if (state.height !== null) return { flex: `0 1 ${state.height}px`, minHeight: SECTION_MIN[id] };
-  return { flex: "0 1 auto", minHeight: SECTION_MIN[id] };
+  return { flex: id === "layers" ? "0 1 40%" : "0 1 auto", minHeight: SECTION_MIN[id] };
 }
 
 function isBool(v: unknown): v is boolean {

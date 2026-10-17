@@ -7,10 +7,10 @@ import { runCommand } from "../../commands/registry";
 import { t, type MessageKey } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
-import { LibraryTabs } from "../panels/LibraryPanel";
-import { PanelSection } from "../panels/PanelSection";
-import { IconButton } from "../primitives/Button";
+import { SectionHeader } from "../primitives/SectionHeader";
+import { Button, IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
+import { TextField } from "../primitives/TextField";
 import { Tooltip } from "../primitives/Tooltip";
 import { toast } from "../toast/toastStore";
 import { useUiStore } from "../uiStore";
@@ -27,14 +27,14 @@ export function entityTypeIcon(type: Pick<EntityType, "id" | "icon"> | undefined
 }
 
 /** Color dot with the type's icon (the same mark the canvas uses for the type). */
-export function TypeMark({ type, size = 18 }: { type: EntityType | undefined; size?: number }) {
+export function TypeMark({ type, size = 16 }: { type: EntityType | undefined; size?: number }) {
   return (
     <span
       aria-hidden
-      className="grid shrink-0 place-items-center rounded-sm text-inverse"
-      style={{ width: size, height: size, background: type?.color ?? "var(--color-line-strong)" }}
+      className="grid shrink-0 place-items-center text-muted"
+      style={{ width: size, height: size }}
     >
-      <Icon name={entityTypeIcon(type)} size={Math.round(size * 0.66)} />
+      <Icon name={entityTypeIcon(type)} size={16} />
     </span>
   );
 }
@@ -54,18 +54,12 @@ export function EntityPalette() {
   const custom = doc.entityTypes;
 
   return (
-    <PanelSection
-      title={t("panels.entities")}
-      heading={<LibraryTabs />}
-      className="min-h-[160px] flex-1"
-      actions={
-        <Tooltip label={t("commands.entity.editTypes")}>
-          <IconButton aria-label={t("commands.entity.editTypes")} className="size-7" onClick={() => runCommand("entity.editTypes")}>
-            <Icon name="pencilLine" size={14} />
-          </IconButton>
+    <section aria-label={t("entities.title")} className="flex min-h-0 flex-1 flex-col">
+      <SectionHeader title={t("entities.title")} actions={
+        <Tooltip label={t("entities.editTypes")}>
+          <IconButton size="sm" aria-label={t("entities.editTypes")} onClick={() => runCommand("entity.editTypes")}><Icon name="pencil" size={16} /></IconButton>
         </Tooltip>
-      }
-    >
+      } />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
         <Group label={t("entities.builtin")}>
           {doc.allEntityTypes().slice(0, 2).map((type) => (
@@ -80,18 +74,15 @@ export function EntityPalette() {
         </Group>
         {isEntityLayer(layer) && layer.entities.length > 0 && <EntityList doc={doc} entities={layer.entities} />}
       </div>
-      <div className="flex h-7 shrink-0 items-center border-t border-line-subtle px-3 text-2xs text-faint">
-        <span className="truncate">{t("entities.paletteHint")}</span>
-      </div>
-    </PanelSection>
+    </section>
   );
 }
 
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 px-2 pb-2">
-      <div className="px-1 text-2xs font-semibold tracking-wide text-faint">{label}</div>
-      <div role="radiogroup" aria-label={label} className="flex flex-col gap-1">
+    <div className="flex flex-col px-2 pb-2">
+      <div className="flex h-control-md items-center px-1 text-xs font-semibold tracking-section text-muted uppercase">{label}</div>
+      <div role="radiogroup" aria-label={label} className="flex flex-col">
         {children}
       </div>
     </div>
@@ -110,15 +101,15 @@ function TypeChip({ type, count }: { type: EntityType; count: number }) {
           aria-checked={on}
           data-entity-type={type.id}
           onClick={() => chooseEntityType(type.id)}
-          className={`flex h-8 min-w-0 items-center gap-2 rounded-md border pr-2 pl-1.5 text-sm transition-colors ${
-            on ? "border-accent bg-accent-soft text-text" : "border-line text-muted hover:border-line-strong hover:text-text"
+          className={`flex h-row min-w-0 items-center gap-2 rounded-sm pr-2 pl-1.5 text-sm transition-colors ${
+            on ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"
           }`}
         />
       }
     >
       <TypeMark type={type} />
       <span className="min-w-0 flex-1 truncate text-left">{entityTypeName(type)}</span>
-      {count > 0 && <span className="shrink-0 font-mono text-2xs text-faint tabular">{count}</span>}
+      {count > 0 && <span className="shrink-0 text-xs text-faint tabular">{count}</span>}
     </RowContextMenu>
   );
 }
@@ -174,11 +165,11 @@ function EntityList({ doc, entities }: { doc: MapDocument; entities: readonly En
   const select = useEditorStore((s) => s.setSelectedEntity);
   return (
     <div className="flex flex-col gap-0.5 border-t border-line-subtle px-1.5 pt-2">
-      <div className="px-1.5 pb-0.5 text-2xs font-semibold tracking-wide text-faint">
+      <div className="px-1.5 pb-0.5 text-xs font-semibold tracking-section text-muted uppercase">
         {t("entities.inLayer")}
         <span className="ml-1.5 font-mono font-normal tabular">{entities.length}</span>
       </div>
-      <ul role="listbox" aria-label={t("panels.entities")} className="flex flex-col">
+      <ul role="listbox" aria-label={t("entities.title")} className="flex flex-col">
         {[...entities].reverse().map((entity) => {
           const type = doc.getEntityType(entity.typeId);
           const cell = entityCell(entity, doc.map);
@@ -190,14 +181,13 @@ function EntityList({ doc, entities }: { doc: MapDocument; entities: readonly En
               aria-selected={on}
               data-entity-id={entity.id}
               onClick={() => select(entity.id)}
-              className={`relative flex h-7 shrink-0 cursor-default items-center gap-2 rounded-md pr-2 pl-2 text-sm ${
-                on ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"
+              className={`relative flex h-row shrink-0 cursor-default items-center gap-2 rounded-sm pr-2 pl-2 text-sm ${
+                on ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"
               }`}
             >
-              {on && <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
-              <TypeMark type={type} size={14} />
+              <TypeMark type={type} size={16} />
               <span className="min-w-0 flex-1 truncate">{type ? entityTypeName(type) : entity.typeId}</span>
-              <span className="shrink-0 font-mono text-2xs text-faint tabular">
+              <span className="shrink-0 text-xs text-faint tabular">
                 {cell.x}, {cell.y}
               </span>
             </li>
@@ -260,21 +250,20 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
   if (editing) {
     const color = TYPE_COLORS[colorIndex]!;
     return (
-      <div className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-accent bg-panel pr-1.5 pl-1.5 ring-2 ring-accent-soft" data-new-entity-type>
+      <div className="flex h-row min-w-0 items-center gap-2 rounded-sm bg-field pr-1.5 pl-1.5 ring-1 ring-inset ring-accent-line" data-new-entity-type>
         <Tooltip label={t("entities.nextColor")}>
-          <button
-            type="button"
+          <IconButton size="sm"
             aria-label={t("entities.nextColor")}
             // Keep focus in the name field.
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => setColorIndex((i) => (i + 1) % TYPE_COLORS.length)}
-            className="grid size-[18px] shrink-0 place-items-center rounded-sm text-inverse transition-transform duration-100 hover:scale-110"
+            className="text-text"
             style={{ background: color }}
           >
-            <Icon name="box" size={12} />
-          </button>
+            <Icon name="box" size={16} />
+          </IconButton>
         </Tooltip>
-        <input
+        <TextField size="sm"
           autoFocus
           value={name}
           aria-label={t("entities.name")}
@@ -285,45 +274,36 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
           spellCheck={false}
           autoComplete="off"
           maxLength={64}
-          className="h-6 min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-faint focus-visible:outline-none"
+          className="flex-1"
         />
       </div>
     );
   }
 
   const editTarget = chosen && custom.some((ty) => ty.id === chosen) ? chosen : null;
-  const empty = custom.length === 0;
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col">
       <div className="flex items-center gap-1">
-        <button
-          type="button"
+        <Button size="sm" variant="ghost"
           data-new-entity-type-button
-          aria-describedby={empty ? "entity-no-custom-hint" : undefined}
           onClick={start}
-          className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-dashed pr-2 pl-1.5 text-sm transition-colors ${
-            empty ? "border-line-strong text-muted hover:border-accent-line hover:text-text" : "border-line text-faint hover:border-line-strong hover:text-text"
-          }`}
+          className="flex-1 justify-start"
         >
-          <span aria-hidden className="grid size-[18px] shrink-0 place-items-center">
-            <Icon name="plus" size={14} />
+          <span aria-hidden className="grid size-4 shrink-0 place-items-center">
+            <Icon name="plus" size={16} />
           </span>
           {/* The label never truncates; the empty-state hint gets its own wrapping line below. */}
           <span className="flex-1 text-left whitespace-nowrap">{t("entities.newType")}</span>
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button size="sm" variant="ghost"
           onClick={() => useUiStore.getState().setEntityTypesOpen(true, false, editTarget)}
-          className="h-8 shrink-0 rounded-md px-2 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+
         >
           {t("entities.editType")}
-        </button>
+        </Button>
       </div>
-      {empty && (
-        <p id="entity-no-custom-hint" className="px-1.5 text-2xs text-faint">
-          {t("entities.noCustom")}
-        </p>
-      )}
+
     </div>
   );
 }

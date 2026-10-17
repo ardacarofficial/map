@@ -25,6 +25,8 @@ import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { Button, IconButton } from "../primitives/Button";
+import { NativeSelect } from "../primitives/NativeSelect";
 import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 import { Toggle } from "../primitives/Toggle";
@@ -39,23 +41,20 @@ export function RandomSetPicker() {
   const current = activeSetId ? sets.find((s) => s.id === activeSetId) : undefined;
   return (
     <Menu.Root>
-      <Menu.Trigger
-        data-random-set-picker
-        className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-raised px-2 text-left text-sm transition-colors hover:border-line-strong data-popup-open:border-line-strong"
-      >
-        <Icon name="dice" size={13} className="shrink-0 text-accent" />
-        <span className={`min-w-0 flex-1 truncate ${current ? "text-text" : "text-faint"}`}>{current?.name ?? (sets.length ? t("randomSets.saved") : t("randomSets.none"))}</span>
-        <Icon name="chevronDown" size={13} className="shrink-0 text-faint" />
-      </Menu.Trigger>
+      <Menu.Trigger render={<Button size="sm" data-random-set-picker className="min-w-0 flex-1">
+        <Icon name="dices" size={16} className="text-muted" />
+        <span className="min-w-0 flex-1 truncate text-left">{current?.name ?? (sets.length ? t("randomSets.saved") : t("randomSets.none"))}</span>
+        <Icon name="chevron-down" size={12} />
+      </Button>} />
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} max-h-[min(360px,var(--available-height))] w-(--anchor-width) min-w-[200px] overflow-y-auto`}>
-            {sets.length === 0 && <div className="px-2 py-1.5 text-xs text-faint">{t("randomSets.none")}</div>}
+          <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) w-(--anchor-width) min-w-48 overflow-y-auto`}>
+            {sets.length === 0 && <div className="px-2 py-1 text-sm text-muted">{t("randomSets.none")}</div>}
             {sets.map((s) => (
               <Menu.Item key={s.id} className={menuItemClass} data-random-set-option={s.id} onClick={() => loadRandomSet(s.id)}>
                 <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                <span className="font-mono text-2xs text-faint tabular">{s.candidates.length}</span>
-                {s.id === activeSetId && <Icon name="check" size={14} className="text-accent" />}
+                <span className="text-xs text-muted tabular">{s.candidates.length}</span>
+                {s.id === activeSetId && <Icon name="tick" size={12} className="text-muted" />}
               </Menu.Item>
             ))}
             {current && (
@@ -64,16 +63,16 @@ export function RandomSetPicker() {
                 <Menu.Item
                   className={menuItemClass}
                   onClick={() =>
-                    void askText({ title: t("randomSets.rename"), label: t("randomSets.saveName"), initial: current.name, confirm: t("palettes.rename") }).then(
+                    void askText({ title: t("randomSets.rename"), label: t("randomSets.saveName"), initial: current.name, confirm: t("randomSets.confirmRename") }).then(
                       (name) => name && renameRandomSet(current.id, name),
                     )
                   }
                 >
-                  <Icon name="pencilLine" size={15} className="text-muted" />
+                  <Icon name="pencilLine" size={16} className="text-muted" />
                   {t("randomSets.rename")}
                 </Menu.Item>
                 <Menu.Item className={`${menuItemClass} text-danger`} onClick={() => deleteRandomSet(current.id)}>
-                  <Icon name="trash" size={15} />
+                  <Icon name="trash" size={16} />
                   {t("randomSets.delete")}
                 </Menu.Item>
               </>
@@ -96,71 +95,59 @@ export function RandomSetControls() {
     <div className="flex flex-col gap-2" data-random-set-controls>
       <div className="flex items-center gap-1">
         <RandomSetPicker />
-        <button
-          type="button"
+        <Button size="sm"
           data-random-set-save
           title={activeSetId ? t("randomSets.save") : t("randomSets.saveAs")}
           onClick={() => (activeSetId ? saveRandomSet() : void saveRandomSetAs())}
-          className="h-7 shrink-0 rounded-md border border-line px-2 text-xs text-muted transition-colors hover:border-line-strong hover:text-text"
         >
           {t("randomSets.save")}
-        </button>
+        </Button>
         {activeSetId && (
-          <button
-            type="button"
+          <IconButton size="sm"
             aria-label={t("randomSets.saveAs")}
             title={t("randomSets.saveAs")}
             onClick={() => void saveRandomSetAs()}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-faint hover:bg-hover hover:text-text"
           >
-            <Icon name="plus" size={13} />
-          </button>
+            <Icon name="plus" size={16} />
+          </IconButton>
         )}
       </div>
       {stamps.length > 0 && (
         <div className="flex flex-col gap-0.5" data-random-stamps>
-          <span className="text-2xs font-semibold tracking-[.06em] text-faint uppercase">{t("randomSets.stamps")}</span>
+          <span className="flex h-control-md items-center text-xs font-semibold tracking-section text-muted uppercase">{t("randomSets.stamps")}</span>
           {stamps.map((c) => {
             const stamp = library.find((s) => s.id === c.stampId);
             const weight = c.weight ?? 1;
             return (
-              <div key={c.stampId} className="group flex h-7 items-center gap-2 rounded-md bg-panel/60 pr-1 pl-1.5">
-                <Icon name="stamp" size={13} className={stamp ? "text-muted" : "text-danger"} />
-                <span className="min-w-0 flex-1 truncate text-xs text-muted">{stamp?.name ?? c.stampId}</span>
-                <span className="flex shrink-0 items-center rounded-sm border border-line">
-                  <button type="button" aria-label={t("random.dec")} disabled={weight <= MIN_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, -1)} className="grid size-5 place-items-center text-muted hover:text-text disabled:opacity-30">
-                    <Icon name="minus" size={11} />
-                  </button>
-                  <span className="w-4 text-center font-mono text-xs text-text tabular">{weight}</span>
-                  <button type="button" aria-label={t("random.inc")} disabled={weight >= MAX_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, 1)} className="grid size-5 place-items-center text-muted hover:text-text disabled:opacity-30">
-                    <Icon name="plus" size={11} />
-                  </button>
+              <div key={c.stampId} className="group flex h-row items-center gap-2 rounded-sm pr-1 pl-1.5">
+                <Icon name="stamp" size={16} className={stamp ? "text-muted" : "text-danger"} />
+                <span className="min-w-0 flex-1 truncate text-sm text-text">{stamp?.name ?? c.stampId}</span>
+                <span className="flex h-control-sm shrink-0 items-center rounded-sm bg-field ring-1 ring-inset ring-line">
+                  <IconButton size="sm" aria-label={t("random.dec")} disabled={weight <= MIN_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, -1)} >
+                    <Icon name="minus" size={16} />
+                  </IconButton>
+                  <span className="w-4 text-center text-xs text-text tabular">{weight}</span>
+                  <IconButton size="sm" aria-label={t("random.inc")} disabled={weight >= MAX_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, 1)} >
+                    <Icon name="plus" size={16} />
+                  </IconButton>
                 </span>
-                <button type="button" aria-label={t("random.remove")} onClick={() => removeRandomStamp(c.stampId)} className="grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text">
+                <IconButton size="sm" aria-label={t("random.remove")} onClick={() => removeRandomStamp(c.stampId)} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                   <Icon name="x" size={12} />
-                </button>
+                </IconButton>
               </div>
             );
           })}
         </div>
       )}
-      <label className="flex items-center gap-2 text-xs text-muted" title={t("randomSets.scatterTitle")}>
-        <span className="w-20 shrink-0">{t("randomSets.scatter")}</span>
-        <input
-          type="range"
-          min={0}
-          max={95}
-          step={5}
-          value={Math.round(scatter * 100)}
-          onChange={(e) => setRandomScatter(Number(e.target.value))}
-          data-random-scatter
-          className="h-5 min-w-0 flex-1 accent-(--color-accent)"
-        />
-        <span className="w-9 shrink-0 text-right font-mono tabular">%{Math.round(scatter * 100)}</span>
+      <label className="flex h-control-md items-center gap-2 text-sm text-muted" title={t("randomSets.scatterTitle")}>
+        <span className="w-proplabel shrink-0">{t("randomSets.scatter")}</span>
+        <NativeSelect size="sm" aria-label={t("randomSets.scatter")} value={Math.round(scatter * 100)} onChange={(e) => setRandomScatter(Number(e.target.value))} data-random-scatter className="flex-1">
+          {Array.from({ length: 20 }, (_, i) => i * 5).map(percent => <option key={percent} value={percent}>{t("layers.percent", { value: percent })}</option>)}
+        </NativeSelect>
       </label>
-      <div className="flex items-center gap-2 text-xs text-muted" title={t("randomSets.flipTitle")}>
-        <span className="flex-1">{t("randomSets.flip")}</span>
+      <div className="flex h-control-md items-center gap-2 text-sm text-text" title={t("randomSets.flipTitle")}>
         <Toggle checked={randomFlip} onChange={setRandomFlip} label={t("randomSets.flip")} />
+        <span className="min-w-0 truncate">{t("randomSets.flip")}</span>
       </div>
     </div>
   );

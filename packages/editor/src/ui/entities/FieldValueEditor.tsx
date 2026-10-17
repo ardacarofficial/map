@@ -2,7 +2,8 @@ import type { EntityFieldDef, EntityFieldValue } from "@smap/core";
 import { useEffect, useId, useState, type KeyboardEvent } from "react";
 
 import { t } from "../../i18n";
-import { inputBad, inputClass, inputOk, NativeSelect } from "../primitives/NativeSelect";
+import { inputBad, inputOk, NativeSelect } from "../primitives/NativeSelect";
+import { TextField } from "../primitives/TextField";
 import { Toggle } from "../primitives/Toggle";
 import { rawFromValue, valueFromRaw, type RawValue } from "./fieldValues";
 
@@ -24,6 +25,7 @@ export function FieldValueEditor({
   levels,
   label,
   live = false,
+  size = "sm",
   onValidity,
 }: {
   field: Pick<EntityFieldDef, "type" | "enumValues">;
@@ -32,6 +34,7 @@ export function FieldValueEditor({
   levels: readonly LevelOption[];
   label: string;
   live?: boolean;
+  size?: "sm" | "md";
   /** Told whether what is typed right now is valid (so a form can block saving). */
   onValidity?(valid: boolean): void;
 }) {
@@ -80,7 +83,7 @@ export function FieldValueEditor({
   };
 
   const errorNode = error && (
-    <span id={`${id}-err`} className="text-2xs leading-[14px] text-danger">
+    <span id={`${id}-err`} className="text-xs text-danger">
       {error}
     </span>
   );
@@ -88,7 +91,7 @@ export function FieldValueEditor({
   switch (field.type) {
     case "bool":
       return (
-        <span className="flex h-7 items-center gap-2">
+        <span className="flex h-control-sm items-center gap-2">
           <Toggle checked={raw.bool} onChange={(bool) => change({ bool }, true)} label={label} />
           <span className={raw.bool ? "text-text" : "text-muted"}>{raw.bool ? t("entities.yes") : t("entities.no")}</span>
         </span>
@@ -96,7 +99,7 @@ export function FieldValueEditor({
     case "enum":
       return (
         <span className="flex min-w-0 flex-col gap-0.5">
-          <NativeSelect
+          <NativeSelect size={size}
             aria-label={label}
             value={raw.choice ?? ""}
             invalid={!!error}
@@ -115,7 +118,7 @@ export function FieldValueEditor({
     case "levelRef": {
       const missing = raw.choice !== null && !levels.some((l) => l.id === raw.choice);
       return (
-        <NativeSelect
+        <NativeSelect size={size}
           aria-label={label}
           value={raw.choice ?? ""}
           invalid={missing}
@@ -142,7 +145,7 @@ export function FieldValueEditor({
             }}
           >
             {(["x", "y"] as const).map((axis) => (
-              <label key={axis} className={`flex min-w-0 flex-1 items-center rounded-md border bg-panel pl-2 transition-colors focus-within:border-accent ${error ? inputBad : inputOk}`}>
+              <label key={axis} className={`flex ${size === "sm" ? "h-control-sm" : "h-control-md"} min-w-0 flex-1 items-center rounded-sm border bg-field pl-2 transition-colors focus-within:border-accent ${error ? inputBad : inputOk}`}>
                 <span className="font-mono text-2xs text-faint">{axis}</span>
                 <input
                   value={raw[axis]}
@@ -153,7 +156,7 @@ export function FieldValueEditor({
                   onKeyDown={onKeyDown}
                   spellCheck={false}
                   autoComplete="off"
-                  className="h-[26px] w-full min-w-0 bg-transparent px-1.5 font-mono text-md text-text tabular placeholder:font-sans placeholder:text-faint focus-visible:outline-none"
+                  className="h-full w-full min-w-0 bg-transparent px-1.5 font-mono text-md text-text tabular placeholder:font-sans placeholder:text-faint focus-visible:outline-none"
                 />
               </label>
             ))}
@@ -166,7 +169,7 @@ export function FieldValueEditor({
       const numeric = field.type === "int" || field.type === "float";
       return (
         <span className="flex min-w-0 flex-col gap-0.5">
-          <input
+          <TextField size={size}
             value={raw.text}
             aria-label={label}
             aria-invalid={error ? true : undefined}
@@ -177,7 +180,7 @@ export function FieldValueEditor({
             onBlur={onBlur}
             spellCheck={false}
             autoComplete="off"
-            className={`${inputClass} ${error ? inputBad : inputOk} ${numeric ? "font-mono tabular" : ""}`}
+            className={`${numeric ? "tabular" : ""} ${error ? "[&>input]:border-danger" : ""}`}
           />
           {errorNode}
         </span>

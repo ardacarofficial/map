@@ -122,9 +122,15 @@ describe("sections layout", () => {
     );
   });
 
+  it("uses 28px headers and reserves opacity plus five layer rows", () => {
+    expect(SECTION_HEADER).toBe(28);
+    expect(SECTION_MIN.layers).toBe(196);
+    expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).minHeight).toBe(196);
+  });
+
   it("sizes sections: header only, filler, dragged height or content", () => {
     expect(sectionFlex("properties", DEFAULT_SECTIONS, ctx).flex).toBe("1 1 0px");
-    expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).flex).toBe("0 1 auto");
+    expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).flex).toBe("0 1 40%");
     expect(sectionFlex("layers", with_({ layers: { height: 240 } }), ctx).flex).toBe("0 1 240px");
     expect(sectionFlex("layers", with_({ layers: { collapsed: true } }), ctx)).toEqual({ flex: "0 0 auto", minHeight: SECTION_HEADER });
   });
