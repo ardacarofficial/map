@@ -170,7 +170,9 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   });
   const placed = await cellsAt(page, 20, 10, 3, 3);
   const maps = page.getByRole("listbox", { name: "Haritalar" }).getByRole("option");
+  await page.locator("[data-library-tab-button='project']").click();
   await expect(maps).toHaveCount(1);
+  await page.locator("[data-library-tab-button='stamps']").click();
 
   // Denetçi → Düzenle: the stamp opens in its own tab with the banner.
   await card(page, "Kulübe").click();
@@ -179,7 +181,9 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   await expect(page.locator("[data-stamp-tab]")).toHaveAttribute("aria-selected", "true");
   expect(await levelId(page)).toBe(`stamp:${id}`);
   // The temporary document is not a map of the project.
+  await page.locator("[data-library-tab-button='project']").click();
   await expect(maps).toHaveCount(1);
+  await page.locator("[data-library-tab-button='stamps']").click();
 
   // Grow the stamp: one more tile right of it (the editing map centres the stamp with a margin).
   await page.evaluate(() => {

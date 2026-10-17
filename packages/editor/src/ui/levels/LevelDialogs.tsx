@@ -7,9 +7,10 @@ import { t } from "../../i18n";
 import type { PortalReferences } from "../../io/levelWorkspace";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
-import { Field, parseIntInRange } from "../dialogs/NewProjectDialog";
-import { backdropClass, popupClass } from "../dialogs/styles";
-import { Button } from "../primitives/Button";
+import { parseIntInRange } from "../dialogs/NewProjectDialog";
+import { backdropClass, popupClass, dialogWidthS } from "../dialogs/styles";
+import { Button, IconButton } from "../primitives/Button";
+import { TextField } from "../primitives/TextField";
 import { Icon } from "../primitives/Icon";
 
 const MAP_MIN = 1;
@@ -24,7 +25,7 @@ export function NewLevelDialog() {
     <Dialog.Root open={open} onOpenChange={(o) => openNewLevelDialog(o)}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} w-[400px] max-w-[calc(100vw-32px)]`} data-dialog="new-level">
+        <Dialog.Popup className={`${popupClass} ${dialogWidthS}`} data-dialog="new-level">
           {open && <NewLevelForm onDone={() => openNewLevelDialog(false)} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -34,7 +35,6 @@ export function NewLevelDialog() {
 
 function NewLevelForm({ onDone }: { onDone(): void }) {
   const doc = useEditorStore.getState().project?.store.document;
-  const projectTile = doc?.tilesets[0]?.tileWidth ?? doc?.map.tileWidth ?? 32;
   const [name, setName] = useState(nextLevelName);
   // New-map defaults come from the project settings.
   const defaults = useProjectLibrary.getState().settings;
@@ -61,20 +61,23 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5">
-        <Dialog.Title className="text-lg font-semibold">{t("levels.newTitle")}</Dialog.Title>
+      <div className="flex flex-col gap-2 px-4 pt-4">
+        <div className="flex items-center gap-2">
+          <Dialog.Title className="flex-1 text-lg font-semibold text-title">{t("levels.newTitle")}</Dialog.Title>
+          <Dialog.Close
+            render={
+              <IconButton size="sm" aria-label={t("common.close")}>
+                <Icon name="x" size={16} />
+              </IconButton>
+            }
+          />
+        </div>
         <Dialog.Description className="text-md text-muted">{t("levels.newDescription")}</Dialog.Description>
       </div>
-      <div className="flex flex-col gap-4 px-5 py-5">
-        <Field
-          label={t("levels.newName")}
-          value={name}
-          onChange={setName}
-          error={touched && !nameOk ? t("newProject.errName") : null}
-          autoFocus
-        />
+      <div className="flex flex-col gap-3 p-4">
+        <LevelField label={t("levels.newName")} value={name} onChange={setName} error={touched && !nameOk ? t("newProject.errName") : null} autoFocus />
         <div className="grid grid-cols-2 gap-3">
-          <Field
+          <LevelField
             label={t("newProject.width")}
             value={width}
             onChange={setWidth}
@@ -82,7 +85,7 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
             numeric
             error={(touched || width !== "") && w === null ? mapErr : null}
           />
-          <Field
+          <LevelField
             label={t("newProject.height")}
             value={height}
             onChange={setHeight}
@@ -91,8 +94,8 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
             error={(touched || height !== "") && h === null ? mapErr : null}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Field
+        <div className="flex flex-col gap-2">
+          <LevelField
             label={t("newProject.tileSize")}
             value={tile}
             onChange={setTile}
@@ -100,22 +103,14 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
             numeric
             error={(touched || tile !== "") && ts === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}
           />
-          {tilesetSize !== undefined && ts !== null && ts !== tilesetSize ? (
-            <span className="flex items-center gap-1.5 text-xs text-warning">
-              <Icon name="warning" size={12} className="shrink-0" />
-              {t("levels.tileSizeDiffers", { size: tilesetSize })}
-            </span>
-          ) : (
-            <span className="text-xs text-faint">{t("levels.tileSizeProject", { size: projectTile })}</span>
+          {tilesetSize !== undefined && ts !== null && ts !== tilesetSize && (
+            <span className="text-xs text-warning">{t("levels.tileSizeDiffers", { size: tilesetSize })}</span>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
-        <span className="font-mono text-xs text-faint tabular">
-          {w !== null && h !== null && ts !== null ? t("newProject.summary", { width: w * ts, height: h * ts }) : " "}
-        </span>
+      <div className="flex items-center gap-2 border-t border-line-subtle px-4 py-3">
         <div className="ml-auto flex gap-2">
-          <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
+          <Dialog.Close render={<Button variant="secondary">{t("common.cancel")}</Button>} />
           <Button type="submit" variant="primary" disabled={touched && !valid}>
             {t("common.create")}
           </Button>
@@ -134,7 +129,7 @@ export function RemoveLevelDialog() {
     <AlertDialog.Root open={open} onOpenChange={(o) => !o && askRemoveLevel(null)}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className={backdropClass} />
-        <AlertDialog.Popup className={`${popupClass} w-[440px] max-w-[calc(100vw-32px)] p-5`} data-dialog="remove-level">
+        <AlertDialog.Popup className={`${popupClass} ${dialogWidthS} p-4`} data-dialog="remove-level">
           {open && <RemoveLevelBody id={level.id} name={level.name} />}
         </AlertDialog.Popup>
       </AlertDialog.Portal>
@@ -164,15 +159,22 @@ function RemoveLevelBody({ id, name }: { id: string; name: string }) {
 
   return (
     <>
-      <AlertDialog.Title className="text-lg font-semibold">{t("levels.removeTitle", { name })}</AlertDialog.Title>
-      <AlertDialog.Description className="mt-1.5 text-md text-muted">{t("levels.removeDescription")}</AlertDialog.Description>
+      <div className="flex items-center gap-2">
+        <AlertDialog.Title className="flex-1 text-lg font-semibold text-title">{t("levels.removeTitle", { name })}</AlertDialog.Title>
+        <AlertDialog.Close
+          render={
+            <IconButton size="sm" aria-label={t("common.close")}>
+              <Icon name="x" size={16} />
+            </IconButton>
+          }
+        />
+      </div>
+      <AlertDialog.Description className="mt-2 text-md text-muted">{t("levels.removeDescription")}</AlertDialog.Description>
       <div
-        className={`mt-4 flex items-start gap-2 rounded-md px-3 py-2.5 text-sm leading-5 ${
-          refs && refs.count > 0 ? "bg-danger-soft text-danger" : "bg-raised text-muted"
-        }`}
+        className={`mt-4 flex items-start gap-2 rounded-md text-sm ${refs && refs.count > 0 ? "text-danger" : "text-muted"}`}
         data-portal-refs={refs?.count ?? ""}
       >
-        <Icon name={refs && refs.count > 0 ? "warning" : "portal"} size={14} className="mt-0.5 shrink-0" />
+        <Icon name={refs && refs.count > 0 ? "warning" : "portal"} size={16} className="mt-0.5 shrink-0" />
         <span className="flex flex-col gap-1">
           <span>
             {refs === null
@@ -184,12 +186,48 @@ function RemoveLevelBody({ id, name }: { id: string; name: string }) {
           {refs && refs.unreadable > 0 && <span className="text-xs text-faint">{t("levels.removeUnreadable", { count: refs.unreadable })}</span>}
         </span>
       </div>
-      <div className="mt-5 flex justify-end gap-2">
-        <AlertDialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
+      <div className="mt-4 flex justify-end gap-2">
+        <AlertDialog.Close render={<Button variant="secondary">{t("common.cancel")}</Button>} />
         <Button variant="danger" disabled={busy} onClick={() => void confirm()}>
           {t("levels.removeConfirm")}
         </Button>
       </div>
     </>
+  );
+}
+
+/** Labelled 28px input used by the map creation dialog. */
+function LevelField({
+  label,
+  value,
+  onChange,
+  error,
+  unit,
+  numeric,
+  autoFocus,
+}: {
+  label: string;
+  value: string;
+  onChange(value: string): void;
+  error?: string | null;
+  unit?: string;
+  numeric?: boolean;
+  autoFocus?: boolean;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-2 text-sm text-muted">
+      <span>{label}</span>
+      <TextField
+        size="md"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        inputMode={numeric ? "numeric" : undefined}
+        autoFocus={autoFocus}
+        aria-label={label}
+        aria-invalid={!!error}
+        trailing={unit && <span className="text-xs">{unit}</span>}
+      />
+      {error && <span className="text-xs text-danger">{error}</span>}
+    </label>
   );
 }

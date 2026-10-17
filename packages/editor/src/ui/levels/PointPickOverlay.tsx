@@ -6,6 +6,7 @@ import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
 import { CANVAS_HOST_ATTR } from "../canvas/canvasHandle";
 import { Button } from "../primitives/Button";
+import { KbdText } from "../primitives/Kbd";
 import { Icon } from "../primitives/Icon";
 import { toast } from "../toast/toastStore";
 
@@ -59,14 +60,14 @@ export function PointPickOverlay() {
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4" data-point-pick="">
       <div
         role="status"
-        className="pointer-events-auto flex items-center gap-3 rounded-lg border border-accent-line bg-raised py-1.5 pr-1.5 pl-3 text-md text-text shadow-popup"
+        className="pointer-events-auto flex items-center gap-3 rounded-md border border-line-strong bg-popup py-1.5 pr-1.5 pl-3 text-sm text-text shadow-popup"
       >
-        <Icon name="crosshair" size={15} className="shrink-0 text-accent" />
+        <Icon name="crosshair" size={16} className="shrink-0 text-muted" />
         <span>{t("levels.pickBanner", { level: levelName })}</span>
         <span className="w-16 font-mono text-xs text-faint tabular">{hover ? `${hover.x}, ${hover.y}` : "—"}</span>
-        <Button variant="ghost" className="h-7 px-2" onClick={() => void cancelPointPick()}>
+        <Button variant="ghost" size="sm" onClick={() => void cancelPointPick()}>
           {t("levels.pickCancel")}
-          <kbd className="font-mono text-2xs text-faint">Esc</kbd>
+          <KbdText keys="Escape" />
         </Button>
       </div>
     </div>

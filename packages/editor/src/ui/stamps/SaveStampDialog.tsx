@@ -5,9 +5,10 @@ import { defaultStampName, saveSelectionAsStamp, stampRegion, usedStampLayerIds 
 import { t } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
-import { Field } from "../dialogs/NewProjectDialog";
-import { backdropClass, popupClass } from "../dialogs/styles";
-import { Button } from "../primitives/Button";
+import { TextField } from "../primitives/TextField";
+import { Icon } from "../primitives/Icon";
+import { backdropClass, popupClass, dialogWidthS } from "../dialogs/styles";
+import { Button, IconButton } from "../primitives/Button";
 import { useUiStore } from "../uiStore";
 
 /** stamp.saveSelection — asks for a name, then saves the marquee of every layer. */
@@ -20,9 +21,7 @@ export function SaveStampDialog() {
     <Dialog.Root open={show} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} w-[400px] max-w-[calc(100vw-32px)]`}>
-          {show && <SaveStampForm onDone={() => setOpen(false)} />}
-        </Dialog.Popup>
+        <Dialog.Popup className={`${popupClass} ${dialogWidthS}`}>{show && <SaveStampForm onDone={() => setOpen(false)} />}</Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -43,19 +42,30 @@ function SaveStampForm({ onDone }: { onDone(): void }) {
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col">
-      <div className="flex flex-col gap-1 px-5 pt-5">
-        <Dialog.Title className="text-lg font-semibold">{t("stamps.dialogTitle")}</Dialog.Title>
+      <div className="flex flex-col gap-2 px-4 pt-4">
+        <div className="flex items-center gap-2">
+          <Dialog.Title className="flex-1 text-lg font-semibold text-title">{t("stamps.dialogTitle")}</Dialog.Title>
+          <Dialog.Close
+            render={
+              <IconButton size="sm" aria-label={t("common.close")}>
+                <Icon name="x" size={16} />
+              </IconButton>
+            }
+          />
+        </div>
         <Dialog.Description className="text-md text-muted">
-          {region
-            ? t("stamps.dialogDescription", { width: region.width, height: region.height, count: layerCount })
-            : t("stamps.saveDisabled")}
+          {region ? t("stamps.dialogDescription", { width: region.width, height: region.height, count: layerCount }) : t("stamps.saveDisabled")}
         </Dialog.Description>
       </div>
-      <div className="px-5 py-5">
-        <Field label={t("stamps.name")} value={name} onChange={setName} autoFocus error={error} />
+      <div className="p-4">
+        <label className="flex flex-col gap-2 text-sm text-muted">
+          <span>{t("stamps.name")}</span>
+          <TextField size="md" aria-label={t("stamps.name")} value={name} onChange={(e) => setName(e.target.value)} autoFocus aria-invalid={!!error} />
+          {error && <span className="text-xs text-danger">{error}</span>}
+        </label>
       </div>
-      <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-        <Dialog.Close render={<Button variant="ghost">{t("common.cancel")}</Button>} />
+      <div className="flex justify-end gap-2 border-t border-line-subtle px-4 py-3">
+        <Dialog.Close render={<Button variant="secondary">{t("common.cancel")}</Button>} />
         <Button type="submit" variant="primary" disabled={!!error || !region}>
           {t("common.save")}
         </Button>
