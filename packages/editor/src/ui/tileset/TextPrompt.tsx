@@ -8,8 +8,8 @@ import { create } from "zustand";
 
 import { t } from "../../i18n";
 import { backdropClass, popupClass } from "../dialogs/styles";
+import { TextField } from "../primitives/TextField";
 import { Button } from "../primitives/Button";
-import { inputBad, inputClass, inputOk } from "../primitives/NativeSelect";
 import { registerTilesetModal } from "../tilesetImport/importStore";
 
 export interface TextPromptRequest {
@@ -45,7 +45,7 @@ export function TextPromptDialog() {
     <Dialog.Root open={request !== null} onOpenChange={(open) => !open && finish(null)}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup className={`${popupClass} w-[360px] max-w-[calc(100vw-32px)] p-5`} data-dialog="text-prompt">
+        <Dialog.Popup className={`${popupClass} w-100 max-w-[calc(100vw-32px)] p-4`} data-dialog="text-prompt">
           {request && <PromptForm request={request} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -65,7 +65,7 @@ function PromptForm({ request }: { request: TextPromptRequest }) {
       <Dialog.Title className="text-lg font-semibold">{request.title}</Dialog.Title>
       <label className="flex flex-col gap-1.5 text-sm font-medium text-muted">
         {request.label}
-        <input
+        <TextField size="md"
           autoFocus
           value={value}
           maxLength={64}
@@ -73,11 +73,12 @@ function PromptForm({ request }: { request: TextPromptRequest }) {
           autoComplete="off"
           onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => setValue(e.target.value)}
-          className={`${inputClass} h-8 ${ok ? inputOk : inputBad}`}
+          aria-invalid={!ok}
+          className="w-full"
         />
       </label>
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={() => finish(null)}>
+        <Button variant="secondary" onClick={() => finish(null)}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" variant="primary" disabled={!ok}>

@@ -1,5 +1,5 @@
 /**
- * Terrain tags drawn over the tileset grid (⚙ Düzenle → Arazi): corner sets
+ * Terrain tags drawn over the tileset grid (Arazi mode): corner sets
  * show a coloured triangle in each tagged corner, blob sets a centre square
  * plus a small mark toward every neighbour the tile connects to. Read-only;
  * clicks are handled by the grid ("Düzelt").
@@ -60,19 +60,19 @@ export const TerrainTagOverlay = memo(function TerrainTagOverlay({
           ];
           return (
             <g key={tag.tileId} data-tag-tile={tag.tileId}>
-              {c.map((id, i) => (id === 0 ? null : <polygon key={i} points={tri[i]} fill={color.get(id) ?? "#888"} fillOpacity={alpha(id)} stroke="#0008" strokeWidth={0.5} />))}
+              {c.map((id, i) => (id === 0 ? null : <polygon key={i} points={tri[i]} fill={color.get(id) ?? "var(--color-muted)"} fillOpacity={alpha(id)} stroke="var(--color-bg)" strokeOpacity={0.6} strokeWidth={0.5} />))}
             </g>
           );
         }
         const id = tag.terrainId ?? 0;
-        const fill = color.get(id) ?? "#888";
+        const fill = color.get(id) ?? "var(--color-muted)";
         const u = Math.min(cellW, cellH) / 3;
         const ox = x + (cellW - 3 * u) / 2;
         const oy = y + (cellH - 3 * u) / 2;
         const inset = Math.max(1, u * 0.18);
         return (
           <g key={tag.tileId} data-tag-tile={tag.tileId} fillOpacity={alpha(id)}>
-            <rect x={ox + u + inset} y={oy + u + inset} width={u - 2 * inset} height={u - 2 * inset} fill={fill} stroke="#0008" strokeWidth={0.5} />
+            <rect x={ox + u + inset} y={oy + u + inset} width={u - 2 * inset} height={u - 2 * inset} fill={fill} stroke="var(--color-bg)" strokeOpacity={0.6} strokeWidth={0.5} />
             {BLOB_POS.map(([bit, cx, cy]) =>
               ((tag.mask ?? 0) & bit) !== 0 ? (
                 <rect key={bit} x={ox + cx * u + inset * 1.6} y={oy + cy * u + inset * 1.6} width={u - 3.2 * inset} height={u - 3.2 * inset} fill={fill} />
@@ -104,7 +104,7 @@ export function TagZoneHover({ zone, col, row, cellW, cellH, color }: { zone: Ta
       aria-hidden
       data-tag-zone=""
       className="pointer-events-none absolute"
-      style={{ left, top, width: w, height: h, outline: `2px solid ${color}`, outlineOffset: -2, background: `${color}33` }}
+      style={{ left, top, width: w, height: h, outline: `1px solid ${color}`, outlineOffset: -1, background: `color-mix(in srgb, ${color} 20%, transparent)` }}
     />
   );
 }

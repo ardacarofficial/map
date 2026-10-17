@@ -6,9 +6,9 @@
  * - Seç: left selects; Alt + left (drag) adds the rectangle to the random
  *   brush (a plain Alt + click toggles one tile); right opens the tile's
  *   context menu (no edit).
- * - Katı (⚙ Düzenle): left (drag) marks solid, right (drag) unmarks.
+ * - Katı: left (drag) marks solid, right (drag) unmarks.
  * - (There is no "Rastgele" mode any more: a legacy "random" value acts as Seç.)
- * - Arazi (⚙ Düzenle): left drags a rough rectangle over a terrain block
+ * - Arazi: left drags a rough rectangle over a terrain block
  *   (the program finds template and origin), or — while "Düzelt" is on —
  *   tags the clicked corner / zone; right drops the open draft.
  */
@@ -65,10 +65,10 @@ export function contextMenuEnabled(mode: TilesetMode): boolean {
   return mode === "pick" || mode === "random";
 }
 
-/** Modes behind the tileset header's ⚙ "Düzenle" toggle (tagging tiles, not picking a brush). */
+/** Tagging modes in the tileset header's mode control. */
 export const EDIT_MODES = ["solid", "terrain"] as const;
 
-/** True when `mode` tags tiles (the ⚙ "Düzenle" toggle is on). */
+/** True when `mode` tags tiles. */
 export function isEditMode(mode: TilesetMode): boolean {
   return mode === "solid" || mode === "terrain";
 }

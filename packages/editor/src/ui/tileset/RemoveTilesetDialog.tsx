@@ -56,13 +56,13 @@ export function RemoveTilesetDialog() {
     <AlertDialog.Root open={request !== null} onOpenChange={(open) => !open && finish(false)}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className={backdropClass} />
-        <AlertDialog.Popup className={`${popupClass} w-[440px] max-w-[calc(100vw-32px)] p-5`} data-dialog="remove-tileset">
+        <AlertDialog.Popup className={`${popupClass} w-100 max-w-[calc(100vw-32px)] p-4`} data-dialog="remove-tileset">
           {request && (
             <>
               <AlertDialog.Title className="text-lg font-semibold">{t("tilesetLib.removeTitle", { name: request.name })}</AlertDialog.Title>
               <AlertDialog.Description className="mt-1.5 text-md text-muted">{t("tilesetLib.removeDescription")}</AlertDialog.Description>
               <div className="mt-4 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm leading-5 text-danger" data-remove-usage>
-                <Icon name="warning" size={14} className="mt-0.5 shrink-0" />
+                <Icon name="warning" size={16} className="mt-0.5 shrink-0" />
                 <span>{usageText(request.usage)}</span>
               </div>
               <div className="mt-5 flex justify-end gap-2">
@@ -70,7 +70,7 @@ export function RemoveTilesetDialog() {
                   {t("tilesetLib.removeCancel")}
                 </Button>
                 <Button variant="danger" autoFocus onClick={() => finish(true)}>
-                  <Icon name="trash" size={14} />
+                  <Icon name="trash" size={16} />
                   {t("tilesetLib.removeConfirm")}
                 </Button>
               </div>

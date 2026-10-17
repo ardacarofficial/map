@@ -110,15 +110,15 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const sel = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().selection);
   expect(sel?.tileId).toBe(18);
 
-  // ---- ⚙ Düzenle shows the labelled edit modes (Katı first); Esc returns to picking.
-  await page.locator("[data-tileset-edit]").click();
+  // ---- The mode control switches directly to Katı; Esc returns to picking.
+  await page.locator("[data-tileset-mode='solid']").click();
   await expect(page.locator("[data-tileset-mode='solid']")).toHaveAttribute("aria-checked", "true");
   await page.locator("[data-tileset-mode='terrain']").click();
   await expect(page.locator("[data-tileset-mode='terrain']")).toHaveAttribute("aria-checked", "true");
   await grid.focus();
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-tileset-edit]")).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator("[data-tileset-modes]")).toBeHidden();
+  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
 
   expect(errors).toEqual([]);
 });
@@ -134,11 +134,12 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   const scroll = () => grid.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
   const before = await scale();
 
-  // A mouse notch over the tiles zooms in at the cursor (like the map), twice.
+  // Mouse notches zoom at the cursor; reach 4× so the full-width dock overflows horizontally.
   const box = (await grid.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 80);
   await page.mouse.wheel(0, -100);
   await expect.poll(scale).toBeGreaterThan(before);
+  await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
   await page.waitForTimeout(300);

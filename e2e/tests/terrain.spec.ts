@@ -77,9 +77,8 @@ async function openProject(page: Page, file: string) {
   return image;
 }
 
-/** ⚙ Düzenle → Arazi, then a rough drag from (c0, r0) to (c1, r1). */
+/** Arazi mode, then a rough drag from (c0, r0) to (c1, r1). */
 async function roughSelect(page: Page, image: Locator, c0: number, r0: number, c1: number, r1: number) {
-  if ((await page.locator("[data-tileset-mode='terrain']").count()) === 0) await page.locator("[data-tileset-edit]").click();
   await page.locator("[data-tileset-mode='terrain']").click();
   const a = await tilesetCell(image, c0, r0);
   const b = await tilesetCell(image, c1, r1);
@@ -124,6 +123,7 @@ test("blob47-godot: rough rectangle → template found, define, paint next to a 
   await expect(page.locator("[data-terrain-sets] [data-terrain-name='Çimen']")).toBeVisible();
   const sets = await terrainSets(page);
   expect(sets).toHaveLength(1);
+  await expect(page.locator("[data-terrain-set-heading]")).toHaveCount(0);
   expect(sets[0]!.kind).toBe("blob");
   expect(sets[0]!.tiles).toHaveLength(47);
   let s = await editorState(page);
@@ -170,7 +170,7 @@ test("blob47-godot: rough rectangle → template found, define, paint next to a 
   // ---- A tile pick turns the terrain brush off; Autotile brings it back.
   const tile = await tilesetCell(image, 0, 3);
   // "Tanımla" already left ⚙ Düzenle: a click picks a tile again.
-  await expect(page.locator("[data-tileset-edit]")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
   await page.mouse.click(tile.x, tile.y);
   s = await editorState(page);
   expect(s.terrainActive).toBe(false);
@@ -207,6 +207,7 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   await expect(page.locator("[data-terrain-sets] [data-terrain-name='Çimen']")).toBeVisible();
   const sets = await terrainSets(page);
   expect(sets).toHaveLength(1);
+  await expect(page.locator("[data-terrain-set-heading]")).toHaveCount(0);
   expect(sets[0]!.terrains.map((t) => t.name)).toEqual(["Toprak", "Çimen"]);
   expect(sets[0]!.background).toBe(1);
 

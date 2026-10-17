@@ -52,6 +52,7 @@ import { useUiStore } from "../ui/uiStore";
 import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
+import { showDockTab } from "../ui/layout/dock/dockActions";
 import { usePaletteStore } from "../ui/palettes/paletteStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 import { groupNames, planTilesetMove, summarizeUsage, uniqueGroupName, type DropTarget, type LevelUsage } from "../ui/tileset/libraryModel";
@@ -530,7 +531,7 @@ export function tilesetGroups(): string[] {
 export function gotoTileset(tilesetId: string): void {
   if (!activeStore()?.document.getTileset(tilesetId)) return;
   const ui = useUiStore.getState();
-  ui.setLibraryTab("tileset");
+  showDockTab("tileset");
   ui.setActiveTileset(tilesetId);
   useTilesetView.getState().requestJump(tilesetId);
 }
@@ -606,7 +607,8 @@ const COMMANDS: Command[] = [
     category: "tileset",
     enabled: hasTileset,
     run: () => {
-      useUiStore.getState().setLibraryTab("tileset");
+      showDockTab("tileset");
+      useTilesetView.getState().setView("all");
       useTilesetView.getState().requestSearchFocus();
     },
   },

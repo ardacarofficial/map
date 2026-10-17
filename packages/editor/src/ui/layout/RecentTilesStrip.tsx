@@ -26,7 +26,7 @@ function usable(doc: MapDocument, item: RecentItem): boolean {
 
 /**
  * "Son kullanılanlar" tab of the bottom dock: the most recently used tiles
- * and multi-tile stamps (newest first), wrapping to the dock's width. Click
+ * and multi-tile stamps (newest first), scrolling horizontally. Click
  * one to paint with it again; hover for its tileset · id (or the stamp's
  * name, or its anchor tileset · size @ id). Empty: a quiet one-line hint.
  */
@@ -39,15 +39,26 @@ export function RecentTilesStrip() {
   const doc = store?.document;
   const items = doc ? recent.filter((item) => usable(doc, item)) : [];
 
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey || el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * (e.deltaMode === 1 ? 16 : 1);
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, []);
   return (
-    <div role="toolbar" aria-label={t("recent.title")} data-recent-strip className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2">
+    <div ref={ref} role="toolbar" aria-label={t("recent.title")} data-recent-strip className="flex min-h-0 flex-1 items-start overflow-x-auto overflow-y-hidden p-2">
       {items.length === 0 ? (
-        <span className="flex items-center gap-2 py-1 text-sm text-faint" data-recent-empty>
-          <Icon name="history" size={14} />
+        <span className="flex items-center gap-2 py-1 text-sm text-muted" data-recent-empty>
           {t("recent.empty")}
         </span>
       ) : (
-        <div className="flex flex-wrap content-start items-start gap-1">
+        <div className="flex shrink-0 items-start gap-1">
           {items.map((item) => {
             if (isRecentStamp(item)) {
               const on = stamp === item.stamp;
@@ -128,7 +139,7 @@ function ItemButton({ label, on, data, onClick, children }: { label: string; on:
         data-recent-tile={data}
         onClick={onClick}
         className={`shrink-0 rounded-sm p-px transition-shadow ${
-          on ? "shadow-[0_0_0_2px_var(--color-accent)]" : "hover:shadow-[0_0_0_1px_var(--color-line-strong)]"
+          on ? "outline outline-1 outline-accent shadow-[0_0_0_2px_rgb(0_0_0_/_0.6)]" : "hover:shadow-[0_0_0_1px_var(--color-line-strong)]"
         }`}
       >
         {children}
@@ -172,8 +183,8 @@ function StampMini({ doc, clip }: { doc: MapDocument; clip: TileClip }) {
     <span className="relative block">
       <canvas ref={ref} aria-hidden style={{ width: cssW, height: ITEM }} className="checker block rounded-xs pixelated" />
       {/* Marks a stamp among single tiles. */}
-      <span aria-hidden className="absolute right-0 bottom-0 grid size-[11px] place-items-center rounded-tl-xs rounded-br-xs bg-panel/90 text-muted">
-        <Icon name="stamp" size={9} />
+      <span aria-hidden className="absolute right-0 bottom-0 grid size-4 place-items-center rounded-tl-xs rounded-br-xs bg-panel text-muted">
+        <Icon name="stamp" size={12} />
       </span>
     </span>
   );

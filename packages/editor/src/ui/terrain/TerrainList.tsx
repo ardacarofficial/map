@@ -5,6 +5,8 @@ import { chooseTerrain, removeTerrain, renameTerrain } from "../../commands/terr
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
+import { IconButton } from "../primitives/Button";
+import { SectionHeader } from "../primitives/SectionHeader";
 import { Icon } from "../primitives/Icon";
 import { RenameInput } from "../primitives/RenameInput";
 import { TileSwatch } from "../primitives/TileSwatch";
@@ -21,14 +23,14 @@ export function useActiveTerrain(): TerrainRef | null {
 }
 
 /** A small round colour dot of a terrain. */
-export function TerrainDot({ color, size = 8, className = "" }: { color: string; size?: number; className?: string }) {
+export function TerrainDot({ color, size = 6, className = "" }: { color: string; size?: number; className?: string }) {
   return <span aria-hidden className={`inline-block shrink-0 rounded-full ${className}`} style={{ width: size, height: size, background: color }} />;
 }
 
 /** The terrain's representative tile, or its colour when it has no tile. */
 export function TerrainSwatch({ tileset, set, terrainId, size }: { tileset: Tileset; set: TerrainSet; terrainId: number; size: number }) {
   const tile = terrainSwatch(set, terrainId);
-  const color = set.terrains.find((x) => x.id === terrainId)?.color ?? "#888888";
+  const color = set.terrains.find((x) => x.id === terrainId)?.color ?? "var(--color-muted)";
   if (tile === null) return <span aria-hidden className="shrink-0 rounded-xs" style={{ width: size, height: size, background: color }} />;
   return <TileSwatch tileset={tileset} tileId={tile} size={size} className="rounded-xs" />;
 }
@@ -40,7 +42,7 @@ export function TerrainSwatch({ tileset, set, terrainId, size }: { tileset: Tile
  * (undoable); "+": ⚙ Düzenle → Arazi in the tileset, ready for a rough
  * rectangle over a block (concept "Terrain sets").
  */
-export function TerrainSets({ compact = false }: { compact?: boolean }) {
+export function TerrainSets() {
   const store = useEditorStore((s) => s.project?.store);
   useStructureVersion(store);
   const active = useActiveTerrain();
@@ -59,34 +61,22 @@ export function TerrainSets({ compact = false }: { compact?: boolean }) {
       aria-label={t("terrain.list")}
       data-terrain-sets=""
       data-empty={terrainCount === 0 || undefined}
-      className={`flex shrink-0 flex-col ${compact ? "" : "border-t border-line-subtle"}`}
+      className="flex shrink-0 flex-col border-t border-line-subtle"
     >
-      <div className={`flex h-7 items-center pr-1.5 text-2xs font-semibold tracking-wide text-faint uppercase ${compact ? "pl-1" : "pl-3"}`}>
-        {t("terrain.list")}
-        <span className="ml-1.5 font-mono font-normal tabular">{terrainCount}</span>
+      <SectionHeader padding={12} title={<>{t("terrain.list")} <span className="ml-1 font-mono text-faint">{terrainCount}</span></>} actions={
         <Tooltip label={terrainCount === 0 ? t("terrain.setsEmpty") : t("terrain.defineNew")}>
-          <button
-            type="button"
-            aria-label={t("terrain.defineNew")}
-            aria-pressed={defining}
-            data-terrain-add=""
-            onClick={() => startDefine(activeTilesetId ?? undefined)}
-            className={`ml-auto grid size-6 place-items-center rounded-sm hover:bg-hover hover:text-text ${defining ? "text-accent" : "text-faint"}`}
-          >
-            <Icon name="plus" size={13} />
-          </button>
+          <IconButton size="sm" aria-label={t("terrain.defineNew")} active={defining} data-terrain-add onClick={() => startDefine(activeTilesetId ?? undefined)}><Icon name="plus" /></IconButton>
         </Tooltip>
-      </div>
-      {terrainCount === 0 && !compact && <p className="px-3 pb-2 text-2xs leading-4 text-pretty text-faint">{t("terrain.setsEmpty")}</p>}
+      } />
       {terrainCount > 0 && (
-        <ul role="listbox" aria-label={t("terrain.list")} className={`flex max-h-[220px] flex-col overflow-y-auto pb-1.5 ${compact ? "" : "px-1.5"}`}>
+        <ul role="listbox" aria-label={t("terrain.list")} className="flex max-h-56 flex-col overflow-y-auto px-2 pb-1">
           {entries.map(({ tileset, set }) => (
             <li key={`${tileset.id}/${set.id}`} role="presentation" data-terrain-set={set.id} className="flex flex-col">
-              <div className="flex h-6 items-center gap-1.5 px-2 text-2xs text-faint">
+              {entries.length > 1 && <div data-terrain-set-heading className="flex h-6 items-center gap-1.5 px-2 text-xs text-faint">
                 <span className="min-w-0 truncate font-medium text-muted">{set.name}</span>
                 <span className="shrink-0">· {t(set.kind === "corner" ? "terrain.kindCorner" : "terrain.kindBlob")}</span>
                 {several && <span className="ml-auto min-w-0 truncate">{tileset.name}</span>}
-              </div>
+              </div>}
               <ul role="group" aria-label={set.name} className="flex flex-col">
                 {set.terrains.map((terrain) => {
                   const ref: TerrainRef = { tilesetId: tileset.id, setId: set.id, terrainId: terrain.id };
@@ -106,11 +96,11 @@ export function TerrainSets({ compact = false }: { compact?: boolean }) {
                       onDoubleClick={(e) => {
                         if (!(e.target as HTMLElement).closest("button")) setEditing(keyOf(ref));
                       }}
-                      className={`group relative flex h-8 shrink-0 cursor-default items-center gap-2 rounded-md pr-1 pl-2 text-md ${
+                      className={`group relative flex h-row shrink-0 cursor-default items-center gap-2 rounded-sm pr-0 pl-2 text-sm ${
                         on ? "bg-accent-soft text-text" : "text-muted hover:bg-hover hover:text-text"
                       }`}
                     >
-                      <TerrainSwatch tileset={tileset} set={set} terrainId={terrain.id} size={20} />
+                      <TerrainSwatch tileset={tileset} set={set} terrainId={terrain.id} size={16} />
                       {editing === keyOf(ref) ? (
                         <RenameInput
                           initial={terrain.name}
@@ -124,15 +114,14 @@ export function TerrainSets({ compact = false }: { compact?: boolean }) {
                         <span className="min-w-0 flex-1 truncate">{terrain.name}</span>
                       )}
                       <TerrainDot color={terrain.color} className="group-hover:hidden" />
-                      <button
-                        type="button"
+                      <IconButton size="sm"
                         aria-label={t("terrain.remove")}
                         title={t("terrain.remove")}
                         onClick={() => removeTerrain(ref)}
-                        className="hidden size-6 shrink-0 place-items-center rounded-sm text-faint group-hover:grid hover:bg-hover hover:text-danger focus-visible:grid"
+                        className="invisible text-faint group-hover:visible hover:text-danger focus-visible:visible"
                       >
-                        <Icon name="trash" size={13} />
-                      </button>
+                        <Icon name="trash" size={16} />
+                      </IconButton>
                     </li>
                   );
                 })}

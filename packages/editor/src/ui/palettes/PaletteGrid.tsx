@@ -16,7 +16,7 @@ import { onTilesetImage } from "../../state/tilesetImages";
 import { useStructureVersion } from "../hooks";
 import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
-import { GridHostContext } from "../tileset/TilesetGrid";
+import { GridHostContext } from "../tileset/view/gridHost";
 import { CellLabel, SelectionOverlay } from "../tileset/TilesetOverlays";
 import {
   arrowDelta,
@@ -261,7 +261,7 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
         {hover && !drag && !shown.includes(idOf(grid, hover)) && (
           <div
             aria-hidden
-            className="pointer-events-none absolute bg-hover-tile outline outline-1 outline-text/60"
+            className="pointer-events-none absolute outline outline-1 outline-(--color-hover-tile) shadow-[0_0_0_2px_rgb(0_0_0_/_0.6)]"
             style={{ left: hover.col * cellW, top: hover.row * cellH, width: cellW, height: cellH }}
           />
         )}
@@ -278,15 +278,15 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
                 key={`${it.dx},${it.dy}`}
                 aria-hidden
                 data-palette-drop-preview
-                className={`pointer-events-none absolute ${out ? "bg-danger/20 outline-danger" : "bg-accent/25 outline-accent"}`}
+                className={`pointer-events-none absolute ${out ? "bg-danger/20 outline-danger" : "bg-accent-soft/30 outline-accent"}`}
                 style={{
                   left: Math.min(col, palette.columns) * cellW,
                   top: row * cellH,
                   width: out ? 4 : cellW,
                   height: cellH,
-                  outlineWidth: 2,
+                  outlineWidth: 1,
                   outlineStyle: "dashed",
-                  outlineOffset: -2,
+                  outlineOffset: -1,
                 }}
               />
             );
@@ -327,15 +327,15 @@ function SlotMenuItems({ palette, cell, selected }: { palette: Collection; cell:
   return (
     <>
       <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="copy" onClick={() => copyPaletteSlots(palette, ids)}>
-        <Icon name="copy" size={15} className="text-muted" />
+        <Icon name="copy" size={16} className="text-muted" />
         {t("palettes.copy")}
       </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} disabled={!canPaste} data-palette-menu-item="paste" onClick={() => pasteIntoPalette(palette.id, cell)}>
-        <Icon name="clipboard" size={15} className="text-muted" />
+        <Icon name="clipboard" size={16} className="text-muted" />
         {t("palettes.paste")}
       </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="clear" onClick={() => clearPaletteSlots(palette.id, ids)}>
-        <Icon name="eraser" size={15} className="text-muted" />
+        <Icon name="eraser" size={16} className="text-muted" />
         {t("palettes.clearSlots")}
       </ContextMenu.Item>
       <div role="separator" className={menuSeparatorClass} />
@@ -350,11 +350,11 @@ export function PaletteMenuItems({ palette }: { palette: Collection }) {
   return (
     <>
       <Item className={menuItemClass} data-palette-menu-item="rename" onClick={() => void renamePalette(palette.id)}>
-        <Icon name="pencilLine" size={15} className="text-muted" />
+        <Icon name="pencilLine" size={16} className="text-muted" />
         {t("palettes.renameMenu")}
       </Item>
       <Item className={`${menuItemClass} text-danger`} data-palette-menu-item="delete" onClick={() => deletePalette(palette.id)}>
-        <Icon name="trash" size={15} />
+        <Icon name="trash" size={16} />
         {t("palettes.delete")}
       </Item>
     </>

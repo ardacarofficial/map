@@ -4,21 +4,17 @@
  * the hover label and the terrain block ghost.
  */
 import { terrainTemplateInfo, tileRect, type TerrainTemplate, type Tileset } from "@smap/core";
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 
-import { t } from "../../i18n";
-import { Button } from "../primitives/Button";
-import { Icon } from "../primitives/Icon";
 import { templateGlyphs } from "../terrain/templateGlyph";
+import { cssColor } from "./cssColor";
 import { cellOf, outlinePath, type Cell, type GridSize } from "./selectionModel";
 
 type TileCell = Cell;
 
-/** `#rrggbb` CSS variable → `[r, g, b]`. */
-function cssColor(name: string, fallback: [number, number, number]): [number, number, number] {
-  const m = /^#([0-9a-f]{6})$/i.exec(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
-  if (!m) return fallback;
-  const n = parseInt(m[1]!, 16);
+/** Theme tokens used by the drawing canvas are #rrggbb. */
+function colorChannels(name: string): [number, number, number] {
+  const n = Number.parseInt(cssColor(name).slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
@@ -60,7 +56,7 @@ export function drawMarks(
     return { x0, y0, x1: Math.round((col + 1) * cw), y1: Math.round((row + 1) * ch) };
   };
   if (empty.size > 0) {
-    const [r, g, b] = cssColor("--color-bg", [20, 20, 22]);
+    const [r, g, b] = colorChannels("--color-bg");
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.62)`;
     for (const id of empty) {
       const { x0, y0, x1, y1 } = box(id);
@@ -68,7 +64,7 @@ export function drawMarks(
     }
   }
   if (solid.length === 0) return;
-  const [r, g, b] = cssColor("--color-collision-solid", [255, 84, 104]);
+  const [r, g, b] = colorChannels("--color-collision-solid");
   const rgba = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
   if (!marking && Math.min(cellW, cellH) < 10) return;
   for (const id of solid) {
@@ -181,9 +177,9 @@ export function SelectionOverlay({
       shapeRendering="crispEdges"
       data-selected-tiles={ids.join(",")}
     >
-      <path d={fill} fill="var(--color-accent)" fillOpacity={live ? 0.28 : 0.22} />
-      <path d={outline} fill="none" stroke="var(--color-bg)" strokeWidth={4} strokeLinecap="square" strokeOpacity={0.7} />
-      <path d={outline} fill="none" stroke="var(--color-accent)" strokeWidth={2} strokeLinecap="square" strokeDasharray={live ? "4 3" : undefined} />
+      <path d={fill} fill="var(--color-accent-soft)" fillOpacity={0.3} />
+      <path d={outline} fill="none" stroke="var(--color-bg)" strokeWidth={3} strokeLinecap="square" strokeOpacity={0.7} />
+      <path d={outline} fill="none" stroke="var(--color-accent)" strokeWidth={1} strokeLinecap="square" strokeDasharray={live ? "4 3" : undefined} />
     </svg>
   );
 }
@@ -212,42 +208,10 @@ export function CellLabel({
     <div
       aria-hidden
       data-tileset-cell-label
-      className="pointer-events-none absolute z-10 rounded-sm border border-line bg-raised/95 px-1.5 font-mono text-2xs leading-4 whitespace-nowrap text-text shadow-popup tabular"
+      className="pointer-events-none absolute z-10 rounded-sm border border-line-strong bg-popup px-1.5 font-mono text-2xs leading-4 whitespace-nowrap text-text tabular"
       style={{ left, top: flipBottom ? cell.row * cellH + 2 : top }}
     >
       {text}
-    </div>
-  );
-}
-
-/** Strip above the tileset while a mode is on: what to do, and "Bitti". */
-export function ModeBar({
-  icon,
-  tone,
-  onDone,
-  compact = false,
-  children,
-}: {
-  icon: "bricks" | "terrain" | "dice";
-  tone: "solid" | "terrain" | "random";
-  onDone(): void;
-  /** Narrow column (the dock's side column): the text gets the full width and "Bitti" wraps under it. */
-  compact?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`flex shrink-0 items-center gap-2 rounded-md border border-line bg-raised py-1 pr-1 pl-2 ${compact ? "flex-wrap justify-end gap-y-0.5 [&>[data-tileset-hint]]:basis-[calc(100%-26px)]" : "mx-2 mb-1"}`}
-    >
-      <Icon
-        name={icon}
-        size={14}
-        className={`shrink-0 ${tone === "solid" ? "text-collision-solid" : tone === "random" ? "text-accent" : "text-terrain-tint"}`}
-      />
-      {children}
-      <Button variant="ghost" className="h-6 shrink-0 px-2 text-sm" onClick={onDone}>
-        {t("tileset.done")}
-      </Button>
     </div>
   );
 }
@@ -285,7 +249,7 @@ export function BlockGhost({
       className={`pointer-events-none absolute ${invalid ? "bg-danger/15 outline-danger" : "bg-terrain-tint/10 outline-terrain-tint"} ${
         pinned ? "" : "transition-[left,top] duration-75"
       }`}
-      style={{ left, top, width, height, outlineWidth: 2, outlineStyle: pinned ? "solid" : "dashed", outlineOffset: -1 }}
+      style={{ left, top, width, height, outlineWidth: 1, outlineStyle: pinned ? "solid" : "dashed", outlineOffset: -1 }}
     >
       {unit >= 2 && !invalid && (
         <svg width={width} height={height} className="absolute inset-0" shapeRendering="crispEdges">
