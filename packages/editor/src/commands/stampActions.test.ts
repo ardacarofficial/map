@@ -80,4 +80,17 @@ describe("stamp library metadata and editor save", () => {
     expect(useEditorStore.getState().stamp).toBe(saved);
     expect(replaceStampContent("missing", content)).toBeNull();
   });
+
+  it.each([false, true])("keeps the saved smart-off preference when editor artwork changes: %s", changed => {
+    const { store, house } = libraryWithHouse();
+    const stamp = { ...house, smartDisabled: true };
+    useProjectLibrary.getState().addStamp(stamp);
+    useEditorStore.getState().setStamp(stamp);
+    const editing = stampEditStore(stamp, store.document);
+    if (changed) editing.dispatch({ type: "paintCells", layerId: editing.document.layers[0]!.id, cells: [{ x: 3, y: 3, cell: makeCell(editing.getOrAddPaletteIndex("grass", 1)) }] });
+    const content = stampFromDocument(editing.document, { id: house.id, name: house.name })!;
+    expect(content.smartDisabled).toBeUndefined();
+    expect(replaceStampContent(stamp.id, content)?.smartDisabled).toBe(true);
+    expect(useEditorStore.getState().stamp).toHaveProperty("smartDisabled", true);
+  });
 });

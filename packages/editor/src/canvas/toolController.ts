@@ -1030,7 +1030,7 @@ export class ToolController {
     const missing = missingBrush(s.tool, {
       grid: isGridLayer(layer),
       stamp: s.stamp !== null,
-      tile: (!!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined) !== null,
+      tile: !!s.selection && doc.getTileset(s.selection.tilesetId) !== undefined,
       random: hasRandomBrush(),
     });
     if (!missing) return false;

@@ -4,7 +4,7 @@ import { clipFromTileset, createDocument, MapStore, serializeLevel, type Stamp, 
 import { useEditorStore } from "../state/editorStore";
 import { clearTilesetImages, setTilesetImage } from "../state/tilesetImages";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { prepareSelectionBrush, preparedBrush, publishBrushAssets, waitForSelectionBrush, setBrushSmartEnabled, brushDisabled, autoBrush } from "./smartBrushActions";
+import { prepareSelectionBrush, preparedBrush, publishBrushAssets, publishSavedBrushAssets, waitForSelectionBrush, setBrushSmartEnabled, brushDisabled, autoBrush } from "./smartBrushActions";
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { saveClipAsStamp } from "../ui/tileset/SelectionSection";
 import { bakeSmartStamp } from "../ui/stamps/smartStampBake";
@@ -78,4 +78,52 @@ it("cancels a pending save when another brush replaces its source clip",async()=
  await vi.waitFor(()=>expect(release).toBeTypeOf("function"),{timeout:4000});useEditorStore.getState().setStamp(null);
  release({tilesetId:"late",bytes:new Uint8Array(),bitmap:{close:vi.fn()} as unknown as ImageBitmap});
  expect(await saving).toBeNull();expect(useEditorStore.getState().stamp).toBeNull();expect(useProjectLibrary.getState().stamps).toHaveLength(0);expect(store.document.tilesets).toHaveLength(1);
+});
+
+it.each(["delete", "delete-undo-redo", "undo-publication"] as const)("project save preserves %s and its history", async removal => {
+ const { store, clip } = setup();
+ await waitForSelectionBrush(clip);
+ const stamp = (await saveClipAsStamp(store.document, clip, "Road"))!;
+ store.beginTransaction(); publishBrushAssets(stamp, store); store.commit();
+ const bank = store.document.tilesets.find(t => t.generated)!;
+ if (removal === "undo-publication") store.undo();
+ else {
+  store.dispatch({ type: "removeTileset", tilesetId: bank.id });
+  if (removal === "delete-undo-redo") { store.undo(); store.redo(); }
+ }
+ const before = serializeLevel(store.document), history = store.historyEntries();
+ await publishSavedBrushAssets();
+ expect(store.document.getTileset(bank.id)).toBeUndefined();
+ expect(serializeLevel(store.document)).toBe(before);
+ expect(store.historyEntries()).toEqual(history);
+ if (removal === "undo-publication") { store.redo(); expect(store.document.getTileset(bank.id)).toBeDefined(); }
+});
+
+it("does not republish removed assets after source refresh, reselection and saving a new library copy", async () => {
+ const { store, clip, ids } = setup();
+ await waitForSelectionBrush(clip);
+ await saveClipAsStamp(store.document, clip, "Road");
+ await publishSavedBrushAssets();
+ const bank = store.document.tilesets.find(t => t.generated)!;
+ store.dispatch({ type: "removeTileset", tilesetId: bank.id });
+ setTilesetImage({ tilesetId: source.id, bytes: Uint8Array.of(2), bitmap: { close: vi.fn() } as unknown as ImageBitmap });
+ const second = clipFromTileset(source, { x: 2, y: 1, w: 3, h: 3 })!;
+ prepareSelectionBrush(source, ids, new Set(), second);
+ useEditorStore.getState().setStamp(second);
+ await waitForSelectionBrush(second);
+ await saveClipAsStamp(store.document, second, "Road copy");
+ await publishSavedBrushAssets();
+ expect(store.document.getTileset(bank.id)).toBeUndefined();
+});
+
+it("a rolled-back first gesture still allows first publication on library save", async () => {
+ const { store, clip } = setup();
+ await waitForSelectionBrush(clip);
+ const stamp = (await saveClipAsStamp(store.document, clip, "Road"))!;
+ store.beginTransaction(); publishBrushAssets(stamp, store); store.rollback();
+ await publishSavedBrushAssets();
+ expect(store.document.tilesets.filter(t => t.generated)).toHaveLength(1);
+ const before = serializeLevel(store.document), depth = store.undoDepth;
+ await publishSavedBrushAssets();
+ expect(serializeLevel(store.document)).toBe(before); expect(store.undoDepth).toBe(depth);
 });
