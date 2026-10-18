@@ -11,6 +11,7 @@ import type { CellRect } from "./geometry";
 import { isEntityLayer, isGridLayer, isTileLayer, type TileLayer } from "./layer";
 import type { CellWrite, GridWrite } from "./ops";
 import type { MapStore } from "./store";
+import type { Stamp } from "./stamp";
 
 /** Tile size (in pixels) used to turn entity positions into cells; `MapInfo` satisfies it. */
 export interface TileSize {
@@ -246,4 +247,35 @@ export function tilesetUsage(doc: MapDocument, tilesetId: string): TilesetUsage 
     if (n > 0) layers.push(layer.id);
   }
   return { cells, layers, terrains: terrainIds.size, terrainCells };
+}
+
+
+/** Stamp references to a tileset. Counts actual tile cells separately from smart bake/profile dependencies. */
+export interface StampTilesetUsage {
+  readonly cells: number;
+  /** Source tile layers with at least one matching cell, in stamp order; raw grids never count. */
+  readonly layers: readonly string[];
+  /** nineSlice layers whose generated bank uses the tileset (even if their source cells do not). */
+  readonly bakedLayers: readonly string[];
+  readonly road: boolean;
+}
+
+/**
+ * Pure counterpart to tilesetUsage for library stamps. Ignores unused palette entries and all grid values,
+ * preserves flip bits when identifying palette indices, and reports baked/profile references separately.
+ * For removal confirmation sum tilesetUsage over levels and this helper over stamps; a bank reference is
+ * a usage even when cells is zero. No stamp or document is mutated.
+ */
+export function stampTilesetUsage(stamp: Stamp, tilesetId: string): StampTilesetUsage {
+  const indices = new Set<number>();
+  stamp.palette.forEach((entry, i) => { if (entry.tilesetId === tilesetId) indices.add(i + 1); });
+  let cells = 0;
+  const layers: string[] = [];
+  for (const layer of stamp.layers) {
+    if (layer.grid) continue;
+    let count = 0;
+    for (const cell of layer.cells) if (cell !== EMPTY_CELL && indices.has(cellPaletteIndex(cell))) count++;
+    if (count) { cells += count; layers.push(layer.layerId); }
+  }
+  return { cells, layers, bakedLayers: (stamp.nineSlice?.tileLayers ?? []).filter(l => l.tilesetId === tilesetId).map(l => l.layerId), road: stamp.nineSlice?.road?.tilesetId === tilesetId };
 }

@@ -918,10 +918,18 @@ export class MapStore {
     }
     const name = op.name ?? tileset.name;
     const group = op.group === undefined ? tileset.group : op.group === null || op.group === "" ? undefined : op.group;
-    if (name === tileset.name && group === tileset.group) return;
+    if (op.generated !== undefined) {
+      const old = tileset.generated;
+      if (!old) throw new Error("setTilesetMeta: only an existing generated asset may be regenerated");
+      const problem = tilesetProblem({ ...tileset, generated: op.generated });
+      if (problem) throw new Error(`setTilesetMeta: ${problem}`);
+      if ((["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion"] as const).some(k => old[k] !== op.generated![k])) throw new Error("setTilesetMeta: generated origin and slot layout cannot change");
+    }
+    const generated = op.generated === undefined ? tileset.generated : normalizeTileset({ ...tileset, generated: op.generated }).generated;
+    if (name === tileset.name && group === tileset.group && JSON.stringify(generated) === JSON.stringify(tileset.generated)) return;
     const { group: _old, ...rest } = tileset;
     const ctx = this.#openOp();
-    this.#replaceTileset(ctx, { ...rest, name, ...(group !== undefined ? { group } : {}) });
+    this.#replaceTileset(ctx, { ...rest, name, ...(group !== undefined ? { group } : {}), ...(generated !== undefined ? { generated } : {}) });
     this.#closeOp(ctx);
   }
 
@@ -1303,7 +1311,7 @@ export class MapStore {
     if (!layer) throw new Error(`paintTerrainBrush: unknown layer "${op.layerId}"`);
     if (!isTileLayer(layer)) throw new TypeError(`paintTerrainBrush: "${op.layerId}" is not a tile layer`);
     const brush = { tilesetId: op.tilesetId, setId: op.setId, terrainId: op.terrainId };
-    const options = op.maxExpand !== undefined ? { maxExpand: op.maxExpand } : {};
+    const options = { ...(op.maxExpand !== undefined ? { maxExpand: op.maxExpand } : {}), ...(op.orientation !== undefined ? { orientation: op.orientation } : {}), ...(op.boundary !== undefined ? { boundary: op.boundary } : {}) };
     let writes: TerrainTileWrite[];
     if (op.fill) {
       const start = op.cells[0];
@@ -1314,7 +1322,7 @@ export class MapStore {
       writes = terrainPaint(this.#doc, op.layerId, op.cells, brush, options);
     }
     if (layer.locked || this.#isDerivedLayer(layer.id) || writes.length === 0) return emptyPatch(layer.id);
-    const cells = writes.map(({ x, y, tile }) => ({ x, y, cell: tile ? makeCell(this.getOrAddPaletteIndex(tile.tilesetId, tile.tileId)) : 0 }));
+    const cells = writes.map(({ x, y, tile, flags }) => ({ x, y, cell: tile ? makeCell(this.getOrAddPaletteIndex(tile.tilesetId, tile.tileId), flags) : 0 }));
     return this.#paintCells({ type: "paintCells", layerId: op.layerId, cells });
   }
 
@@ -1378,6 +1386,7 @@ export class MapStore {
    * `next` by pixel position (see the op docs) as one undo step.
    */
   #regridTileset(name: "updateTilesetGrid" | "replaceTilesetImage", current: Tileset, next: Tileset): TilesetRemapResult {
+    if (current.generated && (next.rows < current.rows || (["tileWidth", "tileHeight", "margin", "spacing", "columns"] as const).some(k => next[k] !== current[k]))) throw new Error(`${name}: generated tile ids are append-only; cannot shrink or repack the grid`);
     const result = { remapped: 0, dropped: 0, outOfRange: 0, clearedCells: 0, droppedSolidTiles: 0, droppedTerrains: [] as number[] };
     if (next.columns < 1 || next.rows < 1) {
       throw new RangeError(`${name}: not even one ${next.tileWidth}×${next.tileHeight} tile fits the image`);

@@ -1,0 +1,19 @@
+{
+  "format": "smap-project",
+  "documentFormatVersion": 1,
+  "name": "Legacy",
+  "levels": [],
+  "tilesets": [
+    {
+      "id": "old",
+      "name": "Old",
+      "imagePath": "tilesets/old.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 3,
+      "rows": 3,
+      "margin": 0,
+      "spacing": 0
+    }
+  ]
+}

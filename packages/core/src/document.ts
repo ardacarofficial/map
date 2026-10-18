@@ -9,9 +9,10 @@ import { normalizeTileset, type Tileset } from "./tileset";
 /**
  * The single file-format version number for project and level files.
  * 2 (October 2026): terrain sets as tile tags, legacy terrain grid layers
- * migrated away (see `serialize.ts`). Version-1 files are still read.
+ * migrated away (see `serialize.ts`).
+ * 3: explicit nine-slice stamp metadata and generated tileset provenance/source PNG hashes. Versions 1 and 2 remain readable; old stamps stay flat.
  */
-export const DOCUMENT_FORMAT_VERSION = 2;
+export const DOCUMENT_FORMAT_VERSION = 3;
 /** Default tile size in pixels. */
 export const DEFAULT_TILE_SIZE = 32;
 /**

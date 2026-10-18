@@ -24,6 +24,7 @@ import type { CellRect } from "./geometry";
 import { isEntityLayer, isGridLayer, type GridRole, type TileLayer } from "./layer";
 import type { LayerPatch } from "./ops";
 import type { MapStore } from "./store";
+import { nineSliceProblem } from "./nineSlice";
 
 /** A saved multi-layer clip. */
 export interface Stamp extends TileClip {
@@ -37,6 +38,48 @@ export interface Stamp extends TileClip {
   readonly tags?: readonly string[];
   /** Marked as favourite in the library (round 4); omitted = false. */
   readonly favorite?: boolean;
+  /** Explicit nine-slice bake references; omitted stamps retain flat placement semantics. */
+  readonly nineSlice?: StampNineSlice;
+}
+
+/** Persisted nine-slice metadata. Generated assets are ordinary project tilesets; no map-cell links are stored. */
+export interface StampNineSlice {
+  readonly border: 1;
+  /** Exactly one entry per source tile layer, in source layer order. Grids have no baked asset. */
+  readonly tileLayers: readonly { readonly layerId: string; readonly tilesetId: string }[];
+  /** Optional single-layer road profile. Must refer to one of tileLayers' generated tilesets. */
+  readonly road?: { readonly tilesetId: string; readonly setId: string; readonly terrainId: number };
+}
+
+/** Validates metadata shape and source correspondence. Asset existence is checked by smart placement against the document. */
+export function stampNineSliceProblem(source: TileClip, value: unknown): string | null {
+  const problem = nineSliceProblem(source);
+  if (problem) return problem;
+  if (!value || typeof value !== "object") return "nineSlice must be an object";
+  const meta = value as Record<string, unknown>;
+  if (meta["border"] !== 1) return "nineSlice border must be 1";
+  const layers = meta["tileLayers"], sourceLayers = source.layers.filter(l => !l.grid);
+  if (!Array.isArray(layers) || layers.length !== sourceLayers.length) return "nineSlice tileLayers must match source tile layers";
+  const assets = new Set<string>();
+  for (let i = 0; i < layers.length; i++) {
+    const entry = layers[i] as Record<string, unknown> | null;
+    if (!entry || typeof entry !== "object" || entry["layerId"] !== sourceLayers[i]!.layerId || typeof entry["tilesetId"] !== "string" || !entry["tilesetId"] || assets.has(entry["tilesetId"])) return "nineSlice tileLayers require ordered source layer ids and unique nonempty tileset ids";
+    assets.add(entry["tilesetId"]);
+  }
+  if (meta["road"] !== undefined) {
+    const road = meta["road"] as Record<string, unknown> | null;
+    if (!road || typeof road !== "object" || typeof road["tilesetId"] !== "string" || !assets.has(road["tilesetId"]) || typeof road["setId"] !== "string" || !road["setId"] || typeof road["terrainId"] !== "number" || !Number.isInteger(road["terrainId"]) || road["terrainId"] < 1 || road["terrainId"] > 255) return "nineSlice road requires a baked tileset, set id and terrain id 1..255";
+    const layerId = sourceLayers[layers.findIndex(l => (l as Record<string, unknown>)["tilesetId"] === road["tilesetId"])]!.layerId;
+    return nineSliceProblem(source, { roadLayerId: layerId });
+  }
+  return null;
+}
+
+/** Validated, deeply frozen metadata in canonical key order, preserving source tile-layer order. */
+export function normalizeStampNineSlice(source: TileClip, value: StampNineSlice): StampNineSlice {
+  const problem = stampNineSliceProblem(source, value);
+  if (problem) throw new Error(problem);
+  return Object.freeze({ border: 1, tileLayers: Object.freeze(value.tileLayers.map(l => Object.freeze({ layerId: l.layerId, tilesetId: l.tilesetId }))), ...(value.road ? { road: Object.freeze({ tilesetId: value.road.tilesetId, setId: value.road.setId, terrainId: value.road.terrainId }) } : {}) });
 }
 
 /** Library metadata of a stamp (round 4). */

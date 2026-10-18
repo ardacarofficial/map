@@ -149,12 +149,12 @@ export function derivedMismatches(doc: MapDocument): string[] {
 }
 
 /**
- * Level text as a format-2 load writes it back: the same JSON without the
+ * Level text as a format-3 load writes it back: the same JSON without the
  * legacy terrain grid layers (their derived tiles stay on the tile layers).
  */
 export function stripTerrainGrids(text: string): string {
   const json = JSON.parse(text);
-  json.documentFormatVersion = 2;
+  json.documentFormatVersion = 3;
   json.layers = json.layers.filter((l: { role?: string }) => l.role !== "terrain");
   return JSON.stringify(json, null, 2) + "\n";
 }

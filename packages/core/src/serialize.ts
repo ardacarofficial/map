@@ -52,7 +52,8 @@
  *   re-deriving their tiles once when the legacy terrains are known); the
  *   derived tiles are ordinary tiles on their tile layer, so the level looks
  *   exactly as before. `MapDocument.migrations` lists what was converted.
- * Version-1 files are read forever.
+ * Version 3: explicit stamp nineSlice metadata and optional tileset generated provenance/source PNG hashes.
+ * Versions 1 and 2 remain readable; their stamps stay flat (no inferred metadata).
  *
  * Core does not touch the filesystem: these functions produce and consume strings.
  */
@@ -73,7 +74,7 @@ import {
   type EntityType,
 } from "./entity";
 import { normalizeProject, type Project, type ProjectData } from "./project";
-import { normalizeStampMeta, stampIdProblem, stampMetaProblem, type Stamp, type StampMeta } from "./stamp";
+import { normalizeStampMeta, normalizeStampNineSlice, stampIdProblem, stampMetaProblem, stampNineSliceProblem, type Stamp, type StampMeta, type StampNineSlice } from "./stamp";
 import { collectionsProblem, normalizeCollection, type Collection } from "./collection";
 import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomSet";
 import { projectSettingsJson, type ProjectSettingsInput } from "./projectSettings";
@@ -199,6 +200,7 @@ export function serializeStamp(stamp: Stamp): string {
     id: stamp.id,
     name: stamp.name,
     ...stampMetaJson(stamp),
+    ...(stamp.nineSlice !== undefined ? { nineSlice: normalizeStampNineSlice(stamp, stamp.nineSlice) } : {}),
     ...clipBodyJson(stamp),
   });
 }
@@ -271,6 +273,7 @@ function tilesetJson(tileset: Tileset): Record<string, unknown> {
     id: t.id,
     name: t.name,
     ...(t.group !== undefined ? { group: t.group } : {}),
+    ...(t.generated !== undefined ? { generated: t.generated } : {}),
     imagePath: t.imagePath,
     tileWidth: t.tileWidth,
     tileHeight: t.tileHeight,
@@ -330,7 +333,7 @@ export function parseProject(text: string): Project {
   });
   assertUnique(levels.map((l) => l.path), "levels", "path");
   assertUnique(levels.filter((l) => l.id !== undefined).map((l) => l.id!), "levels", "id");
-  const tilesets = arr(root, "tilesets", "").map((item, i) => readTileset(item, `tilesets[${i}]`));
+  const tilesets = arr(root, "tilesets", "").map((item, i) => readTileset(item, `tilesets[${i}]`, root["documentFormatVersion"] as number));
   assertUnique(tilesets.map((t) => t.id), "tilesets", "id");
   assertUniqueTerrains(tilesets, "tilesets");
   let entityTypes: EntityType[] = [];
@@ -626,7 +629,13 @@ export function parseStamp(text: string): Stamp {
   const metaProblem = stampMetaProblem(meta);
   if (metaProblem) throw new FormatError("", metaProblem);
   const clip = readClipBody(root);
-  return Object.freeze({ id, name, ...normalizeStampMeta(meta as StampMeta), width: clip.width, height: clip.height, palette: clip.palette, layers: clip.layers });
+  let nineSlice: StampNineSlice | undefined;
+  if ((root["documentFormatVersion"] as number) >= 3 && root["nineSlice"] !== undefined) {
+    const problem = stampNineSliceProblem(clip, root["nineSlice"]);
+    if (problem) throw new FormatError("nineSlice", problem);
+    nineSlice = normalizeStampNineSlice(clip, root["nineSlice"] as StampNineSlice);
+  }
+  return Object.freeze({ id, name, ...normalizeStampMeta(meta as StampMeta), ...(nineSlice ? { nineSlice } : {}), width: clip.width, height: clip.height, palette: clip.palette, layers: clip.layers });
 }
 
 function readClipBody(root: Record<string, unknown>): TileClip {
@@ -781,7 +790,7 @@ function readRoot(text: string, format: string, what: string): Record<string, un
   return root;
 }
 
-function readTileset(item: unknown, path: string): Tileset {
+function readTileset(item: unknown, path: string, version: number): Tileset {
   const t = obj(item, path);
   const tileset: Tileset = {
     id: str(t, "id", path),
@@ -819,6 +828,7 @@ function readTileset(item: unknown, path: string): Tileset {
   }
   const full: Tileset = {
     ...tileset,
+    ...(version >= 3 && t["generated"] !== undefined ? { generated: t["generated"] as NonNullable<Tileset["generated"]> } : {}),
     ...(group !== undefined ? { group } : {}),
     ...(solidTiles && solidTiles.length > 0 ? { solidTiles } : {}),
     ...(terrains && terrains.length > 0 ? { terrains } : {}),

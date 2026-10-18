@@ -10,7 +10,7 @@ import type { CellRect } from "./geometry";
 import type { GridRole } from "./layer";
 import type { Terrain } from "./terrain";
 import type { TerrainSet } from "./terrainSet";
-import type { Tileset } from "./tileset";
+import type { GeneratedTilesetMetadata, Tileset } from "./tileset";
 
 /** One cell write inside a `paintCells` op. */
 export interface CellWrite {
@@ -95,15 +95,19 @@ export interface RemoveTilesetOp {
 
 /**
  * Changes a tileset's display metadata: `name` (any string), `group`
- * (`null` or `""` removes it → ungrouped). Omitted fields stay. Undoable;
+ * (`null` or `""` removes it → ungrouped), or refreshes existing generated
+ * provenance after a successful staged PNG bake. Origin/layout remain fixed.
+ * Omitted fields stay. Undoable;
  * a no-op when nothing changes. Structure event `"tilesets"`. Throws on an
- * unknown tileset or a non-string value.
+ * unknown tileset, invalid metadata or an attempted generated origin/layout change.
  */
 export interface SetTilesetMetaOp {
   readonly type: "setTilesetMeta";
   readonly tilesetId: string;
   readonly name?: string;
   readonly group?: string | null;
+  /** Refresh provenance after a successful staged PNG regeneration, retaining origin and slot layout. Existing generated assets only. */
+  readonly generated?: GeneratedTilesetMetadata;
 }
 
 /**
@@ -606,6 +610,10 @@ export interface PaintTerrainBrushOp {
   readonly terrainId: number;
   readonly erase?: boolean;
   readonly fill?: boolean;
+  /** D4 cell flag orientation; default 0. */
+  readonly orientation?: number;
+  /** Blob map edge policy; default solid. */
+  readonly boundary?: "solid" | "empty";
   /** Corner sets: see `TerrainSolveOptions.maxExpand`. */
   readonly maxExpand?: number;
 }

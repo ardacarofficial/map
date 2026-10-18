@@ -43,7 +43,7 @@ function v1Fixture() {
 }
 
 describe("format 1 → 2 migration", () => {
-  it("project: legacy terrains → terrain sets (template macros); written as version 2 without `terrains`", () => {
+  it("project: legacy terrains → terrain sets (template macros); written as version 3 without `terrains`", () => {
     const { projectText } = v1Fixture();
     expect(fileFormatVersion(projectText)).toBe(1);
     const project = parseProject(projectText);
@@ -54,7 +54,7 @@ describe("format 1 → 2 migration", () => {
       ["terrain-2", "corner", 15],
     ]);
     const written = serializeProject(project);
-    expect(fileFormatVersion(written)).toBe(2);
+    expect(fileFormatVersion(written)).toBe(3);
     expect(JSON.parse(written).tilesets[0].terrains).toBeUndefined();
     expect(serializeProject(parseProject(written))).toBe(written);
   });
@@ -66,10 +66,10 @@ describe("format 1 → 2 migration", () => {
     expect(doc.migrations).toEqual(['terrain grid layer "terrain" removed; its tiles stay on layer "tiles"']);
     const before = JSON.parse(levelText);
     const after = JSON.parse(serializeLevel(doc));
-    expect(after.documentFormatVersion).toBe(2);
+    expect(after.documentFormatVersion).toBe(3);
     expect(after.palette).toEqual(before.palette);
     expect(after.layers).toEqual(before.layers.filter((l: { role?: string }) => l.role !== "terrain"));
-    // Reading the written v2 level again changes nothing.
+    // Reading the written v3 level again changes nothing.
     const again = serializeLevel(parseLevel(serializeLevel(doc), parseProject(serializeProject(parseProject(projectText))).tilesets));
     expect(again).toBe(serializeLevel(doc));
   });
