@@ -8,7 +8,7 @@
  * 3. a marquee region (select tool)       → "region"
  * 4. collision layer active               → "collision"
  * 5. terrain brush on a tile layer        → "terrain"
- * 6. a selected library stamp              → "stamp"
+ * 6. a selected library stamp (unless the brush is a random set) → "stamp"
  * 7. a paint tool (or a clip on the brush) on a tile layer → "brush"
  *    (with nothing picked the card says "Önce bir tile seç")
  * 8. otherwise                            → "map"
@@ -55,7 +55,8 @@ export function inspectorMode(input: ModeInput): InspectorMode {
   if (input.region && input.tool === "select" && input.layer !== "entity") return "region";
   if (input.layer === "collision") return "collision";
   if (input.terrainBrush === true && input.layer === "tile" && PAINT_TOOLS.includes(input.tool)) return "terrain";
-  if (input.libraryStamp === true) return "stamp";
+  // A random set on the brush keeps its card (its candidate list) over a selected library stamp.
+  if (input.libraryStamp === true && input.brush !== "random") return "stamp";
   if (input.layer === "tile") {
     // A clip on the brush (paste, stamp) is placed by the brush whatever tool was active before.
     if (input.brush === "stamp") return "brush";

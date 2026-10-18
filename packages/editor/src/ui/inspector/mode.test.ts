@@ -51,6 +51,7 @@ describe("inspector mode (first match wins)", () => {
     expect(mode({ libraryStamp: true, brush: "stamp" })).toBe("stamp");
     expect(mode({ libraryStamp: true, entitySelected: true })).toBe("entity");
     expect(mode({ libraryStamp: true, terrainEdit: true })).toBe("terrain");
+    expect(mode({ libraryStamp: true, brush: "random" })).toBe("brush");
     expect(mode({ libraryStamp: true, solidEdit: true })).toBe("solid");
     expect(mode({ libraryStamp: true, tool: "select", region: true })).toBe("region");
     expect(mode({ libraryStamp: true, layer: "collision" })).toBe("collision");

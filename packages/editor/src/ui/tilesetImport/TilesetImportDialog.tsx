@@ -119,7 +119,7 @@ export function TilesetCard({
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <DialogHeader title={title} onClose={() => close(null)} />
+      <DialogHeader title={title} subtitle={edit ? request.initial.name : undefined} onClose={() => close(null)} />
       <DialogBody className="flex min-h-0 flex-1 gap-4">
         <Preview request={request} spec={parsed.spec} summary={summary} />
         <div className="flex min-h-0 w-80 shrink-0 flex-col gap-3 overflow-y-auto">
