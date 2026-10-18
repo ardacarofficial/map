@@ -50,6 +50,7 @@ export function activeInfo(store: MapStore | undefined): LayerInfo | undefined {
 export function mappingFor(store: MapStore | undefined, clip: TileClip): Record<string, string> {
   const doc = store?.document;
   if (!doc) return {};
+  if (clip.layers.length > 1) return savedStampPreviewMapping(store, clip);
   return stampMapping(clip, useEditorStore.getState().activeLayerId, (id) => {
     const l = doc.getLayer(id);
     return l ? layerInfo(l, doc) : undefined;

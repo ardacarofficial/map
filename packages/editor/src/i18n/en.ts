@@ -1221,4 +1221,13 @@ export const en: Messages = {
     empty: "The stamp is empty; draw at least one tile to save it",
     saved: "“{name}” saved",
   },
+  selectionScope: {
+    label: "Layers",
+    active: "Active layer",
+    visible: "Visible layers",
+    hint: "Tile and collision layers included in selection actions. Locked layers are skipped.",
+    toggle: "Toggle selection layer scope",
+    skipped: "Skipped layers: {layers}",
+  },
+
 };

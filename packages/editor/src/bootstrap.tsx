@@ -11,6 +11,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { registerAppCommands } from "./commands/appCommands";
+import { registerSelectionScopeCommands } from "./commands/selectionScope";
 import { registerRotateCommands } from "./commands/rotateCommands";
 import { registerHandToolCommand } from "./commands/handTool";
 import { registerExportCommands } from "./commands/exportCommands";
@@ -97,6 +98,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   // Shortcut labels follow the keyboard layout ("Ğ" for "[" on Turkish-Q); never waits long.
   const layoutReady = Promise.race([installKeyboardLayout().catch(() => undefined), timeout(100)]);
   registerAppCommands();
+  registerSelectionScopeCommands();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version
   registerHandToolCommand();
   registerExportCommands();

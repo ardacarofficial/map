@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { isEntityLayer, type MapDocument, type MapStore, type TileClip } from "@smap/core";
 
+import type { SelectionScope } from "../commands/selectionScope";
 import { pushRecent, type RecentItem } from "./recentItems";
 
 /**
@@ -61,6 +62,8 @@ export interface EditorState {
   dirty: boolean;
   /** Active marquee selection on the map (select tool), or null. */
   region: CellRegion | null;
+  selectionScope: SelectionScope;
+  setSelectionScope(scope: SelectionScope): void;
   /**
    * Clip being placed (after paste, or a multi-tile pick from the tileset /
    * right-drag on the map). While set, the brush stamps this clip instead of
@@ -159,6 +162,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   zoom: 1,
   dirty: false,
   region: null,
+  selectionScope: "active",
+  setSelectionScope: (selectionScope) => set({ selectionScope }),
   stamp: null,
   gridValue: 1,
   collisionOverlay: false,
