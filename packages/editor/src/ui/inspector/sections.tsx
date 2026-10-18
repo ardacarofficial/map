@@ -1,3 +1,5 @@
+import type { Stamp } from "@smap/core";
+import { SmartStampProperties } from "../stamps/SmartStampProperties";
 /**
  * Built-in Denetçi cards, one per inspector mode (see `mode.ts`):
  * entity, marquee region, brush (FIRÇA), terrain brush (ARAZİ, from
@@ -206,6 +208,7 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
         </div>
       </div>
       {stamp && <StampDetails clip={stamp} doc={doc} />}
+      {stamp && activeStampId(stamp) && <PropGrid><SmartStampProperties stamp={stamp as Stamp} /></PropGrid>}
       {!stamp && random && <RandomDetails doc={doc} />}
       {!stamp && !random && selection && tileset && <TileDetails tileset={tileset} tileId={selection.tileId} />}
       {!stamp && !random && doc.randomSets.length > 0 && (

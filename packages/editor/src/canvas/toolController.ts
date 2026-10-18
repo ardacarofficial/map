@@ -1,3 +1,6 @@
+import { applySmartStampPlan, stampLayerMapping, isTileLayer } from "@smap/core";
+import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
+import { addRoadSamples, smartGesturePlan, smartHoverGesture, type SmartGesture } from "./smartStampGesture";
 /**
  * Pointer tools on the map: brush / eraser strokes, stamps, rectangle,
  * fill, marquee selection and pick. Owns the gesture in progress and turns
@@ -59,7 +62,7 @@ import { t } from "../i18n";
 import { toast } from "../ui/toast/toastStore";
 import { prepareSelectionPaste, survivingPasteMapping } from "../commands/selectionPaste";
 import { consumeReplacementPick, rememberReplacementTile, replacementBrushTile, useTileReplacement } from "../commands/replaceTiles";
-import { rectangleStampSource } from "./rectangleSource";
+import { smartRectangleUsage, rectangleStampSource } from "./rectangleSource";
 import { rectangleThickness } from "../state/rectangleOptions";
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
@@ -113,6 +116,7 @@ import {
 
 /** A pointer interaction in progress (left or right button). */
 export type Gesture =
+  | SmartGesture
   | {
       readonly kind: "paint";
       readonly pointerId: number;
@@ -294,7 +298,7 @@ export class ToolController {
   /** Shift / Alt changed (keys or pointer events): reshapes a rectangle drag. */
   setModifiers(shift: boolean, alt: boolean): void {
     const g = this.#gesture;
-    if (g?.kind !== "rect" || (g.square === shift && g.fromCenter === alt)) return;
+    if ((g?.kind !== "rect" && g?.kind !== "smart") || (g.square === shift && g.fromCenter === alt)) return;
     g.square = shift;
     g.fromCenter = alt;
     this.#host.requestRender();
@@ -304,6 +308,7 @@ export class ToolController {
   #footprintTool(): boolean {
     const s = useEditorStore.getState();
     const grid = isGridLayer(this.#activeLayer());
+    if (activeSmartStamp() && useSmartStampSession.getState().usage === "road" && s.tool === "brush") return true;
     if (s.tool === "eraser") return true;
     return s.tool === "brush" && !(s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid));
   }
@@ -324,6 +329,7 @@ export class ToolController {
     }
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
+    if (activeSmartStamp() && ((s.tool === "brush" && useSmartStampSession.getState().usage === "area") || (s.tool === "rect" && smartRectangleUsage(useSmartStampSession.getState().usage, rectangleThickness()) === "area"))) { this.#beginSmart(e, cell); return; }
     if ((s.tool !== "select" && this.#reportBlocked(s.tool)) || this.#reportMissingBrush()) return;
     if (s.tool === "select" && s.selectionScope === "visible" && s.selectedEntityId) s.setSelectedEntity(null);
     if ((s.tool === "entity" || (s.tool === "select" && s.selectionScope === "active")) && isEntityLayer(active)) {
@@ -336,6 +342,9 @@ export class ToolController {
       this.#beginMove(e, s.region, cell);
       this.#host.requestRender();
       return;
+    }
+    if (activeSmartStamp() && (s.tool === "brush" || s.tool === "rect" || (s.tool === "eraser" && useSmartStampSession.getState().usage === "road"))) {
+      this.#beginSmart(e, cell); return;
     }
     switch (s.tool) {
       case "brush":
@@ -374,6 +383,8 @@ export class ToolController {
       this.cancel();
     } else if (g.kind === "pick" && released(e, g.button)) {
       this.#finish();
+    } else if (g.kind === "smart") {
+      this.#moveSmart(g, e);
     } else if (g.kind === "paint" || g.kind === "stamp") {
       const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
       this.#paint(events.length > 0 ? events : [e]);
@@ -397,7 +408,8 @@ export class ToolController {
     if (!g || e.pointerId !== g.pointerId) return;
     const button = g.kind === "pick" ? g.button : 0;
     if (!released(e, button)) return;
-    if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
+    if (g.kind === "smart") this.#moveSmart(g, e);
+    else if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
     else if (g.kind === "entity") this.#dragEntity(g);
     else if (g.kind === "move") this.#dragMove(g);
     else {
@@ -411,7 +423,7 @@ export class ToolController {
   /** Rectangle, marquee and pick drags can be cancelled (Esc, right click); strokes only by Esc. */
   isCancelable(): boolean {
     const g = this.#gesture;
-    return !!g && (g.kind === "rect" || g.kind === "select" || g.kind === "entity" || g.kind === "move" || (g.kind === "pick" && g.button === 0));
+    return !!g && (g.kind === "smart" || g.kind === "rect" || g.kind === "select" || g.kind === "entity" || g.kind === "move" || (g.kind === "pick" && g.button === 0));
   }
 
   /** Ends without applying drags; keeps what a stroke already painted (lost capture, project change). */
@@ -419,6 +431,9 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
+    if (g.kind === "smart" && g.store.inTransaction) {
+      if (g.rectangle) g.store.rollback(); else { g.store.commit(); this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last }; }
+    }
     if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) {
       g.store.commit();
       if (g.kind === "move") this.#moveDone(g);
@@ -433,7 +448,7 @@ export class ToolController {
     const g = this.#gesture;
     if (!g) return;
     this.#gesture = null;
-    if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) g.store.rollback();
+    if ((g.kind === "smart" || g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) g.store.rollback();
     this.#host.release(g.pointerId);
     this.#host.requestRender();
   }
@@ -452,6 +467,14 @@ export class ToolController {
     if (!g) return;
     this.#gesture = null;
     switch (g.kind) {
+      case "smart":
+        try {
+          if (g.rectangle) applySmartStampPlan(g.store, smartGesturePlan(g));
+          if (g.store.inTransaction) g.store.commit();
+          if (!g.rectangle) this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last };
+          if (!g.erase) this.#pushRecentClip(g.stamp);
+        } catch (error) { if (g.store.inTransaction) g.store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+        break;
       case "paint":
       case "stamp":
         if (g.store.inTransaction) {
@@ -544,6 +567,7 @@ export class ToolController {
         tilesetId: brush.tilesetId,
         setId: brush.setId,
         terrainId: brush.terrainId,
+        ...(activeSmartStamp() ? { orientation: useSmartStampSession.getState().orientation, boundary: "empty" as const } : {}),
         ...(mode.erase ? { erase: true } : {}),
         ...(mode.fill ? { fill: true } : {}),
       }),
@@ -858,6 +882,36 @@ export class ToolController {
     if (tile) this.#pushRecent(tile);
     this.#host.flash?.(event.region);
     this.#host.picked?.(event);
+  }
+
+  #beginSmart(e: PointerEvent, cell: CellPoint): void {
+    const store = this.#host.scene?.store, stamp = activeSmartStamp(), state = useEditorStore.getState();
+    if (!store || !stamp || !state.activeLayerId) return;
+    const session = useSmartStampSession.getState(), erase = state.tool === "eraser";
+    const usage = state.tool === "rect" ? smartRectangleUsage(session.usage, rectangleThickness()) : session.usage;
+    if (usage === "road" && !isTileLayer(store.document.getLayer(state.activeLayerId))) return;
+    const anchor = e.shiftKey && usage === "road" && state.tool !== "rect" ? this.lineAnchor() : null;
+    const g: SmartGesture = { ...smartHoverGesture(store, stamp, state.activeLayerId, cell, usage, session.orientation, state.brushSize, state.brushShape, erase, anchor), pointerId: e.pointerId, mapping: stampLayerMapping(store.document, stamp), rectangle: usage === "area" || state.tool === "rect", thickness: usage === "area" ? 0 : rectangleThickness(), square: e.shiftKey, fromCenter: e.altKey };
+    store.beginTransaction(); this.#start(g);
+    if (!g.rectangle) this.#applySmart(g);
+  }
+
+  #applySmart(g: SmartGesture): void {
+    try { applySmartStampPlan(g.store, smartGesturePlan(g)); }
+    catch (error) { this.cancel(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+  }
+
+  #moveSmart(g: SmartGesture, e: PointerEvent): void {
+    if (g.rectangle) {
+      this.setModifiers(e.shiftKey, e.altKey);
+      const cell = this.#host.pointerCell(); if (cell) g.end = cell;
+      g.version++;
+    } else {
+      const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
+      const samples = (events.length ? events : [e]).map(sample => this.#host.camera.cellAt(this.#host.toLocal(sample))).filter((p): p is CellPoint => p !== null);
+      addRoadSamples(g, samples); this.#applySmart(g);
+    }
+    this.#host.requestRender();
   }
 
   // ------------------------------------------------------------------ strokes

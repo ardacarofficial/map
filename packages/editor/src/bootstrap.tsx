@@ -1,3 +1,4 @@
+import { installSmartStamps } from "./commands/smartStampCommands";
 /**
  * Editor entry point shared by the browser build (`main.tsx`) and the
  * desktop shell (`packages/desktop/src/main.ts`). The host decides only the
@@ -99,6 +100,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   // Shortcut labels follow the keyboard layout ("Ğ" for "[" on Turkish-Q); never waits long.
   const layoutReady = Promise.race([installKeyboardLayout().catch(() => undefined), timeout(100)]);
   registerAppCommands();
+  installSmartStamps();
   registerSelectionScopeCommands();
   registerTileReplacementCommand();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version

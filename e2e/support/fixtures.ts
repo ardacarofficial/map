@@ -97,6 +97,13 @@ export async function confirmTilesetCard(page: Page): Promise<void> {
   await expect(card).toBeVisible();
   await card.locator("button[type=submit]").click();
   await expect(card).toBeHidden();
+  // Import can start a project before Pixi's asynchronous initialization finishes.
+  // A visible canvas alone does not yet provide the camera/debug hook used by the callers.
+  const hasProject = await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    return useEditorStore.getState().project !== null;
+  });
+  if (hasProject) await expect.poll(() => page.evaluate(() => Object.hasOwn(window, "__smap"))).toBe(true);
 }
 
 /** The welcome screen's "Tileset bırak" card (drops anywhere work too; this one is the visible target). */

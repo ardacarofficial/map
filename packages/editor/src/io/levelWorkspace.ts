@@ -1,3 +1,4 @@
+import type { GeneratedRecipe } from "./smartStampRecipes";
 /**
  * The levels of the open project (v1.0) and what is loaded of them.
  *
@@ -84,6 +85,7 @@ export interface SavedLevel {
 export interface SaveLevelsInput {
   tilesetBytes(tilesetId: string): Uint8Array | undefined;
   stamps?: readonly Stamp[];
+  generatedRecipes?: readonly GeneratedRecipe[];
   keepStampFiles?: Iterable<string>;
   /** Round 4: project settings for `project.smap`. */
   settings?: ProjectSettings;
@@ -543,6 +545,7 @@ export class LevelWorkspace {
       removeFiles: removed,
       tilesetBytes: input.tilesetBytes,
       ...(input.stamps ? { stamps: input.stamps } : {}),
+      ...(input.generatedRecipes ? { generatedRecipes: input.generatedRecipes } : {}),
       ...(input.keepStampFiles ? { keepStampFiles: input.keepStampFiles } : {}),
       ...(input.settings ? { settings: input.settings } : {}),
     });

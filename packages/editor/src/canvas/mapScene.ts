@@ -1,3 +1,5 @@
+import { chunkKey, type SmartStampPlan } from "@smap/core";
+import { TilePreview } from "./preview";
 /**
  * Tile layers of one MapStore as Pixi display objects.
  *
@@ -68,6 +70,11 @@ export class MapScene {
   readonly #layers = new Container();
   readonly #background = new Graphics();
   readonly #backgroundColor: number;
+  readonly #smartMasks = new Map<string, Set<string>>();
+  readonly #smartPreviews: TilePreview[] = [];
+  #smartKey: string | null = null;
+  #smartPlan: SmartStampPlan | null = null;
+  get smartPreviewPlan(): SmartStampPlan | null { return this.#smartPlan; }
   readonly #views = new Map<string, LayerView>();
   readonly #atlases = new Map<string, { atlas: TilesetAtlas; groupBase: number }>();
   /** Texture per quad group (global atlas page id). */
@@ -225,7 +232,42 @@ export class MapScene {
     }
   }
 
+  /** Suppress old pixels for every planned replacement/erasure, keeping per-layer order and opacity. */
+  setSmartPreview(plan: SmartStampPlan | null, key: string | null): void {
+    if (this.#smartKey === key) return;
+    for (const [id, cells] of this.#smartMasks) for (const cell of cells) {
+      const [x, y] = cell.split(",").map(Number) as [number, number]; this.#markDirty(id, chunkKey(x >> 5, y >> 5));
+    }
+    for (const preview of this.#smartPreviews) { preview.root.removeFromParent(); preview.destroy(); }
+    this.#smartPreviews.length = 0; this.#smartMasks.clear(); this.#smartKey = key; this.#smartPlan = plan;
+    if (!plan) return;
+    const map = this.store.document.map;
+    let previous: Container | null = null;
+    for (const layer of plan.layers) {
+      const targetParent = layer.layerId ? this.#views.get(layer.layerId)?.container : undefined;
+      const insertion = previous ? this.#layers.getChildIndex(previous) + 1 : 0;
+      if (targetParent) previous = targetParent;
+      const mask = new Set<string>();
+      const quads = [];
+      for (const w of layer.writes) {
+        if (!("tile" in w)) continue;
+        mask.add(`${w.x},${w.y}`);
+        if (layer.layerId) this.#markDirty(layer.layerId, chunkKey(w.x >> 5, w.y >> 5));
+        if (w.tile) { const src = this.quadSource(w.tile.tilesetId, w.tile.tileId); if (src) quads.push({ x: w.x, y: w.y, flags: w.flags ?? 0, src }); }
+      }
+      if (layer.layerId) this.#smartMasks.set(layer.layerId, mask);
+      if (!quads.length) continue;
+      const preview = new TilePreview(CANVAS_COLORS.previewAlpha);
+      preview.set(key!, quads, map.tileWidth, map.tileHeight, group => this.groupTexture(group));
+      preview.root.visible = true;
+      if (targetParent) targetParent.addChild(preview.root);
+      else { this.#layers.addChildAt(preview.root, insertion); previous = preview.root; }
+      this.#smartPreviews.push(preview);
+    }
+  }
+
   destroy(): void {
+    this.setSmartPreview(null, null);
     this.#unsubscribe();
     for (const view of this.#views.values()) for (const c of view.chunks.values()) destroyChunkView(c);
     this.root.destroy({ children: true });
@@ -386,8 +428,14 @@ export class MapScene {
     if (!chunk) return;
     const { tileWidth, tileHeight } = this.store.document.map;
     const used = new Set<string>();
-    const batches = buildChunkQuads(chunk.data, tileWidth, tileHeight, (i) => this.#resolve(i, used));
     const { cx, cy } = parseChunkKey(key);
+    const mask = this.#smartMasks.get(layer.id);
+    let data = chunk.data;
+    if (mask?.size) {
+      data = new Uint32Array(chunk.data);
+      for (const cell of mask) { const [x, y] = cell.split(",").map(Number) as [number, number]; if ((x >> 5) === cx && (y >> 5) === cy) data[(y & 31) * 32 + (x & 31)] = 0; }
+    }
+    const batches = buildChunkQuads(data, tileWidth, tileHeight, (i) => this.#resolve(i, used));
     const container = new Container({ x: cx * CHUNK_SIZE * tileWidth, y: cy * CHUNK_SIZE * tileHeight });
     for (const b of batches) {
       const texture = this.#groupTextures.get(b.group);
@@ -395,7 +443,7 @@ export class MapScene {
       const geometry = new MeshGeometry({ positions: b.positions, uvs: b.uvs, indices: b.indices });
       container.addChild(new Mesh({ geometry, texture, roundPixels: false }));
     }
-    view.container.addChild(container);
+    view.container.addChildAt(container, 0);
     view.chunks.set(key, { cx, cy, container, tilesets: used });
   }
 }

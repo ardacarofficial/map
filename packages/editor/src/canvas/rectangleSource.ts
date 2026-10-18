@@ -29,3 +29,8 @@ export function rectangleStampSource(
   });
   return any ? { ...clip, layers } : null;
 }
+
+/** Filled R always samples the authored area; only a road outline uses road membership. */
+export function smartRectangleUsage(usage: "area" | "road", thickness: number): "area" | "road" {
+  return usage === "road" && thickness > 0 ? "road" : "area";
+}

@@ -11,6 +11,8 @@
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "stamp.nineSlice"
+  | "stamp.toTerrain"
   | "selection.toggleScope"
   | "tool.brush"
   | "tool.eraser"
@@ -101,6 +103,8 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  { command: "stamp.nineSlice", keys: [] },
+  { command: "stamp.toTerrain", keys: [] },
   // Selection scope
   { command: "selection.toggleScope", keys: [] },
   { command: "tool.brush", keys: ["B"] },

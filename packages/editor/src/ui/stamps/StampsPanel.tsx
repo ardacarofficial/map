@@ -1,3 +1,4 @@
+import { focusNineSlice, stampToTerrain } from "../../commands/smartStampCommands";
 import type { Stamp } from "@smap/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -102,7 +103,11 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
     },
     {
       type: "item",
-      id: "tags",
+      id: "nineSlice", label: t("smartStamp.command"), run: () => focusNineSlice(stamp.id),
+    },
+    { type: "item", id: "toTerrain", label: t("smartStamp.toTerrain"), run: () => stampToTerrain(stamp.id) },
+    {
+      type: "item", id: "tags",
       label: t("stampLib.tagsMenu"),
       icon: "bricks",
       run: () => lib.requestFocus(stamp.id, "tags"),

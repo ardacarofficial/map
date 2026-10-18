@@ -1,3 +1,4 @@
+import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * DOM input of the map canvas: pointer events (routed to panning or the
  * tool controller), wheel zoom / pan, Space-to-pan, Esc-to-cancel, the
@@ -289,6 +290,7 @@ export class PointerInput {
       return;
     }
     if (!hot || !this.pointer || !this.#host.map()) return;
+    if (activeSmartStamp() && (useEditorStore.getState().tool === "rect" || useSmartStampSession.getState().usage === "area")) return;
     if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now(), busy: this.#host.tools.gesture !== null || this.#pan !== null });
   }
 
@@ -405,7 +407,7 @@ export class PointerInput {
     if (!cell) return;
     this.#syncModifiers(e);
     // Alt + click picks right away (no need to wait for the hold).
-    if (e.button === 0 && e.altKey) {
+    if (e.button === 0 && e.altKey && !(activeSmartStamp() && (useEditorStore.getState().tool === "rect" || useSmartStampSession.getState().usage === "area"))) {
       if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now() });
       this.#feedSpring({ type: "click" });
     }
@@ -462,7 +464,10 @@ export class PointerInput {
     if (this.#pan && e.pointerId === this.#pan.pointerId) this.#endPan();
     if (this.#host.world()?.busy) this.#host.world()?.cancel();
     const g = this.#host.tools.gesture;
-    if (g && e.pointerId === g.pointerId) this.#host.tools.end();
+    if (g && e.pointerId === g.pointerId) {
+      if (g.kind === "smart" && e.type === "pointercancel") this.#host.tools.cancel();
+      else this.#host.tools.end();
+    }
     this.#host.requestRender();
   }
 

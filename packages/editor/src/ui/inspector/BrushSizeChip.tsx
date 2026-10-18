@@ -1,3 +1,4 @@
+import { activeSmartStamp, useSmartStampSession } from "../stamps/smartStampSession";
 import { Menu } from "@base-ui/react/menu";
 
 import { t } from "../../i18n";
@@ -23,7 +24,8 @@ export function BrushSizeChip({ withShape = true, showLabel = true }: { withShap
   const size = useEditorStore((s) => s.brushSize);
   const setSize = useEditorStore((s) => s.setBrushSize);
   // A clip on the brush is placed as it is: the size only applies to the eraser then.
-  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null);
+  const usage = useSmartStampSession(s => s.usage);
+  const unused = useEditorStore((s) => s.tool === "brush" && s.stamp !== null) && !(activeSmartStamp() && usage === "road");
   const expanded = showsSizeControls(size);
   return (
     <div

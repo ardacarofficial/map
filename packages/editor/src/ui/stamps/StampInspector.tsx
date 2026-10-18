@@ -1,3 +1,4 @@
+import { SmartStampProperties } from "./SmartStampProperties";
 /**
  * Denetçi section of the stamp selected in the library (round 5): large
  * preview, size and layers, category and tags (saved with the project in
@@ -92,7 +93,7 @@ function StampCard({ stamp }: { stamp: Stamp }) {
   return (
     <section aria-label={t("stampLib.section")} data-stamp-inspector={stamp.id}>
       <SectionHeader
-        title={t("stampLib.section")}
+        title={t("inspector.brushContent")}
         padding={12}
         actions={
           <>
@@ -127,6 +128,7 @@ function StampCard({ stamp }: { stamp: Stamp }) {
           </span>
         </div>
         <div>
+          <SmartStampProperties stamp={stamp} />
           <PropRow label={t("stampLib.sizeLabel")}>
             <PropValue align="left">{t("stamps.size", { width: stamp.width, height: stamp.height })}</PropValue>
           </PropRow>
