@@ -1,91 +1,21 @@
+/** Compatibility API for callers that predate docking. All state and persistence
+ * belong to dockStore; this facade only projects names and forwards actions. */
 import { create } from "zustand";
+import { COLUMNS, widenLibraryTarget, type ColumnId } from "./columns";
+import { clampZoneSize, copyLayout, defaultDockLayout, locatePanel, ZONE_SIZES, type DockLayout, type PanelId } from "./dockModel";
+import { revealPanel, useDockStore } from "./dockStore";
+import { DEFAULT_SECTIONS, type SectionId, type SectionsState } from "./sections";
 
-import {
-  clampWidth,
-  clearWidth,
-  COLUMNS,
-  defaultLibraryWidth,
-  LIBRARY_COLLAPSED_KEY,
-  readFlag,
-  readStoredWidth,
-  readWidth,
-  widenLibraryTarget,
-  writeFlag,
-  writeWidth,
-  type ColumnId,
-  type WidthStorage,
-} from "./columns";
-import { DEFAULT_SECTIONS, readSections, writeSections, type SectionId, type SectionsState } from "./sections";
-
-function storage(): WidthStorage | null {
-  try {
-    return typeof localStorage === "undefined" ? null : localStorage;
-  } catch {
-    return null;
-  }
-}
-
-/** localStorage key of the right column's hidden flag. */
 export const INSPECTOR_COLLAPSED_KEY = "smap.layout.inspectorCollapsed";
-/** localStorage key of the bottom dock's hidden flag (was the recent tiles strip). */
 export const RECENT_HIDDEN_KEY = "smap.layout.recentHidden";
-/** localStorage key of the bottom dock's height. */
 export const DOCK_HEIGHT_KEY = "smap.layout.dockHeight";
-/** localStorage key shared by the library tabs and legacy leftPanel API. */
 export const LEFT_PANEL_KEY = "smap.layout.leftPanel";
-/** localStorage key of the rulers flag. */
 export const RULERS_HIDDEN_KEY = "smap.layout.rulersHidden";
-
-/**
- * Bottom dock height (CSS px, tab strip included): the range a drag may
- * reach (the default height is content-based, see dock/contentHeight.ts).
- */
-export const DOCK = { initial: 324, min: 96, max: 480 } as const;
-
-/** Legacy left-panel names; library corresponds to the stamps tab. */
+export const DOCK = ZONE_SIZES.bottom;
 export type LeftPanel = "library" | "project";
 export type LeftPanelTab = "stamps" | "project";
-/** Right column tabs. */
 export type RightTab = "inspector" | "history";
-
-export function clampDockHeight(value: number): number {
-  if (!Number.isFinite(value)) return DOCK.initial;
-  return Math.min(DOCK.max, Math.max(DOCK.min, Math.round(value)));
-}
-
-function readDockHeight(s: WidthStorage | null): number | null {
-  try {
-    const raw = s?.getItem(DOCK_HEIGHT_KEY);
-    if (raw == null || raw.trim() === "") return null;
-    const value = Number(raw);
-    return Number.isFinite(value) ? clampDockHeight(value) : null;
-  } catch {
-    return null;
-  }
-}
-
-function readLeftPanel(s: WidthStorage | null): LeftPanel {
-  try {
-    return s?.getItem(LEFT_PANEL_KEY) === "project" ? "project" : "library";
-  } catch {
-    return "library";
-  }
-}
-
-function writeRaw(s: WidthStorage | null, key: string, value: string): void {
-  try {
-    s?.setItem(key, value);
-  } catch {
-    // Not remembered.
-  }
-}
-
-/**
- * Sizes and visibility of the editor frame that only the layout cares
- * about: column widths, which columns / sections are shown, folded or how
- * tall they were dragged. Remembered per browser (localStorage), like a
- * window layout. Nothing here moves on its own: every change is the user's.
- */
+export const clampDockHeight = (value: number): number => clampZoneSize("bottom", value);
 export interface LayoutState {
   /** Library width; null = the default for the window width ({@link defaultLibraryWidth}). */
   libraryWidth: number | null;
@@ -114,7 +44,7 @@ export interface LayoutState {
   setWidth(column: ColumnId, width: number): void;
   /** Stores the current width of a column (end of a drag). */
   commitWidth(column: ColumnId): void;
-  /** Back to the default width (double-click on the handle). */
+  /** Back to the default width (Home on the handle). */
   resetWidth(column: ColumnId): void;
   setLibraryCollapsed(collapsed: boolean): void;
   toggleLibrary(): void;
@@ -150,179 +80,78 @@ export interface LayoutState {
   widenLibrary(extra: number, tilesetId?: string): boolean;
 }
 
-/** The library width the layout asks for. */
-export function wantedLibraryWidth(s: Pick<LayoutState, "libraryWidth">, viewport: number): number {
-  return s.libraryWidth ?? defaultLibraryWidth(viewport);
+const panelsForSection = (id: SectionId): PanelId[] => id === "properties" ? ["inspector", "history"] : [id === "levels" ? "project" : "layers"];
+function view(layout: DockLayout) {
+  const activeLeft = layout.zones.left.groups[0]?.active;
+  const sections = {} as SectionsState;
+  for (const id of ["levels", "properties", "layers"] as const) {
+    const panels = panelsForSection(id), at = locatePanel(layout, panels[0]!);
+    sections[id] = { ...DEFAULT_SECTIONS[id], hidden: panels.every(p => layout.hiddenPanels.includes(p)), collapsed: at ? layout.zones[at.zone].groups[at.group]!.collapsed : false };
+  }
+  return {
+    libraryWidth: layout.zones.left.expandedPx, rightWidth: layout.zones.right.expandedPx, dockHeight: layout.zones.bottom.expandedPx,
+    libraryCollapsed: layout.zones.left.state !== "expanded", inspectorCollapsed: layout.zones.right.state !== "expanded", recentHidden: layout.zones.bottom.state === "hidden",
+    dockTab: layout.zones.bottom.groups[0]?.active ?? null,
+    leftPanel: activeLeft === "project" ? "project" as const : "library" as const,
+    leftPanelTab: activeLeft === "project" ? "project" as const : "stamps" as const,
+    rightTab: Object.values(layout.zones).some(z => z.groups.some(g => g.active === "history")) ? "history" as const : "inspector" as const,
+    rulersVisible: layout.rulersVisible, sections,
+  };
 }
-
-function viewportWidth(): number {
-  return typeof window === "undefined" ? 1366 : window.innerWidth;
-}
-
-export const useLayoutStore = create<LayoutState>()((set, get) => ({
-  libraryWidth: readStoredWidth(COLUMNS.library, storage()),
-  rightWidth: readWidth(COLUMNS.right, storage()),
-  libraryCollapsed: readFlag(LIBRARY_COLLAPSED_KEY, storage()),
-  inspectorCollapsed: readFlag(INSPECTOR_COLLAPSED_KEY, storage()),
-  recentHidden: readFlag(RECENT_HIDDEN_KEY, storage()),
-  dockHeight: readDockHeight(storage()),
-  dockTab: null,
-  leftPanel: readLeftPanel(storage()),
-  leftPanelTab: readLeftPanel(storage()) === "project" ? "project" : "stamps",
-  rightTab: "inspector",
-  rulersVisible: !readFlag(RULERS_HIDDEN_KEY, storage()),
-  sections: readSections(storage()),
-  setWidth: (column, width) =>
-    column === "library" ? set({ libraryWidth: clampWidth(COLUMNS.library, width) }) : set({ rightWidth: clampWidth(COLUMNS.right, width) }),
-  commitWidth: (column) => {
-    if (column === "right") writeWidth(COLUMNS.right, storage(), get().rightWidth);
-    else writeWidth(COLUMNS.library, storage(), wantedLibraryWidth(get(), viewportWidth()));
-  },
-  resetWidth: (column) => {
-    if (column === "right") {
-      set({ rightWidth: COLUMNS.right.initial });
-      writeWidth(COLUMNS.right, storage(), COLUMNS.right.initial);
-      return;
-    }
-    set({ libraryWidth: null });
-    clearWidth(COLUMNS.library, storage());
-  },
-  setLibraryCollapsed: (libraryCollapsed) => {
-    set({ libraryCollapsed });
-    writeFlag(LIBRARY_COLLAPSED_KEY, storage(), libraryCollapsed);
-  },
-  toggleLibrary: () => get().setLibraryCollapsed(!get().libraryCollapsed),
-  setInspectorCollapsed: (inspectorCollapsed) => {
-    set({ inspectorCollapsed });
-    writeFlag(INSPECTOR_COLLAPSED_KEY, storage(), inspectorCollapsed);
-  },
-  toggleInspector: () => get().setInspectorCollapsed(!get().inspectorCollapsed),
-  setRecentHidden: (recentHidden) => {
-    set({ recentHidden });
-    writeFlag(RECENT_HIDDEN_KEY, storage(), recentHidden);
-  },
-  setDockHeight: (height, commit = false) => {
-    const dockHeight = height === null ? null : clampDockHeight(height);
-    if (dockHeight !== get().dockHeight) set({ dockHeight });
-    if (commit) writeRaw(storage(), DOCK_HEIGHT_KEY, dockHeight === null ? "" : String(dockHeight));
-  },
-  setDockTab: (dockTab) => set({ dockTab }),
-  setLeftPanelTab: (leftPanelTab) => {
-    const leftPanel = leftPanelTab === "stamps" ? "library" : "project";
-    set({ leftPanelTab, leftPanel, libraryCollapsed: false });
-    writeRaw(storage(), LEFT_PANEL_KEY, leftPanelTab);
-    writeFlag(LIBRARY_COLLAPSED_KEY, storage(), false);
-  },
-  showLeftPanel: (panel) => {
-    const s = get();
-    if (s.leftPanel === panel && !s.libraryCollapsed) {
-      s.setLibraryCollapsed(true);
-      return;
-    }
-    set({ leftPanel: panel, leftPanelTab: panel === "library" ? "stamps" : "project" });
-    writeRaw(storage(), LEFT_PANEL_KEY, panel);
-    if (s.libraryCollapsed) s.setLibraryCollapsed(false);
-  },
-  setRightTab: (rightTab) => set({ rightTab }),
-  setRulersVisible: (rulersVisible) => {
-    set({ rulersVisible });
-    writeFlag(RULERS_HIDDEN_KEY, storage(), !rulersVisible);
-  },
+const dock = () => useDockStore.getState();
+export const useLayoutStore = create<LayoutState>()(() => ({
+  ...view(dock().layout),
+  setWidth: (column, px) => dock().setSize(column === "library" ? "left" : "right", px),
+  commitWidth: () => dock().commit(),
+  resetWidth: column => { const zone = column === "library" ? "left" : "right"; dock().setSize(zone, ZONE_SIZES[zone].initial, true); },
+  setLibraryCollapsed: value => dock().setZoneState("left", value ? "collapsed" : "expanded"),
+  toggleLibrary: () => dock().toggleZone("left"),
+  setInspectorCollapsed: value => dock().setZoneState("right", value ? "collapsed" : "expanded"),
+  toggleInspector: () => dock().toggleZone("right"),
+  setRecentHidden: value => dock().setZoneState("bottom", value ? "hidden" : "expanded"),
+  setDockHeight: (height, commit = false) => dock().setSize("bottom", height ?? DOCK.initial, commit),
+  setDockTab: id => { if (id === "tileset" || id === "recent") revealPanel(id); },
+  setLeftPanelTab: tab => { revealPanel(tab); },
+  showLeftPanel: panel => { revealPanel(panel === "library" ? "stamps" : "project"); },
+  setRightTab: tab => { revealPanel(tab); },
+  setRulersVisible: visible => dock().update({ ...dock().layout, rulersVisible: visible }),
   setSectionHidden: (id, hidden) => {
-    const sections = { ...get().sections, [id]: { ...get().sections[id], hidden } };
-    set({ sections });
-    writeSections(storage(), sections);
+    for (const panel of panelsForSection(id).reverse()) { if (hidden) dock().hidePanel(panel); else revealPanel(panel); }
   },
   setSectionCollapsed: (id, collapsed) => {
-    const sections = { ...get().sections, [id]: { ...get().sections[id], collapsed } };
-    set({ sections });
-    writeSections(storage(), sections);
-  },
-  setSectionHeight: (id, height, commit = false, startHeight) => {
-    const current = get().sections[id];
-    if (current.height !== height) {
-      const resetHeight = current.resetHeight ?? (current.height === null && startHeight !== undefined ? Math.round(startHeight) : undefined);
-      set({ sections: { ...get().sections, [id]: { ...current, height, ...(resetHeight !== undefined ? { resetHeight } : {}) } } });
+    const layout = copyLayout(dock().layout);
+    for (const panel of panelsForSection(id)) {
+      const at = locatePanel(layout, panel);
+      if (at) layout.zones[at.zone].groups[at.group]!.collapsed = collapsed;
     }
-    if (commit) writeSections(storage(), get().sections);
+    dock().update(layout);
   },
-  resetSectionHeight: (id) => get().setSectionHeight(id, get().sections[id].resetHeight ?? null, true),
-  commitSections: () => writeSections(storage(), get().sections),
-  resetLayout: () => {
-    set({
-      libraryWidth: null,
-      rightWidth: COLUMNS.right.initial,
-      libraryCollapsed: false,
-      inspectorCollapsed: false,
-      recentHidden: false,
-      dockHeight: null,
-      leftPanel: "library",
-      leftPanelTab: "stamps",
-      rulersVisible: true,
-      sections: DEFAULT_SECTIONS,
-    });
-    const s = storage();
-    clearWidth(COLUMNS.library, s);
-    writeWidth(COLUMNS.right, s, COLUMNS.right.initial);
-    writeFlag(LIBRARY_COLLAPSED_KEY, s, false);
-    writeFlag(INSPECTOR_COLLAPSED_KEY, s, false);
-    writeFlag(RECENT_HIDDEN_KEY, s, false);
-    writeRaw(s, DOCK_HEIGHT_KEY, "");
-    writeRaw(s, LEFT_PANEL_KEY, "stamps");
-    writeFlag(RULERS_HIDDEN_KEY, s, false);
-    writeSections(s, DEFAULT_SECTIONS);
+  // Legacy px API: project onto the flat group's weight. New chrome works
+  // directly in ratios and resets to the default pair instead of content height.
+  setSectionHeight: (id, height, commit = false) => {
+    const layout = copyLayout(dock().layout), at = locatePanel(layout, panelsForSection(id)[0]!);
+    if (!at) return;
+    const groups = layout.zones[at.zone].groups;
+    const selected = groups[at.group]!;
+    const other = groups.find(g => g !== selected);
+    if (!other) return;
+    const defaults = defaultDockLayout().zones[at.zone].groups.find(g => g.id === selected.id)?.weight ?? .5;
+    const fraction = height === null ? defaults : Math.max(.1, Math.min(.9, height / Math.max(1, (typeof window === "undefined" ? 768 : window.innerHeight) - 60)));
+    const total = selected.weight + other.weight;
+    selected.weight = total * fraction; other.weight = total - selected.weight;
+    dock().update(layout, commit);
   },
+  resetSectionHeight: id => useLayoutStore.getState().setSectionHeight(id, null, true),
+  commitSections: () => dock().commit(),
+  resetLayout: () => dock().reset(),
   widenLibrary: (extra, tilesetId) => {
     if (tilesetId !== undefined) return false;
-    const s = get();
-    const viewport = viewportWidth();
-    const target = widenLibraryTarget(viewport, { library: wantedLibraryWidth(s, viewport), right: s.rightWidth }, extra);
+    const viewport = typeof window === "undefined" ? 1366 : window.innerWidth;
+    const target = widenLibraryTarget(viewport, { library: dock().layout.zones.left.expandedPx, right: dock().layout.zones.right.expandedPx }, extra);
     if (target === null) return false;
-    set({ libraryWidth: target });
-    writeWidth(COLUMNS.library, storage(), target);
-    return true;
+    dock().setSize("left", target, true); return true;
   },
 }));
-
-/**
- * Makes a section visible and open (and its column shown), e.g. before F2
- * renames a layer or "Özellikler" shows an entity (which also selects the
- * Denetçi tab). "levels" is the library's PROJE tree. Returns true when
- * something had to change.
- */
-export function revealSection(id: SectionId): boolean {
-  const s = useLayoutStore.getState();
-  let changed = false;
-  if (id === "levels") {
-    if (s.libraryCollapsed) {
-      s.setLibraryCollapsed(false);
-      changed = true;
-    }
-    if (s.sections.levels.hidden) {
-      s.setSectionHidden("levels", false);
-      changed = true;
-    }
-    if (s.sections.levels.collapsed === true) {
-      s.setSectionCollapsed("levels", false);
-      changed = true;
-    }
-    return changed;
-  }
-  if (id === "properties" && s.rightTab !== "inspector") {
-    s.setRightTab("inspector");
-    changed = true;
-  }
-  if (s.inspectorCollapsed) {
-    s.setInspectorCollapsed(false);
-    changed = true;
-  }
-  if (s.sections[id].hidden) {
-    s.setSectionHidden(id, false);
-    changed = true;
-  }
-  if (s.sections[id].collapsed === true) {
-    s.setSectionCollapsed(id, false);
-    changed = true;
-  }
-  return changed;
-}
+useDockStore.subscribe((state, before) => { if (state.layout !== before.layout) useLayoutStore.setState(view(state.layout)); });
+export function wantedLibraryWidth(s: Pick<LayoutState, "libraryWidth">, _viewport: number): number { return s.libraryWidth ?? COLUMNS.library.initial; }
+export function revealSection(id: SectionId): boolean { return revealPanel(panelsForSection(id)[0]!); }

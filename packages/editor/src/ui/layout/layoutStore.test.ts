@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { LIBRARY_COLLAPSED_KEY } from "./columns";
-import { contentDockHeight } from "./dock/contentHeight";
 import { clampDockHeight, DOCK, DOCK_HEIGHT_KEY, LEFT_PANEL_KEY } from "./layoutStore";
 
 function memory(initial: Record<string, string> = {}) {
@@ -37,13 +35,12 @@ describe("left panel tab compatibility", () => {
     store.getState().setLibraryCollapsed(true);
     store.getState().setLeftPanelTab("project");
     expect(store.getState()).toMatchObject({ leftPanelTab: "project", leftPanel: "project", libraryCollapsed: false });
-    expect(storage.data[LEFT_PANEL_KEY]).toBe("project");
-    expect(storage.data[LIBRARY_COLLAPSED_KEY]).toBe("0");
+    expect(JSON.parse(storage.data["smap.layout.v2"]!).zones.left).toMatchObject({ state: "expanded", groups: [{ id: "library", tabs: ["tileset", "stamps", "project", "entities"], active: "project", weight: 1, collapsed: false }] });
     store.getState().setLeftPanelTab("project");
     expect(store.getState().libraryCollapsed).toBe(false);
     store.getState().setLeftPanelTab("stamps");
     expect(store.getState()).toMatchObject({ leftPanelTab: "stamps", leftPanel: "library", libraryCollapsed: false });
-    expect(storage.data[LEFT_PANEL_KEY]).toBe("stamps");
+    expect(JSON.parse(storage.data["smap.layout.v2"]!).zones.left.groups[0].active).toBe("stamps");
   });
 
   it("keeps legacy panel switching and layout reset in sync", async () => {
@@ -51,13 +48,13 @@ describe("left panel tab compatibility", () => {
     store.getState().showLeftPanel("project");
     expect(store.getState()).toMatchObject({ leftPanelTab: "project", leftPanel: "project", libraryCollapsed: false });
     store.getState().showLeftPanel("project");
-    expect(store.getState().libraryCollapsed).toBe(true);
+    expect(store.getState().libraryCollapsed).toBe(false);
     store.getState().showLeftPanel("library");
     expect(store.getState()).toMatchObject({ leftPanelTab: "stamps", leftPanel: "library", libraryCollapsed: false });
     store.getState().setLeftPanelTab("project");
     store.getState().resetLayout();
     expect(store.getState()).toMatchObject({ leftPanelTab: "stamps", leftPanel: "library", libraryCollapsed: false });
-    expect(storage.data[LEFT_PANEL_KEY]).toBe("stamps");
+    expect(JSON.parse(storage.data["smap.layout.v2"]!).zones.left.groups[0].active).toBe("tileset");
   });
 
   it("survives unavailable localStorage", async () => {
@@ -71,10 +68,11 @@ describe("left panel tab compatibility", () => {
 });
 
 describe("dock default height", () => {
-  // An 8-row 32px tileset wants 305px of body (see contentHeight.test.ts).
-  it.each([[900, 480], [768, 360]])("leaves enough canvas height at viewport height %i", (height, minimum) => {
-    const chrome = 36 + 36 + 24 + 20;
-    expect(height - chrome - contentDockHeight(305, height)).toBeGreaterThanOrEqual(minimum);
+  it.each([900, 768])("keeps the Recent-only default at viewport height %i", async (height) => {
+    vi.stubGlobal("window", { innerHeight: height });
+    const { store } = await loadPanel(null);
+    expect(store.getState().dockHeight).toBe(68);
+    expect(store.getState().dockTab).toBe("recent");
   });
 
   it("loads and persists the dragged height across viewport sizes", async () => {
@@ -84,7 +82,7 @@ describe("dock default height", () => {
     const { useLayoutStore: store } = await import("./layoutStore");
     expect(store.getState().dockHeight).toBe(400);
     store.getState().setDockHeight(350, true);
-    expect(storage.data[DOCK_HEIGHT_KEY]).toBe("350");
+    expect(JSON.parse(storage.data["smap.layout.v2"]!).zones.bottom.expandedPx).toBe(350);
     expect(store.getState().dockHeight).toBe(350);
   });
 
@@ -94,27 +92,23 @@ describe("dock default height", () => {
   });
 });
 
-describe("section resize reset", () => {
-  it("restores the original split across reload and subsequent drags", async () => {
+describe("legacy section API projects onto dock groups", () => {
+  it("persists a manual group ratio across reload and resets to default weights", async () => {
     const { store, storage } = await loadPanel(null);
-    store.getState().setSectionHeight("properties", 91, true, 245);
-    expect(store.getState().sections.properties).toMatchObject({ height: 91, resetHeight: 245 });
+    store.getState().setSectionHeight("properties", 100, true);
+    const stored = () => JSON.parse(storage.data["smap.layout.v2"]!).zones.right.groups;
+    expect(stored()[0].weight).toBeLessThan(.3);
     vi.resetModules();
     const { useLayoutStore: reloaded } = await import("./layoutStore");
     reloaded.getState().resetSectionHeight("properties");
-    expect(reloaded.getState().sections.properties.height).toBe(245);
-    expect(JSON.parse(storage.data["smap.layout.sections"]!).properties.height).toBe(245);
-    reloaded.getState().setSectionHeight("properties", 110, true, 180);
-    reloaded.getState().resetSectionHeight("properties");
-    expect(reloaded.getState().sections.properties.height).toBe(245);
+    expect(stored()[0].weight).toBe(.6);
     reloaded.getState().resetLayout();
     expect(reloaded.getState().sections.properties).toEqual({ height: null, collapsed: false, hidden: false });
   });
-
-  it("uses content sizing for older stored splits without a captured height", async () => {
-    const { store } = await loadPanel(null);
+  it("uses the default group ratio when a legacy caller requests automatic sizing", async () => {
+    const { store, storage } = await loadPanel(null);
     store.getState().setSectionHeight("layers", 300, true);
     store.getState().resetSectionHeight("layers");
-    expect(store.getState().sections.layers.height).toBeNull();
+    expect(JSON.parse(storage.data["smap.layout.v2"]!).zones.right.groups[1].weight).toBe(.4);
   });
 });

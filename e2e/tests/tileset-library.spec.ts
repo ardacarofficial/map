@@ -150,17 +150,15 @@ test("tile context menu and removing an unused tileset with Geri al", async ({ p
   await expect.poll(() => tilesetIds(page)).toEqual(["overworld-32", "dungeon-16"]);
 });
 
-test("dock: compact header, searchable switcher, content default and remembered collapse", async ({ page }) => {
+test("tileset host: compact scrollable header, searchable switcher and remembered zone size", async ({ page }) => {
   await startProject(page);
-  const dock = page.locator("[data-dock]");
+  const dock = page.locator("[data-dock-zone=left]");
   const header = page.locator("[data-tileset-side]");
-  const resize = page.locator("[data-dock-resize]");
+  const resize = page.locator("[data-zone-splitter=left]");
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    await expect.poll(() => header.evaluate((el) => ({ height: el.getBoundingClientRect().height, fits: el.scrollWidth <= el.clientWidth }))).toEqual({ height: 32, fits: true });
-    if (viewport.width === 1440) {
-      for (const label of await header.locator("[data-header-group='view'] [data-header-label]").all()) await expect(label).toBeVisible();
-    }
+    await expect.poll(() => header.evaluate((el) => ({ height: el.getBoundingClientRect().height, fits: el.clientWidth <= 260 }))).toEqual({ height: 32, fits: true });
+    // Narrow hosts keep the chrome inside the panel; overflowing controls scroll.
     const layouts = await header.evaluate(async (el) => {
       const states = [];
       for (let i = 0; i < 12; i++) {
@@ -180,24 +178,17 @@ test("dock: compact header, searchable switcher, content default and remembered 
   await search.press("Enter");
   await expect(search).toBeHidden();
   await expect(page.locator("[data-tileset-switcher-name]")).toHaveText("overworld-32");
-  // Default dock height: min(content, 30% of the window) — 270 px at 1440×900; the grid scrolls inside.
-  const defaultHeight = await dock.evaluate((el) => el.getBoundingClientRect().height);
-  expect(defaultHeight).toBe(Math.round(0.3 * 900));
-  await resize.focus();
-  await resize.press("ArrowUp");
-  await expect.poll(() => dock.evaluate((el) => el.getBoundingClientRect().height)).toBe(defaultHeight + 16);
+  const defaultWidth = await dock.evaluate(el => el.getBoundingClientRect().width);
+  expect(defaultWidth).toBe(260);
+  await resize.focus(); await resize.press("ArrowRight");
+  await expect.poll(() => dock.evaluate(el => el.getBoundingClientRect().width)).toBe(defaultWidth + 16);
+  await resize.press("Home");
   await resize.dblclick();
-  await expect.poll(() => dock.evaluate((el) => el.getBoundingClientRect().height)).toBe(defaultHeight);
-  await page.locator("[data-dock-tab-button='recent']").click();
-  await expect.poll(() => dock.evaluate((el) => el.getBoundingClientRect().height)).toBe(defaultHeight);
-  await page.locator("[data-dock-hide]").click();
-  await expect.poll(() => dock.evaluate((el) => el.getBoundingClientRect().height)).toBe(29);
-  await expect(resize).toHaveCount(0);
-  expect(await page.evaluate(() => localStorage.getItem("smap.layout.dockCollapsed"))).toBe("true");
+  await expect.poll(() => dock.evaluate(el => el.getBoundingClientRect().width)).toBe(28);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("smap.layout.v2")!).zones.left.state)).toBe("collapsed");
   await page.locator("[data-dock-tab-button='tileset']").click();
-  await expect(header).toBeVisible();
-  await expect(resize).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("smap.layout.dockCollapsed"))).toBe("false");
+  await expect(header).toBeVisible(); await expect(resize).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("smap.layout.v2")!).zones.left.state)).toBe("expanded");
   const fit = page.locator("[data-tileset-zoom-fit]");
   const fitColors = await fit.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }));
   await expect(fit).toHaveAttribute("aria-pressed", "true");
@@ -212,14 +203,10 @@ test("dock: compact header, searchable switcher, content default and remembered 
   await page.locator("[data-tileset-zoom-fit]").click();
   await expect(page.locator("[data-tileset-zoom-label]")).toHaveText("%75");
   await page.setViewportSize({ width: 1366, height: 600 });
-  await resize.focus();
-  for (let i = 0; i < 8; i++) await resize.press("Shift+ArrowUp");
-  await expect.poll(() => dock.evaluate((el) => {
-    let parent = el.parentElement;
-    while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
-    return parent!.clientHeight - el.getBoundingClientRect().height;
-  })).toBeGreaterThanOrEqual(160);
-  await resize.dblclick();
+  await page.locator("[data-zone-splitter=bottom]").focus();
+  for (let i = 0; i < 8; i++) await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(() => page.locator("[data-canvas-host]").evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(160);
+
 });
 
 test("dock palettes: create, drop through the header, rename and delete through the switcher", async ({ page }) => {

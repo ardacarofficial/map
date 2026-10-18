@@ -42,6 +42,7 @@ import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
 import { t, type MessageKey } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { useUiStore } from "../ui/uiStore";
+import { useDockStore } from "../ui/layout/dockStore";
 import { CameraController } from "./cameraController";
 import type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary } from "./canvasEvents";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
@@ -514,6 +515,9 @@ export class MapCanvas {
     this.#observeSize();
     this.#input.attach(this.#abort.signal);
     window.addEventListener("pointerdown", () => this.#camera.keepView(), { capture: true, signal: this.#abort.signal });
+    this.#unsubs.push(useDockStore.subscribe((s, prev) => {
+      if (s.layout !== prev.layout) this.#camera.keepView();
+    }));
     this.#unsubs.push(useUiStore.subscribe((s, prev) => {
       if (s.panelsHidden !== prev.panelsHidden) this.#camera.keepView();
     }));

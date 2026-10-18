@@ -8,15 +8,15 @@ import { StampCloseDialog, StampEditorBanner } from "../stampEditor/StampEditorC
 import { CanvasFeedback } from "../feedback/CanvasFeedback";
 import { BlockedActionFeedback } from "../feedback/BlockedActionFeedback";
 import { CanvasContextMenu } from "../contextMenus/CanvasContextMenu";
-import { LibraryPanel } from "../panels/LibraryPanel";
 import { useUiStore } from "../uiStore";
 import { AppBar } from "./AppBar";
 import { fitColumns } from "./columns";
-import { BottomDock } from "./dock/BottomDock";
-import { useLayoutStore, wantedLibraryWidth } from "./layoutStore";
+import { COLLAPSED_PX } from "./dockModel";
+import { useDockStore } from "./dockStore";
+import { DockZone } from "./DockZone";
+import { DockDropIndicator } from "./DockTabDrag";
+import { PanelHosts } from "./panels";
 import { ToolRail } from "./ToolRail";
-import { ResizeHandle } from "./ResizeHandle";
-import { EdgeReopen, RightColumn } from "./RightColumn";
 import { useRulersSync } from "./rulers";
 import { StatusBar } from "./StatusBar";
 import { OptionsBar } from "./OptionsBar";
@@ -36,45 +36,35 @@ export function EditorLayout() {
   const hidden = useUiStore((s) => s.panelsHidden);
   const world = useWorldView((s) => s.view === "world");
   const viewport = useViewportWidth();
-  const wantedLibrary = useLayoutStore((s) => wantedLibraryWidth(s, viewport));
-  const wantedRight = useLayoutStore((s) => s.rightWidth);
-  const collapsed = useLayoutStore((s) => s.libraryCollapsed);
-  const inspectorCollapsed = useLayoutStore((s) => s.inspectorCollapsed);
-  const dockHidden = useLayoutStore((s) => s.recentHidden);
+  const zones = useDockStore(s => s.layout.zones);
   useRulersSync();
-  const showLibrary = !hidden && !collapsed;
-  const showRight = !hidden && !inspectorCollapsed;
-  const widths = fitColumns(viewport, { library: wantedLibrary, right: wantedRight }, { library: showLibrary, right: showRight });
+  const expanded = (zone: "left" | "right") => !hidden && zones[zone].state === "expanded" && zones[zone].groups.length > 0;
+  const widths = fitColumns(viewport, { library: zones.left.expandedPx, right: zones.right.expandedPx }, { library: expanded("left"), right: expanded("right") });
+  const sideSize = (zone: "left" | "right") => zones[zone].state === "collapsed" ? COLLAPSED_PX : zone === "left" ? widths.library : widths.right;
+  const bottomSize = zones.bottom.state === "collapsed" ? COLLAPSED_PX : zones.bottom.expandedPx;
 
   return (
     <div className="flex h-full flex-col">
       <AppBar />
       <div className="flex min-h-0 flex-1">
         <div className={hidden ? "hidden" : "contents"}><ToolRail /></div>
-        <aside
-          aria-label={t("layout.library")}
-          style={{ width: widths.library }}
-          className={`relative shrink-0 flex-col border-r border-line bg-panel ${showLibrary ? "flex" : "hidden"}`}
-        >
-          <LibraryPanel />
-          <ResizeHandle column="library" edge="right" width={widths.library} />
-        </aside>
-        {!hidden && collapsed && <EdgeReopen side="left" label={t("layout.showLibrary")} onClick={() => useLayoutStore.getState().setLibraryCollapsed(false)} />}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <DockZone zone="left" size={sideSize("left")} temporaryHidden={hidden} />
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <OptionsBar />
           <StampEditorBanner />
-          <main aria-label={t("layout.canvas")} className="relative min-h-0 min-w-0 flex-1 bg-canvas">
+          <main aria-label={t("layout.canvas")} className="dock-canvas relative min-h-0 min-w-0 flex-1 bg-canvas">
             <CanvasHost />
             <CanvasFeedback />
             <PointPickOverlay />
             <CanvasContextMenu />
             <BlockedActionFeedback />
           </main>
-          <div className={hidden || world || dockHidden ? "hidden" : "contents"}><BottomDock /></div>
+          <DockZone zone="bottom" size={bottomSize} temporaryHidden={hidden || world} />
         </div>
-        {!hidden && inspectorCollapsed && <EdgeReopen side="right" label={t("layout.showInspector")} onClick={() => useLayoutStore.getState().setInspectorCollapsed(false)} />}
-        <RightColumn width={widths.right} visible={showRight} />
+        <DockZone zone="right" size={sideSize("right")} temporaryHidden={hidden} />
       </div>
+      <PanelHosts />
+      <DockDropIndicator />
       <StampCloseDialog />
       <StatusBar />
     </div>

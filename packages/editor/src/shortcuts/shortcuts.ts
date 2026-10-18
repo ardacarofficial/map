@@ -8,6 +8,7 @@
  * Windows/Linux and Cmd on macOS. Character keys match the typed character
  * first (layout-aware, see `commands/keymap.ts`).
  */
+import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
@@ -92,7 +93,11 @@ export type CommandId =
   | "level.remove"
   | "settings.language"
   | "settings.editShortcuts"
-  | "edit.replaceTiles";
+  | "edit.replaceTiles"
+  // Docking
+  | "view.toggleBottom"
+  | `dock.${"left" | "right" | "bottom"}.${"show" | "hide"}`
+  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`;
 
 export interface ShortcutDef {
   command: CommandId;
@@ -186,6 +191,10 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "settings.language", keys: [] },
   { command: "settings.editShortcuts", keys: [] },
   { command: "edit.replaceTiles", keys: [] },
+  // Docking
+  { command: "view.toggleBottom", keys: ["Ctrl+Shift+B"] },
+  ...ZONE_IDS.flatMap(zone => (["show", "hide"] as const).map(action => ({ command: `dock.${zone}.${action}` as const, keys: [] }))),
+  ...PANEL_IDS.flatMap(panel => ([...ZONE_IDS, "show", "hide", "forward", "backward", "split", "merge"] as const).map(action => ({ command: `panel.${panel}.${action}` as const, keys: [] }))),
 ];
 
 /** Per-command keys from the settings file (replace the defaults of that command). */

@@ -14,6 +14,7 @@
  * unbinds it); commands not listed keep their defaults. Invalid entries are
  * reported and ignored, never fatal.
  */
+import { normalizeLayout, type DockLayout } from "../ui/layout/dockModel";
 import { parseChord } from "../commands/keymap";
 import type { Locale } from "../i18n";
 import type { CommandId, ShortcutDef } from "../shortcuts/shortcuts";
@@ -22,6 +23,8 @@ export const LOCALES: readonly Locale[] = ["tr", "en"];
 
 export interface AppSettings {
   locale: Locale;
+  /** Optional versioned dock layout, validated and repaired. */
+  layout?: DockLayout;
   /** Validated overrides only. */
   shortcuts: Map<CommandId, string[]>;
 }
@@ -29,7 +32,7 @@ export interface AppSettings {
 /** One ignored entry. `entry` is the JSON path ("shortcuts.tool.brush"). */
 export interface SettingsProblem {
   entry: string;
-  reason: "json" | "notObject" | "locale" | "unknownCommand" | "notKeyList" | "badKey" | "fixedKey" | "conflict" | "unknownField";
+  reason: "json" | "notObject" | "locale" | "unknownCommand" | "notKeyList" | "badKey" | "fixedKey" | "conflict" | "unknownField" | "layout";
   detail: string;
 }
 
@@ -86,7 +89,7 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
   }
   const record = raw as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "locale" && key !== "shortcuts" && !key.startsWith("$")) {
+    if (key !== "locale" && key !== "shortcuts" && key !== "layout" && !key.startsWith("$")) {
       problems.push({ entry: key, reason: "unknownField", detail: key });
     }
   }
@@ -95,6 +98,12 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
     const locale = record.locale;
     if (typeof locale === "string" && (LOCALES as readonly string[]).includes(locale)) settings.locale = locale as Locale;
     else problems.push({ entry: "locale", reason: "locale", detail: JSON.stringify(locale) });
+  }
+
+  if ("layout" in record) {
+    const layout = normalizeLayout(record.layout);
+    if (layout) settings.layout = layout;
+    else problems.push({ entry: "layout", reason: "layout", detail: "expected layout version 2" });
   }
 
   const known = new Set<string>(defaults.map((d) => d.command));

@@ -40,6 +40,8 @@ import {
   startLayerRename,
   unitOf,
 } from "./layerActions";
+import { registerDockCommands } from "../ui/layout/dockCommands";
+import { onDockReveal, useDockStore } from "../ui/layout/dockStore";
 import { revealSection, useLayoutStore } from "../ui/layout/layoutStore";
 import type { SectionId } from "../ui/layout/sections";
 import { toast } from "../ui/toast/toastStore";
@@ -115,8 +117,6 @@ const sectionToggle = (id: SectionId, command: "view.toggleLevels" | "view.toggl
   run: () => {
     const hidden = !layout().sections[id].hidden;
     layout().setSectionHidden(id, hidden);
-    // Showing a section of a hidden column shows the column too.
-    if (!hidden && layout().inspectorCollapsed) layout().setInspectorCollapsed(false);
   },
 });
 
@@ -451,8 +451,8 @@ const COMMANDS: Command[] = [
     title: "commands.view.toggleRecent",
     category: "view",
     enabled: hasProject,
-    checked: () => !layout().recentHidden,
-    run: () => layout().setRecentHidden(!layout().recentHidden),
+    checked: () => !useDockStore.getState().layout.hiddenPanels.includes("recent"),
+    run: () => { const s = useDockStore.getState(); if (s.layout.hiddenPanels.includes("recent")) s.reveal("recent"); else s.hidePanel("recent"); },
   },
   {
     id: "view.resetLayout",
@@ -501,5 +501,7 @@ export function registerAppCommands(): void {
   if (registered) return;
   registered = true;
   registerCommands(COMMANDS);
+  onDockReveal(() => { if (ui().panelsHidden) togglePanels(); });
+  registerDockCommands();
   registerProjectCommands();
 }

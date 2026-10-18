@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { isPanelId } from "./layout/dockModel";
+import { revealPanel } from "./layout/dockStore";
 
 /**
  * What the library column shows. Built-in tabs: "tileset", "stamps",
@@ -72,7 +74,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setBusy: (busy) => set({ busy }),
   setDraggingFiles: (draggingFiles) => set({ draggingFiles }),
   setStartupOpening: (startupOpening) => set({ startupOpening }),
-  setLibraryTab: (libraryTab) => set({ libraryTab }),
+  setLibraryTab: (libraryTab) => { set({ libraryTab }); if (isPanelId(libraryTab)) revealPanel(libraryTab); },
   setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
   setEntityTypesOpen: (entityTypesOpen, startNew = false, selectId = null) =>
     set({ entityTypesOpen, entityTypesStartNew: entityTypesOpen && startNew, entityTypesSelect: entityTypesOpen ? selectId : null }),

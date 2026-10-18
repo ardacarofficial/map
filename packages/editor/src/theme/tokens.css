@@ -147,3 +147,68 @@
   --duration-panel: 150ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* Docking: dimensions shared by all three zones. Stored expanded sizes are
+   constrained by dockModel; viewport fitting never rewrites those preferences. */
+:root {
+  --dock-left-default: 260px;
+  --dock-left-min: 220px;
+  --dock-left-max: 400px;
+  --dock-right-default: 296px;
+  --dock-right-min: 260px;
+  --dock-right-max: 420px;
+  --dock-bottom-default: 68px;
+  --dock-bottom-min: 64px;
+  --dock-bottom-max: 480px;
+  --dock-collapsed: 28px;
+  --dock-splitter-hit: 6px;
+  --dock-line: 1px;
+  --dock-caret: 2px;
+  --dock-drop-edge: 24px;
+  --dock-canvas-min-height: 160px;
+}
+.dock-zone { position: relative; flex-shrink: 0; min-width: 0; min-height: 0; background: var(--color-panel); }
+.dock-zone-left { border-right: var(--dock-line) solid var(--color-line); }
+.dock-zone-right { border-left: var(--dock-line) solid var(--color-line); }
+.dock-zone-bottom { min-height: var(--dock-bottom-min); flex-shrink: 1; border-top: var(--dock-line) solid var(--color-line); max-height: calc(100% - var(--dock-canvas-min-height) - var(--spacing-optionsbar)); flex-direction: column; }
+.dock-zone-left, .dock-zone-right { flex-direction: column; }
+.dock-zone-collapsed { border: 0; }
+.dock-rail-tabs { height: auto; border: 0; }
+.dock-rail-tabs [role=tablist] { flex-direction: column; }
+.dock-rail-tabs [role=tab] { writing-mode: vertical-rl; width: var(--dock-collapsed); padding: calc(var(--spacing) * 2) 0; flex-shrink: 0; }
+.dock-group-tabs [role=tablist] { overflow-x: auto; scrollbar-width: none; }
+.dock-group-tabs [role=tab] { flex-shrink: 0; padding-inline: calc(var(--spacing) * 2); touch-action: none; }
+.dock-zone-splitter { position: absolute; z-index: 20; outline: none; touch-action: none; }
+.dock-zone-splitter-left, .dock-zone-splitter-right { width: var(--dock-splitter-hit); top: 0; bottom: 0; cursor: col-resize; }
+.dock-zone-splitter-left { right: calc(var(--dock-splitter-hit) / -2); }
+.dock-zone-splitter-right { left: calc(var(--dock-splitter-hit) / -2); }
+.dock-zone-splitter-bottom { height: var(--dock-splitter-hit); left: 0; right: 0; top: calc(var(--dock-splitter-hit) / -2); cursor: row-resize; }
+.dock-zone-splitter > div { background: var(--color-line); pointer-events: none; }
+.dock-zone-splitter-left > div, .dock-zone-splitter-right > div { width: var(--dock-line); height: 100%; margin: auto; }
+.dock-zone-splitter-bottom > div { height: var(--dock-line); width: 100%; margin-top: calc((var(--dock-splitter-hit) - var(--dock-line)) / 2); }
+.dock-zone-splitter:hover > div, .dock-group-splitter:hover > div { background: var(--color-accent-line); }
+.dock-zone-splitter:focus-visible > div, .dock-group-splitter:focus-visible > div { background: var(--color-accent); }
+.dock-group-splitter { height: var(--dock-splitter-hit); flex-shrink: 0; cursor: row-resize; outline: none; touch-action: none; display: flex; align-items: center; }
+.dock-group-splitter > div { height: var(--dock-line); width: 100%; background: var(--color-line); }
+.dock-group-splitter-horizontal { width: var(--dock-splitter-hit); height: auto; cursor: col-resize; justify-content: center; }
+.dock-group-splitter-horizontal > div { width: var(--dock-line); height: 100%; }
+.dock-drop-indicator, .dock-insertion { position: fixed; z-index: 100; pointer-events: none; }
+.dock-drop-indicator { background: var(--color-accent-soft); border: var(--dock-line) solid var(--color-accent-line); opacity: .8; }
+.dock-insertion { background: var(--color-accent); }
+.dock-empty-target { position: fixed; z-index: 30; background: var(--color-accent-soft); border: var(--dock-line) solid var(--color-accent-line); color: var(--color-text); font-size: var(--text-sm); padding: var(--spacing); }
+.dock-empty-target-left, .dock-empty-target-right { top: var(--spacing-toolbar); bottom: var(--spacing-statusbar); width: var(--dock-collapsed); writing-mode: vertical-rl; }
+.dock-empty-target-left { left: var(--spacing-rail); }
+.dock-empty-target-right { right: 0; }
+.dock-empty-target-bottom { bottom: var(--spacing-statusbar); left: var(--spacing-rail); right: var(--dock-collapsed); height: var(--dock-collapsed); }
+
+/* A narrow host gives palette targets the whole header during tile dragging. */
+.dock-tileset-drag > :not([data-dock-palette-targets]) { display: none; }
+
+.dock-canvas { min-height: var(--dock-canvas-min-height); }
+.dock-zone-bottom.dock-zone-collapsed { min-height: var(--dock-collapsed); }
+.dock-empty-target-bottom { position: absolute; left: 0; right: 0; bottom: 0; }
+/* Recent's 32px swatches and their keyline fit inside the compact bottom row.
+   Wheel scrolling remains available without a scrollbar consuming row height. */
+.dock-zone-bottom [data-recent-strip] { max-height: var(--spacing-recentstrip); padding-block: 0; align-items: center; scrollbar-width: none; }
+/* Legacy mode instructions remain readable in the narrow, scrollable chrome. */
+[data-tileset-side] [data-tileset-hint] { min-width: calc(var(--spacing) * 24); flex-shrink: 0; }

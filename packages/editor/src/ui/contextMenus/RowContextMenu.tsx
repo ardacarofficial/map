@@ -131,20 +131,19 @@ export function PointMenu({ at, items, onClose }: { at: MenuPoint | null; items:
     [at],
   );
   return (
-    <Menu.Root
+    <ContextMenu.Root
       open={at !== null}
-      modal={false}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
     >
-      <Menu.Portal>
-        <Menu.Positioner anchor={anchor} side="bottom" align="start" sideOffset={2} className={menuPositionerClass}>
-          <Menu.Popup className={menuPopupClass} data-context-menu="">
-            {at && <OpenItems items={items} Item={Menu.Item} />}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner anchor={anchor} side="bottom" align="start" sideOffset={2} className={menuPositionerClass}>
+          <ContextMenu.Popup className={menuPopupClass} data-context-menu="">
+            {at && <OpenItems items={items} Item={ContextMenu.Item} />}
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }

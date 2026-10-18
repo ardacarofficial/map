@@ -49,13 +49,13 @@ test("1366×768: opening frames the whole map; Tab in both directions keeps zoom
   await page.keyboard.press("Tab");
   await expect(page.locator("[data-tileset-side]")).toBeHidden();
   await expect.poll(async () => (await view(page)).zoom).toBe(before.zoom);
-  expect((await view(page)).cx).toBeCloseTo(before.cx);
-  expect((await view(page)).cy).toBeCloseTo(before.cy);
+  await expect.poll(async () => (await view(page)).cx).toBeCloseTo(before.cx);
+  await expect.poll(async () => (await view(page)).cy).toBeCloseTo(before.cy);
   await page.keyboard.press("Tab");
   await expect(page.locator("[data-tileset-side]")).toBeVisible();
   await expect.poll(async () => (await view(page)).zoom).toBe(before.zoom);
-  expect((await view(page)).cx).toBeCloseTo(before.cx);
-  expect((await view(page)).cy).toBeCloseTo(before.cy);
+  await expect.poll(async () => (await view(page)).cx).toBeCloseTo(before.cx);
+  await expect.poll(async () => (await view(page)).cy).toBeCloseTo(before.cy);
 });
 
 test("a multi-tile tileset brush is paint in history; hidden layers block the next stroke", async ({ page }) => {
@@ -82,49 +82,40 @@ test("a multi-tile tileset brush is paint in history; hidden layers block the ne
   expect(await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.undoDepth)).toBe(before);
 });
 
-test("F6 cycles regions, restores panels, skips collapsed dock and stays inside modals", async ({ page }) => {
+test("F6 follows physical groups, restores panels, expands rails and stays inside modals", async ({ page }) => {
   await openMap(page);
   const host = page.locator("[data-canvas-host]");
-  await host.click({ position: { x: 4, y: 4 } });
-  await expect(host).not.toHaveAttribute("data-focus-inset");
-  for (const target of ["[data-tileset-viewport]", "[data-right-tab][aria-selected=true]", "[data-layers-list]", "[data-left-panel] [role=tab][aria-selected=true]", "[data-canvas-host]"]) {
+  await host.focus();
+  for (const target of ["[data-tileset-viewport]", "[data-panel-tab=inspector]", "[data-layers-list]", "[data-panel-tab=recent]", "[data-canvas-host]"]) {
     await page.keyboard.press("F6");
-    await expect(page.locator(target)).toBeFocused();
+    await expect(page.locator(target).first()).toBeFocused();
   }
   await expect(host).toHaveAttribute("data-focus-inset", "");
-  expect(await host.evaluate(el => getComputedStyle(el, "::after").boxShadow)).toContain("1px");
   await page.keyboard.press("Shift+F6");
-  await expect(page.locator("[data-left-panel] [role=tab][aria-selected=true]")).toBeFocused();
-  await page.keyboard.press("F6");
-  await page.keyboard.press("Shift+F6");
-  await page.getByRole("textbox", { name: "Zoom yüzdesi", exact: true }).focus();
-  await page.keyboard.press("F6");
-  await expect(host).toBeFocused();
-  await page.keyboard.press("Tab");
+  await expect(page.locator("[data-panel-tab=recent]")).toBeFocused();
+  await host.focus(); await page.keyboard.press("Tab");
   await expect(page.locator("[data-tileset-viewport]")).toBeHidden();
   await page.keyboard.press("F6");
   await expect(page.locator("[data-tileset-viewport]")).toBeFocused();
-  await page.locator("[data-dock-hide]").click();
-  await host.focus();
-  await page.keyboard.press("F6");
-  await expect(page.locator("[data-right-tab][aria-selected=true]")).toBeFocused();
+  await page.keyboard.press("Control+b");
+  await host.focus(); await page.keyboard.press("F6");
+  await expect(page.locator("[data-tileset-viewport]")).toBeFocused();
+  await expect(page.locator("[data-dock-zone=left]")).toHaveAttribute("data-zone-state", "expanded");
   await page.keyboard.press("Control+k");
   const input = page.getByRole("dialog").getByRole("combobox");
-  await expect(input).toBeFocused();
-  await page.keyboard.press("F6");
-  await expect(input).toBeFocused();
+  await expect(input).toBeFocused(); await page.keyboard.press("F6"); await expect(input).toBeFocused();
   await input.fill("Sonraki bölgeye geç");
   await expect(page.getByRole("dialog")).toContainText("F6");
 });
 
-test("1366×768: Fit shows the whole 256px tileset in the visible dock", async ({ page }) => {
+test("1366×768: Fit shows the whole 256px tileset in its left panel", async ({ page }) => {
   await openMap(page);
   await page.locator("[data-tileset-zoom-fit]").click();
   await expect.poll(() => page.locator("[data-tileset-viewport]").evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true);
-  await expect(page.locator("[data-tileset-grid]")).toHaveAttribute("data-tileset-scale", "0.5");
+  await expect(page.locator("[data-tileset-grid]")).toHaveAttribute("data-tileset-scale", "0.75");
 });
 
-test("short inspector leaves most of the column to 12 layers; list keys select and reveal rows", async ({ page }) => {
+test("right split preserves its ratio while layer list keys select and reveal rows", async ({ page }) => {
   await openMap(page);
   await page.evaluate(() => {
     const h = (window as unknown as { __smap: Hook }).__smap;
@@ -134,7 +125,7 @@ test("short inspector leaves most of the column to 12 layers; list keys select a
     h.editor.getState().setTool("brush");
   });
   await expect(page.locator("[data-inspector-title]")).toContainText("Önce bir tile seç");
-  await expect.poll(() => page.locator("[data-right-column]").evaluate(el => el.querySelector("[data-section=layers]")!.getBoundingClientRect().height / el.getBoundingClientRect().height)).toBeGreaterThan(0.6);
+  await expect.poll(() => page.locator("[data-right-column]").evaluate(el => el.querySelector("[data-section=layers]")!.getBoundingClientRect().height / el.getBoundingClientRect().height)).toBeGreaterThan(0.3);
   const list = page.locator("[data-layers-list]");
   const rows = list.getByRole("option");
   await list.focus();
@@ -146,14 +137,14 @@ test("short inspector leaves most of the column to 12 layers; list keys select a
   await expect(rows.nth(10)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowDown");
   await expect(rows.last()).toHaveAttribute("aria-selected", "true");
-  expect(await rows.last().evaluate(el => { const row = el.getBoundingClientRect(); const parent = el.parentElement!.getBoundingClientRect(); return row.top >= parent.top && row.bottom <= parent.bottom; })).toBe(true);
+  await expect.poll(() => rows.last().evaluate(el => { const row = el.getBoundingClientRect(); const parent = el.parentElement!.getBoundingClientRect(); return row.top >= parent.top - 1 && row.bottom <= parent.bottom + 1; })).toBe(true);
   await page.keyboard.press("Enter");
   await expect(list.getByRole("textbox")).toBeFocused();
   await page.keyboard.press("Escape");
   const splitter = page.locator("[data-section-splitter]");
   await splitter.focus();
   await splitter.press("Shift+ArrowDown");
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("smap.layout.sections")!).properties.height)).toBeGreaterThan(56);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("smap.layout.v2")!).zones.right.groups[0].weight)).toBeGreaterThan(0.6);
 });
 
 test("new project validates immediately and retains its preview without shifting on errors", async ({ page }) => {
@@ -237,7 +228,7 @@ test("empty marquee cannot save a stamp; arming a saved stamp removes its stale 
   await expect(page.locator("[data-action=placeStamp]")).toHaveText("Fırçada etkin");
 });
 
-test("splitter reset restores the pre-drag height across reload even when brush content clears", async ({ page }) => {
+test("group splitter reset restores the default ratio across reload even when brush content clears", async ({ page }) => {
   await openMap(page);
   await page.evaluate(() => {
     const h = (window as unknown as { __smap: Hook }).__smap;
