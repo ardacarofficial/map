@@ -5,6 +5,7 @@
  * Placeholders: `{name}` is replaced by `t(key, { name: ... })`.
  */
 export const tr = {
+  panelTabs: { previous: "Önceki sekmeler", next: "Sonraki sekmeler" },
   app: {
     name: "Harita Tasarlayıcı",
   },

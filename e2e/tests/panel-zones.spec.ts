@@ -98,7 +98,8 @@ test("pointer release commits once; canceled resize and viewport shrink preserve
   expect(await savedLayout(page)).toEqual(remembered);
   for (const zone of zones) await page.keyboard.press(keys[zone]);
   await expect.poll(async () => (await view()).zoom).toBe(before.zoom);
-  expect((await view()).x).toBeCloseTo(before.x); expect((await view()).y).toBeCloseTo(before.y);
+  await expect.poll(async () => (await view()).x).toBeCloseTo(before.x);
+  await expect.poll(async () => (await view()).y).toBeCloseTo(before.y);
 });
 
 test("desktop settings win, concurrent layout/locale writes merge, and reload waits for an active resize", async ({ page }) => {

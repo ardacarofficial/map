@@ -57,7 +57,10 @@ export function ZoneSplitter({ zone }: { zone: ZoneId }) {
     const layout = copyLayout(s.layout);
     layout.zones[zone].state = "expanded";
     s.update(layout, false);
-    s.setSize(zone, state.expandedPx + delta * (e.shiftKey ? 48 : 16), true);
+    // Start from the displayed edge, including a content minimum or viewport cap.
+    const laid = e.currentTarget.parentElement?.getBoundingClientRect();
+    const currentPx = state.state === "expanded" && laid ? (horizontal ? laid.height : laid.width) : state.expandedPx;
+    s.setSize(zone, currentPx + delta * (e.shiftKey ? 48 : 16), true);
   };
   return <div role="separator" tabIndex={0} aria-label={t("docking.resize")} aria-orientation={horizontal ? "horizontal" : "vertical"}
     aria-valuemin={ZONE_SIZES[zone].min} aria-valuemax={ZONE_SIZES[zone].max} aria-valuenow={state.state === "collapsed" ? COLLAPSED_PX : state.expandedPx}

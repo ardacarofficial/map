@@ -62,8 +62,8 @@ export function PanelGroup({ zone, group, index, rail = false, controls = index 
     s.update(layout);
   };
   if (!active) return null;
-  return <section data-dock-group={index} data-group-id={group.id} className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${rail ? "shrink-0" : "flex-1"}`} style={rail ? undefined : { flexGrow: group.collapsed ? 0 : group.weight, flexBasis: group.collapsed ? "var(--spacing-tabrow)" : 0 }}>
-    <Tabs orientation={rail && zone !== "bottom" ? "vertical" : "horizontal"} label={t(`docking.${zone}`)} value={active} data-dock-strip={index} className={rail && zone !== "bottom" ? "dock-rail-tabs" : "dock-group-tabs"}
+  return <section data-active-panel={active} data-dock-group={index} data-group-id={group.id} className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${rail ? "shrink-0" : "flex-1"}`} style={rail ? undefined : { flexGrow: group.collapsed ? 0 : group.weight, flexBasis: group.collapsed ? "var(--spacing-tabrow)" : 0 }}>
+    <Tabs scrollable orientation={rail && zone !== "bottom" ? "vertical" : "horizontal"} label={t(`docking.${zone}`)} value={active} data-dock-strip={index} className={rail && zone !== "bottom" ? "dock-rail-tabs" : "dock-group-tabs"}
       onValueChange={id => { revealPanel(id); }}
       items={listed.map(id => ({ value: id, label: t(PANELS[id].label), attrs: {
         "data-panel-tab": id,

@@ -212,3 +212,21 @@
 .dock-zone-bottom [data-recent-strip] { max-height: var(--spacing-recentstrip); padding-block: 0; align-items: center; scrollbar-width: none; }
 /* Legacy mode instructions remain readable in the narrow, scrollable chrome. */
 [data-tileset-side] [data-tileset-hint] { min-width: calc(var(--spacing) * 24); flex-shrink: 0; }
+
+/* Side hosts use two fixed 32px rows; wide hosts share one row. The source
+   gets its own row so its name is useful even at the 220px minimum. */
+[data-tileset-library] { container: tileset-chrome / inline-size; }
+.tileset-header-view { padding-inline: var(--spacing); }
+.tileset-header-wheel { display: none; }
+@container tileset-chrome (min-width: 560px) {
+  .tileset-header { flex-direction: row; align-items: center; gap: calc(var(--spacing) * 2); }
+  .tileset-header-source { flex: 1; }
+  .tileset-header-controls { flex: 1; }
+  .tileset-header-wheel { display: flex; }
+  .tileset-header-view { padding-inline: calc(var(--spacing) * 2); }
+}
+/* A moved Tileset reserves three tile rows below its chrome.
+   This is a presentation minimum; the remembered expanded size stays intact. */
+.dock-zone-bottom:has([data-active-panel=tileset]) { min-height: calc(var(--spacing-tabrow) + var(--spacing-control-rail) * 5 + var(--dock-line) * 2); }
+.dock-zone-bottom:has([data-active-panel=tileset]):has([data-palette-columns]) { min-height: calc(var(--spacing-tabrow) + var(--spacing-control-rail) * 6 + var(--dock-line) * 2); }
+.dock-zone-bottom.dock-zone-collapsed { min-height: var(--dock-collapsed); }

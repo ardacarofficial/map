@@ -150,15 +150,15 @@ test("tile context menu and removing an unused tileset with Geri al", async ({ p
   await expect.poll(() => tilesetIds(page)).toEqual(["overworld-32", "dungeon-16"]);
 });
 
-test("tileset host: compact scrollable header, searchable switcher and remembered zone size", async ({ page }) => {
+test("tileset host: compact two-row header, searchable switcher and remembered zone size", async ({ page }) => {
   await startProject(page);
   const dock = page.locator("[data-dock-zone=left]");
   const header = page.locator("[data-tileset-side]");
   const resize = page.locator("[data-zone-splitter=left]");
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    await expect.poll(() => header.evaluate((el) => ({ height: el.getBoundingClientRect().height, fits: el.clientWidth <= 260 }))).toEqual({ height: 32, fits: true });
-    // Narrow hosts keep the chrome inside the panel; overflowing controls scroll.
+    await expect.poll(() => header.evaluate((el) => ({ height: el.getBoundingClientRect().height, fits: el.clientWidth <= 260 }))).toEqual({ height: 65, fits: true });
+    // Narrow hosts keep both fixed-height rows inside the panel without scrolling.
     const layouts = await header.evaluate(async (el) => {
       const states = [];
       for (let i = 0; i < 12; i++) {

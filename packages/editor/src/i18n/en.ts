@@ -2,6 +2,7 @@ import type { Messages } from "./types";
 
 /** English UI strings. Same keys as `tr.ts` (the type enforces it). */
 export const en: Messages = {
+  panelTabs: { previous: "Previous tabs", next: "Next tabs" },
   app: {
     name: "Map Designer",
   },

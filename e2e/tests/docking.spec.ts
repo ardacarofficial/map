@@ -82,7 +82,8 @@ test("moved panels reveal through existing commands, keyboard menu navigation an
   await openDockMap(page);
   const tile = page.locator("[data-panel-tab=tileset]");
   await tile.focus(); await page.keyboard.press("Shift+F10");
-  await expect(page.locator("[data-context-menu]")).toBeVisible(); await page.keyboard.press("ArrowDown");
+  await expect(page.locator("[data-context-menu]")).toBeVisible();
+  await expect(page.locator("[data-context-menu]")).toBeFocused(); await page.keyboard.press("ArrowDown");
   await expect(page.locator("[data-context-item=move]")).toBeFocused(); await page.keyboard.press("ArrowRight");
   await expect(page.locator("[data-context-item=move-right]")).toBeFocused(); await page.keyboard.press("Enter");
   await expect(page.locator(`${zone("right")} [data-panel-tab=tileset]`)).toBeVisible();
