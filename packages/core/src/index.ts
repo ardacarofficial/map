@@ -472,7 +472,7 @@ export {
   tilesetGridRemap,
 } from "./tilesetGrid";
 
-export { floodFill, type CellSource } from "./fill";
+export { floodFill, floodFillRuns, type FillRun, type CellSource } from "./fill";
 
 export {
   copyRegion,

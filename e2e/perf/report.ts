@@ -3,19 +3,23 @@
 export interface Metric {
   value: number;
   unit: string;
+  /** Per-run statistics and the underlying sample counts. */
+  runs?: number[];
+  samples?: number[];
 }
 
 export interface Results {
   label: string;
   date: string;
   metrics: Record<string, Metric>;
+  settings?: { runs: number; profile: boolean; viewport: { width: number; height: number }; strokePlacement: string };
   /** Top self-time functions per profiled phase (PERF_PROFILE=1). */
   profiles: Record<string, string[]>;
 }
 
 export function percentile(values: readonly number[], p: number): number {
-  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
-  if (v.length === 0) return NaN;
+  if (values.length === 0 || values.some((x) => !Number.isFinite(x))) throw new Error("Expected nonempty finite metric samples");
+  const v = [...values].sort((a, b) => a - b);
   const i = Math.min(v.length - 1, Math.max(0, Math.ceil((p / 100) * v.length) - 1));
   return v[i]!;
 }
@@ -26,11 +30,12 @@ export function median(values: readonly number[]): number {
 
 /** Markdown table: metric | baseline | this run | change. */
 export function formatTable(now: Results, base: Results | null): string {
-  const rows = ["| metric | baseline | " + now.label + " | change |", "|---|---:|---:|---:|"];
+  const rows = ["| metric | baseline | " + now.label + " | change | samples/run |", "|---|---:|---:|---:|---|"];
   for (const [key, m] of Object.entries(now.metrics)) {
-    const b = base?.metrics[key];
+    const candidate = base?.metrics[key];
+    const b = candidate && Number.isFinite(candidate.value) && candidate.value >= 0 ? candidate : undefined;
     const change = b && b.value !== 0 ? `${(((m.value - b.value) / b.value) * 100).toFixed(0)}%` : "";
-    rows.push(`| ${key} | ${b ? `${b.value} ${b.unit}` : "–"} | ${m.value} ${m.unit} | ${change} |`);
+    rows.push(`| ${key} | ${b ? `${b.value} ${b.unit}` : "–"} | ${m.value} ${m.unit} | ${change} | ${m.samples?.join(" / ") ?? "–"} |`);
   }
   return rows.join("\n");
 }

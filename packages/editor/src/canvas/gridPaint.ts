@@ -2,7 +2,7 @@
  * Pure helpers for painting grid (terrain / collision) layers: brush, eraser,
  * rectangle and fill produce `paintTerrain` writes. No Pixi, no DOM.
  */
-import { floodFill, type CellBounds, type CellPoint, type CellSource, type GridWrite } from "@smap/core";
+import { floodFillRuns, type CellBounds, type CellPoint, type CellSource, type GridWrite, type FillRun } from "@smap/core";
 
 import type { CellRegion, ToolId } from "../state/editorStore";
 
@@ -48,6 +48,11 @@ export function gridRectWrites(r: CellRegion, value: number, getCell: (x: number
  * value at (`x`, `y`), set to `value`. Empty when that cell already holds
  * `value` or lies outside `bounds`.
  */
-export function gridFillWrites(layer: CellSource, x: number, y: number, value: number, bounds: CellBounds): GridWrite[] {
-  return floodFill(layer, x, y, value, bounds).map((p) => ({ x: p.x, y: p.y, value }));
+export function gridFillWrites(layer: CellSource, x: number, y: number, value: number, bounds: CellBounds, runs?: readonly FillRun[]): GridWrite[] {
+  if (runs && layer.getCell(x, y) === value) return [];
+  const writes: GridWrite[] = [];
+  for (const r of runs ?? floodFillRuns(layer, x, y, value, bounds)) {
+    for (let ix = r.left; ix <= r.right; ix++) writes.push({ x: ix, y: r.y, value });
+  }
+  return writes;
 }

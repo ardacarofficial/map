@@ -19,7 +19,6 @@ import {
   cellFlags,
   cellPaletteIndex,
   flipClip,
-  floodFill,
   isEntityLayer,
   isGridLayer,
   makeCell,
@@ -32,7 +31,6 @@ import {
   type MapDocument,
   type RandomSet,
   type TileClip,
-  type TileLayer,
 } from "@smap/core";
 import { AlphaFilter, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 
@@ -41,7 +39,8 @@ import { useEditorStore, type CellRegion } from "../state/editorStore";
 import { strokeCells } from "./brush";
 import type { Point } from "./camera";
 import type { CameraController } from "./cameraController";
-import { cellMaskImage, membershipMask, type CellMaskImage } from "./cellMask";
+import { fillPreviewStarted, fillPreviewFinished } from "./fillPreviewPerf";
+import { fillRegionPlan, type FillRegionPlan } from "./fillRegionPlan";
 import type { CellQuad } from "./chunkGeometry";
 import { CANVAS_COLORS, type CanvasColors } from "./colors";
 import { brushFootprint, cellsBounds, footprintCells } from "./footprint";
@@ -93,14 +92,6 @@ const OUTLINE_MIN_CELL_DEVICE_PX = 6;
 const OUTLINE_MAX_CELLS = 40_000;
 /** Reused on the pointer path; the keyline sits immediately outside the colour line. */
 const FOOTPRINT_KEYLINE = { color: CANVAS_COLORS.cursorShadow, alpha: 0.6 };
-
-interface FillCache {
-  readonly layer: TileLayer;
-  readonly revision: number;
-  readonly width: number;
-  readonly mask: Uint8Array;
-  readonly image: CellMaskImage | null;
-}
 
 /** What the renderer reads from the canvas each frame. */
 export interface OverlayHost {
@@ -163,7 +154,7 @@ export class OverlayRenderer {
   #hintTimer: ReturnType<typeof setTimeout> | null = null;
   #antsTimer: ReturnType<typeof setTimeout> | null = null;
   #flash: { readonly region: CellRegion; readonly start: number } | null = null;
-  #fillCache: FillCache | null = null;
+  #fillCache: FillRegionPlan | null = null;
   #lastFillAt = -Infinity;
   #fillTimer: ReturnType<typeof setTimeout> | null = null;
   readonly #host: OverlayHost;
@@ -1075,7 +1066,7 @@ export class OverlayRenderer {
       if (index > 0 && layer.getCell(cell.x, cell.y) === makeCell(index)) return;
     }
     let c = this.#fillCache;
-    const fresh = c && c.layer === layer && c.revision === scene.store.revision && c.width === map.width;
+    const fresh = c && c.layer === layer && c.revision === scene.store.revision && c.width === map.width && c.height === map.height;
     if (!fresh || c!.mask[cell.y * map.width + cell.x] !== 1) {
       const now = performance.now();
       const wait = this.#lastFillAt + FILL_PREVIEW_THROTTLE_MS - now;
@@ -1087,14 +1078,10 @@ export class OverlayRenderer {
         return;
       }
       this.#lastFillAt = now;
-      const points = floodFill(layer, cell.x, cell.y, -1, map);
-      c = this.#fillCache = {
-        layer,
-        revision: scene.store.revision,
-        width: map.width,
-        mask: membershipMask(points, map.width, map.height),
-        image: cellMaskImage(points),
-      };
+      const started = fillPreviewStarted();
+      c = this.#fillCache = fillRegionPlan(scene.store, layer, cell);
+      void c.image;
+      fillPreviewFinished(started);
     }
     this.#fillPreview.set(c!.image, map.tileWidth, map.tileHeight);
     this.#fillPreview.sprite.visible = c!.image !== null;
