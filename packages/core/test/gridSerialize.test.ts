@@ -75,7 +75,7 @@ describe("grid layers and tileset metadata serialization", () => {
     const text = serializeProject({ name: "p", levels: [], tilesets: [{ ...TERRAIN_TILESET, solidTiles: [], terrains: [], terrainSets: [] }] });
     expect(text).not.toMatch(/solidTiles|terrains|terrainSets/);
     expect(JSON.parse(serializeLevel(store.document)).seed).toBeUndefined();
-    expect(JSON.parse(text).documentFormatVersion).toBe(2);
+    expect(JSON.parse(text).documentFormatVersion).toBe(3);
   });
 
   it("migrates a terrain grid with a dangling target (its tile layer was removed)", () => {

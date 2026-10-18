@@ -39,6 +39,11 @@ export { Palette, type PaletteEntry } from "./palette";
 
 export {
   type Tileset,
+  type GeneratedTilesetMetadata,
+  type GeneratedTilesetSource,
+  generatedTilesetMetadataProblem,
+  normalizeGeneratedTilesetMetadata,
+  generatedTilesetStale,
   type TileRect,
   tileCount,
   tileIdAt,
@@ -528,3 +533,61 @@ export {
 
 export { rectangleBand, rectangleBandContains } from "./rectangleBand";
 export { planTileReplacement, type TileReplacementOptions, type TileReplacementWrites } from "./replaceTiles";
+
+export {
+  type StampNineSlice,
+  stampNineSliceProblem,
+  normalizeStampNineSlice,
+} from "./stamp";
+
+export {
+  NINE_SLICE_LAYOUT_VERSION,
+  type NineSliceOrientation,
+  type NineSliceLayout,
+  type NineSliceSample,
+  type NineSlicePixelRect,
+  type NineSliceBlit,
+  type NineSliceInnerCorner,
+  assertOrientation,
+  composeOrientation,
+  inverseOrientation,
+  orientPoint,
+  nineSliceProblem,
+  nineSliceLayout,
+  nineSliceRegions,
+  nineSliceMaskSources,
+  sampleNineSlice,
+  planNineSliceRect,
+  nineSliceBlits,
+  bakedNineSliceTerrainSet,
+  bakedNineSliceSolidTiles,
+} from "./nineSlice";
+
+export {
+  type SmartBrushSession,
+  type SmartStampWrite,
+  type SmartStampLayerPlan,
+  type SmartStampPlan,
+  type SmartStampPlanOptions,
+  type SmartStampRoadOptions,
+  type SmartStampApplyResult,
+  planSmartStampArea,
+  planSmartStampRoad,
+  applySmartStampPlan,
+  applySmartStampArea,
+  applySmartStampRoad,
+  orthogonalBridge,
+} from "./smartStamp";
+
+export {
+  type TerrainTileReader,
+  type TerrainMembership,
+  type TerrainBlobSolveOptions,
+  terrainTileInfo,
+  terrainMembership,
+  solveBlobFromReader,
+} from "./terrainBrush";
+
+
+export { prepareNineSliceTileset, regenerateNineSliceTileset, type PrepareNineSliceTilesetOptions, type RegenerateNineSliceTilesetOptions } from "./generatedTileset";
+export { stampTilesetUsage, type StampTilesetUsage } from "./region";

@@ -405,3 +405,21 @@ describe("paintTerrainBrush undo", () => {
     expect(patch.cells.length).toBe(0);
   });
 });
+
+describe("oriented terrain writes and explicit blob boundaries", () => {
+  it("preserves legacy solid boundaries and lets smart roads cap at empty map edges", () => {
+    const store = groundStore(1, 1, false);
+    const set = { id: "blob", name: "Blob", kind: "blob" as const, terrains: [{ id: 1, name: "Road", color: "#ffffff" }], tiles: [{ tileId: 0, terrainId: 1, mask: 0 }, { tileId: 1, terrainId: 1, mask: 255 }] };
+    store.dispatch({ type: "setTerrainSet", tilesetId: "ground", set });
+    const brush = { tilesetId: "ground", setId: "blob", terrainId: 1 };
+    expect(terrainPaint(store.document, "l", [{ x: 0, y: 0 }], brush)[0]!.tile!.tileId).toBe(1);
+    expect(terrainPaint(store.document, "l", [{ x: 0, y: 0 }], brush, { boundary: "empty" })[0]!.tile!.tileId).toBe(0);
+  });
+
+  it("passes composed orientation flags through store operations for corner and blob sets", () => {
+    const store = groundStore(3, 3, false);
+    store.dispatch({ type: "paintTerrainBrush", layerId: "l", cells: [{ x: 1, y: 1 }], tilesetId: "ground", setId: "ground", terrainId: 1, orientation: 0x80000000 });
+    expect(store.document.getLayer("l")!.getCell(1, 1) >>> 31).toBe(1);
+    expect(terrainCellInfo(store.document, "l", 1, 1, "ground", "ground")).toEqual({ kind: "corner", corners: [1, 1, 1, 1] });
+  });
+});

@@ -1,0 +1,263 @@
+/**
+ * Pure smart-stamp plans shared by previews and operation-based application.
+ *
+ * Authoring: prepareNineSliceTileset creates a separate generated PNG descriptor per source tile layer; never write
+ * a source PNG. On source PNG changes explicitly regenerate that same generated id/path with the same slots. Register
+ * bakedNineSliceTerrainSet/solidTiles through existing tileset operations, then persist Stamp.nineSlice.
+ * Gestures: capture stampLayerMapping + store.revision, plan with the full intended rectangle or membership,
+ * and render the tile-reference writes (including null erasures). A window limits output, never membership.
+ * On release recompute a complete plan against the current revision and apply it. Road samples may each
+ * apply inside one caller-owned beginTransaction/commit; cancellation calls rollback. Palette additions
+ * intentionally survive undo, exactly as ordinary painting does. Plans belong to their originating document.
+ */
+import { cellFlags, cellPaletteIndex, FLIP_D, makeCell } from "./cell";
+import type { MapDocument } from "./document";
+import { lineCells, type CellPoint, type CellRect } from "./geometry";
+import { COLLISION_PASSABLE, COLLISION_SOLID, isGridLayer, isTileLayer, type GridRole } from "./layer";
+import { assertOrientation, nineSliceLayout, sampleNineSlice } from "./nineSlice";
+import type { LayerPatch } from "./ops";
+import { stampLayerMapping, stampNineSliceProblem, type Stamp, type StampLayerTarget } from "./stamp";
+import type { MapStore } from "./store";
+import { BLOB47_MASKS } from "./terrain";
+import { solveBlobFromReader, terrainTileInfo, type TerrainMembership, type TerrainTileReader, type TerrainTileWrite } from "./terrainBrush";
+import { getTerrainSet } from "./terrainSet";
+import { isValidTileId } from "./tileset";
+
+/** Tile references rather than palette indices keep preview planning mutation-free. Grid writes use raw values. */
+export type SmartStampWrite = TerrainTileWrite | (CellPoint & { readonly value: number });
+/** Existing destination or a deferred layer descriptor; layers are created only when applying nonempty writes. */
+export interface SmartStampLayerPlan {
+  readonly sourceLayerId: string;
+  readonly layerId: string | null;
+  readonly name: string;
+  readonly grid: boolean;
+  readonly role?: GridRole;
+  readonly writes: readonly SmartStampWrite[];
+}
+/** Revision-bound plan. Window plans are preview-only; applying one is rejected. */
+export interface SmartStampPlan {
+  readonly revision: number;
+  readonly layers: readonly SmartStampLayerPlan[];
+  readonly windowed: boolean;
+}
+/** Supply the revision and mapping captured at gesture start. Windows restrict output to the visible area plus one cell. */
+export interface SmartStampPlanOptions {
+  readonly revision: number;
+  readonly orientation?: number;
+  readonly mapping?: readonly StampLayerTarget[];
+  readonly window?: CellRect;
+}
+/** Session-only mode and D4 orientation; the canonical saved stamp is never transformed. */
+export interface SmartBrushSession {
+  readonly stampId: string;
+  readonly usage: "area" | "road";
+  readonly orientation: number;
+}
+/** Actual changes and the newly allocated layer ids, all in the enclosing gesture transaction. */
+export interface SmartStampApplyResult {
+  readonly patches: readonly LayerPatch[];
+  readonly createdLayerIds: readonly string[];
+  readonly layerMapping: ReadonlyMap<string, string>;
+}
+
+const provenance = new WeakMap<SmartStampPlan, MapDocument>();
+const contains = (r: CellRect, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height;
+const derived = (doc: MapDocument, layerId: string) => doc.layers.some(l => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === layerId);
+const halo = (r: CellRect): CellRect => ({ x: r.x - 1, y: r.y - 1, width: r.width + 2, height: r.height + 2 });
+
+function validate(doc: MapDocument, stamp: Stamp, orientation: number): void {
+  assertOrientation(orientation);
+  if (orientation & FLIP_D && doc.map.tileWidth !== doc.map.tileHeight) throw new Error("quarter-turn orientation requires square map tiles");
+  if (!stamp.nineSlice) throw new Error("smart stamp requires nineSlice metadata");
+  const problem = stampNineSliceProblem(stamp, stamp.nineSlice);
+  if (problem) throw new Error(problem);
+  const slots = nineSliceLayout(stamp).slots;
+  for (const entry of stamp.nineSlice.tileLayers) {
+    const ts = doc.getTileset(entry.tilesetId);
+    if (!ts || ts.columns * ts.rows < slots || ts.tileWidth !== doc.map.tileWidth || ts.tileHeight !== doc.map.tileHeight) throw new Error(`missing or incompatible baked tileset ${entry.tilesetId}`);
+  }
+}
+
+function reader(doc: MapDocument, layerId: string | null): TerrainTileReader {
+  const layer = layerId === null ? undefined : doc.getLayer(layerId);
+  return { width: doc.map.width, height: doc.map.height, seed: doc.seed, read: (x, y) => {
+    const cell = layer?.getCell(x, y) ?? 0;
+    return { tile: cell === 0 ? null : doc.palette.get(cellPaletteIndex(cell)), flags: cellFlags(cell) };
+  } };
+}
+
+function differs(doc: MapDocument, layerId: string | null, write: SmartStampWrite): boolean {
+  const cell = layerId === null ? 0 : doc.getLayer(layerId)!.getCell(write.x, write.y);
+  if ("value" in write) return cell !== write.value;
+  if (!write.tile) return cell !== 0;
+  const old = doc.palette.get(cellPaletteIndex(cell));
+  return !old || old.tilesetId !== write.tile.tilesetId || old.tileId !== write.tile.tileId || cellFlags(cell) !== (write.flags ?? 0);
+}
+
+function finish(doc: MapDocument, options: SmartStampPlanOptions, layers: readonly SmartStampLayerPlan[]): SmartStampPlan {
+  const plan = Object.freeze({ revision: options.revision, windowed: options.window !== undefined, layers: Object.freeze(layers.map(l => Object.freeze({ ...l, writes: Object.freeze(l.writes.map(w => Object.freeze({ ...w, ...("tile" in w && w.tile ? { tile: Object.freeze({ ...w.tile }) } : {}) }))) }))) });
+  provenance.set(plan, doc);
+  return plan;
+}
+
+function roadProfile(doc: MapDocument, stamp: Stamp) {
+  const road = stamp.nineSlice?.road;
+  if (!road) throw new Error("stamp has no road profile");
+  const set = getTerrainSet(doc.getTileset(road.tilesetId), road.setId);
+  if (!set || set.kind !== "blob" || !BLOB47_MASKS.every(mask => set.tiles.some(t => t.terrainId === road.terrainId && t.mask === mask))) throw new Error("road requires a complete 47-mask baked terrain set");
+  return { road, set };
+}
+
+/**
+ * Plans Alan over every mapped tile/grid source layer. Empty source slots skip; hidden and locked targets skip.
+ * Canonical source phase uses the unclipped intended rectangle. Collision caps use solid > passable > zero;
+ * other raw-grid caps require equal values. Linked legacy terrain grids must first be migrated, since their
+ * derived writes cannot be represented as raw stamp cells. A matching road family repairs both boundary sides.
+ * Planning never allocates palette entries, layers or history, and window reads use the complete virtual area.
+ */
+export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRect, options: SmartStampPlanOptions): SmartStampPlan {
+  const orientation = options.orientation ?? 0;
+  validate(doc, stamp, orientation);
+  // Validate rectangle even if it is completely clipped or all targets are skipped.
+  sampleNineSlice(rect, { x: rect.x, y: rect.y }, stamp, orientation);
+  if (options.window) sampleNineSlice(options.window, { x: options.window.x, y: options.window.y }, stamp);
+  const mapping = options.mapping ?? stampLayerMapping(doc, stamp);
+  if (mapping.length !== stamp.layers.length || mapping.some((e, i) => e.clipLayerId !== stamp.layers[i]!.layerId) || new Set(mapping.filter(e => e.targetLayerId !== null).map(e => e.targetLayerId)).size !== mapping.filter(e => e.targetLayerId !== null).length) throw new Error("invalid stamp layer mapping");
+  const layers: SmartStampLayerPlan[] = [];
+  for (let i = 0; i < stamp.layers.length; i++) {
+    const source = stamp.layers[i]!, targetId = mapping[i]!.targetLayerId, target = targetId === null ? undefined : doc.getLayer(targetId);
+    if (targetId !== null && !target) throw new Error(`missing mapped layer ${targetId}`);
+    if (target && (source.grid ? !isGridLayer(target) || (source.role !== undefined && target.role !== source.role) : !isTileLayer(target))) throw new Error("incompatible mapped layer");
+    const role = source.role ?? (isGridLayer(target) ? target.role : "terrain");
+    const descriptor = { sourceLayerId: source.layerId, layerId: targetId, name: source.name, grid: !!source.grid, ...(source.grid ? { role } : {}) };
+    if (target?.locked || target?.visible === false || (targetId !== null && derived(doc, targetId))) { layers.push({ ...descriptor, writes: [] }); continue; }
+    if (isGridLayer(target) && target.role === "terrain" && target.targetLayerId !== null) throw new Error("smart stamp requires a raw grid; migrate the linked legacy terrain grid first");
+    const asset = stamp.nineSlice!.tileLayers.find(l => l.layerId === source.layerId);
+    const at = (x: number, y: number): SmartStampWrite | null => {
+      const sample = sampleNineSlice(rect, { x, y }, stamp, orientation);
+      if (!sample) return null;
+      const values = sample.sourceIndices.map(index => source.cells[index]!);
+      if (source.grid) {
+        let value = values[0]!;
+        if (role === "collision") {
+          if (values.some(v => v > COLLISION_PASSABLE)) throw new Error("invalid collision grid contributor");
+          value = values.includes(COLLISION_SOLID) ? COLLISION_SOLID : values.includes(COLLISION_PASSABLE) ? COLLISION_PASSABLE : 0;
+        }
+        else if (!values.every(v => v === value)) throw new Error("collapsed grid contributors must be equal");
+        return value === 0 ? null : { x, y, value };
+      }
+      return values.some(v => v !== 0) ? { x, y, tile: { tilesetId: asset!.tilesetId, tileId: sample.slot }, ...(orientation ? { flags: orientation } : {}) } : null;
+    };
+    const base = reader(doc, targetId);
+    const virtual: TerrainTileReader = { ...base, read: (x, y) => {
+      const w = at(x, y);
+      return w && "tile" in w ? { tile: w.tile, ...(w.flags ? { flags: w.flags } : {}) } : base.read(x, y);
+    } };
+    const writes = new Map<number, SmartStampWrite>(), window = options.window ? halo(options.window) : undefined;
+    const x0 = Math.max(0, rect.x, window?.x ?? 0), y0 = Math.max(0, rect.y, window?.y ?? 0);
+    const x1 = Math.min(doc.map.width, rect.x + rect.width, window ? window.x + window.width : Infinity), y1 = Math.min(doc.map.height, rect.y + rect.height, window ? window.y + window.height : Infinity);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const w = at(x, y); if (w) writes.set(y * doc.map.width + x, w); }
+    if (!source.grid && stamp.nineSlice!.road?.tilesetId === asset!.tilesetId) {
+      const { road, set } = roadProfile(doc, stamp);
+      const membership: TerrainMembership = { bounds: rect, contains: (x, y) => doc.inBounds(x, y) && contains(rect, x, y) && at(x, y) !== null };
+      const repairs = solveBlobFromReader(virtual, set, road, membership, {
+        orientation, boundary: "empty", ...(options.window ? { window: options.window } : {}),
+        outside: (x, y) => at(x, y) !== null ? road.terrainId : 0,
+      });
+      const oldRoad = (x: number, y: number) => {
+        if (!doc.inBounds(x, y) || at(x, y) !== null) return false;
+        const cell = base.read(x, y), info = terrainTileInfo(set, road.tilesetId, cell.tile, cell.flags ?? 0);
+        return info.kind === "blob" && info.terrainId === road.terrainId;
+      };
+      for (const w of repairs) {
+        // Preserve an isolated rectangle's authored cells/holes. Only contacts with existing road
+        // outside the painted membership may change the prescribed artwork, on either side.
+        let contact = oldRoad(w.x, w.y);
+        if (!contact && at(w.x, w.y) !== null) for (let dy = -1; dy <= 1 && !contact; dy++) for (let dx = -1; dx <= 1; dx++) if (oldRoad(w.x + dx, w.y + dy)) { contact = true; break; }
+        if (contact) writes.set(w.y * doc.map.width + w.x, w);
+      }
+    }
+    layers.push({ ...descriptor, writes: [...writes.values()].filter(w => differs(doc, targetId, w)).sort((a, b) => a.y - b.y || a.x - b.x) });
+  }
+  return finish(doc, options, layers);
+}
+
+/** Road options: erase overlays empty membership and repairs surviving neighbours with the same solver. */
+export interface SmartStampRoadOptions extends SmartStampPlanOptions { readonly erase?: boolean }
+
+/**
+ * Plans Yol on one explicitly selected visible/unlocked tile layer. No layer creation or grid writes.
+ * Membership is the complete gesture, including offscreen cells. Window output includes a one-cell halo.
+ */
+export function planSmartStampRoad(doc: MapDocument, stamp: Stamp, layerId: string, membership: TerrainMembership, options: SmartStampRoadOptions): SmartStampPlan {
+  const orientation = options.orientation ?? 0;
+  validate(doc, stamp, orientation);
+  const { road, set } = roadProfile(doc, stamp), layer = doc.getLayer(layerId);
+  if (!isTileLayer(layer)) throw new Error("road requires an existing tile layer");
+  const writes = layer.locked || !layer.visible || derived(doc, layerId) ? [] : solveBlobFromReader(reader(doc, layerId), set, options.erase ? { ...road, terrainId: set.background ?? 0 } : road, membership, { orientation, boundary: "empty", ...(options.window ? { window: options.window } : {}) });
+  return finish(doc, options, [{ sourceLayerId: stamp.nineSlice!.tileLayers.find(l => l.tilesetId === road.tilesetId)!.layerId, layerId, name: layer.name, grid: false, writes }]);
+}
+
+/**
+ * Executes a complete plan through existing store operations. Rejects stale, foreign and window plans.
+ * New ids are allocated once, inside the transaction; undo/rollback removes created layers as well as cell changes.
+ * Nesting joins the caller's gesture. On an execution failure the entire active gesture rolls back.
+ */
+export function applySmartStampPlan(store: MapStore, plan: SmartStampPlan): SmartStampApplyResult {
+  if (plan.windowed) throw new Error("cannot apply a window preview plan");
+  if (provenance.get(plan) !== store.document || plan.revision !== store.revision) throw new Error("stale or foreign smart stamp plan; recompute before applying");
+  // Preflight every reference before creating layers or writing cells.
+  for (const layer of plan.layers) {
+    for (const w of layer.writes) if ("tile" in w && w.tile) {
+      const ts = store.document.getTileset(w.tile.tilesetId);
+      if (!ts || !isValidTileId(ts, w.tile.tileId)) throw new Error("invalid planned tile reference");
+    }
+  }
+  const createdLayerIds: string[] = [], patches: LayerPatch[] = [], layerMapping = new Map<string, string>();
+  store.beginTransaction();
+  try {
+    let previous: string | null = null;
+    for (const layer of plan.layers) {
+      let target = layer.layerId;
+      if (target === null && layer.writes.length) {
+        target = store.dispatch({ type: "addLayer", layer: layer.grid ? { name: layer.name, type: "grid", role: layer.role ?? "terrain" } : { name: layer.name }, index: previous === null ? 0 : store.document.indexOfLayer(previous) + 1 });
+        createdLayerIds.push(target);
+      }
+      if (target === null) continue;
+      previous = target; layerMapping.set(layer.sourceLayerId, target);
+      if (layer.writes.length === 0) continue;
+      if (layer.grid) patches.push(store.dispatch({ type: "paintTerrain", layerId: target, cells: layer.writes.map(w => { if (!("value" in w)) throw new Error("invalid grid plan"); return w; }) }));
+      else patches.push(store.dispatch({ type: "paintCells", layerId: target, cells: layer.writes.map(w => {
+        if (!("tile" in w)) throw new Error("invalid tile plan");
+        return { x: w.x, y: w.y, cell: w.tile ? makeCell(store.getOrAddPaletteIndex(w.tile.tilesetId, w.tile.tileId), w.flags ?? 0) : 0 };
+      }) }));
+    }
+    store.commit(); return { patches, createdLayerIds, layerMapping };
+  } catch (error) { store.rollback(); throw error; }
+}
+
+/** Plans against the current revision and applies one Alan gesture (or joins an existing transaction). */
+export function applySmartStampArea(store: MapStore, stamp: Stamp, rect: CellRect, options: Omit<SmartStampPlanOptions, "revision" | "window"> = {}): SmartStampApplyResult {
+  return applySmartStampPlan(store, planSmartStampArea(store.document, stamp, rect, { ...options, revision: store.revision }));
+}
+
+/** Plans against the current revision and applies road membership (or joins an existing transaction). */
+export function applySmartStampRoad(store: MapStore, stamp: Stamp, layerId: string, membership: TerrainMembership, options: Omit<SmartStampRoadOptions, "revision" | "window"> = {}): SmartStampApplyResult {
+  return applySmartStampPlan(store, planSmartStampRoad(store.document, stamp, layerId, membership, { ...options, revision: store.revision }));
+}
+
+/**
+ * Reversal-invariant four-connected Bresenham path, both endpoints included. Canonically order endpoints
+ * lexicographically, insert the x-then-y bridge for each diagonal step, then reverse for reverse traversal.
+ */
+export function orthogonalBridge(a: CellPoint, b: CellPoint): CellPoint[] {
+  if (![a.x, a.y, b.x, b.y].every(Number.isInteger)) throw new TypeError("bridge coordinates must be integers");
+  const reverse = a.x > b.x || (a.x === b.x && a.y > b.y), start = reverse ? b : a, end = reverse ? a : b;
+  const line = lineCells(start.x, start.y, end.x, end.y), out: CellPoint[] = [];
+  for (const p of line) {
+    const prev = out[out.length - 1];
+    if (prev && prev.x !== p.x && prev.y !== p.y) out.push({ x: p.x, y: prev.y });
+    out.push(p);
+  }
+  return reverse ? out.reverse() : out;
+}

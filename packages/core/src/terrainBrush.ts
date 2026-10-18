@@ -31,7 +31,7 @@
  * (neighbours of the same terrain; neighbours **outside the map count as
  * the same terrain**, so the map edge draws no border — as in v0.3). If the
  * set has no tile for that mask, the closest mask (fewest differing bits)
- * is used.
+ * is used. `boundary: "empty"` opts into real map-edge caps; the default remains solid.
  *
  * ## Shared rules
  *
@@ -47,6 +47,8 @@
  */
 import { cellFlags, cellPaletteIndex, EMPTY_CELL, FLIP_D, FLIP_H, FLIP_V, type Cell } from "./cell";
 import type { MapDocument } from "./document";
+import type { CellPoint, CellRect } from "./geometry";
+import { assertOrientation, inverseOrientation } from "./nineSlice";
 import { isTileLayer, type TileLayer } from "./layer";
 import type { PaletteEntry } from "./palette";
 import { pickVariant, reduceBlobMask } from "./terrain";
@@ -72,10 +74,16 @@ export interface TerrainTileWrite {
   readonly x: number;
   readonly y: number;
   readonly tile: PaletteEntry | null;
+  /** H/V/D bits composed with the chosen tile; omitted for the default orientation. */
+  readonly flags?: number;
 }
 
 /** Solver options. */
 export interface TerrainSolveOptions {
+  /** D4 H/V/D flags applied to the complete tile recipe. Default 0. */
+  readonly orientation?: number;
+  /** Blob neighbours beyond map bounds: legacy default solid; smart roads use empty. */
+  readonly boundary?: "solid" | "empty";
   /** Corner sets: how many cells beyond the painted ones intermediate terrains may spread. Default 4. */
   readonly maxExpand?: number;
 }
@@ -166,12 +174,15 @@ const EMPTY_INFO: CellInfo = Object.freeze({ kind: "empty" });
 const FIXED_INFO: CellInfo = Object.freeze({ kind: "fixed" });
 
 function readCell(doc: MapDocument, set: TerrainSet, tilesetId: string, cell: Cell): CellInfo {
-  if (cell === EMPTY_CELL) return EMPTY_INFO;
-  const entry = doc.palette.get(cellPaletteIndex(cell));
+  return terrainTileInfo(set, tilesetId, cell === EMPTY_CELL ? null : doc.palette.get(cellPaletteIndex(cell)) ?? undefined, cellFlags(cell));
+}
+
+/** Reads a resolved tile without a document palette; shared by virtual previews and the document solver. */
+export function terrainTileInfo(set: TerrainSet, tilesetId: string, entry: PaletteEntry | null | undefined, flags = 0): CellInfo {
+  if (entry === null) return EMPTY_INFO;
   if (!entry || entry.tilesetId !== tilesetId) return FIXED_INFO;
   const tag = terrainTagOf(set, entry.tileId);
   if (!tag) return FIXED_INFO;
-  const flags = cellFlags(cell);
   const h = (flags & FLIP_H) !== 0;
   const v = (flags & FLIP_V) !== 0;
   const d = (flags & FLIP_D) !== 0;
@@ -236,7 +247,8 @@ export function terrainPaint(
   options: TerrainSolveOptions = {},
 ): TerrainTileWrite[] {
   const { layer, set } = resolve(doc, layerId, brush, "terrainPaint");
-  const solver = new Solver(doc, layer, set, brush.tilesetId);
+  if ((options.orientation ?? 0) & FLIP_D && doc.map.tileWidth !== doc.map.tileHeight) throw new Error("quarter-turn terrain orientation requires square map tiles");
+  const solver = new Solver(doc, layer, set, brush.tilesetId, options);
   const painted = solver.painted(cells);
   if (painted.length === 0) return [];
   return set.kind === "corner"
@@ -362,8 +374,11 @@ class Solver {
   readonly #width: number;
   readonly #height: number;
   readonly #info = new Map<number, CellInfo>();
+  readonly #options: TerrainSolveOptions;
 
-  constructor(doc: MapDocument, layer: TileLayer, set: TerrainSet, tilesetId: string) {
+  constructor(doc: MapDocument, layer: TileLayer, set: TerrainSet, tilesetId: string, options: TerrainSolveOptions) {
+    assertOrientation(options.orientation ?? 0);
+    this.#options = options;
     this.#doc = doc;
     this.#layer = layer;
     this.#set = set;
@@ -393,7 +408,7 @@ class Solver {
     const x = i % this.#width;
     const y = (i - x) / this.#width;
     if (!tileIds || tileIds.length === 0) return { x, y, tile: null };
-    return { x, y, tile: { tilesetId: this.#tilesetId, tileId: tileIds[pickVariant(tileIds.length, this.#doc.seed, x, y)]! } };
+    return { x, y, tile: { tilesetId: this.#tilesetId, tileId: tileIds[pickVariant(tileIds.length, this.#doc.seed, x, y)]! }, ...(this.#options.orientation ? { flags: this.#options.orientation } : {}) };
   }
 
   // -------------------------------------------------------------- corner
@@ -402,7 +417,9 @@ class Solver {
     const W = this.#width;
     const H = this.#height;
     const VW = W + 1;
-    const index = setIndex(this.#set);
+    const orientation = this.#options.orientation ?? 0;
+    const h = !!(orientation & FLIP_H), v = !!(orientation & FLIP_V), d = !!(orientation & FLIP_D);
+    const index = setIndex(orientation ? { ...this.#set, tiles: this.#set.tiles.map(t => t.corners ? { ...t, corners: flipCorners(t.corners, h, v, d) } : t) } : this.#set);
     const { dist, n } = index;
     const hard = new Map<number, number>();
     const paintedSet = new Set(painted);
@@ -528,75 +545,14 @@ class Solver {
   // -------------------------------------------------------------- blob
 
   solveBlob(painted: readonly number[], terrain: number): TerrainTileWrite[] {
-    const W = this.#width;
-    const H = this.#height;
-    const index = setIndex(this.#set);
-    const paintedSet = new Set(painted);
-    /** Membership: terrain id, 0 = empty, -1 = fixed (something else). */
-    const member = (i: number): number => {
-      if (paintedSet.has(i)) return terrain;
-      const info = this.#cellInfo(i);
-      return info.kind === "blob" ? info.terrainId : info.kind === "empty" ? 0 : -1;
-    };
-    const affected = new Set<number>();
-    for (const i of painted) {
-      const x = i % W;
-      const y = (i - x) / W;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && ny >= 0 && nx < W && ny < H) affected.add(ny * W + nx);
-        }
-      }
-    }
-    // Bit order N, NE, E, SE, S, SW, W, NW (cr31).
-    const offsets: readonly (readonly [number, number])[] = [
-      [0, -1],
-      [1, -1],
-      [1, 0],
-      [1, 1],
-      [0, 1],
-      [-1, 1],
-      [-1, 0],
-      [-1, -1],
-    ];
-    const writes: TerrainTileWrite[] = [];
-    for (const i of [...affected].sort((a, b) => a - b)) {
-      const isPainted = paintedSet.has(i);
-      const info = this.#cellInfo(i);
-      const m = member(i);
-      if (!isPainted && info.kind !== "blob") continue; // empty / manual neighbours stay
-      if (m <= 0) {
-        if (info.kind !== "empty") writes.push(this.#write(i, null));
-        continue;
-      }
-      const x = i % W;
-      const y = (i - x) / W;
-      let raw = 0;
-      offsets.forEach(([dx, dy], bit) => {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H || member(ny * W + nx) === m) raw |= 1 << bit;
-      });
-      const mask = reduceBlobMask(raw);
-      if (info.kind === "blob" && info.terrainId === m && info.mask === mask) continue;
-      const byMask = index.blob.get(m);
-      if (!byMask || byMask.size === 0) continue; // the terrain has no tiles at all
-      let tileIds = byMask.get(mask);
-      if (!tileIds) {
-        let bestDiff = Infinity;
-        for (const [candidate, ids] of [...byMask].sort((a, b) => a[0] - b[0])) {
-          const diff = popcount(candidate ^ mask);
-          if (diff < bestDiff) {
-            bestDiff = diff;
-            tileIds = ids;
-          }
-        }
-      }
-      writes.push(this.#write(i, tileIds!));
-    }
-    return writes;
+    const points = painted.map(i => ({ x: i % this.#width, y: Math.floor(i / this.#width) }));
+    return solveBlobFromReader({
+      width: this.#width, height: this.#height, seed: this.#doc.seed,
+      read: (x, y) => {
+        const cell = this.#layer.getCell(x, y);
+        return { tile: cell === 0 ? null : this.#doc.palette.get(cellPaletteIndex(cell)), flags: cellFlags(cell) };
+      },
+    }, this.#set, { tilesetId: this.#tilesetId, setId: this.#set.id, terrainId: terrain }, terrainMembership(points), this.#options);
   }
 }
 
@@ -604,4 +560,109 @@ function popcount(v: number): number {
   let c = 0;
   for (let x = v >>> 0; x !== 0; x &= x - 1) c++;
   return c;
+}
+
+
+/** Palette-independent tile source for a blob solve, including virtual area/road preview cells. */
+export interface TerrainTileReader {
+  readonly width: number;
+  readonly height: number;
+  readonly seed: number;
+  readonly read: (x: number, y: number) => { readonly tile: PaletteEntry | null | undefined; readonly flags?: number };
+}
+
+/** Full virtual paint/erase membership. Bounds are half-open; contains must be pure and independent of a preview window. */
+export interface TerrainMembership {
+  readonly bounds: CellRect;
+  readonly contains: (x: number, y: number) => boolean;
+  /** Optional exact members, to avoid scanning a sparse stroke's bounding rectangle. */
+  readonly cells?: readonly CellPoint[];
+}
+
+/** Immutable, deduplicated integer stroke membership. Reordering inputs has no effect. */
+export function terrainMembership(cells: readonly CellPoint[]): TerrainMembership {
+  const seen = new Map<string, CellPoint>();
+  for (const p of cells) {
+    if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) throw new TypeError("membership coordinates must be integers");
+    seen.set(`${p.x},${p.y}`, Object.freeze({ x: p.x, y: p.y }));
+  }
+  const points = Object.freeze([...seen.values()].sort((a, b) => a.y - b.y || a.x - b.x));
+  let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const p of points) { x = Math.min(x, p.x); y = Math.min(y, p.y); right = Math.max(right, p.x); bottom = Math.max(bottom, p.y); }
+  return { bounds: points.length ? { x, y, width: right - x + 1, height: bottom - y + 1 } : { x: 0, y: 0, width: 0, height: 0 }, cells: points, contains: (cx, cy) => seen.has(`${cx},${cy}`) };
+}
+
+/** Blob preview options. Returned writes are restricted to window plus a one-cell halo; reads use complete membership. */
+export interface TerrainBlobSolveOptions extends TerrainSolveOptions {
+  readonly window?: CellRect;
+  /** Optional virtual membership beyond map bounds (e.g. an unclipped area). Overrides boundary only there. */
+  readonly outside?: (x: number, y: number) => number;
+}
+
+/**
+ * The single blob topology implementation. Reads current tiles through a pure reader and overlays full membership.
+ * Only members and their one-cell neighbours can change; manual neighbours stay fixed, fitting cells retain exact flags.
+ * Orientation looks up candidates in inverse mask space and emits oriented flags. Legacy nearest-mask fallback is retained;
+ * a completed nine-slice bank has every mask and never uses it.
+ */
+export function solveBlobFromReader(reader: TerrainTileReader, set: TerrainSet, brush: TerrainBrush, membership: TerrainMembership, options: TerrainBlobSolveOptions = {}): TerrainTileWrite[] {
+  if (set.kind !== "blob") throw new TypeError("reader blob solve requires a blob terrain set");
+  const orientation = options.orientation ?? 0;
+  assertOrientation(orientation);
+  const inverse = inverseOrientation(orientation), index = setIndex(set), { width: W, height: H } = reader;
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+  const cache = new Map<number, CellInfo>();
+  const infoAt = (x: number, y: number) => {
+    const i = y * W + x;
+    let info = cache.get(i);
+    if (!info) { const c = reader.read(x, y); info = terrainTileInfo(set, brush.tilesetId, c.tile, c.flags ?? 0); cache.set(i, info); }
+    return info;
+  };
+  const member = (x: number, y: number) => {
+    if (membership.contains(x, y)) return brush.terrainId;
+    const c = infoAt(x, y);
+    return c.kind === "blob" ? c.terrainId : c.kind === "empty" ? 0 : -1;
+  };
+  const affected = new Set<number>(), b = membership.bounds, window = options.window;
+  const add = (x: number, y: number) => {
+    if (inside(x, y) && (!window || (x >= window.x - 1 && y >= window.y - 1 && x < window.x + window.width + 1 && y < window.y + window.height + 1))) affected.add(y * W + x);
+  };
+  if (membership.cells && !window) {
+    for (const p of membership.cells) if (inside(p.x, p.y)) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) add(p.x + dx, p.y + dy);
+  } else if (b.width > 0 && b.height > 0) {
+    const x0 = Math.max(0, b.x - 1, window ? window.x - 1 : 0), y0 = Math.max(0, b.y - 1, window ? window.y - 1 : 0);
+    const x1 = Math.min(W, b.x + b.width + 1, window ? window.x + window.width + 1 : W), y1 = Math.min(H, b.y + b.height + 1, window ? window.y + window.height + 1 : H);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      let touched = false;
+      for (let dy = -1; dy <= 1 && !touched; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && membership.contains(x + dx, y + dy)) { touched = true; break; }
+      if (touched) add(x, y);
+    }
+  }
+  const offsets = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]] as const;
+  const writes: TerrainTileWrite[] = [];
+  for (const i of [...affected].sort((a, b) => a - b)) {
+    const x = i % W, y = Math.floor(i / W), info = infoAt(x, y), m = member(x, y);
+    if (!membership.contains(x, y) && info.kind !== "blob") continue;
+    if (m <= 0) { if (info.kind !== "empty") writes.push({ x, y, tile: null }); continue; }
+    let raw = 0;
+    offsets.forEach(([dx, dy], bit) => {
+      const nx = x + dx, ny = y + dy;
+      if (inside(nx, ny) ? member(nx, ny) === m : options.outside ? options.outside(nx, ny) === m : options.boundary !== "empty") raw |= 1 << bit;
+    });
+    const mask = reduceBlobMask(raw);
+    if (info.kind === "blob" && info.terrainId === m && info.mask === mask) continue;
+    const lookup = flipBlobMask(mask, !!(inverse & FLIP_H), !!(inverse & FLIP_V), !!(inverse & FLIP_D));
+    const byMask = index.blob.get(m);
+    if (!byMask || byMask.size === 0) continue;
+    let ids = byMask.get(lookup);
+    if (!ids) {
+      let best = Infinity;
+      for (const [candidate, choices] of [...byMask].sort((a, b) => a[0] - b[0])) {
+        const diff = popcount(candidate ^ lookup);
+        if (diff < best) { best = diff; ids = choices; }
+      }
+    }
+    writes.push({ x, y, tile: { tilesetId: brush.tilesetId, tileId: ids![pickVariant(ids!.length, reader.seed, x, y)]! }, ...(orientation ? { flags: orientation } : {}) });
+  }
+  return writes;
 }

@@ -1,0 +1,20 @@
+{
+  "format": "smap-clip",
+  "documentFormatVersion": 1,
+  "width": 3,
+  "height": 3,
+  "palette": [
+    {
+      "index": 1,
+      "tilesetId": "old",
+      "tileId": 0
+    }
+  ],
+  "layers": [
+    {
+      "layerId": "tiles",
+      "name": "Old",
+      "data": "AQAA4AEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAA"
+    }
+  ]
+}

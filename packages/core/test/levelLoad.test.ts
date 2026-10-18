@@ -32,7 +32,7 @@ function visibleTiles(doc: MapDocument, layerId: string): string[] {
 /** The level JSON without its terrain grid layers (what a migrated level holds). */
 function withoutTerrainGrids(text: string): unknown {
   const json = JSON.parse(text);
-  json.documentFormatVersion = 2;
+  json.documentFormatVersion = 3;
   json.layers = json.layers.filter((l: { role?: string }) => l.role !== "terrain");
   return json;
 }
