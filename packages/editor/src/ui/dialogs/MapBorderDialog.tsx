@@ -31,6 +31,7 @@ function BorderForm({ draft }: { draft: BorderDraft }) {
   useEditorStore(s => s.stamp);
   useEditorStore(s => s.randomSet);
   useSmartStampSession(s => s.orientation);
+  useSmartStampSession(s => s.version);
   const subscribe = useCallback((notify: () => void) => draft.store.subscribe(notify), [draft.store]);
   useSyncExternalStore(subscribe, () => draft.store.revision);
   const plan = borderPlan(draft);

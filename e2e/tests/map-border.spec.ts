@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { mapCells, openToolsProject, pickDockTile, type ToolsHook } from "../support/toolFeatures";
 import { makeRoadStamp, acceptRoadStamp } from "../support/smartStamp";
+import { openRoadSheet, selectRoad, saveRoad, dragRoad, roadCells } from "../support/smartStampDock";
 
 async function openBorder(page: Page, palette = false) {
   if (palette) {
@@ -118,4 +119,110 @@ test("map border: smart road corners and gap ends match the ghost, with orientat
   expect(actual[0]![4]!.cell).toBe(0); expect(actual[0]![5]!.cell).toBe(0);
   await page.locator("canvas[aria-label='map canvas']").first().focus(); await page.keyboard.press("Control+z");
   expect((await mapCells(page, 12, 10)).flat().every(p => p.cell === 0)).toBe(true);
+});
+
+// These flows deliberately open Kenar before any gesture/save publishes the automatic atlas.
+
+async function waitPrepared(page: Page) {
+  await expect.poll(() => page.evaluate(async () => {
+    const { activeSmartStamp } = await import(/* @vite-ignore */ String("/src/ui/stamps/smartStampSession.ts"));
+    return !!activeSmartStamp();
+  })).toBe(true);
+}
+for (const saved of [false, true]) test(`map border: fresh ${saved ? "saved stamp" : "direct selection"} stages its ghost and applies atlas plus cells in one undo`, async ({ page }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await openRoadSheet(page); await resize(page, 12, 10); await selectRoad(page); await waitPrepared(page);
+  if (saved) await saveRoad(page);
+  const before = await mapCells(page, 12, 10);
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  let dialog = await openBorder(page);
+  await expect(dialog).toBeVisible();
+  await expect.poll(async () => (await preview(page)).length).toBe(40);
+  const planned = await preview(page);
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  expect(await mapCells(page, 12, 10)).toEqual(before);
+  await dialog.getByRole("button", { name: "Vazgeç", exact: true }).click();
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  expect(await mapCells(page, 12, 10)).toEqual(before);
+  dialog = await openBorder(page);
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const after = await mapCells(page, 12, 10);
+  for (const p of planned) {
+    expect(after[p.y]![p.x]!.tileId).toBe(p.tile!.tileId);
+    expect((after[p.y]![p.x]!.cell & 0xe0000000) >>> 0).toBe((p.flags ?? 0) >>> 0);
+  }
+  expect((await roadCells(page)).generated).toHaveLength(1);
+  expect(await page.evaluate(() => (window as unknown as { __smap: ToolsHook }).__smap.store.undoDepth)).toBe(1);
+  await page.locator("canvas[aria-label='map canvas']").first().focus(); await page.keyboard.press("Control+z");
+  expect(await mapCells(page, 12, 10)).toEqual(before);
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  await page.keyboard.press("Control+y");
+  expect(await mapCells(page, 12, 10)).toEqual(after);
+  expect((await roadCells(page)).generated).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test("map border: pending preparation disables Apply then updates the open dialog and ghost", async ({ page }) => {
+  await openRoadSheet(page); await resize(page, 12, 10);
+  // Hold real PNG encoding to expose the preparation state deterministically.
+  await page.evaluate(() => {
+    const original = HTMLCanvasElement.prototype.toBlob;
+    const hold = new Promise<void>(resolve => { (window as unknown as { releaseBorderBake(): void }).releaseBorderBake = resolve; });
+    HTMLCanvasElement.prototype.toBlob = function (...args) { void hold.then(() => original.apply(this, args)); };
+  });
+  await selectRoad(page);
+  const dialog = await openBorder(page);
+  await expect(dialog.locator("[data-border-status]")).toContainText("hazırlanıyor");
+  await expect(dialog.getByRole("button", { name: "Uygula", exact: true })).toBeDisabled();
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  await page.evaluate(() => (window as unknown as { releaseBorderBake(): void }).releaseBorderBake());
+  await expect(dialog.getByRole("button", { name: "Uygula", exact: true })).toBeEnabled();
+  await expect.poll(async () => (await preview(page)).length).toBe(40);
+  expect((await roadCells(page)).generated).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  expect((await roadCells(page)).generated).toHaveLength(1);
+});
+
+test("map border: adjoining road repairs are in the ghost, commit and single undo", async ({ page }) => {
+  await openRoadSheet(page); await resize(page, 12, 10); await selectRoad(page); await waitPrepared(page);
+  await dragRoad(page, [[5, 1], [8, 1]]);
+  const before = await mapCells(page, 12, 10);
+  const dialog = await openBorder(page);
+  await expect.poll(async () => (await preview(page)).filter(p => p.y === 1 && p.x >= 5 && p.x <= 8).length).toBe(4);
+  const planned = await preview(page);
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  const after = await mapCells(page, 12, 10);
+  for (const p of planned) {
+    expect(after[p.y]![p.x]!.tileId).toBe(p.tile!.tileId);
+    expect((after[p.y]![p.x]!.cell & 0xe0000000) >>> 0).toBe((p.flags ?? 0) >>> 0);
+  }
+  for (const x of [5, 6, 7, 8]) expect(after[1]![x]!.cell).not.toBe(before[1]![x]!.cell);
+  await page.locator("canvas[aria-label='map canvas']").first().focus(); await page.keyboard.press("Control+z");
+  expect(await mapCells(page, 12, 10)).toEqual(before);
+  await page.keyboard.press("Control+y"); expect(await mapCells(page, 12, 10)).toEqual(after);
+});
+for (const [key, flags, pattern] of [
+  ["x", 0x80000000, [[16, 15, 14], [28, 27, 26], [40, 39, 38]]],
+  ["y", 0x40000000, [[38, 39, 40], [26, 27, 28], [14, 15, 16]]],
+  ["z", 0xa0000000, [[38, 26, 14], [39, 27, 15], [40, 28, 16]]],
+  ["Shift+z", 0x60000000, [[16, 28, 40], [15, 27, 39], [14, 26, 38]]],
+] as const) test(`map border: Akıllı off respects ${key} in the ghost and applied pattern`, async ({ page }) => {
+  await openRoadSheet(page); await resize(page, 12, 10); await selectRoad(page); await waitPrepared(page);
+  await page.locator("[data-smart-brush]").click();
+  await page.locator("canvas[aria-label='map canvas']").first().focus(); await page.keyboard.press(key);
+  const dialog = await openBorder(page);
+  await expect.poll(async () => (await preview(page)).length).toBe(40);
+  const planned = await preview(page);
+  for (const p of planned) {
+    expect(p.tile!.tileId).toBe(pattern[p.y % 3]![p.x % 3]);
+    expect(p.flags).toBe(flags);
+  }
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  const cells = await mapCells(page, 12, 10);
+  for (const p of planned) {
+    expect(cells[p.y]![p.x]!.tileId).toBe(pattern[p.y % 3]![p.x % 3]);
+    expect((cells[p.y]![p.x]!.cell & 0xe0000000) >>> 0).toBe(flags);
+  }
+  expect((await roadCells(page)).generated).toHaveLength(0);
 });
