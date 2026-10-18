@@ -83,7 +83,7 @@ export function parseTileSize(value: TileSizeValue): { width: number; height: nu
 export function TileSizePicker({ value, onChange, showErrors }: { value: TileSizeValue; onChange(value: TileSizeValue): void; showErrors: boolean }) {
   const parsed = parseTileSize(value);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="relative flex flex-col gap-1.5">
       <ChipRow
         label={t("newProject.tileSize")}
         value={value.chip}
@@ -110,7 +110,7 @@ export function TileSizePicker({ value, onChange, showErrors }: { value: TileSiz
           <span className="text-sm text-muted">{t("newProject.pxUnit")}</span>
         </div>
       )}
-      <span className="min-h-4 text-sm text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}</span>
+      <span className="pointer-events-none absolute right-0 bottom-full mb-1.5 max-w-[70%] truncate text-sm leading-4 text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}</span>
     </div>
   );
 }
@@ -141,7 +141,7 @@ export function MapSizePicker({ value, onChange, showErrors }: { value: MapSizeV
     return { value: id as MapSizeValue["preset"], label: name, title: t("common.cells", { width: p.width, height: p.height }) };
   };
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="relative flex flex-col gap-1.5">
       <ChipRow
         label={t("newProject.mapSize")}
         value={value.preset}
@@ -169,7 +169,7 @@ export function MapSizePicker({ value, onChange, showErrors }: { value: MapSizeV
         />
         <span className="text-sm text-muted">{t("newProject.cellsUnit")}</span>
       </div>
-      <span className="min-h-4 text-sm text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX }) : null}</span>
+      <span className="pointer-events-none absolute right-0 bottom-full mb-1.5 max-w-[70%] truncate text-sm leading-4 text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX }) : null}</span>
     </div>
   );
 }

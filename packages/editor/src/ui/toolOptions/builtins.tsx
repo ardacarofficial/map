@@ -52,7 +52,7 @@ function TerrainPicker() {
         doc={doc}
         tilesetId={tilesetId}
         value={valid ? terrain : null}
-        triggerClass="flex h-full max-w-32 items-center gap-1.5 rounded-sm px-1 text-sm text-text outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+        triggerClass="flex h-full max-w-32 items-center gap-1.5 rounded-sm px-1 text-sm text-text outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-accent"
         inactiveLabel={active && valid ? undefined : t("toolOptions.terrainOff")}
         label={t("terrain.brush")}
         placeholder={t("toolOptions.pickTerrain")}

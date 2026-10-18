@@ -230,19 +230,21 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
       <DialogBody className="flex flex-col gap-3">
 
           <Section label={t("newProject.name")} htmlFor={nameId}>
-            <TextField size="md"
-              id={nameId}
-              value={name}
-              onChange={(e) => { setName(e.target.value); setTouched(true); }}
-              onBlur={() => setTouched(true)}
-              {...selectAll}
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              aria-invalid={touched && !nameOk ? true : undefined}
-              className={touched && !nameOk ? "[&>input]:border-danger" : ""}
-            />
-            <span className="min-h-4 text-sm text-danger" role="status">{touched && !nameOk ? t("newProject.errName") : null}</span>
+            <div className="relative">
+              <TextField size="md"
+                id={nameId}
+                value={name}
+                onChange={(e) => { setName(e.target.value); setTouched(true); }}
+                onBlur={() => setTouched(true)}
+                {...selectAll}
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                aria-invalid={touched && !nameOk ? true : undefined}
+                className={touched && !nameOk ? "[&>input]:border-danger" : ""}
+              />
+              <span className="pointer-events-none absolute right-0 bottom-full mb-1.5 max-w-[70%] truncate text-sm leading-4 text-danger" role="status">{touched && !nameOk ? t("newProject.errName") : null}</span>
+            </div>
           </Section>
 
           <Section label={t("newProject.location")}>

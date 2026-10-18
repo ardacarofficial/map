@@ -40,7 +40,7 @@ export function BrushSizeChip({ withShape = true, showLabel = true }: { withShap
           <Menu.Trigger
             aria-label={t("toolOptions.size")}
             data-size-chip
-            className={`flex h-full items-center gap-1 px-2 text-sm text-text outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent hover:bg-hover data-popup-open:bg-hover ${
+            className={`flex h-full items-center gap-1 px-2 text-sm text-text outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-accent hover:bg-hover data-popup-open:bg-hover ${
               expanded ? "border-x border-line" : "rounded-sm"
             }`}
           >
