@@ -1,7 +1,7 @@
 # Harita Tasarlayıcı — UI design spec (redesign 2026-10)
 
 This is the single source of truth for how the editor looks and behaves at the UI layer.
-Scope: **UI only**. `packages/core`, the file format, exporters and the Unity package do not change.
+Scope: **UI rules for every lane**. Core, file-format, exporter and Unity work is allowed under the v1.5 plan's data and migration rules.
 Nothing from CLAUDE.md "Yapılmayacaklar" comes back (no linked prefabs, blend modes, effects, workspaces, canvas rotation).
 
 Reference feel: Photoshop (tool rail + options bar), Aseprite (density, keyboard-first, pixel-exact cursor), Figma UI3 (property rows, calm chrome).
@@ -17,14 +17,14 @@ The canvas is the product; chrome recedes. Every pixel has a job.
 4. **One accent per view.** Accent fill = the single primary action of the current surface (dialog submit; "Unity'ye aktar" in the app bar). Selection uses a soft tint + 1 px accent-line. Active tool = accent icon on `active` fill.
 5. **Fixed sizes.** Only the sizes in §3 exist. No arbitrary `[..px]` classes except layout math that cannot be expressed with tokens.
 6. **Instant.** 0 ms on the painting path (tool switch, hover, brush preview). UI motion ≤ 120 ms; panels 150 ms. Respect `prefers-reduced-motion`.
-7. **Keyboard first.** Every tool has a key; tooltips show it. Focus rings are visible but never wrap huge containers (use an inset 1 px accent line for large focus targets). F6 / Shift+F6 cycle focus between canvas, dock, inspector, layers and library; Tab hides panels only while the canvas is focused.
+7. **Keyboard first.** Every tool has a key; tooltips show it. Focus rings are visible but never wrap huge containers (use an inset 1 px accent line for large focus targets). F6 cycles focus in physical zone order: canvas → left groups → right groups → bottom groups; Shift+F6 reverses the order; Tab hides panels only while the canvas is focused.
 8. **No slop.** No gradients, glass/blur, emoji, coloured category icons, pills (radius-full) except toggle switches and 6 px status dots, shadows on cards/rows/buttons, thick one-sided borders, centred text in panels, ALL-CAPS larger than 11 px, mixed icon strokes.
 
 ---
 
 ## 2. Color tokens (`src/theme/tokens.css`)
 
-Keep the token **names** the canvas reads (`--color-canvas`, `--color-line`, `--color-accent`, collision/terrain/entity colours) and keep them `#rrggbb`.
+Keep the token **names** the canvas reads (`--color-canvas`, `--color-line`, `--color-accent`, collision/entity colours) and keep them `#rrggbb`.
 
 | Token | Hex | Use |
 |---|---|---|
@@ -54,7 +54,7 @@ Keep the token **names** the canvas reads (`--color-canvas`, `--color-line`, `--
 | `map-bg` | `#151c23` | the map rectangle background (replaces hard-coded `0x1b1b1f` in canvas/colors.ts) |
 | `checker-a` / `checker-b` | `#182027` / `#1f2830` | transparency checker (tileset, thumbnails) |
 | danger / warning / success / info | `#f0707a` / `#e7b75f` / `#5fcf98` / `#5cb2ff` (+ `-soft` at 12% alpha) | validation, toasts, export checks |
-| map overlays | collision `#ff5468`, pass `#5cb2ff`, terrain `#c39bff`, spawn `#4ade80`, portal `#b47bff` | canvas only, never as UI chrome |
+| map overlays | collision `#ff5468`, pass `#5cb2ff`, spawn `#4ade80`, portal `#b47bff` | canvas only, never as UI chrome |
 
 Saved state is never green: "Kaydedildi" = `muted` text + check icon; unsaved = 6 px `warning` dot + text.
 
@@ -88,6 +88,14 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 | Options bar | 36 px |
 | Status bar | 24 px |
 | Tool rail | 40 px wide, buttons 32×32, icons 20 |
+| Left dock zone (default/min/max) | 260/220/400 px; `--dock-left-default` / `--dock-left-min` / `--dock-left-max` |
+| Right dock zone (default/min/max) | 296/260/420 px; `--dock-right-default` / `--dock-right-min` / `--dock-right-max` |
+| Bottom dock zone (default/min/max) | 68/64/480 px; `--dock-bottom-default` / `--dock-bottom-min` / `--dock-bottom-max`; preserve `--dock-canvas-min-height` (160 px) |
+| Collapsed dock rail/tab strip | 28 px, `--dock-collapsed`; hidden = 0 px |
+| Dock splitter hit area / line | 6/1 px, `--dock-splitter-hit` / `--dock-line` |
+| Panel drag threshold | 4 px (`--spacing`), with pointer capture |
+| Drop edge / insertion caret | 24/2 px, `--dock-drop-edge` / `--dock-caret` |
+| Recent swatches / content row | 32 px (`--spacing` ×8) / 40 px (`--spacing-recentstrip`); with the 28 px tab strip = `--dock-bottom-default` |
 | Icon button | `sm` 24×24 (icon 16) in panels/rows; `md` 28×28 (icon 16) in options bar/app bar |
 | Text button | 24 px high in panels (px 8), 28 px in dialogs/app bar (px 12) |
 | Input / select | 24 px in panels, 28 px in dialogs |
@@ -106,23 +114,22 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 ## 4. Layout (1440×900 reference; must work at 1366×768 and 1920×1080)
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐ 36 App bar (bg)
-│ ◆ Dosya Düzen Görünüm Harita Yardım │ Proje ▾ / [Ana harita ×][Zindan][+] │ ● Kaydedilmemiş  [Unity'ye aktar] │
-├──┬──────────────┬──────────────────────────────────────────┬───────────────┤
-│  │ Stamp | Proje│ ✎ Kalem  │ Boyut 1 ▾ │ 🎲 Rastgele │ … │ ▦ ⛶  │ Denetçi|Geçmiş│ 28 tabs
-│T │──────────────├──────────────────────────────────────────┤               │ 36 options bar (panel)
-│o │              │ruler                                     │  inspector    │
-│o │  library     │                                          │  (296)        │
-│l │  (260)       │               CANVAS                     ├───────────────┤
-│  │              │                                ┌──────┐  │ KATMANLAR  +  │
-│r │              │                                │ mini │  │  rows 28      │
-│a │              ├──────────────────────────────────────────┤               │
-│i │              │ Tileset | Son kullanılanlar   (dock)     │               │
-│l │              │ [overworld ▾] [Boya|Katı|Arazi] … zoom   │               │
-│40│              │ grid………………………………………………………………………………   │               │
-├──┴──────────────┴──────────────────────────────────────────┴───────────────┤ 24 Status bar
-│ X 12  Y 7 │ Tile 34 │ Katman: Zemin │ 64×48 │ 32 px          Harita|Dünya │ %100 ▾ │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dosya Düzen Görünüm Harita Yardım │ Proje / [Ana harita ×][+] │ Unity'ye aktar          │
+├────┬─────────────────────────────┬──────────────────────────────┬───────────────────────┤
+│    │ Tileset | Stamp'ler | Proje │ Kalem · Boyut · Akıllı …     │ Denetçi | Geçmiş      │
+│T   ├─────────────────────────────┼──────────────────────────────┤                       │
+│o   │ Tileset selector            │ ruler                        │ inspector             │
+│o   │ Tek/Tümü · Palet · zoom     │                              │ (296)                 │
+│l   │                             │           CANVAS             ├───────────────────────┤
+│    │ grid (260)                  │                    [minimap] │ KATMANLAR +           │
+│r   │                             ├──────────────────────────────┤ rows 28               │
+│a   │                             │ Son kullanılanlar            │                       │
+│i   │                             │ [tile] [stamp] …             │                       │
+│l 40│                             │ bottom (68)                  │                       │
+├────┴─────────────────────────────┴──────────────────────────────┴───────────────────────┤
+│ X 12 Y 7 │ Tile 34 │ Katman: Zemin │ 64×48 │ 32 px                 Harita|Dünya │ %100 ▾│
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.1 App bar (36, `bg`)
@@ -141,30 +148,37 @@ Button 32×32, radius 4, icon 20 `muted`; hover `hover` + `text`; active tool `a
 The panel switcher rail is removed. `data-rail` values move: `world` moves to the status-bar Dünya radio; `settings` stays on the rail-bottom button; `library`/`project` go on the library panel tabs (§4.4) and Ctrl+B still toggles the left panel.
 
 ### 4.3 Options bar (36, `panel`, bottom border `line`, spans canvas column only)
-- Left: active tool icon 16 + name (text-sm 500 `text`), 1 px divider, then **that tool's** options only (registry in `ui/toolOptions`): brush size chip "Boyut 1 ▾" (size/shape only when expanded), Rastgele toggle (dice icon + label; on = the multi-tile brush becomes a random set, off = back to the previous brush; disabled for a single tile with no saved sets) with saved-set picker when on, terrain set picker, flip/rotate icon buttons for brush/stamp (X, Y, Z), etc.
+- Left: active tool icon 16 + name (text-sm 500 `text`), 1 px divider, then **that tool's** options only (registry in `ui/toolOptions`): brush size chip "Boyut 1 ▾" (size/shape only when expanded), Rastgele toggle (dice icon + label; on = the multi-tile brush becomes a random set, off = back to the previous brush; disabled for a single tile with no saved sets) with saved-set picker when on, a single "Akıllı" switch (`data-smart-brush`) and "Alan | Yol" control (on an automatic smart source B/freehand/Shift-line = road, R = area; per-tool override resets on a new brush; F keeps pattern fill), flip/rotate icon buttons for brush/stamp (X, Y, Z), etc.
 - Right: view toggles that apply to all tools as `md` icon buttons with tooltips: Izgara (Ctrl+G), Çarpışma overlay, Cetvel. No undo/redo, no zoom, no search here (zoom lives in the status bar; palette is Ctrl+K and the Yardım menu).
 - When narrow, right-side toggles collapse into `⋯`.
 
-### 4.4 Left panel — Library (default 260, min 220, max 400, resizable, Ctrl+B)
-- Tab strip (28): **Stamp'ler | Proje**. The "Tileset'ler" tab is removed: tilesets live in the dock only (§4.6). (Tileset management — groups, search, remove, add — moves into the dock's tileset switcher and its "Tümü" view.)
+### 4.4 Three zones and panels
+- Three dock zones surround the canvas: left, right and bottom. Default left tabs: **Tileset | Stamp'ler | Proje**, Tileset active; the Entity palette appears in its own tab when relevant. Default right: **Denetçi | Geçmiş** above **Katmanlar**, split 60%/40%. Default bottom: **Son kullanılanlar** only. Each panel has one visible home.
+- Every panel can move to any zone. Drag a tab to reorder it or move it between zones; drop on a group body to add a tab, or on a zone edge to create a split group. Left/right groups stack vertically; bottom groups sit horizontally. No recursive split tree or floating windows. Dropping outside the window or in the canvas centre cancels.
+- Tab context menu: **Taşı → Sol / Sağ / Alt**, **Öne taşı**, **Arkaya taşı**, **Bölümü ayır**, **Sekme olarak birleştir**, **Gizle**. The same actions are available by keyboard and command palette; Shift+F10 / Ctrl+F10 or the context-menu key opens the menu. Tab arrow navigation stays intact. Selection, search and scroll survive a move; reveal commands open the panel at its current or remembered home.
+
+### 4.5 Size and visibility
+- Each zone resizes from its outer edge and remembers its expanded size; dimensions and limits are the §3 `--dock-*` tokens. Viewport fitting never overwrites saved sizes. Group splitters adjust proportions within a zone.
+- Header chevron or outer-splitter double-click toggles expanded/collapsed. Collapsed left/right zones are 28 px tab rails; collapsed bottom is a 28 px tab strip. Hidden zones take 0 px; the Görünüm menu restores them. **Ctrl+B** toggles left, **Ctrl+Alt+B** right, **Ctrl+Shift+B** bottom; hidden/collapsed opens, expanded collapses.
+- On an outer splitter: arrows resize by 16 px, Shift+arrows by 48 px; Enter toggles collapse, Home resets size. Esc/pointercancel rolls back a resize. A tab drag commits only on a valid drop; Esc/cancel leaves the source in place.
+- With canvas focus, Tab temporarily hides all three zones, the tool rail and minimap; Tab again restores their previous states. Text fields, menus and dialogs retain normal Tab navigation.
+- Layout v2 persists in desktop `settings.json` (`layout`) and the `smap.layout.v2` localStorage cache, with legacy migration. Startup priority: valid settings layout → local v2 → legacy → defaults. **Düzeni sıfırla** restores panel homes/order/groups, sizes, visibility, active tabs and rulers, and clears temporary Tab hiding.
+
+### 4.6 Dock appearance and content
+- Tab strip 28 px, `tab-row`; active = `title` text + 2 px `accent` underline, inactive = `muted`. Splitter = `--dock-line` (1 px) `line` with `--dock-splitter-hit` (6 px) hit area; hover `accent-line`, keyboard focus `accent`.
+- Drop target = `accent-soft` fill + `--dock-line` `accent-line` border; tab insertion = `--dock-caret` (2 px) `accent` line. Empty/hidden zone targets appear only during tab drag. No extra accent colour, card shadows or floating windows.
+- Tileset management, search, groups, Tek/Tümü, Palet and zoom stay in the panel header; painting selection comes directly from its grid. Content fits and scrolls in whichever zone hosts it.
+- Tileset header row 32 (no side column): tileset switcher (name ▾, 24 high, max 200, tooltip with full name + size; menu lists all tilesets grouped, search field at top, "Tileset ekle…", "Tümü" view entry, per-tileset ⋯ actions: Ayarlar, Görseli değiştir, Gruba taşı, Kaldır) · 1 px divider · Tek/Tümü view toggle (labelled icon buttons) · spacer · "+ Palet" text button · zoom field (%).
+- Grid uses the full panel width. Tile hover = 1 px white @20% + dark keyline; selection = 1 px accent + dark keyline + `accent-soft` 30% fill.
+- Son kullanılanlar: one row of 32 px swatches with labels in tooltips.
 - Stamp'ler: search field (24) + filter row (category chips radius 4, 24 high; favourites star toggle monochrome, accent when on) + grid/list toggle + card size slider in a compact header; cards: thumbnail on checker, name text-sm, meta `faint` text-xs. Selected card = `accent-soft` + 1 px `accent-line`. No banner; "Seçimi stamp olarak kaydet" lives in the inspector region section and the canvas context menu.
 - Proje: tree (rows 24): Haritalar (levels, double-click opens, F2 rename), Stamp'ler count. Level row actions on hover.
-
-### 4.5 Right column (default 296, min 260, max 420, Ctrl+Alt+B)
-- Top: tabs **Denetçi | Geçmiş** (28).
 - Inspector = Figma-style property sections. Section = header row 28 (`text-xs` uppercase `muted`) + property rows 28: label column 72 px (`muted` text-sm) + value. Facts are plain text (`text`, numbers tabular, right part of the row). Editable numbers are 24 px fields with label scrubbing (drag on the label: 1 unit / 4 px, Shift ×10) if it can be done without core changes; arrows ±1, Shift ±10.
 - Inspector header: 16 px icon + title text-md 600 `title` + optional subtitle `faint`; no 40×40 icon tile.
-- Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y coordinates and horizontal/vertical size glyphs) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); terrain → ARAZİ; collision layer → solid/passable; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
+- Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y coordinates and horizontal/vertical size glyphs) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); manual Collision layer → "Engel" / "Geçilebilir"; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
 - No tool selector in the inspector (tool lives on the rail only).
-- Bottom: **Katmanlar** section below a splitter (fills space below the inspector, min 5 rows). Inspector fits its content up to 60% of the column; a remembered manual splitter height takes precedence. Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted` for non-tile layers only (fixed column keeps names aligned), name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
+- **Katmanlar:** Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted` for non-tile layers only (fixed column keeps names aligned), name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
 - Geçmiş: rows 24, newest at bottom, current row `accent-soft`, future rows `faint`. Labels are verbs ("Katman ekle", "Boya 12 hücre").
-
-### 4.6 Bottom dock (spans canvas column; default height fits content: min(8 tile rows at current zoom + header, 30% of window), min 96, collapsible to its tab strip; remembered)
-- Tab strip 28: **Tileset | Son kullanılanlar**, right side: collapse chevron.
-- Tileset tab header row 32 (no side column): tileset switcher (name ▾, 24 high, max 200, tooltip with full name + size; menu lists all tilesets grouped, search field at top, "Tileset ekle…", "Tümü" view entry, per-tileset ⋯ actions: Ayarlar, Görseli değiştir, Gruba taşı, Kaldır) · 1 px divider · **mode segmented control "Boya | Katı | Arazi"** (radiogroup "Tileset modu", 24 high) · Tek/Tümü view toggle (labelled icon buttons) · spacer · "+ Palet" text button · zoom field (%).
-- In Katı/Arazi mode: the grid gets a 1 px mode-colour inset frame (collision red / terrain violet) and the 32 px dock header replaces the Tek/Tümü toggle and "+ Palet" with one short, truncated instruction (full text in a tooltip) + a 24 px secondary "Bitti" button. There is no separate mode strip. The inspector switches to the mode (terrain card already exists).
-- Grid uses the full dock width. Tile hover = 1 px white @20% + dark keyline; selection = 1 px accent + dark keyline + `accent-soft` 30% fill.
-- Recent tab: one row of 32 px swatches with labels in tooltips.
 
 ### 4.7 Status bar (24, `bg`, top border `line`, text-xs `muted`)
 Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile id, layer, map size, tile px. Right: Harita|Dünya segmented (20 high) and the **zoom field** (editable, "%100" Turkish format, ▾ presets: Sığdır Ctrl+0, %50, %100 Ctrl+1, %200, %400). This is the only zoom readout.
@@ -195,13 +209,13 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 
 ## 5. Icons
 - One `<Icon>` primitive (`ui/primitives/Icon.tsx`), Lucide geometry, stroke 1.5 px **absolute** (scale stroke by 24/size so it renders 1.5 px at every size), round caps/joins. Sizes 12/16/20 only. No `strokeWidth` overrides except 12 px check marks (2 px).
-- Glyphs: Seç `square-dashed`, El `hand`, Kalem `pencil`, Silgi `eraser`, Doldur `paint-bucket`, Dikdörtgen `square`, Damlalık `pipette`, Entity `box`, Stamp `stamp`, Rastgele `dices`, Arazi `mountain`, Katmanlar `layers`, göz `eye`/`eye-off`, kilit `lock`/`lock-open`, çevir `flip-horizontal-2`/`flip-vertical-2`, döndür `rotate-cw`/`rotate-ccw`, ızgara `grid-3x3`, geri al `undo-2`/`redo-2`, geçmiş `history`, ara `search`, ekle `plus`, sil `trash-2`, kopyala `copy`, kes `scissors`, yapıştır `clipboard-paste`, dışa aktar `upload`, tileset ekle `image-up`, ayarlar `settings-2`, dünya `map`, çarpışma `brick-wall`, başlangıç `flag`, portal `door-open`, kütüphane `library`, proje `folder-tree`, favori `star`, açılır `chevron-down`.
+- Glyphs: Seç `square-dashed`, El `hand`, Kalem `pencil`, Silgi `eraser`, Doldur `paint-bucket`, Dikdörtgen `square`, Damlalık `pipette`, Entity `box`, Stamp `stamp`, Rastgele `dices`, Katmanlar `layers`, göz `eye`/`eye-off`, kilit `lock`/`lock-open`, çevir `flip-horizontal-2`/`flip-vertical-2`, döndür `rotate-cw`/`rotate-ccw`, ızgara `grid-3x3`, geri al `undo-2`/`redo-2`, geçmiş `history`, ara `search`, ekle `plus`, sil `trash-2`, kopyala `copy`, kes `scissors`, yapıştır `clipboard-paste`, dışa aktar `upload`, tileset ekle `image-up`, ayarlar `settings-2`, dünya `map`, çarpışma `brick-wall`, başlangıç `flag`, portal `door-open`, kütüphane `library`, proje `folder-tree`, favori `star`, açılır `chevron-down`.
 
 ---
 
 ## 6. Hard constraints for every lane
-- Do not edit `packages/core`, exporters' output, file format, `canvas/` engine logic (only listed overlay/visual files), commands semantics or shortcut keys (`shortcuts/shortcuts.ts` may only gain entries if a spec item needs one — avoid).
-- Keep every `data-*` attribute and accessible role/name listed in `/tmp/claude-0/-home-user-map/71aa0adb-d0ed-56a0-9a7b-c70c93d2a345/scratchpad/redesign/audit.md` §3 on an element with the same meaning. If an element is removed by the spec (e.g. library Tileset tab), move its attribute to the new home with the same behaviour, or update the affected e2e test in `/home/user/map/e2e/tests` in the same change and say so.
+- These UI rules apply to every lane; core, format, exporter and Unity changes follow the v1.5 plan's data and migration rules. Keep edits within the lane's assigned ownership.
+- Keep every `data-*` attribute and accessible role/name listed in `/tmp/claude-0/-home-user-map/71aa0adb-d0ed-56a0-9a7b-c70c93d2a345/scratchpad/redesign/audit.md` §3 on an element with the same meaning. If an element is removed by the spec (e.g. a fixed panel host), move its attribute to the new home with the same behaviour, or update the affected e2e test in `/home/user/map/e2e/tests` in the same change and say so.
 - All visible text from `src/i18n/tr.ts` + `en.ts` (same keys in both; edit only the section of your area; add keys at the end of your section).
 - Tokens only; no hard-coded colours in TSX (canvas code reads tokens via `canvas/colors.ts`).
 - `pnpm typecheck`, `pnpm lint`, `pnpm test` must pass.

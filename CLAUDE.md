@@ -63,7 +63,7 @@ Kurulu: Node 22, pnpm 11, git. Rust kurulu değil; v0.5'te gerekecek. Klasör he
 
 ```text
 packages/
-├── core      harita verisi, işlemler, undo, kaydet/aç, autotile
+├── core      harita verisi, işlemler, undo, kaydet/aç, akıllı stamp
 ├── editor    tuval çizimi (PixiJS) + paneller (React), ayrı klasörlerde
 └── desktop   Tauri kabuğu
 ```
@@ -87,8 +87,9 @@ Bağımlılık yönü: `desktop → editor → core`.
 | Chunk adresi | `x >> 5` ve `x & 31` | JS'te `/` ve `%` eksi sayılarda yanlış sonuç verir |
 | Harita sınırı | Genişlik ve yükseklik var, sonradan büyütülebilir | Sonsuz tuval fill, dışa aktarma ve minimap'i "sınır nerede" sorusuyla uğraştırır |
 | Koordinat | Editörde y aşağı doğru | Unity y yukarı; çevirme yalnızca dışa aktarıcıda ve testle |
-| Katman türleri | Tile, Izgara (collision istisnaları için), Entity | Arazi artık ayrı katman değil (aşağıya bkz.) |
-| Autotile | Arazi, normal tile katmanında kullanılan bir fırçadır; asıl veri tile'ların kendisi, arazi bilgisi tileset tile'larındaki etiketlerdir (köşe/blob) | Ekim 2026 kararı: ayrı ızgara + türetilmiş katman çifti kullanıcıya görünmez katmanlar, elle tile karıştıramama ve araziden araziye geçiş olmaması getirdi. Tiled/Godot modeli seçildi; eski dosyalar görüntü değişmeden taşınır |
+| Katman türleri | Tile, Izgara (manuel Collision), Entity | Arazi katmanı/seti yoktur |
+| Autotile / akıllı stamp | Kullanıcıya dönük arazi seti ve tile etiketi yoktur; akıllı stamp açıkça seçilen kaynağın sınırlarını çözer ve sıradan tile hücreleri yazar | Ekim 2026 kararı, Arda: Katı/Arazi kaldırıldı; yol bağlantı çözücüsü smart-stamp modülündedir |
+| Collision | Yalnız manuel Collision ızgara katmanları; üstteki dolu karar kazanır | Tileset solid flag ve otomatik collision kaldırıldı (Ekim 2026, Arda) |
 | Varyant seçimi | `hash(seed, x, y)` | Sıralı rastgele sayı kullanılırsa undo ve yeniden açmada tile'lar değişir |
 | Undo | Fareye basıştan bırakışa tek işlem; değişen hücrelerin `{önce, sonra}` yaması | Geri alma ikisini yer değiştirir, ayrı "ters işlem" tutulmaz |
 | Sürüm numarası | Tek `documentFormatVersion` | |
@@ -111,21 +112,25 @@ benim-dunyam/
 ## Arayüz
 
 ```text
-┌──────────────────────────────────────────┐
-│ Araç çubuğu                              │
-├─────┬──────────────────────────┬─────────┤
-│  A  │                          │ Katman  │
-│  r  │                          │─────────│
-│  a  │          Tuval           │ Tileset │
-│  ç  │                          │─────────│
-│     │                          │ Özellik │
-├─────┴──────────────────────────┴─────────┤
-│ Durum çubuğu                             │
-└──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Uygulama çubuğu · menüler · proje / belge sekmeleri · dışa aktar                │
+├────┬─────────────────────────────┬───────────────────────┬──────────────────────┤
+│Araç│ Tileset | Stamp’ler | Proje │ Araç seçenekleri      │ Denetçi | Geçmiş     │
+│rayı├─────────────────────────────┼───────────────────────┼──────────────────────┤
+│    │ Tileset ızgarası            │                       │ Özellikler           │
+│    │                             │       Tuval           ├──────────────────────┤
+│    │                             │                       │ Katmanlar            │
+│    │                             ├───────────────────────┤                      │
+│    │                             │ Son kullanılanlar     │                      │
+├────┴─────────────────────────────┴───────────────────────┴──────────────────────┤
+│ Durum çubuğu                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Mavi-gri koyu tema (zemin `#11171c`, panel `#1b212a`, vurgu `#69c9ae`; konsept görsellerinden alındı), tek vurgu rengi, Inter + JetBrains Mono, 12–13 piksel yazı. Arda değiştirebilir.
-- Çizerken arayüz göze batmaz. `Tab` panelleri gizler, ama yalnızca tuval odaktayken.
+- Üç dock bölgesi vardır: Sol, Sağ, Alt. Tileset solda; alt bölgede varsayılan yalnız Son kullanılanlar bulunur. Stamp'ler, Proje, Denetçi, Geçmiş, Katmanlar ve gerektiğinde görünen Entity paleti bu bölgeler arasında sekmeleri sürükleyerek veya Taşı menüsüyle taşınır; sekmeler sıralanır ve bölümler halinde bölünebilir. Yüzen pencere yoktur.
+- Her bölge kenarından boyutlandırılır; başlık chevron'u, ayırıcıya çift tıklama ve kendi kısayolu ile açılır/daralır; Görünüm menüsünden tamamen gizlenebilir. Boyut ve yerleşim hatırlanır; Düzeni sıfırla varsayılanları getirir. Ctrl+B Sol, Ctrl+Alt+B Sağ, Ctrl+Shift+B Alt. Tab yalnız tuval odaktayken tüm bölgeleri, araç rayını ve minimap'i geçici gizler; tekrar basınca önceki düzeni getirir.
+- Dolu 3×3 tileset seçimi doğrudan akıllı fırçadır. 1 hücrelik kenar bantlı daha büyük n×m bloklar kenar ve merkez tekrarlarıyla köşe/kenar/dolgu yapısı doğrulanırsa otomatik algılanır. Kaydedilen stamp aynı akıllı kaynağı korur. B ve Shift çizgisi Yol, R Alan varsayılanıdır; Alan | Yol ile araç başına değiştirilir, yeni fırçada sıfırlanır. Akıllı davranış araç seçeneklerindeki tek Akıllı anahtarından kapatılır; F mevcut desen doldurmayı sürdürür.
 - Boş ekran gösterilmez; program karşılama ekranıyla açılır.
 - Kısayollar Tiled alışkanlığına uyar:
 
@@ -137,6 +142,9 @@ benim-dunyam/
 | Boşluk veya orta tuş | Kaydır |
 | Tekerlek | Zoom |
 | Ctrl+G | Izgarayı aç/kapa |
+| Ctrl+B / Ctrl+Alt+B / Ctrl+Shift+B | Sol / Sağ / Alt bölgeyi aç/daralt |
+| Tab | Yalnız tuval odaktayken bölgeleri, araç rayını ve minimap’i geçici gizle/geri getir |
+| F6 / Shift+F6 | Tuval → sol gruplar → sağ gruplar → alt gruplar; ters yönde dolaş |
 | Ctrl+K, Ctrl+Shift+P | Command palette |
 
 ## Sürümler
@@ -164,12 +172,12 @@ benim-dunyam/
 **Bitti:** rastgele işlem dizisi uygulanıp tümü geri alınınca harita başlangıçla birebir aynıdır (otomatik test).
 
 ### v0.3 — Arazi
-- Tileset'te tile'a "katı" işareti. Duvar çizilince collision kendiliğinden gelir; aynı şey iki kere çizilmez
-- Collision katmanı, istisnalar için
-- Autotile: tileset'te bir blok "bu arazi" diye işaretlenir, program standart şablona göre hangi tile'ın nereye gideceğini bilir. Kullanıcı kural yazmaz
-- İki şablon: 16-köşe ve 47-blob (hazır tileset'lerin çoğu blob düzeninde)
+- ~~Tileset'te tile'a "katı" işareti; otomatik collision~~ — **Kaldırıldı (Ekim 2026 kararı, Arda).**
+- Manuel Collision katmanı (korunur)
+- ~~Autotile: tileset'te bir blok "bu arazi" diye işaretlenir, program standart şablona göre hangi tile'ın nereye gideceğini bilir. Kullanıcı kural yazmaz~~ — **Kaldırıldı (Ekim 2026 kararı, Arda).**
+- ~~İki şablon: 16-köşe ve 47-blob (hazır tileset'lerin çoğu blob düzeninde)~~ — **Kaldırıldı (Ekim 2026 kararı, Arda).**
 
-**Bitti:** arazi fırçasıyla çizilen şeklin kenarları ve köşeleri kendiliğinden doğru tile'ı alır; geri alınca eski hali birebir döner.
+**Bitti:** arazi fırçasıyla çizilen şeklin kenarları ve köşeleri kendiliğinden doğru tile'ı alır; geri alınca eski hali birebir döner. Tarihsel ölçüt; arazi kısmı kaldırıldı (Ekim 2026 kararı, Arda).
 
 ### v0.4 — Oyuna aktarma
 - PNG ve JSON dışa aktarma
@@ -218,30 +226,45 @@ Ayrı bir editör değil; mevcut tuvalin ikinci görünümü.
 
 ### v1.3 — Rahat kullanım (Ekim 2026, Arda'nın denemelerinden)
 Arda'nın Windows'ta denediği sürümlerden gelen geri bildirimle eklendi; hepsi onaylı.
-- Konsept görsellerine göre arayüz: belge sekmeleri, üstte araç çubuğu, cetveller, sol kütüphane (Stamp'ler/Tileset'ler, Proje ağacı), alt dock (Tileset / Son kullanılanlar), sağda bağlama göre değişen Denetçi + Geçmiş sekmesi (undo listesi; dal ve checkpoint yok) + Katmanlar
+- Konsept görsellerine göre arayüz: belge sekmeleri, üstte araç çubuğu, cetveller, sol kütüphane (Stamp'ler/Tileset'ler, Proje ağacı), alt dock (Tileset / Son kullanılanlar; v1.5 ile değiştirildi), sağda bağlama göre değişen Denetçi + Geçmiş sekmesi (undo listesi; dal ve checkpoint yok) + Katmanlar
 - Tileset: sürükleyerek çoklu seçim, toplu ekleme kartı, gruplar, "Tümü" görünümü, arama, silme, ayarları sonradan düzenleme
 - Kullanıcı paletleri: farklı tileset'lerden tile'lar referans olarak kopyalanır/taşınır (piksel kopyalanmaz)
 - Rastgele fırça: blok seçip rastgele set yapma, kayıtlı setler, stamp'ler arasından rastgele
 - Araçlar: el (H), fırça boyutu, Shift ile çizgi, Alt ile geçici damlalık, seçimi taşıma, Z/Shift+Z döndürme, silgide sağ sürükle = alan sil
-- Arazi fırçası (normal katmanda), otomatik şablon bulma, araziden araziye geçişler
+- ~~Arazi fırçası (normal katmanda), otomatik şablon bulma, araziden araziye geçişler~~ — **Kaldırıldı (Ekim 2026 kararı, Arda).**
 - Ayrıntılı yeni proje dialogu ve proje ayarları; stamp kütüphanesi (kategori, etiket, favori) ve düz stamp düzenleyici
 - Sağ tık menüleri yalnızca anlamlı yerlerde; tarayıcı menüsü ve F5 kapalı; kapatırken kaydedilmemiş değişiklik sorulur
 
 ### v1.4 — Akıllı stamp ve hız (Ekim 2026, Arda onayladı)
 Arda'nın isteği: 3×3 yol stamp'i kalıp gibi yan yana basılmasın; tek fırçayla yol çizilsin, uçlar ve köşeler kendiliğinden tamamlansın.
-- **9 dilim stamp:** stamp Denetçi'deki FIRÇA İÇERİĞİ bölümünde "9 dilim" olarak işaretlenir. 3×3 için önerilir ama kendiliğinden açılmaz (3×3 bir ev yine evdir); kenarı 1 hücre olan n×m stamp'ler de işaretlenebilir
-- **Alan kullanımı:** dikdörtgen (R) ve fırçayla sürükleme tek dikdörtgen çizer: köşeler korunur, kenarlar ve merkez döşenir. 1×1, 1×n, 2×2 gibi dar boyutlar tanımlı
-- **Yol kullanımı:** serbest çizim ve Shift çizgisi yol olur; uçlar, L dönüşleri, T ve dört yol ağzı kendiliğinden doğru tile'ı alır, var olan yola bağlanınca komşular düzelir. Mevcut arazi (blob47) çözücüsü kullanılır, ikinci bir çözücü yazılmaz
-- Eksik parçalar (ince yol ucu, iç köşe, kavşak) kullanıcının 9 tile'ının çeyreklerinden belirlenimli olarak birleştirilip sıradan bir tileset'e yazılır; kabul etmeden önce önizlemesi gösterilir. Harita hücreleri, tileset ve arazi formatı değişmez; yalnızca stamp'e `nineSlice` bilgisi eklenir (`documentFormatVersion` 3, eski stamp'ler düz kalır)
-- Üretilen tileset kuralları: kullanıcının kendi PNG'sine asla dokunulmaz. Birleştirilen parçalar `tilesets/` altında ayrı bir dosyaya yazılır, adı üretildiğini belli eder ("<stamp> (yol)"), dock'ta varsayılan olarak "Üretilen" grubunda durur. Tile sırası yalnızca sona eklenerek büyür; kaynak PNG değişince (PNG izleme dahil) aynı sırayla yeniden üretilir. Diğer tileset'ler gibi Unity, TMJ ve PNG'ye aktarılır. "9 dilim" kapatılınca haritada kullanılan üretilmiş tileset ortada kalmaz: kullanılıyorsa tutulur, silinmek istenirse tileset kaldırmadaki gibi kullanım sayısıyla sorulur
+- **9 dilim stamp:** ~~stamp Denetçi'deki FIRÇA İÇERİĞİ bölümünde elle "9 dilim" olarak işaretlenir; 3×3 için önerilir ama kendiliğinden açılmaz~~ (v1.5 ile değiştirildi). Artık uygun tileset seçimi otomatik algılanır; tek Akıllı anahtarı araç seçeneklerindedir
+- **Alan kullanımı:** ~~dikdörtgen (R) ve fırçayla sürükleme varsayılan olarak tek dikdörtgen çizer~~ (v1.5 ile değiştirildi). R Alan, B Yol varsayılanıdır. Alan'da köşeler korunur, kenarlar ve merkez döşenir; 1×1, 1×n, 2×2 gibi dar boyutlar tanımlı
+- **Yol kullanımı:** serbest çizim ve Shift çizgisi yol olur; uçlar, L dönüşleri, T ve dört yol ağzı kendiliğinden doğru tile'ı alır, var olan yola bağlanınca komşular düzelir. ~~Mevcut arazi (blob47) çözücüsü kullanılır~~ (v1.5 ile değiştirildi); bağlantı çözücüsü smart-stamp modülündedir
+- Eksik parçalar (ince yol ucu, iç köşe, kavşak) kullanıcının kaynak tile'larının çeyreklerinden belirlenimli olarak birleştirilip sıradan bir tileset'e yazılır. ~~Kabul etmeden önce önizlemesi gösterilir; harita hücreleri, tileset ve arazi formatı değişmez, yalnızca stamp'e `nineSlice` bilgisi eklenir (`documentFormatVersion` 3)~~ (v1.5 ile değiştirildi). Otomatik hazırlık onay dialogu açmaz; çizim önizlemesi yerleşecek sonucu gösterir. Format 4'e geçiş aşağıdadır; eski düz stamp'ler düz kalır
+- Üretilen tileset kuralları: kullanıcının kendi PNG'sine asla dokunulmaz. Birleştirilen parçalar `tilesets/` altında ayrı bir dosyaya yazılır, adı üretildiğini belli eder ("<stamp> (yol)"), Tileset panelinde varsayılan olarak "Üretilen" grubunda durur. Tile sırası yalnızca sona eklenerek büyür; kaynak PNG değişince (PNG izleme dahil) aynı sırayla yeniden üretilir. Diğer tileset'ler gibi Unity, TMJ ve PNG'ye aktarılır. Akıllı kapatılınca (v1.5 ile değiştirildi) haritada kullanılan üretilmiş tileset ortada kalmaz: kullanılıyorsa tutulur, silinmek istenirse tileset kaldırmadaki gibi kullanım sayısıyla sorulur
 - Önizleme tam olarak yerleşecek olanı gösterir; tek hareket tek geri alma; X/Y/Z çevirme ve döndürme uyulur; kilitli ve gizli katmanlara yazılmaz
-- "Stamp'ten arazi yap": hazır 16-köşe veya 47-blob düzenindeki stamp, mevcut şablon bulma ile arazi setine çevrilir
+- ~~"Stamp'ten arazi yap": hazır 16-köşe veya 47-blob düzenindeki stamp, mevcut şablon bulma ile arazi setine çevrilir~~ — **Kaldırıldı (Ekim 2026 kararı, Arda).** (v1.5 ile değiştirildi)
 - Çok katmanlı seçim: seçim aracında "Katmanlar" kapsamı (etkin katman veya görünür ve kilitsiz tüm tile + collision katmanları); taşı, kes, kopyala, sil, döndür aynı katman listesini kullanır. Entity'ler dahil değil
 - Tile değiştir: seçili alanda, etkin katmanda veya görünür tüm katmanlarda bir tile'ı başkasıyla değiştirir; çevirme bitleri korunur, önce kaç hücre değişeceği gösterilir, tek geri alma
 - Dikdörtgen aracında Dolu / Çerçeve seçeneği ve çerçeve kalınlığı
 - Hız: performans ölçümü onarılır (fırça gecikmesi gerçek örneklerle ölçülür); son projeler küçük resmi açma ve kaydetmeyi bekletmez; fill ve fill önizlemesi satır aralıklarıyla çalışır. Her hız işi önce/sonra ölçümüyle gelir
 
+### v1.5 — Yerleşim, akıllı stamp düzeltmesi, sadeleşme (Ekim 2026, Arda onayladı)
+
+- Dolu 3×3 tileset seçimi her zaman akıllı fırça olur; 1 hücrelik kenar bantlı daha büyük n×m bloklarda kenar ve merkez tekrarları doğrulanır. Doğrudan seçim ve kaydedilen stamp aynı akıllı kaynağı kullanır. Ek 9 dilim/Hazırla/Yol tıklaması gerekmez. B serbest çizim ve Shift çizgisi Yol, R Alan; Alan | Yol araç başına değiştirilir, yeni fırçada sıfırlanır. Tek Akıllı anahtarı davranışı kapatır; kayıtlı stamp bu tercihi korur. F mevcut desen doldurmadır
+- Sol/Sağ/Alt bölgeler boyutlandırılır, daraltılır, tamamen gizlenir. Tüm paneller üç bölgeye taşınır; sekme sıralama, bölünmüş bölümler, drop göstergesi ve erişilebilir Taşı menüsü vardır. Yerleşim ayarlarda saklanır; Düzeni sıfırla varsayılanı getirir. Yüzen pencere yoktur
+- Katı tile işareti ve kullanıcıya dönük Arazi bütünüyle kaldırıldı. Manuel Collision katmanı ve Unity'ye aktarımı kalır. Akıllı yolun bağlantı çözücüsü yalnız smart-stamp modülüne aittir; arazi seti/etiketi/komutu yoktur
+- `documentFormatVersion` 4: eski arazi setleri, terrain grid'leri ve solid flag'leri atılır; kaydedilmiş tile hücreleri, çevirme bitleri ve görünüş değişmeden açılır. Eski `nineSlice` stamp'ler ve kullanılan üretilmiş atlaslar korunur. Collision yalnız manuel katmanlardan gelir; TMJ'ye görünmez Collision `objectgroup` dikdörtgenleri olarak aktarılır. Oyun/Unity dışa aktarma formatı değişmez
+- **Tile al → katmanını etkinleştir:** Damlalık'ta Katman Etkin/Tümü; alınan tile'ın kaynak katmanı etkinleşir. Kilitli kaynaktan tile alınabilir, boyama kilidi korunur
+- **Harita kenarı:** Harita → Kenar… dialogunda kalınlık, iç pay ve kenar başına kapı boşlukları canlı önizlenir; mevcut fırça ve akıllı köşeler kullanılır, tek işlem/geri almadır
+- **Bağlı alan seçimi:** Seç aracında Dikdörtgen | Bağlı alan; etkin katmanda aynı tile'ın dört yönden bağlı hücreleri seçilir. Çevirme duyarlılığı açıklaması tooltip'tedir; taşı/kopyala/kes/sil, Tile değiştir ve Stamp olarak kaydet aynı maskeyi kullanır
+- **Kılavuz ızgara:** Izgara düğmesinin popover'ında tile aralığı ve başlangıç ayarlanır; çizim token'ları kullanır, harita formatı dışında proje görünüm ayarıdır
+
+**Bitti:** Arda'nın tileset→çiz ve tileset→stamp kaydet→çiz akışları 16/32 px, sheet ofseti ve flip'lerle e2e'de geçer; 1366×768'de paneller daraltıldığında tuval pencerenin çoğunu kullanır; eski dosyalarda görsel kimlik ve dışa aktarma korunur, Unity manuel Collision testleri geçer. Dört yeni çizim özelliği tüm işlemleriyle tamamlanır.
+
 ### Sonra
+
+- Katı işareti ve arazi fırçası: gerekirse yeniden düşünülür
 - "Bu stamp'ten gelenleri yenile" düğmesi (elle değiştirilmiş olanları atlar veya sorar)
 - Tileset düzeni bozulunca "eski → yeni" eşleştirme ekranı
 - `.aseprite` dosyasını doğrudan okuma (format açık; Aseprite'ı komut satırından çağırmak yok)
