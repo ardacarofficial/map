@@ -1,7 +1,7 @@
 // eslint-disable-next-line no-restricted-imports -- test-only frozen fixture oracle
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FormatError, deriveCollision, decodeUint32LE, encodeUint32LE, nineSliceBlits, orientPoint, MapStore, applySmartStampRoad, roadMembership, fileFormatVersion, parseClip, parseLevel, parseProject, parseStamp, serializeClip, serializeLevel, serializeProject, serializeStamp } from "../src";
+import { FormatError, createDocument, placeStamp, deriveCollision, decodeUint32LE, encodeUint32LE, nineSliceBlits, orientPoint, MapStore, applySmartStampRoad, roadMembership, fileFormatVersion, parseClip, parseLevel, parseProject, parseStamp, serializeClip, serializeLevel, serializeProject, serializeStamp } from "../src";
 import { migrateV4 } from "../src/migrations/v4";
 import { decodePng } from "./png";
 import { pixelHash } from "./pixelOracle";
@@ -38,6 +38,40 @@ describe("frozen e94d93d → format 4", () => {
     expect(serializeStamp(parseStamp(texts[2]!))).toBe(texts[2]);
     expect(serializeClip(parseClip(texts[3]!))).toBe(texts[3]);
   });
+  for (const value of [1, 3]) for (const kind of ["stamp", "clip"] as const) it(`drops pre-role v1 ${kind} terrain value ${value}, preserving explicit collision and tile pixels`, () => {
+    const text = read(`v1-pre-role-${value}-${kind}.json`), before = JSON.parse(text);
+    const clip = kind === "stamp" ? parseStamp(text) : parseClip(text);
+    expect(clip.layers.map(l => l.layerId)).toEqual(["s", "collision"]);
+    expect([...clip.layers[0]!.cells]).toEqual([...decodeUint32LE(before.layers[0].data)]);
+    expect([...clip.layers[1]!.cells]).toEqual([1, 2, 0, 0, 0, 0, 0, 0, 0]);
+    const store = new MapStore(createDocument({ width: 3, height: 3, tileWidth: 32, tileHeight: 32 }));
+    for (const tileset of parseProject(read("v3-project.json")).tilesets) store.dispatch({ type: "addTileset", tileset });
+    placeStamp(store, clip, 0, 0);
+    expect([...deriveCollision(store.document).data]).toEqual([1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const images = new Map([["source", decodePng(readFileSync(fixtureRoot + "v3-source.png"))]]);
+    expect(pixelHash(store.document, images)).toBe(manifest.hashes.preRole);
+    const saved = kind === "stamp" ? serializeStamp(parseStamp(text)) : serializeClip(clip);
+    expect(JSON.parse(saved).layers).toEqual([before.layers[0], before.layers[3]]);
+    expect(kind === "stamp" ? serializeStamp(parseStamp(saved)) : serializeClip(parseClip(saved))).toBe(saved);
+  });
+
+  it("resolves an external legacy road by both set and family, preserving the baseline stroke pixels", () => {
+    const project = parseProject(read("v3-mirrored-unrelated-project.json"));
+    const stamp = parseStamp(read("v3-stamp.json"), project.tilesets);
+    const store = new MapStore(parseLevel(read("v3-level.json"), project.tilesets));
+    const before = serializeLevel(store.document);
+    const points = [{ x: 18, y: 12 }, { x: 19, y: 12 }, { x: 20, y: 12 }];
+    applySmartStampRoad(store, stamp, "tiles", roadMembership(points));
+    expect(points.map(p => store.document.palette.get(store.document.getLayer("tiles")!.getCell(p.x, p.y) & 0x1fffffff)!.tileId)).toEqual([12, 31, 29]);
+    const images = new Map(["source", "baked"].map(id => [id, decodePng(readFileSync(fixtureRoot + `v3-${id}.png`))]));
+    expect(pixelHash(store.document, images)).toBe(manifest.hashes.mirroredFamilyStroke);
+    const after = serializeLevel(store.document);
+    expect(store.undoDepth).toBe(1); store.undo(); expect(serializeLevel(store.document)).toBe(before);
+    store.redo(); expect(serializeLevel(store.document)).toBe(after);
+    expect(serializeStamp(parseStamp(serializeStamp(stamp)))).toBe(serializeStamp(stamp));
+    expect(JSON.stringify(project)).not.toMatch(/"(?:terrainSets|terrains|setId|terrainId)"/);
+  });
+
   it("raw migration is pure, retains every retained property/chunk and converts embedded recipes before dropping tags", () => {
     const input = raw("v3-project.json"), original = JSON.stringify(input);
     const migrated = migrateV4(input);
@@ -48,6 +82,47 @@ describe("frozen e94d93d → format 4", () => {
     expect(JSON.stringify(migrated)).not.toMatch(/"(?:terrains|terrainSets|solidTiles|setId|terrainId)"/);
     expect(migrateV4(migrated)).toEqual(migrated);
   });
+  for (const key of ["setId", "terrainId"] as const) it(`never substitutes another family for an unresolved legacy road ${key}`, () => {
+    const project = parseProject(read("v3-mirrored-unrelated-project.json"));
+    const stamp = raw("v3-stamp.json");
+    stamp.nineSlice.road[key] = key === "setId" ? "missing" : 2;
+    expect(() => parseStamp(JSON.stringify(stamp), project.tilesets)).toThrow(FormatError);
+    expect(() => parseStamp(JSON.stringify(stamp), project.tilesets)).toThrow(/legacy road family/);
+  });
+
+  it("selects the referenced terrain family when one legacy set contains multiple complete families", () => {
+    const input = raw("v3-mirrored-unrelated-project.json");
+    const baked = input.tilesets[1], road = baked.terrainSets[1];
+    const other = baked.terrainSets[0].tiles.map((t: { tileId: number; mask: number }) => ({ ...t, tileId: t.tileId + 64, terrainId: 2 }));
+    road.terrains.push({ ...road.terrains[0], id: 2, name: "Other family" });
+    road.tiles.push(...other); baked.rows = 16;
+    const project = parseProject(JSON.stringify(input));
+    const stamp = raw("v3-stamp.json"); stamp.nineSlice.road.terrainId = 2;
+    const parsed = parseStamp(JSON.stringify(stamp), project.tilesets);
+    expect(parsed.nineSlice!.road!.profile.tiles).toEqual(other.map((t: { tileId: number; mask: number }) => ({ tileId: t.tileId, mask: t.mask })));
+  });
+
+  it("keeps v4 role-less collision grids and rejects invalid retained grid roles", () => {
+    const input = raw("v1-pre-role-1-stamp.json");
+    input.documentFormatVersion = 4;
+    input.layers = input.layers.filter((l: { layerId: string }) => l.layerId !== "old-grid");
+    expect(parseStamp(JSON.stringify(input)).layers.map(l => l.layerId)).toEqual(["s", "implicit", "collision"]);
+    input.layers[1].role = null;
+    expect(() => parseStamp(JSON.stringify(input))).toThrow(FormatError);
+    input.documentFormatVersion = 1;
+    expect(() => parseStamp(JSON.stringify(input))).toThrow(FormatError);
+  });
+
+  it("keeps family lookups scoped to each project even when tileset ids match", () => {
+    const a = parseProject(read("v3-project.json"));
+    const b = raw("v3-project.json");
+    b.tilesets[1].terrainSets[0].tiles.push({ tileId: 63, terrainId: 1, mask: 0 });
+    const other = parseProject(JSON.stringify(b));
+    expect(parseStamp(read("v3-stamp.json"), a.tilesets).nineSlice!.road!.profile.tiles).toHaveLength(63);
+    expect(parseStamp(read("v3-stamp.json"), other.tilesets).nineSlice!.road!.profile.tiles).toHaveLength(64);
+    expect(parseStamp(read("v3-stamp.json"), a.tilesets).nineSlice!.road!.profile.tiles).toHaveLength(63);
+  });
+
   it("archives custom v3 variants in project and sidecar profiles and roundtrips embedded recipes", () => {
     const old = raw("v3-project.json"), set = old.tilesets[1].terrainSets[0];
     set.tiles.push({ tileId: 63, terrainId: 1, mask: 0 });

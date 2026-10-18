@@ -1,5 +1,5 @@
 /** Deterministic project/level/stamp/clip JSON. Legacy conversion is raw and never derives cells. */
-import { migrateV4 } from "./migrations/v4";
+import { migrateV4, retainLegacyRoadFamilies } from "./migrations/v4";
 import { decodeUint32LE, encodeUint32LE } from "./base64";
 import { CELL_INDEX_MASK, cellPaletteIndex, isValidCell } from "./cell";
 import type { ClipLayer, TileClip } from "./clip";
@@ -677,7 +677,7 @@ function readTileset(item: unknown, path: string, version: number): Tileset {
   };
   const problem = tilesetProblem(full);
   if (problem) throw new FormatError(path, problem);
-  return normalizeTileset(full);
+  return retainLegacyRoadFamilies(t, normalizeTileset(full));
 }
 
 export function fileFormatVersion(text: string): number | null {

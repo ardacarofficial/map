@@ -283,7 +283,9 @@ export async function loadProject(
     levelId: level.id,
     retiredLevelIds: [...project.retiredLevelIds],
     stamps,
-    generatedRecipes: await loadGeneratedRecipes(fs, document.tilesets, [...(project.generatedRecipes ?? []), ...stamps], broken),
+    // The parsed project tilesets retain migration-only family lookups until
+    // external legacy recipes are converted. Document tilesets are normalized copies.
+    generatedRecipes: await loadGeneratedRecipes(fs, project.tilesets, [...(project.generatedRecipes ?? []), ...stamps], broken),
     brokenStamps: broken,
     settings: project.settings,
   };
