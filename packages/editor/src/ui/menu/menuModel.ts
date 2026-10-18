@@ -49,6 +49,7 @@ export const MENUS: readonly MenuDef[] = [
       "brush.larger",
       "-",
       "stamp.saveSelection",
+      "edit.replaceTiles",
     ],
   },
   {

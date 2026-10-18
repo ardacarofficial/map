@@ -9,6 +9,7 @@ import { installGlobalShortcuts } from "../commands/globalShortcuts";
 import { installSession } from "../io/session";
 import { useEditorStore } from "../state/editorStore";
 import { CommandPalette } from "./dialogs/CommandPalette";
+import { ReplaceTilesDialog } from "./dialogs/ReplaceTilesDialog";
 import { NewProjectDialog } from "./dialogs/NewProjectDialog";
 import { ProjectSettingsDialog } from "./projectSettings/ProjectSettingsDialog";
 import { UnsavedDialog } from "./dialogs/UnsavedDialog";
@@ -73,6 +74,7 @@ export function App() {
       <FileDropOverlay />
       <CommandPalette />
       <NewProjectDialog />
+      <ReplaceTilesDialog />
       <ProjectSettingsDialog />
       <UnsavedDialog />
       <MapSettingsDialog />

@@ -2,7 +2,7 @@
  * Events the map canvas reports to the UI through its handle (pick feedback,
  * per-stroke summaries for undo toasts). Pure payload builders, unit tested.
  */
-import type { TileClip } from "@smap/core";
+import type { PaletteEntry, TileClip } from "@smap/core";
 
 import type { CellRegion, TileSelection } from "../state/editorStore";
 import type { BlockedReason, PickResult } from "./tools";
@@ -20,13 +20,15 @@ export interface BlockedAction {
 }
 
 /**
- * A right click asks for a context menu instead of picking tiles. `x` / `y`
+ * A right click asks for a context menu. Tile clicks also retain their pick. `x` / `y`
  * are client (page) coordinates of the click, for positioning the menu.
+ * - `"tile"`: clicked tile identity and the brush before the pick;
  * - `"entity"`: on entity `entityId` of the active entity layer (it is
  *   already selected);
  * - `"selection"`: select tool, inside the selection, without a drag.
  */
 export type CanvasContextRequest =
+  | { readonly kind: "tile"; readonly tile: PaletteEntry; readonly brush: PaletteEntry | null; readonly x: number; readonly y: number }
   | { readonly kind: "entity"; readonly entityId: string; readonly x: number; readonly y: number }
   | { readonly kind: "selection"; readonly x: number; readonly y: number };
 

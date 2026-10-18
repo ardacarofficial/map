@@ -6,6 +6,7 @@
  */
 import type { MapDocument, TileClip, Tileset } from "@smap/core";
 
+import { consumeReplacementPick } from "../../commands/replaceTiles";
 import type { CanvasPickEvent } from "../../canvas/canvasEvents";
 import { tileLayerForPick } from "../../commands/terrainActions";
 import { useEditorStore, type EditorState, type ToolId } from "../../state/editorStore";
@@ -31,6 +32,7 @@ export function commitTilesetSelection(
   corners: { anchor: Cell; focus: Cell },
   empty: ReadonlySet<number>,
 ): boolean {
+  if (ids.length && consumeReplacementPick({ tilesetId: tileset.id, tileId: ids[0]! })) return true;
   const s = useEditorStore.getState();
   const brush = brushFor(tileset, ids, empty, s.activeLayerId ?? "tiles");
   if (!brush) return false;

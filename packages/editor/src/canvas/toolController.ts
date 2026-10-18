@@ -36,10 +36,12 @@ import {
   isGridLayer,
   makeCell,
   moveRegion,
+  normalizeRect,
   pasteClip,
   patchCellCount,
   placeStamp,
   rotateRegion,
+  rectangleBand,
   type RotateDirection,
   type TerrainBrush,
   type CellPoint,
@@ -52,6 +54,9 @@ import {
   type TileLayer,
 } from "@smap/core";
 
+import { consumeReplacementPick, rememberReplacementTile, replacementBrushTile, useTileReplacement } from "../commands/replaceTiles";
+import { rectangleStampSource } from "./rectangleSource";
+import { rectangleThickness } from "../state/rectangleOptions";
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
 import { isRecentStamp, recentOfClip } from "../state/recentItems";
@@ -92,6 +97,7 @@ import {
   movedRegion,
   patternCell,
   patternLayerIndex,
+  pickLayer,
   regionContains,
   rightPressAction,
   rightReleaseAction,
@@ -142,6 +148,8 @@ export type Gesture =
       readonly pointerId: number;
       readonly start: CellPoint;
       end: CellPoint;
+      /** Geometry captured at press; sources remain independent of the band. */
+      readonly thickness?: number;
       /** Shift: square. */
       square: boolean;
       /** Alt: `start` is the centre. */
@@ -224,14 +232,15 @@ export function layerState(layer: TileLayer, _doc?: { readonly layers: readonly 
   };
 }
 
-/** Map region of a rectangle gesture (modifiers applied), clipped to the map. */
+/** Modified rectangle geometry; outlines retain intended edges before map clipping. */
 export function rectGestureRegion(
-  g: { readonly start: CellPoint; readonly end: CellPoint; readonly square: boolean; readonly fromCenter: boolean },
+  g: { readonly start: CellPoint; readonly end: CellPoint; readonly square: boolean; readonly fromCenter: boolean; readonly thickness?: number },
   bounds: { readonly width: number; readonly height: number },
 ): CellRegion | null {
   const mods: RectModifiers = { square: g.square, fromCenter: g.fromCenter };
   const { a, b } = constrainRect(g.start, g.end, mods);
-  return dragRegion(a, b, bounds);
+  // An outline keeps the intended edges when the pointer crosses map bounds.
+  return normalizeRect(a.x, a.y, b.x, b.y, (g.thickness ?? 0) > 0 ? undefined : bounds);
 }
 
 /** Last painted cell of a stroke: Shift + click draws a line from it. */
@@ -305,6 +314,10 @@ export class ToolController {
     if (e.button !== 0) return;
     e.preventDefault();
     const s = useEditorStore.getState();
+    if (useTileReplacement.getState().draft?.picking) {
+      this.#start({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell, spring: false });
+      return;
+    }
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
     if (this.#reportBlocked(s.tool) || this.#reportMissingBrush()) return;
@@ -333,7 +346,7 @@ export class ToolController {
       case "rect": {
         const info = this.#activeInfo();
         if (grid ? isGridEditable(info) : isEditable(info) && (s.stamp || s.selection || hasRandomBrush() || this.#terrain())) {
-          this.#start({ kind: "rect", pointerId: e.pointerId, start: cell, end: cell, square: e.shiftKey, fromCenter: e.altKey });
+          this.#start({ kind: "rect", thickness: rectangleThickness(), pointerId: e.pointerId, start: cell, end: cell, square: e.shiftKey, fromCenter: e.altKey });
         }
         break;
       }
@@ -453,7 +466,7 @@ export class ToolController {
       case "rect": {
         const map = this.#host.scene?.store.document.map;
         const r = map ? rectGestureRegion(g, map) : null;
-        if (r) this.#commitRect(r, g.start);
+        if (r) this.#commitRect(r, g.start, "rect", g.thickness ?? 0);
         break;
       }
       case "select":
@@ -637,7 +650,7 @@ export class ToolController {
    * `placeStamp` at their anchors (once per anchor: `placed`), scattered
    * cells are left alone. Returns the changed cell count.
    */
-  #paintRandom(store: MapStore, layerId: string, set: RandomSet, cells: Iterable<CellPoint>, placed: Set<string>): number {
+  #paintRandom(store: MapStore, layerId: string, set: RandomSet, cells: Iterable<CellPoint>, placed: Set<string>, band?: { region: CellRegion; thickness: number }): number {
     const doc = store.document;
     const layer = doc.getLayer(layerId);
     if (!layer) return 0;
@@ -654,7 +667,9 @@ export class ToolController {
     for (const p of plan.stamps) {
       const stamp = randomStampOf(p.stampId);
       if (!stamp) continue;
-      const r = placeStamp(store, stamp, p.x, p.y, { flip: p.flip });
+      const source = band ? rectangleStampSource(stamp, p, band.region, band.thickness) : stamp;
+      if (!source) continue;
+      const r = placeStamp(store, source, p.x, p.y, band ? {} : { flip: p.flip });
       for (const patch of r.patches) changed += patchCellCount(patch);
       changed += r.createdLayerIds.length;
     }
@@ -717,38 +732,39 @@ export class ToolController {
     this.#host.requestRender();
   }
 
-  #commitRect(r: CellRegion, anchor: CellPoint, tool: StrokeTool = "rect"): void {
+  #commitRect(r: CellRegion, anchor: CellPoint, tool: StrokeTool = "rect", thickness = 0): void {
     const t = this.#editTarget();
     if (!t) return;
     const { store, layer } = t;
+    const domain = { x: 0, y: 0, width: store.document.map.width, height: store.document.map.height };
     if (isGridLayer(layer)) {
       const value = this.#gridValue(layer);
       if (value === null) return;
-      const writes = gridRectWrites(r, value, (x, y) => layer.getCell(x, y));
+      const writes = thickness === 0
+        ? gridRectWrites(r, value, (x, y) => layer.getCell(x, y))
+        : gridWrites([...rectangleBand(r, thickness, domain)], value, store.document.map, (x, y) => layer.getCell(x, y));
       if (writes.length > 0) this.#transact(store, tool, () => this.#paintGrid(store, layer.id, writes));
       return;
     }
     const terrain = this.#terrain();
     if (terrain) {
-      this.#transact(store, tool, () => this.#paintTerrain(store, layer.id, terrain, [...rectCells(r)]));
+      this.#transact(store, tool, () => this.#paintTerrain(store, layer.id, terrain, [...rectangleBand(r, thickness, domain)]));
       return;
     }
     const single = this.#singleTile();
     const random = this.#randomSet();
     if (random) {
-      this.#transact(store, tool, () => this.#paintRandom(store, layer.id, random, rectCells(r), new Set()));
+      this.#transact(store, tool, () => this.#paintRandom(store, layer.id, random, rectangleBand(r, thickness, domain), new Set(), thickness > 0 ? { region: r, thickness } : undefined));
       return;
     }
     this.#transact(store, tool, () => {
       const at = this.#writePattern(store, anchor);
       if (!at) return 0;
       const cells: CellWrite[] = [];
-      for (let y = r.y; y < r.y + r.height; y++) {
-        for (let x = r.x; x < r.x + r.width; x++) {
-          const v = at(x, y);
-          if (v === EMPTY_CELL || layer.getCell(x, y) === v) continue;
-          cells.push({ x, y, cell: v });
-        }
+      for (const { x, y } of rectangleBand(r, thickness, domain)) {
+        const v = at(x, y);
+        if (v === EMPTY_CELL || layer.getCell(x, y) === v) continue;
+        cells.push({ x, y, cell: v });
       }
       return this.#paintCells(store, layer.id, cells);
     });
@@ -774,6 +790,12 @@ export class ToolController {
     const r = dragRegion(start, end, doc.map);
     if (!r) return;
     const s = useEditorStore.getState();
+    if (useTileReplacement.getState().draft?.picking) {
+      const layer = pickLayer(doc.layers.map(l => layerInfo(l)), s.activeLayerId, r.x, r.y);
+      const tile = layer ? doc.palette.get(cellPaletteIndex(layer.getCell(r.x, r.y))) : undefined;
+      if (tile) consumeReplacementPick(tile);
+      return;
+    }
     // Tools that cannot place the pick switch (see `toolAfterPick`); the Alt eyedropper decided at the press.
     const switchTool = () => {
       const st = useEditorStore.getState();
@@ -1029,8 +1051,18 @@ export class ToolController {
     const moved = g.start.x !== g.end.x || g.start.y !== g.end.y;
     const action = rightReleaseAction(g.press ?? "pick", moved);
     const client = g.client ?? { x: 0, y: 0 };
-    if (action === "pick") this.#finishPick(g.start, g.end, g.spring);
-    else if (action === "eraseRect") {
+    const store = this.#host.scene?.store;
+    const s = useEditorStore.getState();
+    const layer = !moved && g.button === 2 && store ? pickLayer(store.document.layers.map(l => layerInfo(l)), s.activeLayerId, g.start.x, g.start.y) : null;
+    const tile = layer && store ? store.document.palette.get(cellPaletteIndex(layer.getCell(g.start.x, g.start.y))) : undefined;
+    if (store && tile) rememberReplacementTile(store, tile);
+    if (action === "pick") {
+      const pickingReplacement = !!useTileReplacement.getState().draft?.picking;
+      const pickingValues = isGridLayer(this.#activeLayer()) || this.#terrain() !== null;
+      const brush = replacementBrushTile();
+      this.#finishPick(g.start, g.end, g.spring);
+      if (!moved && g.button === 2 && tile && !pickingReplacement && !pickingValues) this.#host.contextRequest?.({ kind: "tile", tile, brush, x: client.x, y: client.y });
+    } else if (action === "eraseRect") {
       const map = this.#host.scene?.store.document.map;
       const r = map ? dragRegion(g.start, g.end, map) : null;
       if (r) this.#eraseRegion(r);

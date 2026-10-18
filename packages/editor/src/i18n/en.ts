@@ -233,6 +233,11 @@ export const en: Messages = {
     grid: "Grid",
     rulers: "Rulers",
     viewOptions: "View options",
+    rectangleMode: "Rectangle mode",
+    rectangleFilled: "Filled",
+    rectangleOutline: "Outline",
+    rectangleThickness: "Thickness",
+    rectangleThicknessHint: "Border thickness in cells (1–8)",
   },
   layout: {
     showInspector: "Show inspector",
@@ -1221,4 +1226,20 @@ export const en: Messages = {
     empty: "The stamp is empty; draw at least one tile to save it",
     saved: "“{name}” saved",
   },
+  replaceTiles: {
+    title: "Replace tile…",
+    history: "Replace tile",
+    from: "From",
+    to: "To",
+    scope: "Scope",
+    selection: "Selection",
+    active: "Active layer",
+    visible: "Visible layers",
+    count: "{count} cells will change",
+    apply: "Replace",
+    empty: "Choose tile",
+    pickHint: "Pick a tile in the tileset dock or with the canvas eyedropper",
+    picking: "{target}: pick a tile in the tileset dock or on the canvas",
+  },
+
 };

@@ -12,6 +12,7 @@
 import {
   COLLISION_PASSABLE,
   EMPTY_CELL,
+  rectangleBand,
   cellFlags,
   cellPaletteIndex,
   flipClip,
@@ -51,6 +52,7 @@ import { MaskPreview, TilePreview } from "./preview";
 import { activeRandomSet, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint, randomPlanKey } from "./randomPaint";
 import { activeTerrainBrush, terrainBrushKey } from "./terrainBrushSource";
+import { rectangleStampSource } from "./rectangleSource";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -294,12 +296,25 @@ export class OverlayRenderer {
       case "rect": {
         const r = rectGestureRegion(gesture, map);
         if (r) {
-          if (gridActive) this.#drawGridFootprint(r);
-          else if (this.#terrainBrush()) {
-            this.#showTerrainRect(r);
+          if (gridActive) {
+            const thickness = gesture.thickness ?? 0;
+            if (thickness === 0) this.#drawGridFootprint(r);
+            else {
+              const g = this.overlay;
+              const px = 1 / host.camera.resolution;
+              for (const p of rectangleBand(r, thickness, host.visible)) {
+                const b = host.camera.cellBox({ ...p, width: 1, height: 1 });
+                g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px);
+              }
+              g.fill({ color: host.colors.accent, alpha: CANVAS_COLORS.gridBrushAlpha });
+              this.#drawAccentOutline(r);
+              if (r.width > 2 * thickness && r.height > 2 * thickness) this.#drawAccentOutline({ x: r.x + thickness, y: r.y + thickness, width: r.width - 2 * thickness, height: r.height - 2 * thickness });
+            }
+          } else if (this.#terrainBrush()) {
+            this.#showTerrainRect(r, gesture.thickness ?? 0);
             this.#drawAccentOutline(r);
           } else {
-            this.#showPatternPreview(r, gesture.start);
+            this.#showPatternPreview(r, gesture.start, gesture.thickness ?? 0);
             this.#drawAccentOutline(r);
           }
         }
@@ -433,16 +448,15 @@ export class OverlayRenderer {
   }
 
   /** Terrain preview of a rectangle drag (capped like the tile rectangle preview). */
-  #showTerrainRect(r: CellRegion): void {
+  #showTerrainRect(r: CellRegion, thickness = 0): void {
     const scene = this.#host.scene;
     const layer = activeLayer(scene?.store);
     const brush = this.#terrainBrush();
-    if (!scene || !layer || !brush || r.width * r.height > RECT_PREVIEW_LIMIT) return;
-    const key = `terrainR:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${r.x},${r.y},${r.width},${r.height}`;
+    if (!scene || !layer || !brush || (thickness === 0 && r.width * r.height > RECT_PREVIEW_LIMIT)) return;
+    const key = `terrainR:${thickness}:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${r.x},${r.y},${r.width},${r.height}`;
     if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
     else {
-      const cells: CellPoint[] = [];
-      for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) cells.push({ x, y });
+      const cells = [...rectangleBand(r, thickness, { x: 0, y: 0, width: scene.store.document.map.width, height: scene.store.document.map.height })];
       let writes: TerrainTileWrite[] = [];
       try {
         writes = terrainPaint(scene.store.document, layer.id, cells, brush);
@@ -900,7 +914,7 @@ export class OverlayRenderer {
    * layers at their anchors (flipped like `placeStamp` will), scattered
    * cells left out — the same plan the tool controller paints.
    */
-  #randomPreviewCells(set: RandomSet, doc: MapDocument, cells: Iterable<CellPoint>): PreviewCell[] {
+  #randomPreviewCells(set: RandomSet, doc: MapDocument, cells: Iterable<CellPoint>, band?: { region: CellRegion; thickness: number }): PreviewCell[] {
     const inside: CellPoint[] = [];
     for (const c of cells) if (doc.inBounds(c.x, c.y)) inside.push(c);
     const plan = planRandomPaint(set, doc.seed, inside);
@@ -908,9 +922,16 @@ export class OverlayRenderer {
     for (const p of plan.stamps) {
       const stamp = randomStampOf(p.stampId);
       if (!stamp) continue;
-      let clip: TileClip = stamp;
-      if (p.flip.x) clip = flipClip(clip, "x");
-      if (p.flip.y) clip = flipClip(clip, "y");
+      let clip: TileClip;
+      if (band) {
+        const source = rectangleStampSource(stamp, p, band.region, band.thickness);
+        if (!source) continue;
+        clip = source;
+      } else {
+        clip = stamp;
+        if (p.flip.x) clip = flipClip(clip, "x");
+        if (p.flip.y) clip = flipClip(clip, "y");
+      }
       const mapping = savedStampPreviewMapping(this.#host.scene?.store, clip);
       for (const c of stampPreviewCells(clip, mapping)) out.push({ ...c, x: c.x + p.x, y: c.y + p.y });
     }
@@ -941,7 +962,7 @@ export class OverlayRenderer {
   }
 
   /** Rectangle (or single-cell) preview with the current pattern tiled from `anchor`. */
-  #showPatternPreview(r: CellRegion, anchor: CellPoint): void {
+  #showPatternPreview(r: CellRegion, anchor: CellPoint, thickness = 0): void {
     const random = this.#random();
     const doc = this.#host.scene?.store.document;
     if (random && doc) {
@@ -950,13 +971,15 @@ export class OverlayRenderer {
       const y0 = Math.max(r.y, v.y);
       const x1 = Math.min(r.x + r.width, v.x + v.width);
       const y1 = Math.min(r.y + r.height, v.y + v.height);
-      if (x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) > RECT_PREVIEW_LIMIT) return;
-      const key = `rectR:${this.#randomKey(random, doc)}:${x0},${y0},${x1},${y1}`;
+      if (x1 <= x0 || y1 <= y0 || (thickness === 0 && (x1 - x0) * (y1 - y0) > RECT_PREVIEW_LIMIT)) return;
+      const key = `rectR:${thickness}:${r.x},${r.y},${r.width},${r.height}:${this.#randomKey(random, doc)}:${x0},${y0},${x1},${y1}`;
       if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
       else {
-        const cells: CellPoint[] = [];
-        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) cells.push({ x, y });
-        this.#setTilePreview(key, this.#randomPreviewCells(random, doc, cells));
+        // Stamp candidates may cross the viewport: plan the whole band, then crop.
+        const band = thickness > 0 ? { region: r, thickness } : undefined;
+        const cells = rectangleBand(r, thickness, band ? { x: 0, y: 0, width: doc.map.width, height: doc.map.height } : v);
+        const preview = this.#randomPreviewCells(random, doc, cells, band);
+        this.#setTilePreview(key, band ? preview.filter(p => p.x >= x0 && p.y >= y0 && p.x < x1 && p.y < y1) : preview);
       }
       this.#tilePreview.root.position.set(0, 0);
       return;
@@ -968,11 +991,11 @@ export class OverlayRenderer {
     const y0 = Math.max(r.y, v.y);
     const x1 = Math.min(r.x + r.width, v.x + v.width);
     const y1 = Math.min(r.y + r.height, v.y + v.height);
-    const key = `rect:${pattern.key}:${anchor.x},${anchor.y}:${x0},${y0},${x1},${y1}`;
+    const key = `rect:${thickness}:${r.x},${r.y},${r.width},${r.height}:${pattern.key}:${anchor.x},${anchor.y}:${x0},${y0},${x1},${y1}`;
     if (this.#tilePreview.key?.startsWith(`${key}|`) === true) {
       this.#tilePreview.root.visible = true;
     } else {
-      const cells = rectPreviewCells(r, v, RECT_PREVIEW_LIMIT, pattern.at);
+      const cells = rectPreviewCells(r, v, RECT_PREVIEW_LIMIT, pattern.at, thickness);
       if (!cells) return;
       this.#setTilePreview(key, cells);
     }

@@ -7,6 +7,7 @@ import {
   cellFlags,
   cellPaletteIndex,
   normalizeRect,
+  rectangleBand,
   type CellBounds,
   type CellPoint,
   type PaletteEntry,
@@ -241,19 +242,18 @@ export function rectPreviewCells(
   visible: CellRegion,
   limit: number,
   cellAt: (x: number, y: number) => { entry: PaletteEntry; flags: number } | null,
+  thickness = 0,
 ): PreviewCell[] | null {
   const x0 = Math.max(region.x, visible.x);
   const y0 = Math.max(region.y, visible.y);
   const x1 = Math.min(region.x + region.width, visible.x + visible.width);
   const y1 = Math.min(region.y + region.height, visible.y + visible.height);
   if (x1 <= x0 || y1 <= y0) return [];
-  if ((x1 - x0) * (y1 - y0) > limit) return null;
+  if (thickness === 0 && (x1 - x0) * (y1 - y0) > limit) return null;
   const out: PreviewCell[] = [];
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const c = cellAt(x, y);
-      if (c) out.push({ x, y, entry: c.entry, flags: c.flags });
-    }
+  for (const { x, y } of rectangleBand(region, thickness, visible)) {
+    const c = cellAt(x, y);
+    if (c) out.push({ x, y, entry: c.entry, flags: c.flags });
   }
   return out;
 }

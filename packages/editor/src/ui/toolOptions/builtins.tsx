@@ -25,6 +25,7 @@ import { TerrainPickerMenu } from "../terrain/TerrainMenus";
 import { resolveTerrain, terrainSetEntries } from "../terrain/terrainModel";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel } from "./parts";
+import { RectangleOptions } from "./RectangleOptions";
 import { RandomToggle } from "./RandomToggle";
 
 /** The terrain picker shows on tile layers once the project has a terrain. */
@@ -99,6 +100,7 @@ let registered = false;
 export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
+  registerToolOptions(["rect"], RectangleOptions, { id: "builtin.rectangle", order: 5, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) });
   registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
