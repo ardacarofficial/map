@@ -51,6 +51,7 @@ import { TerrainCard } from "../terrain/TerrainCard";
 import { resolveTerrain } from "../terrain/terrainModel";
 import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
 import { saveClipAsStamp } from "../tileset/SelectionSection";
+import { SelectionScopeSection } from "./SelectionScopeSection";
 import { BrushPreview } from "./BrushPreview";
 import { fillBlocker } from "./fillCheck";
 import {
@@ -85,6 +86,7 @@ function RegionCommand({ command, icon, label }: { command: CommandId; icon: "co
 }
 
 function RegionSection({ ctx }: { ctx: InspectorContext }) {
+  useEditorStore(s => s.selectionScope);
   useCanSaveSelectionStamp();
   const region = ctx.region!;
   const setRegion = useEditorStore((s) => s.setRegion);
@@ -105,6 +107,7 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
         title={t("inspector.region")}
         subtitle={ctx.layer?.name}
       />
+      <SelectionScopeSection />
       <SectionHeader>{t("inspector.transform")}</SectionHeader>
       <PropGrid>
         <PropRow label={t("properties.position")}>

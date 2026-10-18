@@ -1,5 +1,5 @@
 /**
- * Copy / cut / paste / delete of the marquee region on the active layer.
+ * Copy / cut / paste / delete of the marquee region on the captured selection layers.
  *
  * Copy keeps the clip in memory and also puts its text form (`serializeClip`)
  * on the system clipboard, so it pastes into another window of the app.
@@ -7,14 +7,11 @@
  * and the user places it with the mouse (the canvas draws the preview).
  */
 import {
-  EMPTY_CELL,
   FLIP_H,
   FLIP_V,
   copyRegion,
   cutRegion,
   flipClip,
-  isGridLayer,
-  isTileLayer,
   isValidTileId,
   makeCell,
   parseClip,
@@ -26,7 +23,8 @@ import {
 import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
 import { toast } from "../ui/toast/toastStore";
-import { activeLayer, canCopy, canErase, contextOf, mapRegion } from "./enablement";
+import { resolveSelectionScope, reportSelectionSkipped, canUseSelectionScope } from "./selectionScope";
+import { activeLayer, contextOf, mapRegion } from "./enablement";
 
 let memoryClip: TileClip | null = null;
 
@@ -46,42 +44,39 @@ function writeSystemClipboard(text: string): void {
 
 export function copySelection(): boolean {
   const c = contextOf(useEditorStore.getState());
-  const layer = activeLayer(c);
   const rect = mapRegion(c);
-  if (!canCopy(c) || !layer || !rect || !c.store) return false;
-  memoryClip = copyRegion(c.store.document, [layer.id], rect);
+  if (!canUseSelectionScope() || !rect || !c.store) return false;
+  const s = useEditorStore.getState();
+  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
+  memoryClip = copyRegion(c.store.document, snapshot.layerIds, rect);
   writeSystemClipboard(serializeClip(memoryClip));
   toast.info(t("toast.copied", { width: rect.width, height: rect.height }));
+  reportSelectionSkipped(snapshot.skipped);
   return true;
 }
 
 export function cutSelection(): boolean {
   const c = contextOf(useEditorStore.getState());
-  const layer = activeLayer(c);
   const rect = mapRegion(c);
-  if (!canErase(c) || !layer || !rect || !c.store) return false;
-  memoryClip = cutRegion(c.store, [layer.id], rect);
+  if (!canUseSelectionScope() || !rect || !c.store) return false;
+  const s = useEditorStore.getState();
+  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
+  memoryClip = cutRegion(c.store, snapshot.layerIds, rect);
   writeSystemClipboard(serializeClip(memoryClip));
   toast.info(t("toast.cut", { width: rect.width, height: rect.height }));
+  reportSelectionSkipped(snapshot.skipped);
   return true;
 }
 
-/** Clears the region on the active layer (one undo step). */
+/** Clears the region on the captured selection layers (one undo step). */
 export function deleteSelection(): boolean {
   const c = contextOf(useEditorStore.getState());
-  const layer = activeLayer(c);
   const rect = mapRegion(c);
-  if (!canErase(c) || !layer || !rect || !c.store) return false;
-  const cells: { x: number; y: number }[] = [];
-  for (let y = rect.y; y < rect.y + rect.height; y++) {
-    for (let x = rect.x; x < rect.x + rect.width; x++) cells.push({ x, y });
-  }
-  if (!isGridLayer(layer) && !isTileLayer(layer)) return false; // entity layers hold no cells
-  if (isGridLayer(layer)) {
-    c.store.dispatch({ type: "paintTerrain", layerId: layer.id, cells: cells.map((p) => ({ ...p, value: 0 })) });
-  } else {
-    c.store.dispatch({ type: "paintCells", layerId: layer.id, cells: cells.map((p) => ({ ...p, cell: EMPTY_CELL })) });
-  }
+  if (!canUseSelectionScope() || !rect || !c.store) return false;
+  const s = useEditorStore.getState();
+  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
+  cutRegion(c.store, snapshot.layerIds, rect);
+  reportSelectionSkipped(snapshot.skipped);
   return true;
 }
 

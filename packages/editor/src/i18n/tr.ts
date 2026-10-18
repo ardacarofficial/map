@@ -1224,4 +1224,13 @@ export const tr = {
     empty: "Stamp boş; kaydetmek için en az bir tile çiz",
     saved: "“{name}” kaydedildi",
   },
+  selectionScope: {
+    label: "Katmanlar",
+    active: "Etkin katman",
+    visible: "Görünür katmanlar",
+    hint: "Seçim işlemlerine katılan tile ve çarpışma katmanları. Kilitli katmanlar atlanır.",
+    toggle: "Seçimin katman kapsamını değiştir",
+    skipped: "Atlanan katmanlar: {layers}",
+  },
+
 } as const;

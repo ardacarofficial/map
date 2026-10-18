@@ -52,6 +52,10 @@ import {
   type TileLayer,
 } from "@smap/core";
 
+import { captureSelectionScope, survivingSelectionIds, reportSelectionSkipped } from "../commands/selectionScope";
+import { t } from "../i18n";
+import { toast } from "../ui/toast/toastStore";
+import { prepareSelectionPaste, survivingPasteMapping } from "../commands/selectionPaste";
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
 import { isRecentStamp, recentOfClip } from "../state/recentItems";
@@ -168,7 +172,7 @@ export type Gesture =
       readonly kind: "move";
       readonly pointerId: number;
       readonly store: MapStore;
-      readonly layerId: string;
+      readonly layerIds: readonly string[];
       /** The selection when the drag started. */
       readonly region: CellRegion;
       readonly grab: CellPoint;
@@ -292,7 +296,7 @@ export class ToolController {
     const s = useEditorStore.getState();
     const grid = isGridLayer(this.#activeLayer());
     if (s.tool === "eraser") return true;
-    return s.tool === "brush" && !(s.stamp && (savedStamp(s.stamp) || !grid));
+    return s.tool === "brush" && !(s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid));
   }
 
   /** Left / right button down on a map cell (pan already handled). */
@@ -307,8 +311,9 @@ export class ToolController {
     const s = useEditorStore.getState();
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
-    if (this.#reportBlocked(s.tool) || this.#reportMissingBrush()) return;
-    if ((s.tool === "entity" || s.tool === "select") && isEntityLayer(active)) {
+    if ((s.tool !== "select" && this.#reportBlocked(s.tool)) || this.#reportMissingBrush()) return;
+    if (s.tool === "select" && s.selectionScope === "visible" && s.selectedEntityId) s.setSelectedEntity(null);
+    if ((s.tool === "entity" || (s.tool === "select" && s.selectionScope === "active")) && isEntityLayer(active)) {
       if (this.#entityDown(e, cell) || s.tool === "entity") {
         this.#host.requestRender();
         return;
@@ -321,7 +326,7 @@ export class ToolController {
     }
     switch (s.tool) {
       case "brush":
-        if (s.stamp && (savedStamp(s.stamp) || !grid)) this.#beginStamp(e, s.stamp, cell);
+        if (s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid)) this.#beginStamp(e, s.stamp, cell);
         else this.#beginPaint(e, e.shiftKey ? this.lineAnchor() : null);
         break;
       case "eraser":
@@ -882,9 +887,16 @@ export class ToolController {
     const store = this.#host.scene?.store;
     if (!store) return;
     const saved = savedStamp(clip) !== null;
-    const mapping = saved ? {} : mappingFor(store, clip);
-    if (!saved && Object.keys(mapping).length === 0) return;
     store.beginTransaction();
+    let mapping: Record<string, string>;
+    try {
+      mapping = saved ? {} : clip.layers.length > 1 ? prepareSelectionPaste(store, clip) : mappingFor(store, clip);
+    } catch (error) {
+      store.rollback();
+      console.error("[canvas] paste preparation failed", error);
+      return;
+    }
+    if (!saved && Object.keys(mapping).length === 0) { store.rollback(); return; }
     this.#start({ kind: "stamp", pointerId: e.pointerId, store, clip, mapping, saved, start, placed: new Set(), count: 0, last: null });
     this.#paint([e]);
     this.#pushRecentClip(clip);
@@ -911,7 +923,7 @@ export class ToolController {
             for (const p of r.patches) g.count += patchCellCount(p);
             if (r.patches.length > 0 || r.createdLayerIds.length > 0) changed = true;
           } else {
-            const patches = pasteClip(g.store, g.clip, g.mapping, o.x, o.y);
+            const patches = pasteClip(g.store, g.clip, survivingPasteMapping(g.store.document, g.mapping), o.x, o.y);
             for (const p of patches) g.count += patchCellCount(p);
             if (patches.length > 0) changed = true;
           }
@@ -955,7 +967,7 @@ export class ToolController {
     const doc = this.#host.scene?.store.document;
     if (!layer || !doc) return false;
     const s = useEditorStore.getState();
-    const reason = blockedReason(tool, layerState(layer, doc), tool === "brush" && savedStamp(s.stamp) !== null);
+    const reason = blockedReason(tool, layerState(layer, doc), tool === "brush" && (savedStamp(s.stamp) !== null || (s.stamp?.layers.length ?? 0) > 1));
     if (!reason) return false;
     this.#host.blocked?.({ reason, layerId: layer.id });
     this.#host.requestRender();
@@ -1045,13 +1057,15 @@ export class ToolController {
 
   // ------------------------------------------------------------------ selection move
 
-  /** Select tool, press inside the selection: drag its content (active layer). */
+  /** Select tool, press inside the selection: drag its content on the captured layers. */
   #beginMove(e: PointerEvent, region: CellRegion, cell: CellPoint): void {
     const store = this.#host.scene?.store;
     const layer = this.#activeLayer();
-    if (!store || !layer || this.#reportBlocked("move")) return;
+    if (!store || !layer) return;
+    const layerIds = captureSelectionScope(store.document);
+    if (layerIds.length === 0) return;
     store.beginTransaction();
-    this.#start({ kind: "move", pointerId: e.pointerId, store, layerId: layer.id, region: { ...region }, grab: cell, dx: 0, dy: 0 });
+    this.#start({ kind: "move", pointerId: e.pointerId, store, layerIds, region: { ...region }, grab: cell, dx: 0, dy: 0 });
   }
 
   /** Redoes the move for the cell under the pointer (the open transaction is rolled back first). */
@@ -1067,7 +1081,9 @@ export class ToolController {
     g.store.beginTransaction();
     if (g.dx === 0 && g.dy === 0) return;
     try {
-      moveRegion(g.store, [g.layerId], g.region, g.dx, g.dy);
+      const ids = survivingSelectionIds(g.store.document, g.layerIds);
+      reportSelectionSkipped(g.layerIds.filter(id => !ids.includes(id)).map(id => g.store.document.getLayer(id)?.name ?? id));
+      moveRegion(g.store, ids, g.region, g.dx, g.dy);
     } catch (error) {
       console.error("[canvas] move failed", error);
       this.cancel();
@@ -1086,7 +1102,7 @@ export class ToolController {
 
   /**
    * Arrow keys with the select tool: moves the selection's content by
-   * (`dx`, `dy`) cells on the active layer as one undo step. False when
+   * (`dx`, `dy`) cells on the scoped layers as one undo step. False when
    * there is nothing to move (no selection, a gesture running, blocked).
    */
   nudgeSelection(dx: number, dy: number): boolean {
@@ -1095,12 +1111,13 @@ export class ToolController {
     const layer = this.#activeLayer();
     const region = s.region;
     if (this.#gesture || s.tool !== "select" || !region || !store || !layer) return false;
-    if (this.#reportBlocked("move")) return true;
+    const layerIds = captureSelectionScope(store.document);
+    if (layerIds.length === 0) return true;
     const map = store.document.map;
     const off = moveOffset(region, { x: 0, y: 0 }, { x: dx, y: dy }, map);
     if (off.x === 0 && off.y === 0) return true;
     try {
-      moveRegion(store, [layer.id], region, off.x, off.y);
+      moveRegion(store, layerIds, region, off.x, off.y);
     } catch (error) {
       console.error("[canvas] move failed", error);
       return true;
@@ -1113,7 +1130,7 @@ export class ToolController {
 
   /**
    * Z / Shift+Z with the select tool: turns the selection's content 90° in
-   * place on the active layer (one undo step, core `rotateRegion`); the
+   * place on the scoped layers (one undo step, core `rotateRegion`); the
    * selection takes the turned size. False when there is no selection to
    * turn (the brush turns instead); true when the turn was handled, also
    * when it was refused (locked layer: the blocked hint says why). Non-square
@@ -1124,12 +1141,18 @@ export class ToolController {
     const store = this.#host.scene?.store;
     const layer = this.#activeLayer();
     const region = s.region;
-    if (s.tool !== "select" || !region || !store || !layer || isEntityLayer(layer)) return false;
+    if (s.tool !== "select" || !region || !store || !layer || (isEntityLayer(layer) && s.selectionScope === "active")) return false;
     if (this.#gesture) return true;
-    if (this.#reportBlocked("move")) return true;
+    const layerIds = captureSelectionScope(store.document);
+    if (layerIds.length === 0) return true;
+    const map = store.document.map;
+    if (map.tileWidth !== map.tileHeight && layerIds.some(id => !isGridLayer(store.document.getLayer(id)))) {
+      toast.info(t("canvas.rotateNonSquare"));
+      return true;
+    }
     let next: CellRegion | null;
     try {
-      next = rotateRegion(store, [layer.id], region, dir);
+      next = rotateRegion(store, layerIds, region, dir);
     } catch (error) {
       console.error("[canvas] rotate failed", error);
       return true;

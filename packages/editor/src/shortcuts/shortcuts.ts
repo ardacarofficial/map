@@ -11,6 +11,7 @@
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "selection.toggleScope"
   | "tool.brush"
   | "tool.eraser"
   | "tool.fill"
@@ -99,6 +100,8 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  // Selection scope
+  { command: "selection.toggleScope", keys: [] },
   { command: "tool.brush", keys: ["B"] },
   { command: "tool.eraser", keys: ["E"] },
   { command: "tool.fill", keys: ["F"] },

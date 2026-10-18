@@ -13,13 +13,12 @@ import { pickFiles } from "../ui/pickFiles";
 import { registerCommands, type Command } from "./registry";
 import { registerProjectCommands } from "../io/projectRename";
 import type { ToolId } from "../state/editorStore";
+import { canUseSelectionScope } from "./selectionScope";
 import { copySelection, cutSelection, deleteSelection, flipStampOrTile, pasteFromSystem } from "./clipboard";
 import {
   activeLayer,
-  canCopy,
   canDeselect,
   hasSelectedEntity,
-  canErase,
   canFlip,
   canPaste,
   canRedo,
@@ -229,14 +228,14 @@ const COMMANDS: Command[] = [
       if (editor().project?.store.redo()) markDirty();
     },
   },
-  { id: "edit.cut", title: "commands.edit.cut", category: "edit", enabled: when(canErase), run: () => void cutSelection() },
-  { id: "edit.copy", title: "commands.edit.copy", category: "edit", enabled: when(canCopy), run: () => void copySelection() },
+  { id: "edit.cut", title: "commands.edit.cut", category: "edit", enabled: () => !isWorldView() && canUseSelectionScope(), run: () => void cutSelection() },
+  { id: "edit.copy", title: "commands.edit.copy", category: "edit", enabled: () => !isWorldView() && canUseSelectionScope(), run: () => void copySelection() },
   { id: "edit.paste", title: "commands.edit.paste", category: "edit", enabled: when(canPaste), run: () => void pasteFromSystem() },
   {
     id: "edit.delete",
     title: "commands.edit.delete",
     category: "edit",
-    enabled: when((c) => hasSelectedEntity(c) || canErase(c)),
+    enabled: when((c) => hasSelectedEntity(c) || canUseSelectionScope()),
     run: () => {
       const entityId = editor().selectedEntityId;
       if (entityId && hasSelectedEntity(ctx())) deleteEntity(entityId);

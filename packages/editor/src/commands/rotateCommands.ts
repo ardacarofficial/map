@@ -13,7 +13,7 @@
  * mirrors its candidates (before, X / Y turned it into a flipped single tile
  * and the preview kept showing the random set).
  */
-import { isEntityLayer, isGridLayer, makeCell, rotateClip, type TileClip } from "@smap/core";
+import { isEntityLayer, makeCell, rotateClip, type TileClip } from "@smap/core";
 
 import { canRotateTiles, flipFlags, rotateFlags, type RotateDir } from "../canvas/rotation";
 import { isRandomBrush, randomTileFlags } from "../canvas/randomPaint";
@@ -93,10 +93,10 @@ function apply(transform: BrushTransform): boolean {
 }
 
 /** True when Z / Shift+Z turn the marquee selection's content instead of the brush (select tool, a selection, a cell layer). */
-export function rotatesSelection(state: Pick<EditorState, "tool" | "region" | "activeLayerId" | "project">): boolean {
+export function rotatesSelection(state: Pick<EditorState, "tool" | "region" | "activeLayerId" | "project"> & Partial<Pick<EditorState, "selectionScope">>): boolean {
   if (state.tool !== "select" || !state.region || !state.project) return false;
   const layer = state.activeLayerId ? state.project.store.document.getLayer(state.activeLayerId) : undefined;
-  return layer !== undefined && !isEntityLayer(layer);
+  return state.selectionScope === "visible" || (layer !== undefined && !isEntityLayer(layer));
 }
 
 /**
@@ -107,14 +107,8 @@ export function rotatesSelection(state: Pick<EditorState, "tool" | "region" | "a
 export function rotateBrush(dir: RotateDir): boolean {
   const state = useEditorStore.getState();
   if (rotatesSelection(state)) {
-    const map = state.project!.store.document.map;
-    const layer = state.project!.store.document.getLayer(state.activeLayerId!)!;
-    if (!isGridLayer(layer) && !canRotateTiles(map.tileWidth, map.tileHeight)) {
-      getCanvasHandle()?.showHint(t("canvas.rotateNonSquare"));
-      return false;
-    }
     const handle = getCanvasHandle();
-    if (handle?.rotateSelection(dir)) return true;
+    return handle?.rotateSelection(dir) ?? false;
   }
   return apply(rotatedBrush(state, dir));
 }

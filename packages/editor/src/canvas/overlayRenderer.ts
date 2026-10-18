@@ -45,6 +45,7 @@ import { gridLayout } from "./grid";
 import { gridPaintValue } from "./gridPaint";
 import { COLL_FORCED_PASSABLE, isSolidCode, solidEdges, type Edge } from "./gridRaster";
 import type { GridOverlays } from "./gridOverlays";
+import { survivingPasteMapping } from "../commands/selectionPaste";
 import { activeInfo, activeLayer, clipId, mappingFor, savedStamp, savedStampPreviewMapping } from "./layerAccess";
 import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
@@ -316,7 +317,7 @@ export class OverlayRenderer {
         return;
       case "stamp": {
         const at = host.pointerCell() ?? gesture.last ?? gesture.start;
-        const mapping = gesture.saved ? savedStampPreviewMapping(host.scene?.store, gesture.clip) : gesture.mapping;
+        const mapping = gesture.saved ? savedStampPreviewMapping(host.scene?.store, gesture.clip) : survivingPasteMapping(host.scene!.store.document, gesture.mapping);
         this.#showStampPreview(gesture.clip, mapping, snapToStampGrid(gesture.start, at, gesture.clip.width, gesture.clip.height));
         return;
       }
@@ -335,10 +336,10 @@ export class OverlayRenderer {
     const cell = host.cursorCell();
     if (!cell) return;
     const one = { x: cell.x, y: cell.y, width: 1, height: 1 };
-    // A saved stamp maps its own layers: it previews (and places) on any active layer.
-    const saved = state.tool === "brush" ? savedStamp(state.stamp) : null;
+    // Clips and saved stamps use the same mapping for hover and placement.
+    const saved = state.tool === "brush" ? state.stamp : null;
     if (saved) {
-      const mapping = savedStampPreviewMapping(host.scene?.store, saved);
+      const mapping = savedStamp(saved) ? savedStampPreviewMapping(host.scene?.store, saved) : mappingFor(host.scene?.store, saved);
       if (Object.keys(mapping).length > 0) this.#showStampPreview(saved, mapping, cell);
       else this.#drawCellCursor(one);
       return;
