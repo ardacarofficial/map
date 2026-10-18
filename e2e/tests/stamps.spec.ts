@@ -175,8 +175,9 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   await expect(maps).toHaveCount(1);
   await page.locator("[data-library-tab-button='stamps']").click();
 
-  // Double-click opens the same stamp editor as Düzenle.
-  await card(page, "Kulübe").dblclick();
+  // Denetçi → Düzenle: the stamp opens in its own tab with the banner.
+  await card(page, "Kulübe").click();
+  await page.locator("[data-stamp-inspector] [data-action='editStamp']").click();
   await expect(page.locator("[data-stamp-banner]")).toBeVisible();
   await expect(page.locator("[data-stamp-tab]")).toHaveAttribute("aria-selected", "true");
   expect(await levelId(page)).toBe(`stamp:${id}`);

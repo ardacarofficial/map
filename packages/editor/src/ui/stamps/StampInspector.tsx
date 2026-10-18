@@ -22,6 +22,7 @@ import { openStampEditor } from "../stampEditor/stampEditorSession";
 import { StarGlyph, TagGlyph } from "./glyphs";
 import { parseTags, stampCategories } from "./stampFilters";
 import { useUiStore } from "../uiStore";
+import { useRandomBrush } from "../../commands/randomBrush";
 import { useTerrainDraft } from "../terrain/terrainDraft";
 import { useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
@@ -52,6 +53,13 @@ export function installStampInspector(): void {
   const clear = () => useStampLibrary.getState().select(null);
   useEditorStore.subscribe((state, prev) => {
     if (state.region !== null && state.region !== prev.region) clear();
+  });
+  // The brush now carries a random set: its card replaces the library stamp's.
+  useEditorStore.subscribe((state, prev) => {
+    if (state.randomSet !== prev.randomSet && state.randomSet.length > 0) clear();
+  });
+  useRandomBrush.subscribe((state, prev) => {
+    if (state.stamps !== prev.stamps && state.stamps.length > 0) clear();
   });
   useUiStore.subscribe((state, prev) => {
     if (state.tilesetMode === "terrain" && state.tilesetMode !== prev.tilesetMode) clear();

@@ -459,7 +459,7 @@ function StampItem({
           }}
           onDoubleClick={(e) => {
             if ((e.target as HTMLElement).closest("input")) return;
-            void openStampEditor(stamp.id);
+            arm();
           }}
           onKeyDown={(e) => {
             if (editing || e.target !== e.currentTarget) return;
