@@ -1,3 +1,4 @@
+import { publishSavedBrushAssets } from "../commands/smartBrushActions";
 import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
 import type { GeneratedRecipe } from "./smartStampRecipes";
 /**
@@ -677,6 +678,7 @@ export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): ()
  * backup of the level. Updates the remembered disk text and the save status.
  */
 async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
+  await publishSavedBrushAssets();
   await waitForSmartStampRegeneration();
   const ws = workspace;
   if (!ws) return;

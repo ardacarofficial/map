@@ -1,20 +1,17 @@
+import { autoBrush, attachPreparedBrush, preparedBrush, brushCandidate, brushDisabled, refreshUnpublishedBrush, setBrushSmartEnabled } from "./smartBrushActions";
 import { queueSmartStampRegeneration } from "../state/smartStampJobs";
 export { waitForSmartStampRegeneration } from "../state/smartStampJobs";
 import { sameBakeRecipe } from "../io/smartStampRecipes";
-import { revealSection, useLayoutStore } from "../ui/layout/layoutStore";
-import { buildRoadProfile, makeStampId, nineSliceProblem, prepareNineSliceTileset, type MapStore, type NineSliceInnerCorner, type Stamp, type StampNineSlice, type Tileset } from "@smap/core";
-import { create } from "zustand";
+import { buildRoadProfile, makeStampId, nineSliceProblem, prepareNineSliceTileset, type MapStore, type NineSliceInnerCorner, type Stamp, type TileClip, type StampNineSlice, type Tileset } from "@smap/core";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
 import { allTilesetImages, getTilesetImage, onTilesetImage, notifyTilesetImage, removeTilesetImage, setTilesetImage, type TilesetImage } from "../state/tilesetImages";
 import { bakeSmartStamp, pngHash } from "../ui/stamps/smartStampBake";
-import { useStampLibrary } from "../ui/stamps/stampLibraryStore";
-import { useToastStore, toast } from "../ui/toast/toastStore";
+import { toast } from "../ui/toast/toastStore";
 import { t } from "../i18n";
 import { registerCommands } from "./registry";
-import { activeStampId, pickStamp } from "./stampActions";
+import { activeStampId } from "./stampActions";
 
-export const useSmartStampDialog = create<{ stampId: string | null; open(id: string | null): void; }>()(set => ({ stampId: null, open: stampId => { if (stampId) { const toasts = useToastStore.getState(); for (const item of toasts.toasts) if (item.kind !== "error") toasts.dismiss(item.id); } set({ stampId }); } }));
 class SmartStampChangedError extends Error {
   constructor() { super(t("smartStamp.changed")); }
 }
@@ -40,7 +37,7 @@ export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInn
   try {
     for (const layer of stamp.layers.filter(l => !l.grid && (!targets || targets.has(l.layerId)))) {
       const old = doc.tilesets.find(t => (!targets || t.id === targets.get(layer.layerId)) && t.generated?.stampId === stamp.id && t.generated.layerId === layer.layerId && t.generated.sourceWidth === stamp.width && t.generated.sourceHeight === stamp.height && (targets || innerCorner === undefined || JSON.stringify(t.generated.innerCorner ?? null) === JSON.stringify(innerCorner)) && (targets || !useProjectLibrary.getState().generatedRecipes.some(r => r.tilesetId === t.id && !sameBakeRecipe(r.stamp, stamp))));
-      const id = old?.id ?? makeStampId(`generated-${stamp.id}-${assets.length + 1}`, [...doc.tilesets.map(t => t.id), ...[...allTilesetImages()].map(i => i.tilesetId)]);
+      const id = old?.id ?? targets?.get(layer.layerId) ?? makeStampId(`generated-${stamp.id}-${assets.length + 1}`, [...doc.tilesets.map(t => t.id), ...[...allTilesetImages()].map(i => i.tilesetId)]);
       let tileset = prepareNineSliceTileset(stamp, layer.layerId, { id, imagePath: old?.imagePath ?? `tilesets/${id}.png`, tileWidth: doc.map.tileWidth, tileHeight: doc.map.tileHeight, tilesets: doc.tilesets, imageHashes: hashes, ...(innerCorner !== undefined ? { innerCorner } : {}) });
       if (!nineSliceProblem(stamp, { roadLayerId: layer.layerId })) {
         const profile = old?.roadProfile ?? buildRoadProfile(stamp, layer.layerId);
@@ -105,44 +102,37 @@ export function acceptSmartStamp(prepared: PreparedSmartStamp, regeneration = fa
 export function disableSmartStamp(id: string): void {
   const stamp = useProjectLibrary.getState().stamps.find(s => s.id === id);
   if (!stamp?.nineSlice) return;
-  const { nineSlice: _old, ...flat } = stamp;
+  const flat = { ...stamp, smartDisabled: true };
+  attachPreparedBrush(flat, stamp);
   useProjectLibrary.getState().addStamp(flat);
   const editor = useEditorStore.getState();
   if (activeStampId(editor.stamp) === id) editor.setStamp(flat);
   // Ordinary generated tilesets remain available. Removal uses the existing project-wide usage dialog.
 }
-export function focusNineSlice(id: string): void {
-  const editor = useEditorStore.getState(), tool = editor.tool;
-  editor.setSelectedEntity(null);
-  pickStamp(id);
-  if (tool === "rect" || tool === "fill") editor.setTool(tool);
-  revealSection("properties");
-  useLayoutStore.getState().setRightTab("inspector");
-  useStampLibrary.getState().requestFocus(id, "nineSlice");
-}
 let installed = false;
 export function installSmartStamps(): void {
   if (installed) return; installed = true;
-  const selected = () => useStampLibrary.getState().selectedId ?? activeStampId(useEditorStore.getState().stamp);
   registerCommands([
-    { id: "stamp.nineSlice", title: "smartStamp.command", category: "edit", enabled: () => !!selected(), run: () => { const id = selected(); if (id) focusNineSlice(id); } },
+    { id: "stamp.nineSlice", title: "smartBrush.command", category: "edit", enabled: () => brushCandidate(), checked: () => !brushDisabled(useEditorStore.getState().stamp), run: () => setBrushSmartEnabled(brushDisabled(useEditorStore.getState().stamp)) },
   ]);
   let stopWatching: (() => void) | undefined;
   useEditorStore.subscribe((state, prev) => {
     if (state.project?.store !== prev.project?.store) {
       stopWatching?.();
       const store = state.project?.store;
-      let suspended: Stamp | null = null;
+      let suspended: TileClip | null = null;
       stopWatching = store?.subscribe(event => {
         if (!event.structure.includes("tilesets")) return;
         const editor = useEditorStore.getState(), selected = editor.stamp as Stamp | null;
         const missing = (stamp: Stamp) => stamp.nineSlice?.tileLayers.some(l => !store.document.getTileset(l.tilesetId));
         // Missing banks suspend the brush, never destroy the canonical recipe.
         // Undo/rollback restores availability from the same library metadata.
-        if (selected?.nineSlice && missing(selected)) { suspended = selected; editor.setStamp(null); }
-        else if (suspended && !missing(suspended)) {
-          const canonical = useProjectLibrary.getState().stamps.find(s => s.id === suspended!.id);
-          if (!editor.stamp && canonical === suspended) editor.setStamp(canonical);
+        const automatic = autoBrush(selected), candidate = preparedBrush(selected) ?? selected;
+        if (automatic && candidate && missing(candidate) && (event.cause === "undo" || event.cause === "rollback")) { automatic.published = false; refreshUnpublishedBrush(selected); }
+        if (candidate?.nineSlice && (!automatic || automatic.published) && missing(candidate)) { suspended = selected; editor.setStamp(null); }
+        else if (suspended && !missing(preparedBrush(suspended) ?? suspended as Stamp)) {
+          const canonical = useProjectLibrary.getState().stamps.find(s => s.id === (suspended as Stamp).id);
+          if (!editor.stamp && (canonical === suspended || autoBrush(suspended))) editor.setStamp(suspended);
           suspended = null;
         }
       });

@@ -33,29 +33,19 @@ async function snapshot(page: Page) {
 }
 
 test("9 dilim: real bake previews, compact rectangles, shrinking, ghost equals commit, unmarked stamp regression", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page);
-  await page.locator("[data-action='placeStamp']").click();
+  await makeRoadStamp(page);
+  await page.locator("[data-smart-brush]").click();
   await dragRoad(page, [[4, 4], [7, 4]]);
   const flat = await page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     const store = useEditorStore.getState().project.store, layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
-    return [4, 5, 6, 7, 8, 9].map(x => store.document.palette.get(layer.getCell(x, 4) & 0x1fffffff)?.tileId);
+    return [4,5,6,7,8,9].map(x=>store.document.palette.get(layer.getCell(x,4)&0x1fffffff)?.tileId);
   });
-  expect(flat).toEqual([0, 1, 2, 0, 1, 2]);
+  expect(flat).toEqual([14,15,16,14,15,16]);
   await page.keyboard.press("Control+z");
-  await page.evaluate(async () => {
-    const { useStampLibrary } = await import(/* @vite-ignore */ String("/src/ui/stamps/stampLibraryStore.ts"));
-    const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
-    useStampLibrary.getState().select(useProjectLibrary.getState().stamps[0].id);
-  });
-  // Cancel conversion does not publish a PNG or metadata.
-  await page.locator("[data-nine-slice]").click();
-  await expect(page.locator("[data-smart-stamp-preview]")).toHaveCount(5);
-  await page.getByRole("button", { name: "Vazgeç", exact: true }).click();
-  await expect(page.locator("[data-nine-slice]")).not.toBeChecked();
-  await acceptRoadStamp(page);
+  await page.locator("[data-smart-brush]").click();
   await page.keyboard.press("r");
-  await expect(page.locator("[data-tool-option='rectangle']")).toHaveCount(0);
+  await expect(page.locator("[data-tool-option='rectangle']")).toHaveCount(1);
   for (const [x, y, w, h] of [[1, 1, 1, 1], [3, 1, 1, 4], [5, 1, 2, 2], [8, 1, 5, 4]]) {
     const a = await cellPoint(page, x!, y!), b = await cellPoint(page, x! + w! - 1, y! + h! - 1);
     await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y);
@@ -64,6 +54,7 @@ test("9 dilim: real bake previews, compact rectangles, shrinking, ghost equals c
     expect(await matchesPreview(page, ghost)).toBe(true);
   }
   await page.keyboard.press("b");
+  await page.getByRole("radio", { name: "Alan", exact: true }).click();
   const a = await cellPoint(page, 3, 7), far = await cellPoint(page, 12, 10), small = await cellPoint(page, 5, 8);
   await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(far.x, far.y); await page.mouse.move(small.x, small.y);
   await expect.poll(async () => (await preview(page)).flatMap(l => l.writes).length).toBe(6);
@@ -73,7 +64,7 @@ test("9 dilim: real bake previews, compact rectangles, shrinking, ghost equals c
 
 test("9 dilim road: straight, L, T, +, joining strokes, transforms, erase, cancellation, save and reopen", async ({ page }) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-  await page.goto("/"); await makeRoadStamp(page); await acceptRoadStamp(page);
+  await makeRoadStamp(page); await acceptRoadStamp(page);
   await page.getByRole("radio", { name: "Yol", exact: true }).click();
   await expect(page.locator("[data-smart-stamp-mode]")).toHaveAttribute("data-smart-stamp-mode", "road");
   await dragRoad(page, [[2, 3], [8, 3]]); // straight
@@ -116,20 +107,18 @@ test("9 dilim road: straight, L, T, +, joining strokes, transforms, erase, cance
   await expect.poll(() => readOpfsText(page, "project.smap")).not.toBeNull();
   const project = JSON.parse((await readOpfsText(page, "project.smap"))!);
   expect(project.tilesets.some((t: { generated?: unknown; imagePath: string }) => t.generated && t.imagePath.startsWith("tilesets/"))).toBe(true);
+  await expect.poll(() => page.evaluate(async () => { const { useUiStore } = await import(/* @vite-ignore */ String("/src/ui/uiStore.ts")); return useUiStore.getState().busy; })).toBe(false);
   const saved = await snapshot(page); await page.reload(); await page.getByRole("button", { name: /^Aç…/ }).click();
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
   expect(await snapshot(page)).toEqual(saved);
-  await page.evaluate(async () => {
-    const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
-    const { pickStamp } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
-    pickStamp(useProjectLibrary.getState().stamps[0].id);
-  });
+  await page.locator("[data-panel-tab='stamps']").click();
+  await page.locator("[data-stamp-id='koy-yolu']").dblclick();
   await expect(page.locator("[data-smart-stamp-mode]")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
 test("generated bank: deterministic PNG reload, stable slots, Save As and unmark keeps used atlas", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page); await acceptRoadStamp(page);
+  await makeRoadStamp(page); await acceptRoadStamp(page);
   await page.getByRole("radio", { name: "Yol", exact: true }).click(); await dragRoad(page, [[2, 3], [7, 3]]);
   await page.keyboard.press("Control+s"); await expect.poll(() => readOpfsText(page, "project.smap")).not.toBeNull();
   await expect.poll(() => page.evaluate(async () => {
@@ -150,7 +139,7 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
     commands.discardSmartStamp(unchanged);
     const source = store.document.getTileset("road-source"), image = getTilesetImage(source.id);
     const canvas = new OffscreenCanvas(image.bitmap.width, image.bitmap.height), ctx = canvas.getContext("2d")!;
-    ctx.drawImage(image.bitmap, 0, 0); ctx.fillStyle = "#b8ae82"; ctx.fillRect(32, 32, 32, 32);
+    ctx.drawImage(image.bitmap, 0, 0); ctx.fillStyle = "#b8ae82"; ctx.fillRect(96, 64, 32, 32);
     const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer());
     await getProjectFolder().fs.writeBytes(source.imagePath, bytes);
     await reloadTilesetImage(source.imagePath); await commands.waitForSmartStampRegeneration();
@@ -159,7 +148,7 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
     const sourceKept = JSON.stringify([...getTilesetImage(source.id).bytes]) === JSON.stringify([...bytes]);
     const cells = [...store.document.layers.find((l: { type: string }) => l.type === "tile").chunks()].map(c => [...c.data]);
     commands.disableSmartStamp(stamp.id);
-    const retained = !!store.document.getTileset(original.id), flat = !useProjectLibrary.getState().stamps[0].nineSlice;
+    const retained = !!store.document.getTileset(original.id), flat = !!useProjectLibrary.getState().stamps[0].smartDisabled;
     const unchangedCells = JSON.stringify([...store.document.layers.find((l: { type: string }) => l.type === "tile").chunks()].map(c => [...c.data])) === JSON.stringify(cells);
     useProjectLibrary.getState().removeStamp(stamp.id);
     const copy = await (await navigator.storage.getDirectory()).getDirectoryHandle("saved-copy", { create: true });
@@ -182,16 +171,21 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
 });
 
 test("multi-layer smart stamp: area skips hidden layers and retains area-only behavior", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page);
+  await makeRoadStamp(page);
   await page.evaluate(async () => {
     const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     const stamp = useProjectLibrary.getState().stamps[0], store = useEditorStore.getState().project.store;
     const id = store.dispatch({ type: "addLayer", layer: { name: "Overlay" } });
     store.dispatch({ type: "setLayerProps", layerId: id, props: { visible: false } });
-    useProjectLibrary.getState().addStamp({ ...stamp, layers: [...stamp.layers, { ...stamp.layers[0], layerId: "overlay-source", name: "Overlay" }] });
+    const { prepareSmartStamp, acceptSmartStamp } = await import(/* @vite-ignore */ String("/src/commands/smartStampCommands.ts"));
+    const { pickStamp } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
+    const { nineSlice: _old, ...flat } = stamp;
+    const multi = { ...flat, layers: [...stamp.layers, { ...stamp.layers[0], layerId: "overlay-source", name: "Overlay" }] };
+    useProjectLibrary.getState().addStamp(multi);
+    acceptSmartStamp(await prepareSmartStamp(multi)); pickStamp(multi.id);
   });
-  await acceptRoadStamp(page); await dragRoad(page, [[2, 2], [4, 4]]);
+  await expect(page.locator("[data-smart-stamp-mode]")).toHaveAttribute("data-smart-stamp-mode", "area"); await dragRoad(page, [[2, 2], [4, 4]]);
   const overlayEmpty = await page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     return [...useEditorStore.getState().project.store.document.layers.find((l: { name: string }) => l.name === "Overlay").chunks()].length === 0;
@@ -200,40 +194,11 @@ test("multi-layer smart stamp: area skips hidden layers and retains area-only be
   await expect(page.getByRole("radio", { name: "Yol", exact: true })).toBeDisabled();
 });
 
-test("9 dilim property has one label and toggle; rebuild appears only for edited bake content", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page);
-  await page.setViewportSize({ width: 1366, height: 768 });
-  const row = page.locator("[data-nine-slice]").locator("xpath=ancestor::div[label][1]");
-  await expect(row.getByText("9 dilim", { exact: true })).toHaveCount(1);
-  await expect(row.getByRole("switch", { name: "9 dilim", exact: true })).toHaveCount(1);
-  await expect(row.getByRole("button")).toHaveCount(0);
-  await row.getByRole("switch").focus(); await page.keyboard.press("Space");
-  await expect(page.locator("[data-smart-stamp-dialog]")).toBeVisible();
-  await page.getByRole("button", { name: "Hazırla", exact: true }).click();
-  await expect(page.locator("[data-smart-stamp-dialog]")).toBeHidden();
-  await expect(row.getByRole("switch")).toBeChecked();
-  await expect(row.getByRole("button")).toHaveCount(0);
-  // A deliberately disabled stamp still has a valid bake and needs no maintenance.
-  await row.getByRole("switch").click();
-  await expect(row.getByRole("switch")).not.toBeChecked();
-  await expect(row.getByRole("button")).toHaveCount(0);
-  // The stamp editor uses this command to invalidate an edited source's old bake.
-  await page.evaluate(async () => {
-    const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
-    const { replaceStampContent } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
-    const stamp = useProjectLibrary.getState().stamps[0];
-    const layers = stamp.layers.map((l: { cells: Uint32Array }) => ({ ...l, cells: l.cells.slice() }));
-    layers[0].cells[4] = layers[0].cells[1];
-    replaceStampContent(stamp.id, { ...stamp, layers });
-  });
-  const rebuild = row.getByRole("button", { name: "Yeniden hazırla", exact: true });
-  await expect(rebuild).toBeVisible();
-  await expect(row.getByText("9 dilim", { exact: true })).toHaveCount(1);
-  await rebuild.click();
-  await page.getByRole("button", { name: "Hazırla", exact: true }).click();
-  await expect(page.locator("[data-smart-stamp-dialog]")).toBeHidden();
-  await expect(row.getByRole("switch")).toBeChecked();
-  await expect(rebuild).toHaveCount(0);
-  await row.getByRole("switch").click();
-  await expect(rebuild).toHaveCount(0);
+test("options bar owns the single smart switch; Inspector only shows source facts", async ({ page }) => {
+  await makeRoadStamp(page);
+  await page.setViewportSize({width:1366,height:768});
+  const toggle=page.locator("[data-smart-brush]");await expect(toggle).toHaveCount(1);await expect(toggle).toBeChecked();
+  await expect(page.getByRole("switch",{name:"9 dilim",exact:true})).toHaveCount(0);
+  await toggle.focus();await page.keyboard.press("Space");await expect(toggle).not.toBeChecked();await expect(page.locator("[data-smart-stamp-dialog]")).toBeHidden();
+  await toggle.click();await expect(toggle).toBeChecked();
 });

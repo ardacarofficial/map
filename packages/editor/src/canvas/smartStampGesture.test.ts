@@ -1,5 +1,4 @@
 import { buildLayout1RoadProfile } from "@smap/core";
-import { smartRectangleUsage } from "./rectangleSource";
 import { describe, expect, it } from "vitest";
 import { applySmartStampPlan, buildRoadProfile, createDocument, FLIP_H, FLIP_V, makeCell, MapStore, nineSliceLayout, planSmartStampRoad, type Stamp, type RoadMembership } from "@smap/core";
 import { addRoadSamples, smartGesturePlan, smartHoverGesture, smartMembership, smartRect } from "./smartStampGesture";
@@ -14,11 +13,17 @@ function fixture(width = 80, height = 60) {
   return { store, stamp, layerId };
 }
 describe("smart gestures", () => {
-  it("filled R keeps area phase in both usages; only road outlines use the road solver", () => {
-    expect(smartRectangleUsage("area", 0)).toBe("area");
-    expect(smartRectangleUsage("area", 2)).toBe("area");
-    expect(smartRectangleUsage("road", 0)).toBe("area");
-    expect(smartRectangleUsage("road", 2)).toBe("road");
+  it("restored single-layer recipes use the active layer for both area and road", () => {
+    const { store, stamp, layerId } = fixture();
+    const activeId = store.dispatch({ type: "addLayer", layer: { name: "Overlay" } });
+    for (const usage of ["area", "road"] as const) {
+      const g = smartHoverGesture(store, stamp, activeId, { x: 4, y: 4 }, usage, 0, 1, "square");
+      const plan = smartGesturePlan(g);
+      expect(plan.layers[0]!.layerId).toBe(activeId);
+      applySmartStampPlan(store, plan);
+      expect(store.document.getLayer(layerId)!.getCell(4, 4)).toBe(0);
+      expect(store.document.getLayer(activeId)!.getCell(4, 4)).not.toBe(0);
+    }
   });
   it("keeps intended unclipped geometry, shrinks, reverses, squares and centres", () => {
     const { store, stamp, layerId } = fixture();

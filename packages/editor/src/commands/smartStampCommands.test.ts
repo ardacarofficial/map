@@ -209,7 +209,7 @@ it("generated removal, undo, redo and rollback preserve canonical nineSlice meta
 });
 
 
-it("stops an incompatible legacy fallback instead of retrying forever, and releases its output", async () => {
+it("rejects an incompatible legacy target before baking instead of retrying forever", async () => {
   const { store, stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
   await waitForSmartStampRegeneration();
   const bank = store.document.tilesets.find(t => t.generated)!, image = getTilesetImage(bank.id);
@@ -217,9 +217,7 @@ it("stops an incompatible legacy fallback instead of retrying forever, and relea
   useProjectLibrary.setState({ stamps: [changed], generatedRecipes: [] });
   vi.mocked(bakeSmartStamp).mockClear();
   replaceSource(40); await waitForSmartStampRegeneration();
-  expect(vi.mocked(bakeSmartStamp)).toHaveBeenCalledTimes(1);
-  const output = await vi.mocked(bakeSmartStamp).mock.results[0]!.value;
-  expect(output.bitmap.close).toHaveBeenCalledExactlyOnceWith();
+  expect(vi.mocked(bakeSmartStamp)).not.toHaveBeenCalled();
   expect(store.document.tilesets).toHaveLength(2);
   expect(store.document.getTileset(bank.id)?.generated).toEqual(bank.generated);
   expect(getTilesetImage(bank.id)).toBe(image);

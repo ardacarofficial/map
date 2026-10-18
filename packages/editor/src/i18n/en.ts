@@ -1173,6 +1173,15 @@ export const en: Messages = {
     picking: "{target}: pick a tile in the tileset dock or on the canvas",
   },
 
+  smartBrush: {
+    failed: "Preparation failed",
+    label: "Smart",
+    hint: "Draw roads or areas using the selected borders. Turn off to place plain blocks.",
+    preparing: "Preparing…",
+    source: "Source",
+    bands: "{border}-cell border",
+    command: "Toggle smart brush",
+  },
   smartStamp: {
     usageStamps: "Affects {count} stamps.",
     recipeMissing: "Source recipe missing for {name}.",

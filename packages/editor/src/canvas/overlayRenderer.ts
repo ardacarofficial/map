@@ -1,5 +1,6 @@
 import { rectangleThickness } from "../state/rectangleOptions";
-import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
+import { brushPreviewTilesets, brushPending } from "../commands/smartBrushActions";
+import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { smartGesturePlan, smartHoverGesture, smartRect } from "./smartStampGesture";
 /**
  * Everything drawn over the map layers: grid lines, map border, selection
@@ -21,6 +22,7 @@ import {
   flipClip,
   isEntityLayer,
   isGridLayer,
+  isTileLayer,
   makeCell,
   type CellPoint,
   type MapDocument,
@@ -49,7 +51,7 @@ import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
 import { activeRandomSet, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint, randomPlanKey } from "./randomPaint";
-import { smartRectangleUsage, rectangleStampSource } from "./rectangleSource";
+import { rectangleStampSource } from "./rectangleSource";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -273,11 +275,14 @@ export class OverlayRenderer {
     const smartCell = host.cursorCell(), smartLayer = activeLayer(host.scene?.store), smartAnchor = host.lineAnchor?.() ?? null;
     if (gesture?.kind === "smart" || ((!gesture || (gesture.kind === "pick" && gesture.press === "eraseRect")) && smart && smartCell && smartLayer && (state.tool === "brush" || state.tool === "rect" || (state.tool === "eraser" && session.usage === "road")))) {
       const scene = host.scene!;
-      let g = gesture?.kind === "smart" ? gesture : smartHoverGesture(scene.store, smart!, smartLayer!.id, smartCell!, state.tool === "rect" ? smartRectangleUsage(session.usage, rectangleThickness()) : session.usage, session.orientation, state.brushSize, state.brushShape, state.tool === "eraser", smartAnchor);
+      if (smart && smart.layers.length === 1 && smartLayer && !isTileLayer(smartLayer)) { scene.setSmartPreview(null, null); return; }
+      let g = gesture?.kind === "smart" ? gesture : smartHoverGesture(scene.store, smart!, smartLayer!.id, smartCell!, session.usage, session.orientation, state.brushSize, state.brushShape, state.tool === "eraser", smartAnchor);
+      if (!gesture && state.tool === "rect") g = { ...g, rectangle: true, thickness: rectangleThickness() };
       if (gesture?.kind === "pick" && gesture.press === "eraseRect") { g = { ...g, start: gesture.start, end: gesture.end, rectangle: true }; }
       const v = host.visible;
       const key = `smart:${smartAnchor?.x ?? ""},${smartAnchor?.y ?? ""}:${clipId(g.stamp)}:${scene.store.revision}:${scene.atlasVersion}:${g.layerId}:${g.usage}:${g.orientation}:${g.start.x},${g.start.y}:${g.end.x},${g.end.y}:${g.square}:${g.fromCenter}:${g.version}:${g.erase}:${g.thickness}:${state.brushSize}:${state.brushShape}:${v.x},${v.y},${v.width},${v.height}`;
       try {
+        for (const tileset of brushPreviewTilesets(g.stamp)) scene.preparePreviewTileset(tileset);
         const plan = smartGesturePlan(g, v);
         scene.setSmartPreview(plan, key);
         const grid = this.#stampGridPreview; grid.clear(); grid.position.set(0, 0);
@@ -293,6 +298,7 @@ export class OverlayRenderer {
       return;
     }
     host.scene?.setSmartPreview(null, null);
+    if (brushPending() && (state.tool === "brush" || state.tool === "rect")) return;
     if (gesture?.kind === "move") {
       const r = movedRegion(gesture.region, gesture.dx, gesture.dy, map);
       if (r) this.#drawRegion(r);
@@ -362,7 +368,7 @@ export class OverlayRenderer {
     if (!cell) return;
     const one = { x: cell.x, y: cell.y, width: 1, height: 1 };
     // Clips and saved stamps use the same mapping for hover and placement.
-    const saved = state.tool === "brush" ? state.stamp : null;
+    const saved = state.tool === "brush" && state.stamp ? orientedBrushClip(state.stamp) : null;
     if (saved) {
       const mapping = savedStamp(saved) ? savedStampPreviewMapping(host.scene?.store, saved) : mappingFor(host.scene?.store, saved);
       if (Object.keys(mapping).length > 0) this.#showStampPreview(saved, mapping, cell);
@@ -949,7 +955,7 @@ export class OverlayRenderer {
   #previewPattern(anchor: CellPoint): { key: string; at: Parameters<typeof rectPreviewCells>[3] } | null {
     const s = useEditorStore.getState();
     if (s.stamp) {
-      const clip = s.stamp;
+      const clip = orientedBrushClip(s.stamp);
       const li = patternLayerIndex(clip, mappingFor(this.#host.scene?.store, clip), s.activeLayerId);
       if (li < 0) return null;
       return {

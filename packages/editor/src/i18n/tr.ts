@@ -1176,6 +1176,15 @@ export const tr = {
     picking: "{target}: tileset'ten veya tuvalden tile seç",
   },
 
+  smartBrush: {
+    failed: "Hazırlanamadı",
+    label: "Akıllı",
+    hint: "Seçili kenarları kullanarak yol veya alan çiz. Kapatınca düz blok yerleştirir.",
+    preparing: "Hazırlanıyor…",
+    source: "Kaynak",
+    bands: "{border} hücre kenar",
+    command: "Akıllı fırçayı aç/kapat",
+  },
   smartStamp: {
     usageStamps: "{count} stamp etkileniyor.",
     recipeMissing: "{name} için kaynak stamp bulunamadı.",

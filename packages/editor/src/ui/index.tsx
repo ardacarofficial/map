@@ -1,4 +1,3 @@
-import { SmartStampDialog } from "./stamps/SmartStampDialog";
 /**
  * React panels (toolbar, layers, tileset, properties, status bar).
  * Tile data never lives in React state; panels send commands to the
@@ -83,7 +82,6 @@ export function App() {
       <DiskChangedDialog />
       <LazyExportDialog />
       <SaveStampDialog />
-      <SmartStampDialog />
       <EntityTypesDialog />
       <NewLevelDialog />
       <RemoveLevelDialog />

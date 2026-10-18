@@ -1,3 +1,4 @@
+import { autoBrush, attachPreparedBrush } from "./smartBrushActions";
 import { cellPaletteIndex, cellFlags } from "@smap/core";
 /**
  * Stamp library actions (v0.6): save the marquee as a multi-layer stamp,
@@ -91,7 +92,7 @@ export function pickStamp(id: string): void {
   if (!stamp || !editor.project) return;
   // A stamp saved with a tileset that was removed since cannot be placed.
   const doc = editor.project.store.document;
-  if (stamp.palette.some((e) => !doc.getTileset(e.tilesetId)) || stamp.nineSlice?.tileLayers.some(l => !doc.getTileset(l.tilesetId)) || (stamp.nineSlice?.road && !doc.getTileset(stamp.nineSlice.road.tilesetId))) {
+  if (stamp.palette.some((e) => !doc.getTileset(e.tilesetId)) || (!autoBrush(stamp) && stamp.nineSlice?.tileLayers.some(l => !doc.getTileset(l.tilesetId))) || (!autoBrush(stamp) && stamp.nineSlice?.road && !doc.getTileset(stamp.nineSlice.road.tilesetId))) {
     toast.error(t("tilesetLib.stampRemovedTileset", { name: stamp.name }));
     return;
   }
@@ -113,8 +114,13 @@ export function renameStamp(id: string, name: string): void {
   const stamp = library.stamps.find((s) => s.id === id);
   if (!stamp || trimmed.length === 0 || trimmed === stamp.name) return;
   library.renameStamp(id, trimmed);
+  const renamed = useProjectLibrary.getState().stamps.find(s => s.id === id)!;
+  attachPreparedBrush(renamed, stamp);
   const editor = useEditorStore.getState();
-  if (activeStampId(editor.stamp) === id && editor.stamp) editor.setStamp(Object.freeze({ ...editor.stamp, name: trimmed }) as Stamp);
+  if (activeStampId(editor.stamp) === id && editor.stamp) {
+    const next = Object.freeze({ ...editor.stamp, name: trimmed }) as Stamp;
+    attachPreparedBrush(next, editor.stamp); editor.setStamp(next);
+  }
 }
 
 /** Removes a stamp from the library (its file goes on the next save); "Geri al" in the toast restores it. */
@@ -140,6 +146,7 @@ export function duplicateStamp(id: string): Stamp | null {
   let name = t("contextMenu.stampCopyName", { name: stamp.name });
   for (let n = 2; names.has(name); n++) name = `${t("contextMenu.stampCopyName", { name: stamp.name })} ${n}`;
   const copy = Object.freeze({ ...stamp, id: makeStampId(name, takenStampIds(library)), name }) as Stamp;
+  attachPreparedBrush(copy, stamp);
   library.addStamp(copy);
   toast.success(t("toast.stampDuplicated", { name }));
   return copy;
@@ -162,6 +169,7 @@ export function setStampMeta(id: string, meta: StampMeta): Stamp | null {
     return null;
   }
   if (next.category === stamp.category && next.favorite === stamp.favorite && sameTags(next.tags, stamp.tags)) return null;
+  attachPreparedBrush(next, stamp);
   library.addStamp(next);
   return next;
 }
@@ -214,6 +222,7 @@ export function replaceStampContent(id: string, content: Stamp): Stamp | null {
   });
   const cells = { ...rawCells, layers, ...(unchanged && stamp.nineSlice ? { nineSlice: stamp.nineSlice } : {}) };
   const next = withStampMeta(Object.freeze({ ...cells, id: stamp.id, name: stamp.name }) as Stamp, meta);
+  if (unchanged) attachPreparedBrush(next, stamp);
   library.addStamp(next);
   syncBrush(next);
   return next;

@@ -88,6 +88,14 @@ describe("frozen e94d93d → format 4", () => {
     const stamp=parseStamp(JSON.stringify(input));expect(stamp.smartDisabled).toBe(true);expect(stamp.layers[0]!.cells[0]).toBe(0xe0000001);
     expect(stamp.nineSlice!.road).toBeDefined();expect(serializeStamp(parseStamp(serializeStamp(stamp)))).toBe(serializeStamp(stamp));
   });
+  it("defaults old stamps to smart enabled and emits smartDisabled in a fixed v4 key position",()=>{
+    const stamp=parseStamp(JSON.stringify(raw("v3-stamp.json")));
+    expect(stamp.smartDisabled??false).toBe(false);
+    const text=serializeStamp({...stamp,smartDisabled:true});
+    expect(Object.keys(JSON.parse(text))).toEqual(["format","documentFormatVersion","id","name","smartDisabled","nineSlice","width","height","palette","layers"]);
+    expect(serializeStamp({...stamp,smartDisabled:false})).toBe(serializeStamp(stamp));
+    expect(text.endsWith("\n")).toBe(true);
+  });
   it("keeps malformed retained metadata errors explicit while discarding obsolete marking metadata",()=>{
     const project=raw("v3-project.json");project.tilesets=[null];
     expect(()=>parseProject(JSON.stringify(project))).toThrow(/tilesets\[0\]/);

@@ -303,9 +303,9 @@ function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
 
 function StampNameForm({ doc, clip, onDone }: { doc: MapDocument; clip: TileClip; onDone(): void }) {
   const [name, setName] = useState(() => defaultStampName(useProjectLibrary.getState().stamps));
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (saveClipAsStamp(doc, clip, name)) onDone();
+    if (await saveClipAsStamp(doc, clip, name)) onDone();
   };
   return (
     <form onSubmit={submit} className="flex items-center gap-1.5">

@@ -1,5 +1,6 @@
-import { applySmartStampPlan, stampLayerMapping, isTileLayer } from "@smap/core";
-import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
+import { brushCandidate, brushPending, publishBrushAssets } from "../commands/smartBrushActions";
+import { applySmartStampPlan, isTileLayer } from "@smap/core";
+import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { addRoadSamples, smartGesturePlan, smartHoverGesture, type SmartGesture } from "./smartStampGesture";
 
 import {
@@ -33,7 +34,7 @@ import { t } from "../i18n";
 import { toast } from "../ui/toast/toastStore";
 import { prepareSelectionPaste, survivingPasteMapping } from "../commands/selectionPaste";
 import { consumeReplacementPick, rememberReplacementTile, replacementBrushTile, useTileReplacement } from "../commands/replaceTiles";
-import { smartRectangleUsage, rectangleStampSource } from "./rectangleSource";
+import { rectangleStampSource } from "./rectangleSource";
 import { rectangleThickness } from "../state/rectangleOptions";
 import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
@@ -295,9 +296,11 @@ export class ToolController {
       this.#start({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell, spring: false });
       return;
     }
+    if (brushCandidate() && s.stamp?.layers.length === 1 && this.#reportBlocked(s.tool, true)) return;
+    if (brushPending() && (s.tool === "brush" || s.tool === "rect")) return;
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
-    if (activeSmartStamp() && ((s.tool === "brush" && useSmartStampSession.getState().usage === "area") || (s.tool === "rect" && smartRectangleUsage(useSmartStampSession.getState().usage, rectangleThickness()) === "area"))) { this.#beginSmart(e, cell); return; }
+    if (activeSmartStamp() && ((s.tool === "brush" && useSmartStampSession.getState().usage === "area") || (s.tool === "rect" && useSmartStampSession.getState().usage === "area"))) { this.#beginSmart(e, cell); return; }
     if ((s.tool !== "select" && this.#reportBlocked(s.tool)) || this.#reportMissingBrush()) return;
     if (s.tool === "select" && s.selectionScope === "visible" && s.selectedEntityId) s.setSelectedEntity(null);
     if ((s.tool === "entity" || (s.tool === "select" && s.selectionScope === "active")) && isEntityLayer(active)) {
@@ -316,7 +319,7 @@ export class ToolController {
     }
     switch (s.tool) {
       case "brush":
-        if (s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid)) this.#beginStamp(e, s.stamp, cell);
+        if (s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid)) this.#beginStamp(e, orientedBrushClip(s.stamp), cell);
         else this.#beginPaint(e, e.shiftKey ? this.lineAnchor() : null);
         break;
       case "eraser":
@@ -400,7 +403,7 @@ export class ToolController {
     if (!g) return;
     this.#gesture = null;
     if (g.kind === "smart" && g.store.inTransaction) {
-      if (g.rectangle) g.store.rollback(); else { g.store.commit(); this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last }; }
+      g.store.rollback();
     }
     if ((g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) {
       g.store.commit();
@@ -585,7 +588,7 @@ export class ToolController {
   #writePattern(store: MapStore, anchor: CellPoint): ((x: number, y: number) => number) | null {
     const s = useEditorStore.getState();
     if (s.stamp) {
-      const clip = s.stamp;
+      const clip = orientedBrushClip(s.stamp);
       const li = patternLayerIndex(clip, mappingFor(store, clip), s.activeLayerId);
       if (li < 0) return null;
       const remap = new Map<number, number>();
@@ -802,12 +805,20 @@ export class ToolController {
   #beginSmart(e: PointerEvent, cell: CellPoint): void {
     const store = this.#host.scene?.store, stamp = activeSmartStamp(), state = useEditorStore.getState();
     if (!store || !stamp || !state.activeLayerId) return;
+    if (stamp.layers.length === 1) {
+      const layer = store.document.getLayer(state.activeLayerId);
+      if (!layer) return;
+      const reason = !isTileLayer(layer) ? "wrongKind" : blockedReason(state.tool, layerState(layer, store.document));
+      if (reason) { this.#host.blocked?.({ reason, layerId: state.activeLayerId }); this.#host.requestRender(); return; }
+    }
     const session = useSmartStampSession.getState(), erase = state.tool === "eraser";
-    const usage = state.tool === "rect" ? smartRectangleUsage(session.usage, rectangleThickness()) : session.usage;
+    const usage = session.usage;
     if (usage === "road" && !isTileLayer(store.document.getLayer(state.activeLayerId))) return;
     const anchor = e.shiftKey && usage === "road" && state.tool !== "rect" ? this.lineAnchor() : null;
-    const g: SmartGesture = { ...smartHoverGesture(store, stamp, state.activeLayerId, cell, usage, session.orientation, state.brushSize, state.brushShape, erase, anchor), pointerId: e.pointerId, mapping: stampLayerMapping(store.document, stamp), rectangle: usage === "area" || state.tool === "rect", thickness: usage === "area" ? 0 : rectangleThickness(), square: e.shiftKey, fromCenter: e.altKey };
-    store.beginTransaction(); this.#start(g);
+    const g: SmartGesture = { ...smartHoverGesture(store, stamp, state.activeLayerId, cell, usage, session.orientation, state.brushSize, state.brushShape, erase, anchor), pointerId: e.pointerId, rectangle: usage === "area" || state.tool === "rect", thickness: state.tool === "rect" ? rectangleThickness() : 0, square: e.shiftKey, fromCenter: e.altKey };
+    store.beginTransaction();
+    try { publishBrushAssets(state.stamp, store); } catch (error) { store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); return; }
+    this.#start(g);
     if (!g.rectangle) this.#applySmart(g);
   }
 
@@ -951,12 +962,12 @@ export class ToolController {
   // ------------------------------------------------------------------ blocked, right click
 
   /** Emits a blocked action (and returns true) when `tool` cannot act on the active layer. */
-  #reportBlocked(tool: ToolId | "move"): boolean {
+  #reportBlocked(tool: ToolId | "move", singleLayer = false): boolean {
     const layer = this.#activeLayer();
     const doc = this.#host.scene?.store.document;
     if (!layer || !doc) return false;
     const s = useEditorStore.getState();
-    const reason = blockedReason(tool, layerState(layer, doc), tool === "brush" && (savedStamp(s.stamp) !== null || (s.stamp?.layers.length ?? 0) > 1));
+    const reason = blockedReason(tool, layerState(layer, doc), !singleLayer && tool === "brush" && (savedStamp(s.stamp) !== null || (s.stamp?.layers.length ?? 0) > 1));
     if (!reason) return false;
     this.#host.blocked?.({ reason, layerId: layer.id });
     this.#host.requestRender();
