@@ -16,7 +16,7 @@
  */
 import { defineConfig } from "@playwright/test";
 
-export const PERF_PORT = 5299;
+export const PERF_PORT = Number(process.env.PERF_PORT ?? 5299);
 
 const outDir = process.env.PERF_DIST ?? "../../e2e/perf/dist";
 const minify = process.env.PERF_UNMINIFIED === "1" ? " --minify false" : "";
