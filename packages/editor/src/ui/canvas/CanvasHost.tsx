@@ -15,6 +15,11 @@ import { loadCanvasModule } from "./loadCanvas";
  * runs effects twice in development) can happen before it resolves; the
  * handle is then destroyed as soon as it arrives.
  */
+let lastTabKeyAt = -Infinity;
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", (e) => { if (e.key === "Tab") lastTabKeyAt = performance.now(); }, true);
+}
+
 export function CanvasHost() {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -59,7 +64,9 @@ export function CanvasHost() {
       {...{ [CANVAS_HOST_ATTR]: "" }}
       tabIndex={0}
       // Clicking the canvas focuses it so `Tab` (hide panels) works right away.
-      onFocus={(e) => { if (e.currentTarget.matches(":focus-visible")) e.currentTarget.dataset.focusInset = ""; }}
+      // The inset accent line marks keyboard arrival only (Tab here; F6 sets it in focusRegions),
+      // never a click or the app focusing the canvas after opening a map or closing a dialog.
+      onFocus={(e) => { if (performance.now() - lastTabKeyAt < 500) e.currentTarget.dataset.focusInset = ""; }}
       onBlur={(e) => { delete e.currentTarget.dataset.focusInset; }}
       onPointerDownCapture={(e) => {
         delete e.currentTarget.dataset.focusInset;
