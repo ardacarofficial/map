@@ -31,7 +31,6 @@ import {
   cellFlags,
   cellPaletteIndex,
   copyRegion,
-  floodFill,
   isEntityLayer,
   isGridLayer,
   makeCell,
@@ -56,6 +55,7 @@ import { moveEntityToCell, placeEntity } from "../commands/entityActions";
 import { useEditorStore, type CellRegion, type TileSelection, type ToolId } from "../state/editorStore";
 import { isRecentStamp, recentOfClip } from "../state/recentItems";
 import { cellWrites, strokeCells } from "./brush";
+import { fillRegionPlan, fillRunWrites, runPoints } from "./fillRegionPlan";
 import type { Point } from "./camera";
 import {
   gridPickEvent,
@@ -671,8 +671,8 @@ export class ToolController {
     if (!store.document.inBounds(cell.x, cell.y)) return;
     if (isGridLayer(layer)) {
       const value = this.#gridValue(layer);
-      if (value === null) return;
-      const writes = gridFillWrites(layer, cell.x, cell.y, value, map);
+      if (value === null || layer.getCell(cell.x, cell.y) === value) return;
+      const writes = gridFillWrites(layer, cell.x, cell.y, value, map, fillRegionPlan(store, layer, cell).runsAt(cell));
       if (writes.length > 0) this.#transact(store, "fill", () => this.#paintGrid(store, layer.id, writes));
       return;
     }
@@ -682,24 +682,18 @@ export class ToolController {
       return;
     }
     // The sentinel never equals a cell, so this is the whole same-valued region.
-    const points = floodFill(layer, cell.x, cell.y, -1, map);
+    const runs = fillRegionPlan(store, layer, cell).runsAt(cell);
     const single = this.#singleTile();
     const random = this.#randomSet();
     if (random) {
-      this.#transact(store, "fill", () => this.#paintRandom(store, layer.id, random, points, new Set()));
+      this.#transact(store, "fill", () => this.#paintRandom(store, layer.id, random, runPoints(runs), new Set()));
       return;
     }
     this.#transact(store, "fill", () => {
       // Stamps tile by absolute position, so neighbouring fills line up.
       const at = this.#writePattern(store, { x: 0, y: 0 });
       if (!at) return 0;
-      const cells: CellWrite[] = [];
-      for (const p of points) {
-        const v = at(p.x, p.y);
-        if (v === EMPTY_CELL || layer.getCell(p.x, p.y) === v) continue;
-        cells.push({ x: p.x, y: p.y, cell: v });
-      }
-      return this.#paintCells(store, layer.id, cells);
+      return this.#paintCells(store, layer.id, fillRunWrites(runs, layer.getCell(cell.x, cell.y), at));
     });
     if (single) this.#pushRecent(single);
     else this.#pushUsedStamp();

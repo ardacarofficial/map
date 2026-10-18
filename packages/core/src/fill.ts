@@ -11,24 +11,41 @@ export interface CellSource {
   chunks?(): Iterable<ReadonlyChunk>;
 }
 
-/**
- * Flood fill: the 4-connected region of cells equal to the cell at
- * (`x`, `y`), inside `bounds`. Returns the cells to write, without
- * duplicates; empty when the start is out of bounds or already equals `cell`
- * (filling would change nothing). Iterative scanline — no recursion.
- *
- * Paint the result with a `paintCells` op (one undo step):
- * `store.dispatch({ type: "paintCells", layerId, cells: floodFill(...).map((p) => ({ ...p, cell })) })`.
- */
+/** Inclusive horizontal span, in the existing scanline traversal order. */
+export interface FillRun {
+  readonly y: number;
+  readonly left: number;
+  readonly right: number;
+}
+
+/** Compatibility wrapper returning individual cells in scanline order. */
 export function floodFill(layer: CellSource, x: number, y: number, cell: Cell, bounds: CellBounds): CellPoint[] {
+  const points: CellPoint[] = [];
+  for (const run of floodFillRuns(layer, x, y, cell, bounds)) {
+    for (let ix = run.left; ix <= run.right; ix++) points.push({ x: ix, y: run.y });
+  }
+  return points;
+}
+
+/**
+ * The 4-connected same-valued region inside bounds, without per-cell objects.
+ * Empty for an outside/noninteger start or a no-op. Iterative, no recursion.
+ * Consumers build writes and dispatch through the store in one transaction.
+ */
+export function floodFillRuns(layer: CellSource, x: number, y: number, cell: Cell, bounds: CellBounds): FillRun[] {
   const { width, height } = bounds;
   if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) return [];
   const target = layer.getCell(x, y);
   if (target === cell) return [];
-
-  // open[i] = 1 while cell i matches the target and has not been filled yet.
   const open = matchMask(layer, target, width, height);
-  const points: CellPoint[] = [];
+  const runs: FillRun[] = [];
+  // A uniform bounded map has one run per row. Keep the original LIFO
+  // traversal (down from the seed, then up), without scanning its cells again.
+  if (open === null) {
+    for (let iy = y; iy < height; iy++) runs.push({ y: iy, left: 0, right: width - 1 });
+    for (let iy = y - 1; iy >= 0; iy--) runs.push({ y: iy, left: 0, right: width - 1 });
+    return runs;
+  }
   const stack: number[] = [x, y];
   while (stack.length > 0) {
     const sy = stack.pop()!;
@@ -40,12 +57,11 @@ export function floodFill(layer: CellSource, x: number, y: number, cell: Cell, b
     let right = sx;
     while (right < width - 1 && open[row + right + 1] === 1) right++;
     open.fill(0, row + left, row + right + 1);
-    for (let ix = left; ix <= right; ix++) points.push({ x: ix, y: sy });
-    // Seed one cell per open run in the rows above and below.
+    runs.push({ y: sy, left, right });
     if (sy > 0) seedRow(open, stack, (sy - 1) * width, sy - 1, left, right);
     if (sy < height - 1) seedRow(open, stack, (sy + 1) * width, sy + 1, left, right);
   }
-  return points;
+  return runs;
 }
 
 function seedRow(open: Uint8Array, stack: number[], row: number, y: number, left: number, right: number): void {
@@ -57,18 +73,23 @@ function seedRow(open: Uint8Array, stack: number[], row: number, y: number, left
   }
 }
 
-/** `width × height` mask: 1 where the cell equals `target`. */
-function matchMask(layer: CellSource, target: Cell, width: number, height: number): Uint8Array {
+/** `width × height` match mask; null when the whole bounded map matches. */
+function matchMask(layer: CellSource, target: Cell, width: number, height: number): Uint8Array | null {
   const mask = new Uint8Array(width * height);
   if (!layer.chunks) {
+    let uniform = true;
     for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) if (layer.getCell(x, y) === target) mask[y * width + x] = 1;
+      for (let x = 0; x < width; x++) {
+        if (layer.getCell(x, y) === target) mask[y * width + x] = 1;
+        else uniform = false;
+      }
     }
-    return mask;
+    return uniform ? null : mask;
   }
   // Empty cells are everywhere without a chunk: start from all-ones and clear.
   const empty = target === EMPTY_CELL;
   if (empty) mask.fill(1);
+  let uniform = empty;
   for (const chunk of layer.chunks()) {
     const x0 = chunk.cx << CHUNK_SHIFT;
     const y0 = chunk.cy << CHUNK_SHIFT;
@@ -82,12 +103,15 @@ function matchMask(layer: CellSource, target: Cell, width: number, height: numbe
       for (let x = x0; x < xEnd; x++) {
         const match = data[src + x - x0] === target;
         if (empty) {
-          if (!match) mask[dst + x] = 0;
+          if (!match) {
+            mask[dst + x] = 0;
+            uniform = false;
+          }
         } else if (match) {
           mask[dst + x] = 1;
         }
       }
     }
   }
-  return mask;
+  return uniform ? null : mask;
 }

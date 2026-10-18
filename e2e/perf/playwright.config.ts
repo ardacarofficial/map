@@ -8,7 +8,7 @@
  *
  * Env:
  * - `PERF_LABEL`     result file name under `perf/results/` (default "latest")
- * - `PERF_RUNS`      repetitions of the start-up scenarios (default 5)
+ * - `PERF_RUNS`      repetitions of every editor scenario (default 5)
  * - `PERF_NO_BUILD`  reuse the build (skip it)
  * - `PERF_DIST`      build folder relative to packages/editor (default ../../e2e/perf/dist)
  * - `PERF_PROFILE=1` also write `.cpuprofile`s and a top-functions summary
@@ -26,7 +26,9 @@ export default defineConfig({
   testDir: ".",
   testMatch: /.*\.perf\.ts$/,
   outputDir: "./results/test-output",
-  timeout: 15 * 60_000,
+  // Every scenario now repeats, including the real painting strokes. Leave
+  // room for SwiftShader under concurrent lane load without changing workloads.
+  timeout: 45 * 60_000,
   workers: 1,
   retries: 0,
   reporter: [["list"]],

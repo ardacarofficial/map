@@ -9,6 +9,8 @@
  * (f) JS heap after (b)–(e)
  * (g) save time of that project
  *
+ * PERF_RUNS repeats every scenario; values are medians of per-run statistics.
+ * Pointer paths retain their distance/steps but start on the actual canvas.
  * Times are main-thread milliseconds measured in the page (`performance.now`,
  * the canvas's frame log `window.__smapPerf.frames`).
  */
@@ -23,6 +25,7 @@ import { formatTable, median, percentile, summarizeProfile, type Results } from 
 const RESULTS = fileURLToPath(new URL("./results/", import.meta.url));
 const LABEL = process.env.PERF_LABEL ?? "latest";
 const RUNS = Number(process.env.PERF_RUNS ?? 5);
+if (!Number.isInteger(RUNS) || RUNS < 1) throw new Error("PERF_RUNS must be a positive integer");
 const PROFILE = process.env.PERF_PROFILE === "1";
 /** `PERF_ONLY=c,e` runs only those scenarios ((b) always opens the project for the rest). */
 const ONLY = process.env.PERF_ONLY?.split(",").map((s) => s.trim());
@@ -53,8 +56,15 @@ interface LongTask {
 /** Installed before any page script: frame log, input log, long tasks, OPFS folder picker. */
 function initScript(): void {
   const w = window as unknown as Record<string, unknown>;
-  const perf = { frames: [] as unknown[], inputs: [] as InputRecord[], longtasks: [] as LongTask[], welcomeAt: -1, recording: false };
-  w.__smapPerf = perf;
+  const perf = { frames: [] as unknown[], inputs: [] as InputRecord[], longtasks: [] as LongTask[], fillPreviews: [] as number[], welcomeAt: -1, recording: false };
+  const pending = new WeakMap<Event, InputRecord>();
+  const finishInput = (event: Event) => {
+    const input = pending.get(event);
+    if (!input) return;
+    input.handlerEnd = performance.now();
+    input.revAfter = rev();
+  };
+  w.__smapPerf = Object.assign(perf, { finishInput });
   w.showDirectoryPicker = () => navigator.storage.getDirectory();
   const rev = () => (w.__smap as { store: { revision: number } | null } | undefined)?.store?.revision ?? -1;
   for (const type of ["pointermove", "pointerdown", "keydown"]) {
@@ -63,7 +73,9 @@ function initScript(): void {
       (e) => {
         if (!perf.recording) return;
         const pe = e as PointerEvent;
-        perf.inputs.push({
+        // Only canvas pointer input; keyboard shortcuts finish on window.
+        if (type !== "keydown" && !(e.target instanceof HTMLCanvasElement && e.target.hasAttribute("data-perf-main"))) return;
+        const input: InputRecord = {
           type,
           t: e.timeStamp,
           capture: performance.now(),
@@ -71,34 +83,38 @@ function initScript(): void {
           revAfter: -1,
           handlerEnd: -1,
           coalesced: typeof pe.getCoalescedEvents === "function" ? pe.getCoalescedEvents().length : 0,
-        });
+        };
+        perf.inputs.push(input);
+        pending.set(e, input);
       },
       { capture: true },
     );
-    // Bubble listener on document: runs after the canvas's own (target) listener.
-    document.addEventListener(type, () => {
-      if (!perf.recording) return;
-      const last = perf.inputs[perf.inputs.length - 1];
-      if (last && last.handlerEnd < 0) {
-        last.handlerEnd = performance.now();
-        last.revAfter = rev();
+  }
+
+  if (!PerformanceObserver.supportedEntryTypes.includes("longtask")) throw new Error("Long-task instrumentation is unavailable");
+  new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) perf.longtasks.push({ start: e.startTime, duration: e.duration });
+  }).observe({ type: "longtask", buffered: true });
+  const markWelcome = () => {
+    const welcome = document.querySelector("[data-welcome-drop]");
+    if (!welcome) return;
+    watch.disconnect();
+    // rAF can run while fonts still block contentful paint. Record visibility
+    // only once a contentful frame exists and the welcome action has layout.
+    const paintedWelcome = () => {
+      if (!performance.getEntriesByName("first-contentful-paint").length) {
+        requestAnimationFrame(paintedWelcome);
+        return;
       }
-    });
-  }
-  try {
-    new PerformanceObserver((list) => {
-      for (const e of list.getEntries()) perf.longtasks.push({ start: e.startTime, duration: e.duration });
-    }).observe({ type: "longtask", buffered: true });
-  } catch {
-    // no long task API
-  }
-  const watch = new MutationObserver(() => {
-    if (perf.welcomeAt < 0 && document.body?.innerText.includes("Tileset'i buraya bırak")) {
-      perf.welcomeAt = performance.now();
-      watch.disconnect();
-    }
+      if (welcome.getBoundingClientRect().width > 0) perf.welcomeAt = performance.now();
+    };
+    requestAnimationFrame(paintedWelcome);
+  };
+  const watch = new MutationObserver(markWelcome);
+  document.addEventListener("DOMContentLoaded", () => {
+    watch.observe(document.body, { childList: true, subtree: true });
+    markWelcome();
   });
-  document.addEventListener("DOMContentLoaded", () => watch.observe(document.body, { childList: true, subtree: true, characterData: true }));
 }
 
 async function newPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession; close: () => Promise<void> }> {
@@ -106,7 +122,7 @@ async function newPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession;
   const page = await context.newPage();
   await page.addInitScript(initScript);
   const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => { errors.push(e.message); console.error(`pageerror: ${e.message}`); });
   if (process.env.PERF_DEBUG) page.on("console", (m) => console.log(`console.${m.type()}: ${m.text()}`)); // PERF_DEBUG=1: page console
   const cdp = await context.newCDPSession(page);
   return {
@@ -199,12 +215,13 @@ function inputLatencies(list: InputRecord[], fr: Frame[]): { latency: number[]; 
   const js: number[] = [];
   const queue: number[] = [];
   for (const i of list) {
-    if (i.handlerEnd < 0 || i.revAfter <= i.revBefore) continue;
+    if (i.handlerEnd < i.capture || i.revBefore < 0 || i.revAfter < 0) throw new Error("Incomplete input instrumentation");
+    if (i.revAfter <= i.revBefore) continue;
     handler.push(i.handlerEnd - i.capture);
     coalesced.push(i.coalesced);
     const f = fr.find((f) => f.start >= i.handlerEnd && f.revision >= i.revAfter);
     queue.push(i.capture - i.t);
-    if (!f) continue;
+    if (!f) throw new Error(`No displaying frame for ${i.type} revision ${i.revAfter}`);
     latency.push(f.end - i.t);
     // CPU work this input costs on the main thread: its handler + the frame that shows it.
     js.push(i.handlerEnd - i.capture + (f.end - f.start));
@@ -215,13 +232,16 @@ function inputLatencies(list: InputRecord[], fr: Frame[]): { latency: number[]; 
 /** Event time → end of the first frame showing revision ≥ `rev`. */
 function actionLatency(t: number, rev: number, fr: Frame[]): number {
   const f = fr.find((f) => f.start >= t && f.revision >= rev);
-  return f ? f.end - t : NaN;
+  if (!f) throw new Error(`No frame for action revision ${rev}`);
+  return f.end - t;
 }
 
-function frameStats(fr: Frame[]): { n: number; p50: number; p95: number; max: number; intervalP95: number } {
-  const d = fr.map((f) => f.end - f.start);
-  const gaps = fr.slice(1).map((f, i) => f.start - fr[i]!.start);
-  return { n: fr.length, p50: median(d), p95: percentile(d, 95), max: Math.max(0, ...d), intervalP95: percentile(gaps, 95) };
+function frameStats(fr: Frame[]): { n: number; p50: number; p95: number; max: number } {
+  const d = fr.map((f) => {
+    if (!Number.isFinite(f.start) || !Number.isFinite(f.end) || f.end < f.start) throw new Error("Invalid frame instrumentation");
+    return f.end - f.start;
+  });
+  return { n: fr.length, p50: median(d), p95: percentile(d, 95), max: Math.max(0, ...d) };
 }
 
 async function startProfile(cdp: CDPSession): Promise<void> {
@@ -246,11 +266,21 @@ async function heapMb(cdp: CDPSession): Promise<number> {
 
 test("editor perf", async ({ browser }) => {
   mkdirSync(RESULTS, { recursive: true });
-  const results: Results = { label: LABEL, date: new Date().toISOString(), metrics: {}, profiles: {} };
-  const put = (key: string, value: number, unit = "ms") => {
-    results.metrics[key] = { value: Math.round(value * 10) / 10, unit };
+  const results: Results = {
+    label: LABEL, date: new Date().toISOString(), metrics: {}, profiles: {},
+    settings: { runs: RUNS, profile: PROFILE, viewport: { width: 1440, height: 900 }, strokePlacement: "translate press onto canvas; original distances and steps" },
+  };
+  const measurements = new Map<string, { values: number[]; samples: number[]; unit: string }>();
+  const put = (key: string, value: number, unit = "ms", samples = 1) => {
+    if (!Number.isFinite(value) || value < 0 || samples < 1) throw new Error(`Invalid metric ${key}: ${value} (${samples} samples)`);
+    const m = measurements.get(key) ?? { values: [], samples: [], unit };
+    m.values.push(value);
+    m.samples.push(samples);
+    measurements.set(key, m);
     console.log(`${key}: ${value.toFixed(1)} ${unit}`);
   };
+
+  const putRuns = (key: string, values: number[], unit = "ms") => values.forEach((value) => put(key, value, unit));
 
   // ---------------------------------------------------------------- (a) welcome
   if (want("a")) {
@@ -268,19 +298,22 @@ test("editor perf", async ({ browser }) => {
         const paint = performance.getEntriesByName("first-contentful-paint")[0];
         const res = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
         // Scripts needed for the welcome screen (later idle preloads excluded).
-        const js = res.filter((r) => r.name.endsWith(".js") && r.responseEnd <= perf.welcomeAt).reduce((s, r) => s + r.decodedBodySize, 0);
+        const js = res.filter((r) => new URL(r.name).pathname.endsWith(".js") && r.responseEnd <= perf.welcomeAt).reduce((s, r) => s + r.decodedBodySize, 0);
         return { fcp: paint?.startTime ?? NaN, welcome: perf.welcomeAt, js };
       });
       fcp.push(m.fcp);
       welcome.push(m.welcome);
       tti.push(Math.max(m.welcome, lastLong));
+      expect(m.welcome).toBeGreaterThan(0);
+      expect(m.welcome).toBeGreaterThanOrEqual(m.fcp);
+      expect(m.js).toBeGreaterThan(0);
       script.push(m.js / 1024);
       await close();
     }
-    put("a.welcome FCP", median(fcp));
-    put("a.welcome visible", median(welcome));
-    put("a.welcome interactive (no long task)", median(tti));
-    put("a.JS loaded before welcome", median(script), "KiB");
+    putRuns("a.welcome FCP", fcp);
+    putRuns("a.welcome visible", welcome);
+    putRuns("a.welcome interactive (no long task)", tti);
+    putRuns("a.JS loaded before welcome", script, "KiB");
   }
 
   // ---------------------------------------------------------------- (b) open big project
@@ -292,9 +325,11 @@ test("editor perf", async ({ browser }) => {
     await page.goto("/");
     await expect(page.getByText("Tileset bırak", { exact: true })).toBeVisible();
     await writeOpfs(page, big);
+    if (process.env.PERF_DEBUG) console.log("open: OPFS ready");
     await quiet(page, 0, 300);
     await resetLog(page, false);
     if (profileName) await startProfile(cdp);
+    if (process.env.PERF_DEBUG) console.log("open: welcome quiet");
     const clickAt = await page.evaluate(() => {
       const button = Array.from(document.querySelectorAll("button")).find((b) => /^Aç/.test((b.textContent ?? "").trim()));
       if (!button) throw new Error("open button not found");
@@ -306,6 +341,7 @@ test("editor perf", async ({ browser }) => {
       timeout: 120_000,
       polling: 50,
     });
+    if (process.env.PERF_DEBUG) console.log("open: scene frame ready");
     const lastLong = await quiet(page, clickAt, 800);
     if (profileName) {
       const r = { profiles: {} } as Results;
@@ -333,203 +369,236 @@ test("editor perf", async ({ browser }) => {
       runs.push(await openRun(page, cdp, run === 0 ? "open" : null));
       await close();
     }
-    put("b.open → first map frame", median(runs.map((r) => r.firstFrame)));
-    put("b.open → map complete", median(runs.map((r) => r.complete)));
-    put("b.first map frame JS", median(runs.map((r) => r.firstFrameJs)));
+    putRuns("b.open → first map frame", runs.map((r) => r.firstFrame));
+    putRuns("b.open → map complete", runs.map((r) => r.complete));
+    putRuns("b.first map frame JS", runs.map((r) => r.firstFrameJs));
     console.log(`  first frame LOD: ${runs[0]!.lod}`);
-    put("b.open → main thread quiet", median(runs.map((r) => r.busy)));
-    put("b.open longest task", median(runs.map((r) => r.longest)));
+    putRuns("b.open → main thread quiet", runs.map((r) => r.busy));
+    putRuns("b.open longest task", runs.map((r) => r.longest));
   }
 
-  // One page for (c)–(g).
-  const { page, cdp, close } = await newPage(browser);
-  await openRun(page, cdp, null);
-  // The tileset panel's preview canvas shares the label: the map canvas is the largest.
-  await page.evaluate(() => {
-    const all = Array.from(document.querySelectorAll("canvas[aria-label='map canvas']"));
-    const area = (c: Element) => c.getBoundingClientRect().width * c.getBoundingClientRect().height;
-    all.sort((a, b) => area(b) - area(a))[0]!.setAttribute("data-perf-main", "");
-  });
-  const canvas = page.locator("canvas[data-perf-main]");
-  const box = (await canvas.boundingBox())!;
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  const heapOpen = await heapMb(cdp);
+  // Repeat the identical (c)–(g) workloads on fresh pages; report median of runs.
+  for (let run = 0; run < RUNS; run++) {
+    // One page for (c)–(g).
+    const { page, cdp, close } = await newPage(browser);
+    await openRun(page, cdp, null);
+    // The tileset panel's preview canvas shares the label: the map canvas is the largest.
+    await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll("canvas[aria-label='map canvas']"));
+      const area = (c: Element) => c.getBoundingClientRect().width * c.getBoundingClientRect().height;
+      const main = all.sort((a, b) => area(b) - area(a))[0]!;
+      main.setAttribute("data-perf-main", "");
+      const perf = (window as unknown as { __smapPerf: { finishInput(event: Event): void } }).__smapPerf;
+      // Installed after the app: target listeners follow PointerInput, window's
+      // key listener follows the shortcut handler (document bubble was too early).
+      for (const type of ["pointerdown", "pointermove"]) main.addEventListener(type, perf.finishInput);
+      window.addEventListener("keydown", perf.finishInput);
+    });
+    const canvas = page.locator("canvas[data-perf-main]");
+    const box = (await canvas.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const heapOpen = await heapMb(cdp);
 
-  // ---------------------------------------------------------------- (d) pan / zoom
-  for (const zoom of want("d") ? [1, 0.5, 0.25, 0.125, 0.09, 0.03] : []) {
-    await setCamera(page, 300, 300, zoom);
-    await page.mouse.move(cx - 400, cy - 200);
-    await settle(page, 100);
-    await resetLog(page, false);
-    await page.mouse.down({ button: "middle" });
-    await page.mouse.move(cx + 400, cy + 200, { steps: 60 });
-    await page.mouse.up({ button: "middle" });
-    await settle(page, 50);
-    const fr = await frames(page);
-    const s = frameStats(fr);
-    put(`d.pan @${zoom * 100}%${fr.some((f) => f.lod) ? " (LOD)" : ""} frame p95`, s.p95);
-    put(`d.pan @${zoom * 100}% frame max`, s.max);
-  }
-  if (want("d")) {
-    await setCamera(page, 512, 512, 1);
-    await page.mouse.move(cx, cy);
-    await settle(page, 100);
-    await resetLog(page, false);
-    await startProfile(cdp);
-    for (let i = 0; i < 24; i++) {
-      await page.mouse.wheel(0, 120);
-      await page.waitForTimeout(16);
+    // ---------------------------------------------------------------- (d) pan / zoom
+    for (const zoom of want("d") ? [1, 0.5, 0.25, 0.125, 0.09, 0.03] : []) {
+      await setCamera(page, 300, 300, zoom);
+      await page.mouse.move(cx - 400, cy - 200);
+      await settle(page, 100);
+      await resetLog(page, false);
+      await page.mouse.down({ button: "middle" });
+      await page.mouse.move(cx + 400, cy + 200, { steps: 60 });
+      await page.mouse.up({ button: "middle" });
+      await settle(page, 50);
+      const fr = await frames(page);
+      const s = frameStats(fr);
+      put(`d.pan @${zoom * 100}%${fr.some((f) => f.lod) ? " (LOD)" : ""} frame p95`, s.p95, "ms", s.n);
+      put(`d.pan @${zoom * 100}% frame max`, s.max, "ms", s.n);
     }
-    for (let i = 0; i < 24; i++) {
-      await page.mouse.wheel(0, -120);
-      await page.waitForTimeout(16);
-    }
-    await settle(page, 400);
-    await stopProfile(cdp, "zoom", results);
-    const s = frameStats(await frames(page));
-    put("d.wheel zoom 100%→far→100% frame p95", s.p95);
-    put("d.wheel zoom frame max", s.max);
-  }
-
-  // ---------------------------------------------------------------- (c) brush
-  await page.evaluate(() => {
-    const hook = (window as unknown as { __smap: { editor: { getState(): Record<string, (...a: unknown[]) => void> } } }).__smap;
-    const s = hook.editor.getState();
-    s.setTool!("brush");
-    s.setSelection!({ tilesetId: "overworld", tileId: 9 });
-  });
-  // PERF_EXPERIMENT=nominimap: brush without the minimap (isolates its cost).
-  if (process.env.PERF_EXPERIMENT === "nominimap") {
-    await page.evaluate(() => (window as unknown as { __smap: { handle: { setMinimapVisible(v: boolean): void } } }).__smap.handle.setMinimapVisible(false));
-  }
-  for (const zoom of want("c") ? [1, 0.25] : []) {
-    await setCamera(page, 512, 512, zoom);
-    const strokes: { latency: number[]; handler: number[]; coalesced: number[]; js: number[]; queue: number[] } = { latency: [], handler: [], coalesced: [], js: [], queue: [] };
-    const fr: Frame[] = [];
-    if (zoom === 1) await startProfile(cdp);
-    for (const [steps, dx] of [
-      [80, 480],
-      [12, 480],
-    ] as const) {
-      for (let k = 0; k < 3; k++) {
-        await page.mouse.move(cx - dx, cy - 250 + k * 60);
-        await settle(page, 30);
-        await resetLog(page, true);
-        await page.mouse.down();
-        await page.mouse.move(cx + dx, cy - 150 + k * 60, { steps });
-        await page.mouse.move(cx - dx / 2, cy + 200 - k * 40, { steps });
-        await page.mouse.up();
-        await settle(page, 30);
-        const rawInputs = await inputs(page);
-        const l = inputLatencies(rawInputs, await frames(page));
-        strokes.latency.push(...l.latency);
-        strokes.handler.push(...l.handler);
-        strokes.coalesced.push(...l.coalesced);
-        strokes.js.push(...l.js);
-        strokes.queue.push(...l.queue);
-        fr.push(...(await frames(page)));
+    if (want("d")) {
+      await setCamera(page, 512, 512, 1);
+      await page.mouse.move(cx, cy);
+      await settle(page, 100);
+      await resetLog(page, false);
+      await startProfile(cdp);
+      for (let i = 0; i < 24; i++) {
+        await page.mouse.wheel(0, 120);
+        await page.waitForTimeout(16);
       }
+      for (let i = 0; i < 24; i++) {
+        await page.mouse.wheel(0, -120);
+        await page.waitForTimeout(16);
+      }
+      await settle(page, 400);
+      await stopProfile(cdp, "zoom", results);
+      const s = frameStats(await frames(page));
+      put("d.wheel zoom 100%→far→100% frame p95", s.p95, "ms", s.n);
+      put("d.wheel zoom frame max", s.max, "ms", s.n);
     }
-    if (zoom === 1) await stopProfile(cdp, "brush", results);
-    await resetLog(page, false);
-    const s = frameStats(fr.filter((f) => f.end - f.start >= 0));
-    put(`c.brush @${zoom * 100}% JS per input (handler+frame) p50`, median(strokes.js));
-    put(`c.brush @${zoom * 100}% JS per input (handler+frame) p95`, percentile(strokes.js, 95));
-    put(`c.brush @${zoom * 100}% input dispatch delay p50`, median(strokes.queue));
-    put(`c.brush @${zoom * 100}% input→frame p50`, median(strokes.latency));
-    put(`c.brush @${zoom * 100}% input→frame p95`, percentile(strokes.latency, 95));
-    put(`c.brush @${zoom * 100}% handler p95`, percentile(strokes.handler, 95));
-    put(`c.brush @${zoom * 100}% frame JS p95`, s.p95);
-    put(`c.brush @${zoom * 100}% frame JS max`, s.max);
-    put(`c.brush @${zoom * 100}% frame interval p50`, median(fr.slice(1).map((f, i) => f.start - fr[i]!.start).filter((d) => d > 0 && d < 2000)));
-    console.log(`  brush @${zoom}: ${strokes.latency.length} painting events, coalesced max ${Math.max(0, ...strokes.coalesced)}`);
-  }
-  // Let the autosave of the strokes run now, not during (e).
-  await page.waitForTimeout(2500);
-  await quiet(page, 0, 800);
 
-  // ---------------------------------------------------------------- (e) fill + undo
-  if (want("e")) {
+    // ---------------------------------------------------------------- (c) brush
     await page.evaluate(() => {
-      const hook = (window as unknown as {
-        __smap: { store: { dispatch(op: unknown): string }; editor: { getState(): Record<string, (...a: unknown[]) => void> } };
-      }).__smap;
-      const id = hook.store.dispatch({ type: "addLayer", layer: { name: "fill" } });
+      const hook = (window as unknown as { __smap: { editor: { getState(): Record<string, (...a: unknown[]) => void> } } }).__smap;
       const s = hook.editor.getState();
-      s.setActiveLayer!(id);
-      s.setTool!("fill");
+      s.setTool!("brush");
+      s.setSelection!({ tilesetId: "overworld", tileId: 9 });
     });
-    await setCamera(page, 512, 512, 0.25);
-    await page.mouse.move(cx, cy);
-    await settle(page, 50);
-    await resetLog(page, true);
-    await startProfile(cdp);
-    await page.mouse.down();
-    await page.mouse.up();
-    const fillRev = await page.waitForFunction(
-      () => {
-        const p = (window as unknown as { __smapPerf: { frames: Frame[]; inputs: InputRecord[] } }).__smapPerf;
-        const down = p.inputs.find((i) => i.type === "pointerdown");
-        return down && down.revAfter > down.revBefore && p.frames.some((f) => f.revision >= down.revAfter) ? down : null;
-      },
-      undefined,
-      { timeout: 60_000, polling: 50 },
-    );
-    const down = (await fillRev.jsonValue())!;
-    put("e.fill 1024² → frame", actionLatency(down.t, down.revAfter, await frames(page)));
-    put("e.fill handler", down.handlerEnd - down.capture);
-    await settle(page, 100);
-    await resetLog(page, true);
-    const before = await page.evaluate(() => (window as unknown as { __smap: { store: { revision: number } } }).__smap.store.revision);
-    await canvas.focus();
-    await page.keyboard.press("Control+z");
-    await page.waitForFunction(
-      (before) => (window as unknown as { __smapPerf: { frames: Frame[] } }).__smapPerf.frames.some((f) => f.revision > before),
-      before,
-      { timeout: 60_000, polling: 50 },
-    );
-    await stopProfile(cdp, "fill-undo", results);
-    const key = (await inputs(page)).find((i) => i.type === "keydown" && i.revBefore === before)!;
-    put("e.undo fill → frame", actionLatency(key.t, before + 1, await frames(page)));
+    // PERF_EXPERIMENT=nominimap: brush without the minimap (isolates its cost).
+    if (process.env.PERF_EXPERIMENT === "nominimap") {
+      await page.evaluate(() => (window as unknown as { __smap: { handle: { setMinimapVisible(v: boolean): void } } }).__smap.handle.setMinimapVisible(false));
+    }
+    for (const zoom of want("c") ? [1, 0.25] : []) {
+      await setCamera(page, 512, 512, zoom);
+      const strokes: { latency: number[]; handler: number[]; coalesced: number[]; js: number[]; queue: number[] } = { latency: [], handler: [], coalesced: [], js: [], queue: [] };
+      const fr: Frame[] = [];
+      let captured = 0;
+      let coalesced = 0;
+      if (zoom === 1) await startProfile(cdp);
+      for (const [steps, dx] of [
+        [80, 480],
+        [12, 480],
+      ] as const) {
+        for (let k = 0; k < 3; k++) {
+          // The 960px path exceeds the redesigned 824px canvas. Translate the
+          // whole path so its press hits the canvas; pointer capture carries the
+          // same distances/steps outside it. Previously every press hit Library.
+          const strokeX = Math.max(cx, box.x + dx + 1);
+          const press = { x: strokeX - dx, y: cy - 250 + k * 60 };
+          expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.hasAttribute("data-perf-main"), press), "brush press must hit the main canvas").toBe(true);
+          await page.mouse.move(press.x, press.y);
+          await settle(page, 30);
+          await resetLog(page, true);
+          await page.mouse.down();
+          await page.mouse.move(strokeX + dx, cy - 150 + k * 60, { steps });
+          await page.mouse.move(strokeX - dx / 2, cy + 200 - k * 40, { steps });
+          await page.mouse.up();
+          await settle(page, 30);
+          const rawInputs = await inputs(page);
+          captured += rawInputs.length;
+          coalesced += rawInputs.reduce((sum, input) => sum + input.coalesced, 0);
+
+          if (process.env.PERF_DEBUG) console.log(`brush ${zoom}/${steps}/${k}: ${rawInputs.length} captured, ${rawInputs.filter((i) => i.revAfter > i.revBefore).length} painting`);
+          const l = inputLatencies(rawInputs, await frames(page));
+          strokes.latency.push(...l.latency);
+          strokes.handler.push(...l.handler);
+          strokes.coalesced.push(...l.coalesced);
+          strokes.js.push(...l.js);
+          strokes.queue.push(...l.queue);
+          fr.push(...(await frames(page)));
+        }
+      }
+      if (zoom === 1) await stopProfile(cdp, "brush", results);
+      await resetLog(page, false);
+      put(`c.brush @${zoom * 100}% captured inputs`, captured, "events", captured);
+      put(`c.brush @${zoom * 100}% painting inputs`, strokes.handler.length, "events", strokes.handler.length);
+      put(`c.brush @${zoom * 100}% coalesced samples`, coalesced, "events", captured);
+      const s = frameStats(fr);
+      put(`c.brush @${zoom * 100}% JS per input (handler+frame) p50`, median(strokes.js), "ms", strokes.js.length);
+      put(`c.brush @${zoom * 100}% JS per input (handler+frame) p95`, percentile(strokes.js, 95), "ms", strokes.js.length);
+      put(`c.brush @${zoom * 100}% input dispatch delay p50`, median(strokes.queue), "ms", strokes.queue.length);
+      put(`c.brush @${zoom * 100}% input→frame p50`, median(strokes.latency), "ms", strokes.latency.length);
+      put(`c.brush @${zoom * 100}% input→frame p95`, percentile(strokes.latency, 95), "ms", strokes.latency.length);
+      put(`c.brush @${zoom * 100}% handler p95`, percentile(strokes.handler, 95), "ms", strokes.handler.length);
+      put(`c.brush @${zoom * 100}% frame JS p95`, s.p95, "ms", s.n);
+      put(`c.brush @${zoom * 100}% frame JS max`, s.max, "ms", s.n);
+      const intervals = fr.slice(1).map((f, i) => f.start - fr[i]!.start).filter((d) => d > 0 && d < 2000);
+      put(`c.brush @${zoom * 100}% frame interval p50`, median(intervals), "ms", intervals.length);
+      console.log(`  brush @${zoom}: ${strokes.latency.length} painting events, coalesced max ${Math.max(0, ...strokes.coalesced)}`);
+    }
+    // Let the autosave of the strokes run now, not during (e).
+    await page.waitForTimeout(2500);
+    await quiet(page, 0, 800);
+
+    // ---------------------------------------------------------------- (e) fill + undo
+    if (want("e")) {
+      await page.evaluate(() => {
+        (window as unknown as { __smapPerf: { fillPreviews: number[] } }).__smapPerf.fillPreviews.length = 0;
+        const hook = (window as unknown as {
+          __smap: { store: { dispatch(op: unknown): string }; editor: { getState(): Record<string, (...a: unknown[]) => void> } };
+        }).__smap;
+        const id = hook.store.dispatch({ type: "addLayer", layer: { name: "fill" } });
+        const s = hook.editor.getState();
+        s.setActiveLayer!(id);
+        s.setTool!("fill");
+      });
+      await setCamera(page, 512, 512, 0.25);
+      await page.mouse.move(cx, cy);
+      await settle(page, 50);
+      const preprocessing = await page.evaluate(() => (window as unknown as { __smapPerf: { fillPreviews: number[] } }).__smapPerf.fillPreviews);
+      put("e.fill preview preprocessing p95", percentile(preprocessing, 95), "ms", preprocessing.length);
+      await resetLog(page, true);
+      await startProfile(cdp);
+      await page.mouse.down();
+      await page.mouse.up();
+      const fillRev = await page.waitForFunction(
+        () => {
+          const p = (window as unknown as { __smapPerf: { frames: Frame[]; inputs: InputRecord[] } }).__smapPerf;
+          const down = p.inputs.find((i) => i.type === "pointerdown");
+          return down && down.revAfter > down.revBefore && p.frames.some((f) => f.revision >= down.revAfter) ? down : null;
+        },
+        undefined,
+        { timeout: 60_000, polling: 50 },
+      );
+      const down = (await fillRev.jsonValue())!;
+      put("e.fill 1024² → frame", actionLatency(down.t, down.revAfter, await frames(page)));
+      put("e.fill handler", down.handlerEnd - down.capture);
+      await settle(page, 100);
+      await resetLog(page, true);
+      const before = await page.evaluate(() => (window as unknown as { __smap: { store: { revision: number } } }).__smap.store.revision);
+      await canvas.focus();
+      await page.keyboard.press("Control+z");
+      await page.waitForFunction(
+        (before) => (window as unknown as { __smapPerf: { frames: Frame[] } }).__smapPerf.frames.some((f) => f.revision > before),
+        before,
+        { timeout: 60_000, polling: 50 },
+      );
+      await stopProfile(cdp, "fill-undo", results);
+      const key = (await inputs(page)).find((i) => i.type === "keydown" && i.revBefore === before && i.revAfter > before);
+      if (!key || key.handlerEnd < key.capture) throw new Error("Missing completed undo input");
+      put("e.undo fill → frame", actionLatency(key.t, key.revAfter, await frames(page)));
+    }
+
+    // ---------------------------------------------------------------- (g) save
+    if (want("g")) {
+      // Wait out a running autosave, then make one edit so there is something to save.
+      await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeVisible({ timeout: 60_000 });
+      await page.evaluate(() => {
+        const hook = (window as unknown as { __smap: { store: { document: { layers: { id: string }[] }; dispatch(op: unknown): unknown } } }).__smap;
+        const layerId = hook.store.document.layers[0]!.id;
+        hook.store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: 1 }] });
+      });
+      await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeHidden();
+      await startProfile(cdp);
+      const t = await page.evaluate(() => performance.now());
+      await page.keyboard.press("Control+s");
+      const handle = await page.waitForFunction(
+        () => (document.querySelector("[aria-label='Tüm değişiklikler kaydedildi']") ? performance.now() : 0),
+        undefined,
+        { timeout: 60_000, polling: 10 },
+      );
+      const savedAt = (await handle.jsonValue()) as number;
+      await stopProfile(cdp, "save", results);
+      put("g.save (Ctrl+S → saved)", savedAt - t);
+      const longest = await page.evaluate(
+        (since) =>
+          (window as unknown as { __smapPerf: { longtasks: LongTask[] } }).__smapPerf.longtasks
+            .filter((l) => l.start >= since)
+            .reduce((m, l) => Math.max(m, l.duration), 0),
+        t,
+      );
+      put("g.save longest task", longest);
+    }
+
+    // ---------------------------------------------------------------- (f) memory
+    put("f.JS heap after open", heapOpen, "MB");
+    put("f.JS heap after b–g", await heapMb(cdp), "MB");
+    await close();
   }
-
-  // ---------------------------------------------------------------- (g) save
-  if (want("g")) {
-    // Wait out a running autosave, then make one edit so there is something to save.
-    await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeVisible({ timeout: 60_000 });
-    await page.evaluate(() => {
-      const hook = (window as unknown as { __smap: { store: { document: { layers: { id: string }[] }; dispatch(op: unknown): unknown } } }).__smap;
-      const layerId = hook.store.document.layers[0]!.id;
-      hook.store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: 1 }] });
-    });
-    await expect(page.locator("[aria-label='Tüm değişiklikler kaydedildi']")).toBeHidden();
-    await startProfile(cdp);
-    const t = await page.evaluate(() => performance.now());
-    await page.keyboard.press("Control+s");
-    const handle = await page.waitForFunction(
-      () => (document.querySelector("[aria-label='Tüm değişiklikler kaydedildi']") ? performance.now() : 0),
-      undefined,
-      { timeout: 60_000, polling: 10 },
-    );
-    const savedAt = (await handle.jsonValue()) as number;
-    await stopProfile(cdp, "save", results);
-    put("g.save (Ctrl+S → saved)", savedAt - t);
-    const longest = await page.evaluate(
-      (since) =>
-        (window as unknown as { __smapPerf: { longtasks: LongTask[] } }).__smapPerf.longtasks
-          .filter((l) => l.start >= since)
-          .reduce((m, l) => Math.max(m, l.duration), 0),
-      t,
-    );
-    put("g.save longest task", longest);
+  for (const [key, m] of measurements) {
+    const expectedRuns = key.startsWith("b.") ? Math.min(RUNS, 3) : RUNS;
+    if (m.values.length !== expectedRuns) throw new Error(`Incomplete runs for ${key}: ${m.values.length}/${expectedRuns}`);
+    results.metrics[key] = { value: Math.round(median(m.values) * 10) / 10, unit: m.unit, runs: m.values, samples: m.samples };
   }
-
-  // ---------------------------------------------------------------- (f) memory
-  put("f.JS heap after open", heapOpen, "MB");
-  put("f.JS heap after b–g", await heapMb(cdp), "MB");
-  await close();
-
   writeFileSync(`${RESULTS}${LABEL}.json`, `${JSON.stringify(results, null, 2)}\n`);
   let base: Results | null = null;
   try {
