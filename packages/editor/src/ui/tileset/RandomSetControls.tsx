@@ -2,8 +2,8 @@
  * Random brush extras for the inspector's brush card (round 4): saved
  * sets (load / save / save as / rename / delete), stamp candidates with
  * weights, scatter % and random flip. The card itself shows the tile
- * candidates (weights) and the "Rastgele yap" button
- * (`makeRandomFromStamp`).
+ * candidates (weights); the options-bar "Rastgele" toggle makes the brush
+ * random (`makeRandomFromStamp`).
  */
 import { Menu } from "@base-ui/react/menu";
 
@@ -33,7 +33,7 @@ import { Toggle } from "../primitives/Toggle";
 import { askText } from "./TextPrompt";
 
 /** Saved random sets as a dropdown ("Kayıtlı setler ▾"): pick = load into the brush. Usable with no random brush active. */
-export function RandomSetPicker() {
+export function RandomSetPicker({ compact = false }: { compact?: boolean }) {
   const store = useEditorStore((s) => s.project?.store);
   useStructureVersion(store);
   const activeSetId = useRandomBrush((s) => s.activeSetId);
@@ -41,7 +41,7 @@ export function RandomSetPicker() {
   const current = activeSetId ? sets.find((s) => s.id === activeSetId) : undefined;
   return (
     <Menu.Root>
-      <Menu.Trigger render={<Button size="sm" data-random-set-picker className="min-w-0 flex-1">
+      <Menu.Trigger render={<Button size="sm" data-random-set-picker className={`min-w-0 ${compact ? "max-w-40" : "flex-1"}`}>
         <Icon name="dices" size={16} className="text-muted" />
         <span className="min-w-0 flex-1 truncate text-left">{current?.name ?? (sets.length ? t("randomSets.saved") : t("randomSets.none"))}</span>
         <Icon name="chevron-down" size={12} />

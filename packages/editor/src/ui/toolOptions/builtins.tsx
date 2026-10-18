@@ -1,6 +1,7 @@
 /**
  * Built-in tool options (registered once by `registerBuiltinToolOptions`):
- * the shared collapsed "Boyut 1 ▾" chip for brush / eraser and, on tile
+ * the shared collapsed "Boyut 1 ▾" chip for brush / eraser, the "Rastgele"
+ * toggle for brush / fill / rectangle and, on tile
  * layers of a project with terrains, the terrain brush ("Arazi: ● Çimen ▾"
  * + Autotile). The collision kind is on the Denetçi's collision card; tool
  * hints are in the tool tooltips.
@@ -21,6 +22,7 @@ import { TerrainPickerMenu } from "../terrain/TerrainMenus";
 import { resolveTerrain, terrainSetEntries } from "../terrain/terrainModel";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
 import { OptionLabel, triggerClass } from "./parts";
+import { RandomToggle } from "./RandomToggle";
 
 /** The terrain picker shows on tile layers once the project has a terrain. */
 const showsTerrainPicker = (c: ToolOptionsContext) => isTileLayer(c.layer) && terrainSetEntries(c.doc).length > 0;
@@ -98,6 +100,7 @@ export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
+  registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) });
   registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
   registerToolOptions(["brush", "eraser", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }

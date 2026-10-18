@@ -213,6 +213,10 @@ export const en: Messages = {
   },
   toolOptions: {
     bar: "Tool options",
+    random: "Random",
+    randomHint: "Paint randomly from the selected tiles",
+    randomDisabled: "Select several tiles first",
+    randomRestore: "Return to the previous brush",
     size: "Size",
     sizeUnusedStamp: "A multi-tile selection is placed as is; size does not apply",
     sizeValue: "{size} × {size}",
@@ -276,7 +280,6 @@ export const en: Messages = {
     saveStamp: "Save as stamp…",
     stampName: "Stamp name",
     savedStamp: "Saved stamp",
-    makeRandom: "Make random",
     noBrush: "Pick a tile first",
     tile: "Tile",
     mapSettings: "Map settings…",

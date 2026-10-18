@@ -4,8 +4,8 @@
  *
  * Where a random brush comes from (round 4 — there is no "Rastgele" mode
  * in the tileset any more):
- * - Select a block in the tileset / a palette, then "Rastgele yap" on the
- *   brush card ({@link makeRandomFromStamp}): every non-empty tile of the
+ * - Select a block in the tileset / a palette, then the options-bar
+ *   "Rastgele" toggle ({@link makeRandomFromStamp}): every non-empty tile of the
  *   selection becomes a candidate.
  * - Alt + drag a rectangle in the tileset ({@link addTilesToRandom}); a
  *   plain Alt + click toggles one tile ({@link toggleRandomTile}).
@@ -21,7 +21,7 @@
  * - Alt + click adds only the clicked tile: the tile that was selected
  *   before (a plain click) is not pulled into the set. A set starts with
  *   the first Alt + clicked tile (until a second one it paints as a single
- *   tile); to turn a selection into a set, use "Rastgele yap".
+ *   tile); to turn a selection into a set, use the options-bar "Rastgele" toggle.
  * - A brush of fewer than two candidates is not a random brush: it
  *   collapses into a plain selection of the remaining tile.
  * - Picking a tile normally clears the set (see the tileset panel).
@@ -175,6 +175,13 @@ const DEFAULT_OPTIONS: RandomBrushOptions = { stamps: [], scatter: 0, randomFlip
 
 export const useRandomBrush = create<RandomBrushOptions>()(() => ({ ...DEFAULT_OPTIONS }));
 
+/** True when the editor's tiles and random options form a random brush. */
+export function useIsRandomBrush(): boolean {
+  const tiles = useEditorStore((s) => s.randomSet);
+  const options = useRandomBrush();
+  return randomSetOf(tiles, options) !== null;
+}
+
 /** Candidates of a brush: tiles plus stamps. */
 export function brushCandidates(tiles: readonly RandomTileEntry[], options: Pick<RandomBrushOptions, "stamps">): RandomCandidate[] {
   return [
@@ -327,7 +334,7 @@ export function addTilesToRandom(tiles: readonly RandomTileEntry[]): void {
 }
 
 /**
- * "Rastgele yap" on the brush card: the current multi-tile selection
+ * The options-bar "Rastgele" toggle: the current multi-tile selection
  * (the brush stamp) becomes a random brush, each non-empty tile one
  * candidate. Returns false (with a hint) when the stamp has fewer than two
  * distinct tiles or there is no stamp.
