@@ -37,3 +37,33 @@ export function selectionOutline(r: SelectionRect): Outline {
   if (r.mask) cache.set(r.mask, result);
   return result;
 }
+
+/** Device-pixel view of a mask. Only these values invalidate rendered geometry. */
+export interface SelectionOutlineView {
+  x: number; y: number; tileWidth: number; tileHeight: number;
+  width: number; height: number; lineWidth: number; resolution: number;
+}
+
+/** One textured quad per visible edge; U advances along either axis in eight-pixel ant periods. */
+export function selectionBoundaryQuads(edges: readonly Edge[], view: SelectionOutlineView) {
+  const { x, y, tileWidth: tw, tileHeight: th, width, height, lineWidth: k, resolution } = view;
+  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+  const shadows: { x: number; y: number; width: number; height: number }[] = [];
+  for (const e of edges) {
+    const horizontal = e.y0 === e.y1;
+    const ex = x + e.x0 * tw, ey = y + e.y0 * th;
+    if (horizontal ? ey < -k || ey > height + k : ex < -k || ex > width + k) continue;
+    const x0 = horizontal ? Math.max(-k, ex) : ex, y0 = horizontal ? ey : Math.max(-k, ey);
+    const w = horizontal ? Math.min(width + k, x + e.x1 * tw) - x0 : 0;
+    const h = horizontal ? 0 : Math.min(height + k, y + e.y1 * th) - y0;
+    if (w + h <= 0) continue;
+    shadows.push({ x: (x0 - k) / resolution, y: (y0 - k) / resolution, width: (w + 2 * k) / resolution, height: (h + 2 * k) / resolution });
+    const p = positions.length / 2;
+    positions.push(x0 / resolution, y0 / resolution, (x0 + (w || k)) / resolution, y0 / resolution,
+      (x0 + (w || k)) / resolution, (y0 + (h || k)) / resolution, x0 / resolution, (y0 + (h || k)) / resolution);
+    const from = (x0 - ex + y0 - ey) / (8 * k), to = from + (w + h) / (8 * k);
+    uvs.push(...(horizontal ? [from, 0, to, 0, to, 1, from, 1] : [from, 0, from, 1, to, 1, to, 0]));
+    indices.push(p, p + 1, p + 2, p, p + 2, p + 3);
+  }
+  return { positions: new Float32Array(positions), uvs: new Float32Array(uvs), indices: new Uint32Array(indices), shadows };
+}
