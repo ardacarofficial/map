@@ -25,6 +25,7 @@ interface RecentProjectsState {
 const useRecentStore = create<RecentProjectsState>()(() => ({ entries: [], loaded: false }));
 
 let refreshing: Promise<void> | null = null;
+let refreshAgain = false;
 
 /** Reloads the list from the platform (coalesces overlapping calls). */
 export function refreshRecentProjects(): Promise<void> {
@@ -33,15 +34,21 @@ export function refreshRecentProjects(): Promise<void> {
     useRecentStore.setState({ entries: [], loaded: true });
     return Promise.resolve();
   }
-  refreshing ??= platform.recents
-    .list()
-    .then(
-      (entries) => useRecentStore.setState({ entries: entries.slice(0, RECENT_MENU_LIMIT), loaded: true }),
-      () => useRecentStore.setState({ loaded: true }),
-    )
-    .finally(() => {
-      refreshing = null;
-    });
+  if (refreshing) {
+    refreshAgain = true;
+    return refreshing;
+  }
+  refreshing = (async () => {
+    do {
+      refreshAgain = false;
+      try {
+        const entries = await platform.recents.list();
+        useRecentStore.setState({ entries: entries.slice(0, RECENT_MENU_LIMIT), loaded: true });
+      } catch {
+        useRecentStore.setState({ loaded: true });
+      }
+    } while (refreshAgain);
+  })().finally(() => { refreshing = null; });
   return refreshing;
 }
 

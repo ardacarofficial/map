@@ -47,7 +47,7 @@ import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, P
 import { useSaveStatus } from "./saveStatus";
 import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";
 import { refreshRecentProjects } from "../platform/recentProjects";
-import { captureMapThumbnail } from "../platform/recentThumbnail";
+import { RecentThumbnailScheduler } from "../platform/recentThumbnail";
 import { addTemplateLayers, type LayerSpec } from "../ui/projectSettings/projectTemplates";
 import { updateExportSettings } from "../export/exportSettings";
 import { hasPngSignature, looksLikePng, planTilesetGrid, baseName } from "./tilesetImport";
@@ -159,6 +159,7 @@ function activate(
 ): void {
   const level = library.levels.find((l) => l.id === project.levelId) ?? library.levels.find((l) => l.path === project.levelPath);
   if (!level) throw new Error(`activate: level ${project.levelPath} is not in the project`);
+  recentThumbnails.cancel();
   project = { ...project, levelId: level.id, levelPath: level.path };
   workspace = new LevelWorkspace({
     name: project.name,
@@ -313,20 +314,33 @@ let lastThumbnailAt = 0;
 /** An autosave refreshes the recents thumbnail at most this often. */
 const AUTOSAVE_THUMBNAIL_MS = 60_000;
 
-/** The open level as a small PNG for the recent-projects list (undefined where it cannot be drawn). */
-function projectThumbnail(project: OpenProject): string | undefined {
-  return captureMapThumbnail(project.store, (id) => getTilesetImage(id)?.bitmap);
-}
+const recentThumbnails = new RecentThumbnailScheduler();
 
-/** Lists the project in recents, with a fresh thumbnail of the open level. */
+/** Metadata first; copy and PNG encoding wait for the live overview and idle. */
 function addRecent(target: ProjectFolder, project: OpenProject): void {
   lastThumbnailAt = Date.now();
-  void getPlatform()
-    .recents.add(target, project.name, projectThumbnail(project))
-    .then(refreshRecentProjects, (error: unknown) => console.warn(error));
+  const platform = getPlatform();
+  // Capture the destination and host now. Never consult a later project's folder.
+  const added = platform.recents.add(target, project.name);
+  void added.then(refreshRecentProjects, (error: unknown) => console.warn(error));
+  const active = useEditorStore.getState().project;
+  if (!active || active.store !== project.store) return;
+  project = active; // activate normalizes the level ID into a new OpenProject object
+  const current = () => useEditorStore.getState().project === project && folder === target;
+  recentThumbnails.request({
+    tag: { project, level: project.levelId ?? project.levelPath, revision: project.store.revision },
+    isCurrent: current,
+    publish: async (thumbnail) => {
+      await added;
+      if (!current()) return;
+      await platform.recents.add(target, project.name, thumbnail);
+      await refreshRecentProjects();
+    },
+  });
 }
 
 export function closeProject(): void {
+  recentThumbnails.cancel();
   setFolder(null);
   workspace = null;
   activeLayerMemory.clear();
@@ -669,6 +683,10 @@ export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): ()
 async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
   const ws = workspace;
   if (!ws) return;
+  // An earlier request must not encode unsaved pixels while this write can fail.
+  // If it was still waiting, the successful autosave must replace that request
+  // even inside the normal one-minute refresh throttle.
+  if (recentThumbnails.cancel()) lastThumbnailAt = 0;
   const run = async () => {
     writesInFlight++;
     useSaveStatus.setState({ saving: true });

@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import { runCommand } from "../../commands/registry";
 import { getLocale, t } from "../../i18n";
 import { createProjectFromTilesets, openRecentProject } from "../../io/session";
-import { getPlatform, type RecentEntry } from "../../platform";
+import { type RecentEntry } from "../../platform";
+import { forgetRecentProject, useRecentProjects } from "../../platform/recentProjects";
 import { LanguageSwitch } from "../../platform/LanguageSwitch";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 import { openNewProjectDialog } from "../dialogs/NewProjectDialog";
@@ -85,24 +86,11 @@ function formatDate(ms: number): string {
 }
 
 function Recents() {
-  const [recents, setRecents] = useState<RecentEntry[] | null>(null);
-  const platform = getPlatform();
-  const supported = platform.recents.supported;
-
-  useEffect(() => {
-    let alive = true;
-    void getPlatform()
-      .recents.list()
-      .then((list) => alive && setRecents(list))
-      .catch(() => alive && setRecents([]));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { entries: recents, supported, loaded } = useRecentProjects();
 
   let body: ReactNode;
   if (!supported) body = <Empty text={t("welcome.recentUnsupported")} />;
-  else if (recents === null) body = <div className="h-40" />;
+  else if (!loaded) body = <div className="h-40" />;
   else if (recents.length === 0) body = <Empty text={t("welcome.recentEmpty")} />;
   else
     body = (
@@ -111,10 +99,7 @@ function Recents() {
           <RecentCard
             key={recent.key}
             recent={recent}
-            onRemove={() => {
-              void platform.recents.remove(recent).catch(() => undefined);
-              setRecents((list) => list?.filter((r) => r.key !== recent.key) ?? null);
-            }}
+            onRemove={() => { void forgetRecentProject(recent).catch(() => undefined); }}
           />
         ))}
       </ul>

@@ -20,6 +20,7 @@ import {
   type StoreChangeEvent,
 } from "@smap/core";
 
+import { RECENT_THUMB_PX, thumbnailSnapshots } from "./thumbnailSnapshotBridge";
 import { chunkSpan, thumbnailScale } from "./minimapMath";
 import { compositeChunk, tileThumb, type ChunkLayerInput, type Pixels } from "./thumbnailRaster";
 
@@ -54,14 +55,27 @@ export class MapThumbnail {
   #scratch: HTMLCanvasElement | null = null;
   /** Reused chunk image (one per k). */
   #image: ImageData | null = null;
+  /** A bounded CPU projection of the overview, updated in the same chunk slices.
+   * Keeps the historical per-chunk scaling/filtering of recent pictures. */
+  readonly #recent = document.createElement("canvas");
+  readonly #recentCtx = this.#recent.getContext("2d", { willReadFrequently: true });
+  #recentScale = 1;
+  #overviewK = 1;
+  #overviewBlocks: (Uint8ClampedArray | null)[] = [];
+  #overviewImage: ImageData | null = null;
+  #unpublish: (() => void) | null = null;
+  #missingImages = false;
   /**
    * CPU copy of the picture at 1 px per {@link #overviewCells}² cells (≤ 1024 px a
    * side, straight alpha), filled from the same chunk composites. The minimap
-   * scales this down: reading back or rescaling the GPU canvas (up to 4096² px)
+   * scales this down. Its canonical tile blocks use the recent-picture scale
+   * (1…4), so translucent layer composition matches the saved pictures rather
+   * than averaging the more detailed LOD composition. Reading back or rescaling
+   * the GPU canvas (up to 4096² px)
    * after every brush stroke kept the GPU busy and delayed frames.
    */
   #overview: Pixels = { data: new Uint8ClampedArray(4), width: 1, height: 1 };
-  /** Cells per overview px on each axis (1, 2 or 4: chunk edges stay on whole px). */
+  /** Cells per overview px (fractional on tiny maps to preserve tile detail). */
   #overviewCells = 1;
   /** Overview px redrawn since the last {@link takeDirty} (`"all"`: everything). */
   #dirty: ThumbRect | "all" | null = "all";
@@ -100,6 +114,8 @@ export class MapThumbnail {
   imageChanged(tilesetId: string): void {
     this.#tilesetPixels.delete(tilesetId);
     this.#blocks = [];
+    this.#overviewBlocks = [];
+    this.#missingImages = false;
     this.#rebuildAll();
   }
 
@@ -115,6 +131,7 @@ export class MapThumbnail {
       this.#dirty = "all";
       this.#ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.#overview.data.fill(0);
+      this.#recentCtx?.clearRect(0, 0, this.#recent.width, this.#recent.height);
     }
     for (const key of this.#queue) {
       this.#queue.delete(key);
@@ -122,12 +139,29 @@ export class MapThumbnail {
       if (performance.now() - t0 > budgetMs) break;
     }
     this.version++;
+    if (!this.pending && this.#unpublish) thumbnailSnapshots.changed();
     return true;
   }
 
   /** The CPU overview of the picture (see {@link takeDirty}). */
   get overview(): Pixels {
     return this.#overview;
+  }
+
+  /** Register only the active canvas; disposal cannot unregister a newer canvas. */
+  publishSnapshot(project: object, level: string): void {
+    this.#unpublish?.();
+    this.#unpublish = thumbnailSnapshots.register({
+      state: () => ({ project, level, revision: this.#store.revision, version: this.version, pending: this.pending || this.#missingImages }),
+      snapshot: () => this.snapshot(),
+    });
+  }
+
+  /** Own at most 192² pixels per requested snapshot; never read the GPU LOD canvas. */
+  snapshot(): Pixels | undefined {
+    if (this.pending || this.#missingImages || !this.#recentCtx) return undefined;
+    const image = this.#recentCtx.getImageData(0, 0, this.#recent.width, this.#recent.height);
+    return { data: image.data, width: image.width, height: image.height };
   }
 
   /**
@@ -154,10 +188,14 @@ export class MapThumbnail {
   }
 
   destroy(): void {
+    this.#unpublish?.();
+    this.#unpublish = null;
     this.#unsubscribe();
     this.#queue.clear();
     this.canvas.width = 0;
     this.canvas.height = 0;
+    this.#recent.width = 0;
+    this.#recent.height = 0;
   }
 
   // ------------------------------------------------------------------ internals
@@ -165,7 +203,7 @@ export class MapThumbnail {
   #handle(e: StoreChangeEvent): void {
     const doc = this.#store.document;
     if (e.structure.includes("map")) this.#resize();
-    if (e.structure.includes("layers") || e.structure.includes("map")) {
+    if (e.structure.includes("layers") || e.structure.includes("map") || e.structure.includes("tilesets")) {
       this.#rebuildAll();
       return;
     }
@@ -183,10 +221,15 @@ export class MapThumbnail {
     this.#scale = thumbnailScale(map.width, map.height, this.#maxPx);
     this.#k = this.#scale >= 1 ? this.#scale : 1;
     this.#blocks = [];
+    this.#overviewBlocks = [];
+    this.#recentScale = thumbnailScale(map.width, map.height, RECENT_THUMB_PX);
+    this.#overviewK = Math.max(1, this.#recentScale);
+    this.#recent.width = Math.max(1, Math.ceil(map.width * this.#recentScale));
+    this.#recent.height = Math.max(1, Math.ceil(map.height * this.#recentScale));
     this.canvas.width = Math.max(1, Math.ceil(map.width * this.#scale));
     this.canvas.height = Math.max(1, Math.ceil(map.height * this.#scale));
     const longest = Math.max(map.width, map.height);
-    this.#overviewCells = longest <= 1024 ? 1 : longest <= 2048 ? 2 : 4;
+    this.#overviewCells = longest <= 1024 ? 1 / this.#overviewK : longest <= 2048 ? 2 : 4;
     const ow = Math.ceil(map.width / this.#overviewCells);
     const oh = Math.ceil(map.height / this.#overviewCells);
     this.#overview = { data: new Uint8ClampedArray(ow * oh * 4), width: ow, height: oh };
@@ -196,6 +239,9 @@ export class MapThumbnail {
 
   #rebuildAll(): void {
     this.#clearAll = true;
+    this.#missingImages = false;
+    this.#blocks = [];
+    this.#overviewBlocks = [];
     this.#queue.clear();
     for (const layer of this.#store.document.layers) {
       if (!isTileLayer(layer)) continue;
@@ -223,6 +269,7 @@ export class MapThumbnail {
     if (!any) {
       ctx.clearRect(xs.from, ys.from, xs.to - xs.from, ys.to - ys.from);
       this.#writeOverview(cx, cy, null, 0);
+      this.#writeRecent(cx, cy, null);
       return;
     }
     const k = this.#k;
@@ -230,7 +277,19 @@ export class MapThumbnail {
     if (this.#image?.width !== side) this.#image = new ImageData(side, side);
     const image = this.#image;
     compositeChunk(inputs, k, (i) => this.#block(i), image.data);
-    this.#writeOverview(cx, cy, image.data, k);
+    // One canonical CPU composition serves both minimap overview and recents.
+    // Reuse the LOD chunk when scales coincide; otherwise compose at the old
+    // recent scale. Averaging k=4 after alpha blending is not pixel equivalent.
+    const ok = this.#overviewK;
+    let overviewImage = image;
+    if (ok !== k) {
+      const os = CHUNK_SIZE * ok;
+      if (this.#overviewImage?.width !== os) this.#overviewImage = new ImageData(os, os);
+      overviewImage = this.#overviewImage;
+      compositeChunk(inputs, ok, (i) => this.#block(i, true), overviewImage.data);
+    }
+    this.#writeOverview(cx, cy, overviewImage.data, ok);
+    this.#writeRecent(cx, cy, overviewImage);
     if (this.#scale >= 1) {
       // Integer scale: chunk edges are exact; putImageData clips at the canvas edge.
       ctx.putImageData(image, cx * side, cy * side);
@@ -247,6 +306,30 @@ export class MapThumbnail {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(scratch, 0, 0, cellsW * k, cellsH * k, xs.from, ys.from, xs.to - xs.from, ys.to - ys.from);
+  }
+
+  /** Identical chunk bounds, filtering and transparent clear as the old 192px renderer. */
+  #writeRecent(cx: number, cy: number, image: ImageData | null): void {
+    const ctx = this.#recentCtx;
+    if (!ctx) return;
+    const map = this.#store.document.map;
+    const scale = this.#recentScale;
+    const xs = chunkSpan(cx, CHUNK_SIZE, scale, map.width);
+    const ys = chunkSpan(cy, CHUNK_SIZE, scale, map.height);
+    ctx.clearRect(xs.from, ys.from, xs.to - xs.from, ys.to - ys.from);
+    if (!image) return;
+    if (scale >= 1) {
+      ctx.putImageData(image, cx * image.width, cy * image.height);
+      return;
+    }
+    const scratch = (this.#scratch ??= document.createElement("canvas"));
+    scratch.width = image.width;
+    scratch.height = image.height;
+    scratch.getContext("2d")!.putImageData(image, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(scratch, 0, 0, Math.min(CHUNK_SIZE, map.width - cx * CHUNK_SIZE), Math.min(CHUNK_SIZE, map.height - cy * CHUNK_SIZE),
+      xs.from, ys.from, xs.to - xs.from, ys.to - ys.from);
   }
 
   /** Box-filters a chunk composite (`k` px per cell; null = empty chunk) into the overview. */
@@ -268,6 +351,14 @@ export class MapThumbnail {
     const side = CHUNK_SIZE * k;
     const block = c * k;
     const n = block * block;
+    if (block === 1) {
+      // The usual canonical overview: copy exact straight-alpha rows, no filter.
+      for (let y = oy0; y < oy1; y++) {
+        const start = (y - oy0) * side * 4;
+        out.set(px.subarray(start, start + (ox1 - ox0) * 4), (y * ov.width + ox0) * 4);
+      }
+      return;
+    }
     for (let y = oy0; y < oy1; y++) {
       for (let x = ox0; x < ox1; x++) {
         let r = 0;
@@ -300,8 +391,9 @@ export class MapThumbnail {
     }
   }
 
-  #block(paletteIndex: number): Uint8ClampedArray | undefined {
-    const cached = this.#blocks[paletteIndex];
+  #block(paletteIndex: number, overview = false): Uint8ClampedArray | undefined {
+    const blocks = overview ? this.#overviewBlocks : this.#blocks;
+    const cached = blocks[paletteIndex];
     if (cached !== undefined) return cached ?? undefined;
     const doc = this.#store.document;
     const entry = doc.palette.get(paletteIndex);
@@ -309,17 +401,24 @@ export class MapThumbnail {
     const tileset = entry ? doc.getTileset(entry.tilesetId) : undefined;
     if (entry && tileset && entry.tileId >= 0 && entry.tileId < tileCount(tileset)) {
       const pixels = this.#pixels(entry.tilesetId);
-      if (pixels) block = tileThumb(pixels, tileRect(tileset, entry.tileId), this.#k);
+      if (pixels) block = tileThumb(pixels, tileRect(tileset, entry.tileId), overview ? this.#overviewK : this.#k);
     }
     // A tileset whose image has not arrived yet is not cached as "not drawable".
-    if (block || !entry || this.#tilesetPixels.has(entry.tilesetId)) this.#blocks[paletteIndex] = block;
+    if (block || !entry || this.#tilesetPixels.has(entry.tilesetId)) blocks[paletteIndex] = block;
     return block ?? undefined;
   }
 
   #pixels(tilesetId: string): Pixels | null {
-    if (this.#tilesetPixels.has(tilesetId)) return this.#tilesetPixels.get(tilesetId) ?? null;
+    if (this.#tilesetPixels.has(tilesetId)) {
+      const pixels = this.#tilesetPixels.get(tilesetId) ?? null;
+      if (!pixels) this.#missingImages = true;
+      return pixels;
+    }
     const image = this.#images(tilesetId);
-    if (!image) return null;
+    if (!image) {
+      this.#missingImages = true;
+      return null;
+    }
     let pixels: Pixels | null = null;
     try {
       const c = document.createElement("canvas");
@@ -334,6 +433,7 @@ export class MapThumbnail {
     } catch (error) {
       console.error(`[canvas] thumbnail: cannot read tileset "${tilesetId}"`, error);
     }
+    if (!pixels) this.#missingImages = true;
     this.#tilesetPixels.set(tilesetId, pixels);
     return pixels;
   }
