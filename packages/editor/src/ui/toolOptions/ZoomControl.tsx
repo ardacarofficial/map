@@ -79,7 +79,7 @@ export function ZoomControl() {
             spellCheck={false}
             autoComplete="off"
             maxLength={7}
-            className={`w-10 bg-transparent outline-none ${locale === "tr" ? "text-left" : "text-right"}`}
+            className={`h-full w-10 min-h-0 border-0 bg-transparent py-0 text-xs leading-none outline-none ${locale === "tr" ? "text-left" : "text-right"}`}
           />
           {locale === "en" && <span className="text-faint">%</span>}
         </label>
@@ -87,7 +87,7 @@ export function ZoomControl() {
           <Menu.Trigger
             aria-label={t("zoomMenu.presets")}
             data-zoom-menu=""
-            className="grid h-full w-6 place-items-center rounded-r-sm text-faint outline-none hover:bg-hover hover:text-text data-popup-open:bg-hover data-popup-open:text-text"
+            className="grid h-control-sm w-6 self-center place-items-center rounded-r-sm text-faint outline-none hover:bg-hover hover:text-text data-popup-open:bg-hover data-popup-open:text-text"
           >
             <Icon name="chevronDown" size={12} />
           </Menu.Trigger>

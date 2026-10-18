@@ -91,14 +91,13 @@ export function DocumentTabs() {
             <Icon name="map" size={16} className="text-accent" />
             {t("world.world")}
             <Tooltip label={t("world.back")}>
-              <button
-                type="button"
+              <IconButton size="sm"
                 aria-label={t("world.back")}
                 onClick={() => setCanvasView("level")}
-                className="grid size-5 place-items-center rounded-sm text-faint hover:bg-hover hover:text-text"
+                className="hover:bg-hover"
               >
-                <Icon name="x" size={12} />
-              </button>
+                <Icon name="x" size={16} />
+              </IconButton>
             </Tooltip>
             <span aria-hidden className="absolute right-2 bottom-0 left-2 h-0.5 bg-accent" />
           </div>
@@ -179,17 +178,16 @@ export function DocumentTabs() {
               {dirty.has(id) && !editing && (
                 <span role="img" aria-label={t("levels.unsaved")} data-level-dirty="" className="size-1.5 shrink-0 rounded-full bg-warning" />
               )}
-              <Tooltip label={t("docTabs.close")}><button
-                type="button"
+              <Tooltip label={t("docTabs.close")}><IconButton size="sm"
                 aria-label={t("docTabs.closeNamed", { name: level.name })}
                 disabled={!closable || picking}
                 onClick={() => void closeDocTab(id)}
-                className={`grid size-5 shrink-0 place-items-center rounded-sm text-faint hover:bg-active hover:text-text disabled:invisible ${
+                className={`hover:bg-active disabled:invisible ${
                   active ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 }`}
               >
-                <Icon name="x" size={12} />
-              </button></Tooltip>
+                <Icon name="x" size={16} />
+              </IconButton></Tooltip>
               {active && <span aria-hidden className="absolute right-2 bottom-0 left-2 h-0.5 bg-accent" />}
             </RowContextMenu>
           );
@@ -197,7 +195,7 @@ export function DocumentTabs() {
         <StampDocTab disabled={picking} />
       </div>
       <Tooltip label={t("levels.add")} command="level.new">
-        <IconButton size="sm" aria-label={t("levels.add")} className="my-auto ml-1" disabled={picking} onClick={() => openNewLevelDialog()} data-doc-tab-new="">
+        <IconButton size="md" aria-label={t("levels.add")} className="my-auto ml-1" disabled={picking} onClick={() => openNewLevelDialog()} data-doc-tab-new="">
           <Icon name="plus" size={16} />
         </IconButton>
       </Tooltip>

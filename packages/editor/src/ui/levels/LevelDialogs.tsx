@@ -12,6 +12,7 @@ import { backdropClass, popupClass, dialogWidthS } from "../dialogs/styles";
 import { Button, IconButton } from "../primitives/Button";
 import { TextField } from "../primitives/TextField";
 import { Icon } from "../primitives/Icon";
+import { selectAll } from "../primitives/selectAll";
 
 const MAP_MIN = 1;
 const MAP_MAX = 4096;
@@ -220,7 +221,7 @@ function LevelField({
       <TextField
         size="md"
         value={value}
-        onFocus={(e) => e.currentTarget.select()}
+        {...selectAll}
         onChange={(e) => onChange(e.target.value)}
         inputMode={numeric ? "numeric" : undefined}
         autoFocus={autoFocus}

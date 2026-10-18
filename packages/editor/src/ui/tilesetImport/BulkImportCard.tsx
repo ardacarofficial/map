@@ -22,6 +22,7 @@ import { addableRows, makeRow, readAutoAdd, rowVerdict, setRowSize, setRowSpec, 
 import { draftFromSpec } from "./importModel";
 import { useBulkCard, type BulkFile, type BulkRequest, type CardRequest } from "./importStore";
 import { TilesetCard } from "./TilesetImportDialog";
+import { selectAll } from "../primitives/selectAll";
 
 const NEW_GROUP = "\u0000new";
 
@@ -106,7 +107,7 @@ function BulkCard({ request }: { request: BulkRequest }) {
           <TextField size="md"
             autoFocus
             value={newGroup}
-            onFocus={(e) => e.currentTarget.select()}
+            {...selectAll}
             onChange={(e) => setNewGroup(e.target.value)}
             aria-label={t("tilesetLib.groupName")}
             placeholder={t("tilesetLib.groupName")}
@@ -187,7 +188,7 @@ function BulkRowView({
           spellCheck={false}
           autoComplete="off"
           data-bulk-size
-          onFocus={(e) => e.currentTarget.select()}
+          {...selectAll}
           className={`${inputClass.replace("w-full ", "")} w-16 tabular ${row.spec ? inputOk : inputBad}`}
         />
         {t("newProject.pxUnit")}

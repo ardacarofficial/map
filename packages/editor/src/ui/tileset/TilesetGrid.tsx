@@ -75,7 +75,7 @@ export { GridHostContext, type GridHost } from "./view/gridHost";
 /** "Arazi başlat buradan": Arazi mode with the block around `cell` found (or why nothing was found). */
 export function startTerrainAt(tileset: Tileset, cell: Cell): void {
   useUiStore.getState().setTilesetMode("terrain");
-  if (!startDraft(tileset, { col: cell.col, row: cell.row, columns: 1, rows: 1 })) toast.warning(t("terrain.noCandidate"));
+  startDraft(tileset, { col: cell.col, row: cell.row, columns: 1, rows: 1 });
 }
 
 /** The terrain set whose tags the grid shows in Arazi mode: the fix target's, the draft's, the brush's, else the tileset's first. */
@@ -385,7 +385,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     endStroke();
     updateDrag(null);
     if (g.kind === "rough") {
-      if (!startDraft(tileset, roughRect(g.start, g.cell))) toast.warning(t("terrain.noCandidate"));
+      startDraft(tileset, roughRect(g.start, g.cell));
       return;
     }
     if (g.kind !== "select") return;

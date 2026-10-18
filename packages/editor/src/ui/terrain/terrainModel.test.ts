@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { bestPerTemplate, roughRect } from "./terrainDraft";
 import {
   blockTileIds,
+  plausibleTerrainCandidate,
   draftResult,
   nextTerrainColor,
   nextTerrainId,
@@ -132,8 +133,25 @@ describe("define helpers", () => {
   it("rough rectangles and one candidate per template", () => {
     expect(roughRect({ col: 5, row: 2 }, { col: 1, row: 4 })).toEqual({ col: 1, row: 2, columns: 5, rows: 3 });
     const c = (template: "corner16" | "blob47-godot", score: number, col = 0) => ({ template, origin: { col, row: 0 }, score });
-    expect(bestPerTemplate([c("corner16", 0.9), c("corner16", 0.8, 1), c("blob47-godot", 0.5)]).map((x) => x.template)).toEqual(["corner16", "blob47-godot"]);
-    expect(bestPerTemplate([c("corner16", 0), c("blob47-godot", 0.2)]).map((x) => x.template)).toEqual(["blob47-godot"]);
-    expect(bestPerTemplate([c("corner16", 0)])).toHaveLength(1);
+    expect(bestPerTemplate([c("corner16", 0.9), c("corner16", 0.8, 1), c("blob47-godot", 0.85)]).map((x) => x.template)).toEqual(["corner16", "blob47-godot"]);
+    expect(bestPerTemplate([c("corner16", 0), c("blob47-godot", 0.85)]).map((x) => x.template)).toEqual(["blob47-godot"]);
+    expect(bestPerTemplate([c("corner16", 0)])).toHaveLength(0);
+  });
+});
+
+describe("terrain candidate plausibility", () => {
+  const candidate = { template: "blob47-cr31", origin: { col: 0, row: 0 }, score: 0.9 } as const;
+  it("rejects a 7×1 strip even with a high accidental pixel score", () => {
+    expect(plausibleTerrainCandidate(candidate, { col: 0, row: 0, columns: 7, rows: 1 })).toBe(false);
+  });
+  it("rejects poor pixel matches and a block outside the dragged area", () => {
+    const rough = { col: 0, row: 0, columns: 7, rows: 7 };
+    expect(plausibleTerrainCandidate({ ...candidate, score: 0.79 }, rough)).toBe(false);
+    expect(plausibleTerrainCandidate({ ...candidate, origin: { col: 9, row: 9 } }, rough)).toBe(false);
+  });
+  it("accepts rough real blob and corner16 selections, including a context click", () => {
+    expect(plausibleTerrainCandidate({ ...candidate, template: "blob47-godot" }, { col: 2, row: 1, columns: 8, rows: 2 })).toBe(true);
+    expect(plausibleTerrainCandidate({ ...candidate, template: "corner16" }, { col: 1, row: 1, columns: 2, rows: 2 })).toBe(true);
+    expect(plausibleTerrainCandidate(candidate, { col: 2, row: 2, columns: 1, rows: 1 })).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import { backdropClass, popupClass } from "../dialogs/styles";
 import { TextField } from "../primitives/TextField";
 import { Button } from "../primitives/Button";
 import { registerTilesetModal } from "../tilesetImport/importStore";
+import { selectAll } from "../primitives/selectAll";
 
 export interface TextPromptRequest {
   readonly title: string;
@@ -71,7 +72,7 @@ function PromptForm({ request }: { request: TextPromptRequest }) {
           maxLength={64}
           spellCheck={false}
           autoComplete="off"
-          onFocus={(e) => e.currentTarget.select()}
+          {...selectAll}
           onChange={(e) => setValue(e.target.value)}
           aria-invalid={!ok}
           className="w-full"

@@ -30,6 +30,7 @@ import {
 import { cleanLayers, fitPreview, projectTemplate, templateIdOf, type ProjectTemplateId } from "../projectSettings/projectTemplates";
 import { useUiStore } from "../uiStore";
 import { backdropClass, popupClass, dialogWidthM } from "./styles";
+import { selectAll } from "../primitives/selectAll";
 
 export { parseIntInRange } from "../projectSettings/projectTemplates";
 
@@ -233,7 +234,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
               id={nameId}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onFocus={(e) => e.currentTarget.select()}
+              {...selectAll}
               autoFocus
               spellCheck={false}
               autoComplete="off"
@@ -429,7 +430,7 @@ export function Field({
 }) {
   const id = useId();
   return <Section label={label} htmlFor={id}>
-    <TextField size="md" id={id} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.currentTarget.select()}
+    <TextField size="md" id={id} value={value} onChange={e => onChange(e.target.value)} {...selectAll}
       autoFocus={autoFocus} inputMode={numeric ? "numeric" : "text"} spellCheck={false} autoComplete="off"
       aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}
       className={`${numeric ? "tabular" : ""} ${error ? "[&>input]:border-danger" : ""}`}

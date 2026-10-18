@@ -56,11 +56,11 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // A new level does not pile up on the first one.
   expect(start.x).toBeGreaterThan(0);
 
-  // ---- Into the world view (left rail "Dünya"): both maps, no layers.
+  // ---- Into the world view (status-bar "Dünya"): both maps, no layers.
   const worldButton = page.locator("[data-rail='world']");
   await expect(page.locator("canvas[data-ruler='top']")).toBeVisible();
   await worldButton.click();
-  await expect(worldButton).toHaveAttribute("aria-pressed", "true");
+  await expect(worldButton).toHaveAttribute("aria-checked", "true");
   await expect(page.locator("[data-status-world]")).toContainText("Dünya");
   await expect(page.locator("[data-status-world]")).toContainText("2 harita");
   await expect(page.getByRole("region", { name: "Katmanlar" })).toBeHidden();
@@ -92,7 +92,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   // ---- Esc returns to the level view.
   await page.locator("[data-canvas-host]").focus();
   await page.keyboard.press("Escape");
-  await expect(worldButton).toHaveAttribute("aria-pressed", "false");
+  await expect(worldButton).toHaveAttribute("aria-checked", "false");
   await expect(page.getByRole("region", { name: "Katmanlar" })).toBeVisible();
 
   // ---- Reopen: the position is still there, and the world view shows it.

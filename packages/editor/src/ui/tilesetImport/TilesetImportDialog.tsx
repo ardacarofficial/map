@@ -40,6 +40,7 @@ import { TextPromptDialog } from "../tileset/TextPrompt";
 import { accumulateWheelZoom, PAN_GESTURE_MS, tilesetWheel } from "../tileset/zoomModel";
 import { BulkImportDialog } from "./BulkImportCard";
 import { useTilesetCard, type CardRequest, type CardResult } from "./importStore";
+import { selectAll } from "../primitives/selectAll";
 
 /** Every tileset dialog: the single card, the bulk card, the remove question and the name prompt. */
 export function TilesetImportDialog() {
@@ -118,7 +119,7 @@ export function TilesetCard({
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <DialogHeader title={title} subtitle={edit ? request.initial.name : t("tilesetImport.description")} onClose={() => close(null)} />
+      <DialogHeader title={title} onClose={() => close(null)} />
       <DialogBody className="flex min-h-0 flex-1 gap-4">
         <Preview request={request} spec={parsed.spec} summary={summary} />
         <div className="flex min-h-0 w-80 shrink-0 flex-col gap-3 overflow-y-auto">
@@ -257,7 +258,7 @@ function TextField({
   const id = useId();
   return <FormField label={label} htmlFor={id}>
     <InputField size="md" id={id} value={value} autoFocus={autoFocus} spellCheck={false} autoComplete="off"
-      aria-invalid={invalid || undefined} onFocus={e => e.currentTarget.select()} onChange={e => onChange(e.target.value)}
+      aria-invalid={invalid || undefined} {...selectAll} onChange={e => onChange(e.target.value)}
       className={invalid ? "[&>input]:border-danger" : ""} />
   </FormField>;
 }
@@ -267,7 +268,7 @@ function NumberField({ label, value, invalid, autoFocus, onChange }: { label: st
   const id = useId();
   return <div className="min-w-0 flex-1"><FormField label={label} htmlFor={id}>
     <InputField size="md" id={id} value={value} autoFocus={autoFocus} inputMode="numeric" spellCheck={false} autoComplete="off"
-      aria-invalid={invalid || undefined} onFocus={e => e.currentTarget.select()} onChange={e => onChange(e.target.value)}
+      aria-invalid={invalid || undefined} {...selectAll} onChange={e => onChange(e.target.value)}
       trailing={<span className="text-xs text-muted">{t("newProject.pxUnit")}</span>}
       className={`tabular ${invalid ? "[&>input]:border-danger" : ""}`}
       onKeyDown={e => {

@@ -38,8 +38,17 @@ describe("toast duration policy", () => {
     }
   });
 
-  it("keeps at most four notifications in order, with the newest last", () => {
+  it("replaces the visible notification with the newest", () => {
     for (let i = 0; i < 6; i++) toast.info(`message ${i}`);
-    expect(useToastStore.getState().toasts.map((item) => item.message)).toEqual(["message 2", "message 3", "message 4", "message 5"]);
+    expect(useToastStore.getState().toasts.map((item) => item.message)).toEqual(["message 5"]);
   });
+  it("stops watching a replaced action and never stacks sticky errors", () => {
+    const unwatch = vi.fn();
+    useToastStore.getState().push("info", "action", undefined, { label: "Undo", run: vi.fn(), spent: () => false, watch: () => unwatch });
+    toast.error("failed");
+    expect(unwatch).toHaveBeenCalledOnce();
+    toast.info("newest");
+    expect(useToastStore.getState().toasts.map(item => item.message)).toEqual(["newest"]);
+  });
+
 });

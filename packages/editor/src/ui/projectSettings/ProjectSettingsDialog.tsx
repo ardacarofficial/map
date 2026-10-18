@@ -42,6 +42,7 @@ import {
   type TileSizeValue,
 } from "./fields";
 import { cleanLayers, singleLayer, templateIdOf } from "./projectTemplates";
+import { selectAll } from "../primitives/selectAll";
 
 type TabId = "general" | "unity" | "more";
 
@@ -164,7 +165,7 @@ function SettingsForm({ onDone }: { onDone(): void }) {
             <TextField size="md"
               id={nameId}
               value={name}
-              onFocus={(e) => e.currentTarget.select()}
+              {...selectAll}
               onChange={(e) => setName(e.target.value)}
               spellCheck={false}
               autoComplete="off"

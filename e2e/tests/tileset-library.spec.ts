@@ -42,7 +42,7 @@ async function tileCenter(page: Page, tilesetId: string, col: number, row: numbe
   return { x: box.x + (col + 0.5) * 32 * scale, y: box.y + (row + 0.5) * 32 * scale };
 }
 
-test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, one toast, one undo; Tümü shows them all", async ({ page }) => {
+test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, no confirmation toast, one undo; Tümü shows them all", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await startProject(page);
@@ -80,15 +80,15 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, one toas
   await card.getByRole("button", { name: "Hepsini ekle (4)" }).click();
   await expect(card).toBeHidden();
   await expect.poll(() => tilesetIds(page)).toHaveLength(5);
-  const toast = page.getByRole("status").filter({ hasText: "4 tileset eklendi" });
-  await expect(toast).toHaveCount(1);
+  await expect(page.getByRole("status").filter({ hasText: "4 tileset eklendi" })).toHaveCount(0);
   const groups = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.document.tilesets.map((t) => t.group ?? null));
   expect(groups).toEqual([null, "Zindan", "Zindan", "Zindan", "Zindan"]);
 
-  // One "Geri al" removes all four.
-  await toast.getByRole("button", { name: "Geri al" }).click();
+  // One undo removes all four, without a redundant dialog-confirmation toast.
+  await page.locator("canvas[aria-label='map canvas']").first().focus();
+  await page.keyboard.press("Control+z");
   await expect.poll(() => tilesetIds(page)).toEqual(["overworld-32"]);
-  // Restore the same import to exercise the management view after testing the transient toast.
+  // Restore the same import to exercise the management view after testing undo.
   await page.locator("canvas[aria-label='map canvas']").first().focus();
   await page.keyboard.press("Control+Shift+z");
   await expect.poll(() => tilesetIds(page)).toHaveLength(5);

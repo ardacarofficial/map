@@ -35,6 +35,7 @@ import { clearTerrainDraft, startFix, useTerrainDraft, type TerrainDraft } from 
 import { TerrainDot, TerrainSets } from "./TerrainList";
 import { MenuSelect, type SelectOption } from "./TerrainMenus";
 import { draftResult, kindOfTemplate, previewTiles, resolveTerrain, templateLabel, type TerrainRef } from "./terrainModel";
+import { selectAll } from "../primitives/selectAll";
 
 const CELL = 32;
 
@@ -107,7 +108,11 @@ function DefineFace({ ctx, draft }: { ctx: InspectorContext; draft: TerrainDraft
   const patch = useTerrainDraft((s) => s.patchDraft);
   const tileset = ctx.doc.getTileset(draft.tilesetId);
   const candidate = draft.candidates[draft.index] ?? draft.candidates[0];
-  if (!tileset || !candidate) return null;
+  if (!tileset) return null;
+  if (!candidate) return <div data-inspector-terrain="define">
+    <SectionHeader padding={12} title={t("terrain.defineTitle")} />
+    <p className="px-3 text-sm text-muted" data-terrain-no-template>{t("terrain.noCandidate")}</p>
+  </div>;
   const kind = kindOfTemplate(candidate.template);
   const sets = (tileset.terrainSets ?? []).filter((s) => s.kind === kind);
   const setId = draft.setId && sets.some((s) => s.id === draft.setId) ? draft.setId : null;
@@ -151,7 +156,7 @@ function DefineFace({ ctx, draft }: { ctx: InspectorContext; draft: TerrainDraft
         <PropRow label={t("terrain.name")}>
           <TextField size="sm"
             autoFocus
-            onFocus={(e) => e.currentTarget.select()}
+            {...selectAll}
             value={draft.name}
             aria-label={t("terrain.name")}
             data-terrain-name-input=""
@@ -178,7 +183,7 @@ function DefineFace({ ctx, draft }: { ctx: InspectorContext; draft: TerrainDraft
         )}
       </PropGrid>
       <div className="flex gap-2 px-3 pt-1">
-        <ActionButton label={t("terrain.define")} tone="primary" dataAction="terrain-define" disabledReason={result ? null : t("terrain.noFit")} onClick={submit} />
+        <ActionButton label={t("terrain.define")} dataAction="terrain-define" disabledReason={result ? null : t("terrain.noFit")} onClick={submit} />
         <ActionButton label={t("common.cancel")} dataAction="terrain-define-cancel" onClick={clearTerrainDraft} />
       </div>
     </div>

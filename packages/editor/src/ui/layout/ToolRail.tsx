@@ -65,7 +65,7 @@ function SettingsMenu() {
   );
 }
 
-/** Editing tools, with world view and settings anchored at the bottom. */
+/** Editing tools, with settings anchored at the bottom. */
 export function ToolRail() {
   const tool = useEditorStore((s) => s.tool);
   const world = useWorldView((s) => s.view === "world");
@@ -82,11 +82,6 @@ export function ToolRail() {
         </Fragment>
       ))}
       <div className="mt-auto flex flex-col items-center gap-1 pt-2">
-        <Tooltip label={t("world.world")} command="view.world" side="right">
-          <IconButton size="rail" aria-label={t("world.world")} aria-pressed={world} active={world} data-rail="world" onClick={() => runCommand("view.world")}>
-            <Icon name="map" size={20} />
-          </IconButton>
-        </Tooltip>
         <SettingsMenu />
       </div>
     </nav>

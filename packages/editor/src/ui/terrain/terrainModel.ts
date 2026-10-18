@@ -19,6 +19,8 @@ import {
   tagBlockWithTemplate,
   terrainTagOf,
   terrainTemplateInfo,
+  type DetectedTerrainBlock,
+  type TileGridRect,
   type MapDocument,
   type TerrainCorners,
   type TerrainSet,
@@ -353,4 +355,21 @@ export function draftResult(
   } catch {
     return null;
   }
+}
+
+/** At least 80% of pixel variance must be explained by the template. */
+export const MIN_TERRAIN_MATCH = 0.8;
+
+/** Adjusted pixel match and rough shape must both support an automatic template. */
+export function plausibleTerrainCandidate(candidate: DetectedTerrainBlock, rough: TileGridRect): boolean {
+  if (!Number.isFinite(candidate.score) || candidate.score < MIN_TERRAIN_MATCH) return false;
+  // A context-menu click intentionally asks us to inspect its surrounding block.
+  if (rough.columns === 1 && rough.rows === 1) return true;
+  const info = terrainTemplateInfo(candidate.template);
+  if (rough.columns < info.columns / 3 || rough.rows < info.rows / 3) return false;
+  const aspect = (rough.columns / rough.rows) / (info.columns / info.rows);
+  if (aspect < 0.4 || aspect > 2.5) return false;
+  const overlapW = Math.max(0, Math.min(rough.col + rough.columns, candidate.origin.col + info.columns) - Math.max(rough.col, candidate.origin.col));
+  const overlapH = Math.max(0, Math.min(rough.row + rough.rows, candidate.origin.row + info.rows) - Math.max(rough.row, candidate.origin.row));
+  return overlapW * overlapH >= rough.columns * rough.rows * 0.5;
 }

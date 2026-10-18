@@ -18,7 +18,7 @@ import { showDockTab } from "../layout/dock/dockActions";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { showPalette } from "../palettes/paletteActions";
 import { useUiStore } from "../uiStore";
-import { kindOfTemplate, type TerrainRef } from "./terrainModel";
+import { kindOfTemplate, MIN_TERRAIN_MATCH, plausibleTerrainCandidate, type TerrainRef } from "./terrainModel";
 import { tilesetPixels } from "./tilesetPixels";
 
 /** Candidates kept for the "Şablon" list. */
@@ -58,8 +58,7 @@ export const useTerrainDraft = create<TerrainDraftState>()((set) => ({
 
 /**
  * One candidate per template (its best origin), best first, at most
- * {@link MAX_CANDIDATES}; zero-score candidates are dropped unless nothing
- * else is left.
+ * {@link MAX_CANDIDATES}; candidates without a meaningful match are dropped.
  */
 export function bestPerTemplate(all: readonly DetectedTerrainBlock[]): DetectedTerrainBlock[] {
   const seen = new Set<string>();
@@ -69,8 +68,7 @@ export function bestPerTemplate(all: readonly DetectedTerrainBlock[]): DetectedT
     seen.add(c.template);
     out.push(c);
   }
-  const useful = out.filter((c) => c.score > 0);
-  return (useful.length > 0 ? useful : out).slice(0, MAX_CANDIDATES);
+  return out.filter((c) => c.score >= MIN_TERRAIN_MATCH).slice(0, MAX_CANDIDATES);
 }
 
 /** Normalized rectangle of two tileset cells. */
@@ -91,15 +89,14 @@ export function startDraft(tileset: Tileset, rough: TileGridRect): boolean {
   let candidates: DetectedTerrainBlock[] = [];
   if (pixels) {
     try {
-      candidates = bestPerTemplate(detectTerrainBlock(tileset, pixels, rough));
+      candidates = bestPerTemplate(detectTerrainBlock(tileset, pixels, rough).filter(candidate => plausibleTerrainCandidate(candidate, rough)));
     } catch (error) {
       console.warn("[terrain] detection failed", error);
     }
   }
-  if (candidates.length === 0) return false;
   const prev = useTerrainDraft.getState().draft;
   const keep = prev && prev.tilesetId === tileset.id;
-  const kind = kindOfTemplate(candidates[0]!.template);
+  const kind = candidates[0] ? kindOfTemplate(candidates[0].template) : null;
   const setId = keep && prev.setId && tileset.terrainSets?.find((s) => s.id === prev.setId)?.kind === kind ? prev.setId : null;
   const defaults = terrainDefaults(tileset.id, setId);
   useTerrainDraft.getState().setDraft({
@@ -113,7 +110,7 @@ export function startDraft(tileset: Tileset, rough: TileGridRect): boolean {
     background: keep && setId === prev.setId ? prev.background : 0,
   });
   useTerrainDraft.getState().setFix(null);
-  return true;
+  return candidates.length > 0;
 }
 
 /** Leaves define / fix (the draft is dropped). */

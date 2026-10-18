@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { fuzzyFilter, type FuzzyMatch } from "../../commands/fuzzy";
 import { allCommands, isEnabled, paletteEntries, runCommand, type Command } from "../../commands/registry";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
-import { t } from "../../i18n";
+import { getLocale, t } from "../../i18n";
 import { KbdText } from "../primitives/Kbd";
 import { Icon } from "../primitives/Icon";
 import { useUiStore } from "../uiStore";
@@ -74,7 +74,16 @@ function PaletteBody({ onClose }: { onClose(): void }) {
     const filtered = fuzzyFilter(commands, query, label);
     if (query.trim()) return filtered;
     const recent = recents.flatMap(id => filtered.filter(result => result.item.id === id));
-    return [...recent, ...filtered.filter(result => !recents.includes(result.item.id))];
+    const remaining = filtered.filter(result => !recents.includes(result.item.id));
+    const collator = new Intl.Collator(getLocale());
+    remaining.sort((a, b) => {
+      const x = a.item;
+      const y = b.item;
+      return collator.compare(x.label.slice(0, x.split - 2), y.label.slice(0, y.split - 2))
+        || collator.compare(x.label.slice(x.split), y.label.slice(y.split))
+        || x.id.localeCompare(y.id);
+    });
+    return [...recent, ...remaining];
   }, [commands, query, recents]);
   const recentCount = query.trim() ? 0 : results.filter(result => recents.includes(result.item.id)).length;
   const current = Math.min(active, Math.max(0, results.length - 1));

@@ -10,6 +10,7 @@ import { Icon } from "../primitives/Icon";
 import { backdropClass, popupClass, dialogWidthS } from "../dialogs/styles";
 import { Button, IconButton } from "../primitives/Button";
 import { useUiStore } from "../uiStore";
+import { selectAll } from "../primitives/selectAll";
 
 /** stamp.saveSelection — asks for a name, then saves the marquee of every layer. */
 export function SaveStampDialog() {
@@ -60,7 +61,7 @@ function SaveStampForm({ onDone }: { onDone(): void }) {
       <div className="p-4">
         <label className="flex flex-col gap-2 text-sm text-muted">
           <span>{t("stamps.name")}</span>
-          <TextField size="md" aria-label={t("stamps.name")} value={name} onChange={(e) => setName(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} aria-invalid={!!error} />
+          <TextField size="md" aria-label={t("stamps.name")} value={name} onChange={(e) => setName(e.target.value)} autoFocus {...selectAll} aria-invalid={!!error} />
           {error && <span className="text-xs text-danger">{error}</span>}
         </label>
       </div>

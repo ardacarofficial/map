@@ -30,6 +30,7 @@ import {
   type MapSettingsCurrent,
 } from "./mapSettingsModel";
 import { closeMapSettings, useMapSettingsFocus } from "./mapSettingsStore";
+import { selectAll } from "../primitives/selectAll";
 
 const ANCHORS: Anchor[] = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -139,7 +140,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
               <TextField size="md"
                 id={id}
                 value={name}
-                onFocus={(e) => e.currentTarget.select()}
+                {...selectAll}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus={focus === "name"}
                 maxLength={80}

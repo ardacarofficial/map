@@ -86,7 +86,7 @@ function ToastItem({ toast }: { toast: Toast }) {
               dismiss(toast.id);
               action.run();
             }}
-            className="hover:bg-hover-popup"
+            className="text-accent! hover:bg-hover-popup"
           >
             {action.label}
           </Button>

@@ -27,6 +27,7 @@ import {
   type LayerTemplateId,
   type MapSizePresetId,
 } from "./projectTemplates";
+import { selectAll } from "../primitives/selectAll";
 
 export function Section({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
   return <FormField label={label} htmlFor={htmlFor} title={typeof hint === "string" ? hint : undefined}>{children}</FormField>;
@@ -48,7 +49,7 @@ export function NumberField({ value, onChange, prefix, label, invalid, width = "
   width?: string; id?: string; autoFocus?: boolean; field?: string; unit?: string;
 }) {
   return <TextField size="md" id={id} value={value} onChange={e => onChange(e.target.value)}
-    onFocus={e => e.currentTarget.select()} inputMode="numeric" aria-label={label}
+    {...selectAll} inputMode="numeric" aria-label={label}
     aria-invalid={invalid || undefined} autoFocus={autoFocus} spellCheck={false} autoComplete="off"
     data-field={field} className={`${width} tabular ${invalid ? "[&>input]:border-danger" : ""}`}
     {...(prefix ? { leadingIcon: <span className="text-sm text-muted">{prefix}</span> } : {})}
@@ -239,7 +240,7 @@ export function LayerListEditor({ layers, onChange }: { layers: LayerSpec[]; onC
               <LayerKindIcon kind={layer.kind} className="mx-1 shrink-0 text-muted" />
               <TextField size="md"
                 value={layer.name}
-                onFocus={(e) => e.currentTarget.select()}
+                {...selectAll}
                 onChange={(e) => set(index, { name: e.target.value })}
                 placeholder={t("newProject.layerNamePlaceholder")}
                 aria-label={t("newProject.layerNamePlaceholder")}

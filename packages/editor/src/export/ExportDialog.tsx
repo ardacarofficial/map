@@ -29,9 +29,9 @@ import { backdropClass, popupClass, dialogWidthL } from "../ui/dialogs/styles";
 import { DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "../ui/dialogs/DialogFrame";
 import { Segmented } from "../ui/primitives/Segmented";
 import { DialogToggle as Toggle } from "../ui/dialogs/DialogFrame";
-import { Button, IconButton } from "../ui/primitives/Button";
+import { Button } from "../ui/primitives/Button";
 import { Icon } from "../ui/primitives/Icon";
-import { inputClass, inputOk, NativeSelect } from "../ui/primitives/NativeSelect";
+import { NativeSelect } from "../ui/primitives/NativeSelect";
 import { toast } from "../ui/toast/toastStore";
 import {
   activeSource,
@@ -281,13 +281,12 @@ function ExportForm({
           {chosen === "unity" && (
             <>
               <Section label={t("export.destination")}>
-                <FolderRow handle={current.unityDir} onPick={() => void pickFolder("unity")} />
-                <label className="mt-1 flex flex-col gap-2">
-                  <span className="text-sm text-muted">{t("export.outputFolder")}</span>
+                <FolderRow handle={current.unityDir} onPick={() => void pickFolder("unity")}>
                   <input
-                    className={`${inputClass} ${inputOk} `}
+                    aria-label={t("export.outputFolder")}
+                    className="h-control-md min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-muted"
                     value={subfolder}
-                    placeholder={t("export.outputFolderPlaceholder")}
+                    placeholder={current.unityDir ? t("export.outputFolderPlaceholder") : t("export.noFolder")}
                     spellCheck={false}
                     onChange={(event) => setSubfolderDraft(event.target.value)}
                     onBlur={() => {
@@ -296,7 +295,7 @@ function ExportForm({
                     title={[current.unityDir?.name ?? "…", outputSubfolder(subfolder), derived.files?.mapFile].filter(Boolean).join(" / ")}
                     data-testid="export-subfolder"
                   />
-                </label>
+                </FolderRow>
 
               </Section>
 
@@ -587,16 +586,18 @@ function ZipFiles({ project }: { project: OpenProject }) {
   );
 }
 
-function FolderRow({ handle, onPick }: { handle: FileSystemDirectoryHandle | null; onPick(): void }) {
+function FolderRow({ handle, onPick, children }: { handle: FileSystemDirectoryHandle | null; onPick(): void; children?: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className={`flex h-control-md min-w-0 flex-1 items-center gap-2 ${children ? "rounded-sm border border-line bg-field px-2 focus-within:border-accent" : ""}`}>
         <Icon name="folder" size={16} className="shrink-0 text-muted" />
-        {handle ? <span className="truncate text-sm text-text" data-testid="export-folder">{handle.name}</span> : <span className="truncate text-sm text-muted">{t("export.noFolder")}</span>}
+        {handle ? <span className="max-w-40 truncate text-sm text-text" data-testid="export-folder">{handle.name}</span> : !children && <span className="flex h-control-md items-center truncate text-sm text-muted">{t("export.noFolder")}</span>}
+        {handle && children && <span aria-hidden className="text-muted">/</span>}
+        {children}
       </div>
-      <IconButton size="md" onClick={onPick} aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")} title={handle ? t("export.changeFolder") : t("export.pickFolder")}>
-        <Icon name="folder" size={16} />
-      </IconButton>
+      <Button size="md" onClick={onPick} aria-label={handle ? t("export.changeFolder") : t("export.pickFolder")} title={handle ? t("export.changeFolder") : t("export.pickFolder")}>
+        {t("export.chooseFolder")}
+      </Button>
     </div>
   );
 }

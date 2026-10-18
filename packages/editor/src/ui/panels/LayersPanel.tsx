@@ -234,7 +234,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
                 }}
                 persistent={true}
               />
-              <Icon name={layerIcon(layer)} size={16} className="shrink-0 text-muted" />
+              <span aria-hidden className="grid size-4 shrink-0 place-items-center">{(isEntityLayer(layer) || isGridLayer(layer)) && <Icon name={layerIcon(layer)} size={16} className="text-muted" />}</span>
               {editingId === layer.id ? (
                 <RenameInput
                   initial={layer.name}
@@ -276,6 +276,9 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
             </RowContextMenu>
           );
         })}
+        {drag?.active && to !== null && to !== drag.from && (
+          <li aria-hidden data-layer-drop-line className="pointer-events-none absolute right-1 left-1 z-20 h-px bg-accent" style={{ top: (to > drag.from ? to + 1 : to) * ROW }} />
+        )}
       </ul>
       <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
     </>}
@@ -326,7 +329,7 @@ function layerIcon(layer: TileLayer): IconName {
 function AddLayerMenu() {
   return (
     <Menu.Root>
-      <Tooltip label={t("layers.add")} command="layer.add">
+      <Tooltip label={t("layers.addTile")} command="layer.add">
         <Menu.Trigger
           render={
             <IconButton aria-label={t("layers.add")} size="sm" className="data-popup-open:bg-hover data-popup-open:text-text">

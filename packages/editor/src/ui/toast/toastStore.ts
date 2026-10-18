@@ -40,7 +40,6 @@ const DEFAULT_DURATION: Record<ToastKind, number> = {
   error: Infinity,
 };
 
-const MAX_TOASTS = 4;
 let nextId = 1;
 /** Spent-watchers of shown toasts with an action, by toast id. */
 const spentWatchers = new Map<number, () => void>();
@@ -60,11 +59,7 @@ export const useToastStore = create<ToastState>()((set, get) => ({
     const delay = duration ?? (kind === "error" ? Infinity : action ? 8000 : DEFAULT_DURATION[kind]);
     const id = nextId++;
     if (action?.spent?.()) return id;
-    set((s) => {
-      // Same message twice in a row: replace instead of stacking duplicates.
-      const rest = s.toasts.filter((t) => t.message !== message);
-      return { toasts: [...rest, { id, kind, message, duration: delay, ...(action ? { action } : {}) }].slice(-MAX_TOASTS) };
-    });
+    set({ toasts: [{ id, kind, message, duration: delay, ...(action ? { action } : {}) }] });
     pruneWatchers(get().toasts);
     const { spent, watch } = action ?? {};
     if (spent && watch) {

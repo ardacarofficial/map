@@ -18,6 +18,7 @@ import { getCanvasHandle } from "../canvas/canvasHandle";
 import { RowContextMenu } from "../contextMenus/RowContextMenu";
 import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
 import { TYPE_COLORS, typeFromDraft } from "./fieldValues";
+import { selectAll } from "../primitives/selectAll";
 
 /** Icon of an entity type: built-ins have their own, user types a box. */
 export function entityTypeIcon(type: Pick<EntityType, "id" | "icon"> | undefined): IconName {
@@ -266,7 +267,7 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
         <TextField size="sm"
           autoFocus
           value={name}
-          onFocus={(e) => e.currentTarget.select()}
+          {...selectAll}
           aria-label={t("entities.name")}
           placeholder={t("entities.typeNamePlaceholder")}
           onChange={(e) => setName(e.target.value)}

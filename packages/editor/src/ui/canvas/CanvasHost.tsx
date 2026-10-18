@@ -6,6 +6,7 @@ import { useStampLibrary } from "../stamps/stampLibraryStore";
 import { t } from "../../i18n";
 import { toast } from "../toast/toastStore";
 import { CANVAS_HOST_ATTR, setCanvasHandle } from "./canvasHandle";
+import { captureHistoryBrushSource } from "../feedback/sharedHistoryLabels";
 import { loadCanvasModule } from "./loadCanvas";
 
 /**
@@ -59,6 +60,7 @@ export function CanvasHost() {
       tabIndex={0}
       // Clicking the canvas focuses it so `Tab` (hide panels) works right away.
       onPointerDownCapture={(e) => {
+        if (e.button === 0) captureHistoryBrushSource();
         if (e.button === 0 && useEditorStore.getState().tool === "select") useStampLibrary.getState().select(null);
       }}
       onPointerDown={(e) => e.currentTarget.focus({ preventScroll: true })}

@@ -136,9 +136,9 @@ Order (groups separated by 8 px gap + 1 px `line-subtle` 16 px wide):
 2. Kalem (B) · Silgi (E) · Doldur (F) · Dikdörtgen (R)
 3. Damlalık (I)
 4. Entity (O)
-Bottom: Dünya görünümü toggle (W), Ayarlar.
+Bottom: Ayarlar (`settings-2`). Dünya görünümü stays in the status-bar Harita|Dünya segment and on W.
 Button 32×32, radius 4, icon 20 `muted`; hover `hover` + `text`; active tool `active` fill + `accent` icon (no left bar, no accent fill). Tooltip right side: "Kalem  B".
-The panel switcher rail is removed. `data-rail` values move: `world` and `settings` stay on the rail-bottom buttons; `library`/`project` go on the library panel tabs (§4.4) and Ctrl+B still toggles the left panel.
+The panel switcher rail is removed. `data-rail` values move: `world` moves to the status-bar Dünya radio; `settings` stays on the rail-bottom button; `library`/`project` go on the library panel tabs (§4.4) and Ctrl+B still toggles the left panel.
 
 ### 4.3 Options bar (36, `panel`, bottom border `line`, spans canvas column only)
 - Left: active tool icon 16 + name (text-sm 500 `text`), 1 px divider, then **that tool's** options only (registry in `ui/toolOptions`): brush size chip "Boyut 1 ▾" (size/shape only when expanded), Rastgele toggle (dice icon + label; on = the multi-tile brush becomes a random set, off = back to the previous brush; disabled for a single tile with no saved sets) with saved-set picker when on, terrain set picker, flip/rotate icon buttons for brush/stamp (X, Y, Z), etc.
@@ -156,7 +156,7 @@ The panel switcher rail is removed. `data-rail` values move: `world` and `settin
 - Inspector header: 16 px icon + title text-md 600 `title` + optional subtitle `faint`; no 40×40 icon tile.
 - Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y coordinates and horizontal/vertical size glyphs) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); terrain → ARAZİ; collision layer → solid/passable; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
 - No tool selector in the inspector (tool lives on the rail only).
-- Bottom: **Katmanlar** section below a splitter (default 40%, min 5 rows). Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted`, name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
+- Bottom: **Katmanlar** section below a splitter (default 40%, min 5 rows). Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted` for non-tile layers only (fixed column keeps names aligned), name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
 - Geçmiş: rows 24, newest at bottom, current row `accent-soft`, future rows `faint`. Labels are verbs ("Katman ekle", "Boya 12 hücre").
 
 ### 4.6 Bottom dock (spans canvas column; default height fits content: min(8 tile rows at current zoom + header, 40% of window), min 96, collapsible to its tab strip; remembered)
@@ -172,11 +172,11 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 ### 4.8 Canvas & overlays
 - Map rectangle background `map-bg`; outside `canvas`.
 - Grid: 1 px; alpha fades with zoom (≤50%: hidden, 100%: 0.10, ≥200%: 0.14), colour from `line`-ish white.
-- Hover cell / brush footprint: 1 px `accent` inner line + 1 px `rgba(0,0,0,.6)` outer keyline (visible on sand and grass). Brush ghost 50% opacity. Eraser footprint uses `danger`.
+- Hover cell / brush footprint: 2 px `accent` inner line at ≥100% zoom, 1 px below 100%, with a 1 px `rgba(0,0,0,.6)` outer keyline (visible on sand and grass). Brush ghost 50% opacity. Eraser footprint uses `danger`.
 - Selection: existing marching ants (keep), hover outline inside a selection uses the footprint style, not white.
 - Rulers 20 px, `bg`, text-2xs `faint`, labels every 10 tiles, ticks every tile; horizontal labels for the vertical ruler (not rotated) when they fit.
 - Minimap 176×120 max, `popup` fill, 1 px `line-strong`, radius 6, 8 px inset bottom-right, viewport rect 1 px accent + dark keyline; hidden when the map fits, hidden by Tab.
-- Toasts: bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px, `popup`, radius 6, one line, text-sm; 4 s, action toasts 8 s, errors stay until dismissed; never for saves.
+- Toasts: at most one visible; each new toast replaces the current one. Bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px, `popup`, radius 6, one line, text-sm; 4 s, action toasts 8 s, errors stay until dismissed; never for saves.
 - Undo HUD / blocked feedback: same toast style (radius 6, not pills), bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px; undo HUD stacks above toasts.
 - Brush size HUD near cursor on `[`/`]`: "3 × 3", 120 ms fade, hides 600 ms after last change (only if not already present; do not add if risky).
 

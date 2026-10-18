@@ -63,6 +63,7 @@ import {
   SquareAction,
 } from "./parts";
 import { registerInspectorSection, type InspectorContext } from "./registry";
+import { selectAll } from "../primitives/selectAll";
 
 const PREVIEW = 80;
 
@@ -162,14 +163,12 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
     );
   }
 
+  if (eraser) return <MapSection ctx={ctx} />;
+
   let preview: ReactNode;
   let title: ReactNode;
   let subtitle: ReactNode;
-  if (eraser) {
-    preview = <PreviewBox><Icon name="eraser" size={16} className="text-muted" /></PreviewBox>;
-    title = t("inspector.eraser");
-    subtitle = null;
-  } else if (stamp) {
+  if (stamp) {
     preview = <BrushPreview clip={stamp} doc={doc} width={PREVIEW} height={PREVIEW} />;
     title = <ClipName clip={stamp} />;
     subtitle = null;
@@ -180,7 +179,7 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
   } else if (selection && tileset) {
     preview = <TileSwatch tileset={tileset} tileId={selection.tileId} size={PREVIEW} className="checker rounded-sm border border-line" />;
     title = `${t("inspector.tile")} #${selection.tileId}`;
-    subtitle = tileset.name;
+    subtitle = null;
   } else {
     preview = <PreviewBox><Icon name="pencil" size={16} className="text-faint" /></PreviewBox>;
     title = t("inspector.noBrush");
@@ -197,13 +196,12 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
             {title}
           </span>
           {subtitle && <span className="truncate text-sm text-faint">{subtitle}</span>}
-
         </div>
       </div>
-      {!eraser && stamp && <StampDetails clip={stamp} doc={doc} />}
-      {!eraser && !stamp && random && <RandomDetails doc={doc} />}
-      {!eraser && !stamp && !random && selection && tileset && <TileDetails tileset={tileset} tileId={selection.tileId} />}
-      {!eraser && !stamp && !random && doc.randomSets.length > 0 && (
+      {stamp && <StampDetails clip={stamp} doc={doc} />}
+      {!stamp && random && <RandomDetails doc={doc} />}
+      {!stamp && !random && selection && tileset && <TileDetails tileset={tileset} tileId={selection.tileId} />}
+      {!stamp && !random && doc.randomSets.length > 0 && (
         <PropGrid>
           <PropRow label={t("inspector.random")}>
             <RandomSetPicker />
@@ -320,7 +318,7 @@ function StampNameForm({ doc, clip, onDone }: { doc: MapDocument; clip: TileClip
         value={name}
         aria-label={t("inspector.stampName")}
         onChange={(e) => setName(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
+        {...selectAll}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();

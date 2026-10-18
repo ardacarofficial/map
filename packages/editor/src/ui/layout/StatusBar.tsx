@@ -34,7 +34,7 @@ function CanvasViewChoice() {
     <div role="radiogroup" aria-label={t("status.canvasView")} className="flex h-5 shrink-0 items-stretch rounded-sm">
       {(["level", "world"] as const).map((view) => {
         const on = world === (view === "world");
-        return <button key={view} type="button" role="radio" aria-checked={on} tabIndex={on ? 0 : -1} onClick={() => setCanvasView(view)} onKeyDown={(event) => {
+        return <button key={view} type="button" role="radio" data-rail={view === "world" ? "world" : undefined} aria-checked={on} tabIndex={on ? 0 : -1} onClick={() => setCanvasView(view)} onKeyDown={(event) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault();
           const next = event.key === "Home" ? "level" : event.key === "End" ? "world" : view === "level" ? "world" : "level";

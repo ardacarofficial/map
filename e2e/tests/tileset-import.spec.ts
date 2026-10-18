@@ -69,7 +69,8 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
   // Enter imports.
   await page.keyboard.press("Enter");
   await expect(card).toBeHidden();
-  await expect(page.getByText("Tileset eklendi: dungeon-16 · 24 tile")).toBeVisible();
+  await expect(page.locator("[data-tileset-switcher-name]")).toHaveText("dungeon-16");
+  await expect(page.getByText("Tileset eklendi: dungeon-16 · 24 tile")).toHaveCount(0);
 
   // Paint two dungeon tiles: id 2 (x = 32 px) and id 3 (x = 48 px).
   await page.evaluate(() => {
