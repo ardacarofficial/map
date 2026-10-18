@@ -1,21 +1,28 @@
 import type { FocusEvent, MouseEvent } from "react";
 
-/** Inputs focused by this press: their first mouseup must not drop the select-all. */
-const pressed = new WeakSet<HTMLInputElement>();
+/** Inputs whose text was selected on focus and not clicked into since. */
+const fresh = new WeakSet<HTMLInputElement>();
+/** Inputs being focused by the current press. */
+const pressing = new WeakSet<HTMLInputElement>();
 
 /**
  * Spread on a name/number input so it opens with its text selected and typing
- * replaces it — also when the focus comes from a click (the click's mouseup
- * would otherwise place a caret and drop the selection).
+ * replaces it. The first click after the focus (the click that focused it, or a
+ * click into an auto-focused field) keeps the selection instead of placing a
+ * caret, like a browser address bar; later clicks behave normally.
  */
 export const selectAll = {
-  onMouseDown(e: MouseEvent<HTMLInputElement>): void {
-    if (document.activeElement !== e.currentTarget) pressed.add(e.currentTarget);
-  },
   onFocus(e: FocusEvent<HTMLInputElement>): void {
     e.currentTarget.select();
+    fresh.add(e.currentTarget);
+  },
+  onMouseDown(e: MouseEvent<HTMLInputElement>): void {
+    const el = e.currentTarget;
+    if (document.activeElement !== el) { pressing.add(el); return; }
+    if (fresh.delete(el)) e.preventDefault();
   },
   onMouseUp(e: MouseEvent<HTMLInputElement>): void {
-    if (pressed.delete(e.currentTarget)) e.preventDefault();
+    const el = e.currentTarget;
+    if (pressing.delete(el)) { fresh.delete(el); e.preventDefault(); }
   },
 };
