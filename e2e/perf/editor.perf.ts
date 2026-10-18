@@ -261,7 +261,7 @@ test("editor perf", async ({ browser }) => {
     for (let run = 0; run < RUNS; run++) {
       const { page, close } = await newPage(browser);
       await page.goto("/");
-      await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+      await expect(page.getByText("Tileset bırak", { exact: true })).toBeVisible();
       const lastLong = await quiet(page, 0, 500);
       const m = await page.evaluate(() => {
         const perf = (window as unknown as { __smapPerf: { welcomeAt: number } }).__smapPerf;
@@ -290,7 +290,7 @@ test("editor perf", async ({ browser }) => {
 
   const openRun = async (page: Page, cdp: CDPSession, profileName: string | null) => {
     await page.goto("/");
-    await expect(page.getByText("Tileset'i buraya bırak")).toBeVisible();
+    await expect(page.getByText("Tileset bırak", { exact: true })).toBeVisible();
     await writeOpfs(page, big);
     await quiet(page, 0, 300);
     await resetLog(page, false);
