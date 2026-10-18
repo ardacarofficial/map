@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { CanvasHost } from "../canvas/CanvasHost";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
@@ -34,7 +33,6 @@ function useViewportWidth(): number {
 /** Resizable side columns surround the canvas options, canvas and dock. */
 export function EditorLayout() {
   const hidden = useUiStore((s) => s.panelsHidden);
-  const world = useWorldView((s) => s.view === "world");
   const viewport = useViewportWidth();
   const zones = useDockStore(s => s.layout.zones);
   useRulersSync();
@@ -59,7 +57,7 @@ export function EditorLayout() {
             <CanvasContextMenu />
             <BlockedActionFeedback />
           </main>
-          <DockZone zone="bottom" size={bottomSize} temporaryHidden={hidden || world} />
+          <DockZone zone="bottom" size={bottomSize} temporaryHidden={hidden} />
         </div>
         <DockZone zone="right" size={sideSize("right")} temporaryHidden={hidden} />
       </div>

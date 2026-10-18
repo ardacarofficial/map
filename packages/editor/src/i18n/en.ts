@@ -289,7 +289,7 @@ export const en: Messages = {
     "view.toggleLevels": "Project tree",
     "view.toggleProperties": "Inspector tabs",
     "view.toggleLayers": "Layers section",
-    "view.toggleRecent": "Bottom panel (Tileset · Recent)",
+    "view.toggleRecent": "Recent",
     "view.toggleRulers": "Rulers",
     "view.resetLayout": "Reset layout",
     "layer.duplicate": "Duplicate layer",

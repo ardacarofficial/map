@@ -50,7 +50,7 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} min-w-56`}>
+          <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) min-w-56 overflow-y-auto`}>
             <MenuItems menu={menu} />
           </Menu.Popup>
         </Menu.Positioner>
@@ -122,7 +122,7 @@ function RecentProjectsSubmenu() {
       </Menu.SubmenuTrigger>
       <Menu.Portal>
         <Menu.Positioner side="right" align="start" sideOffset={4} className={menuPositionerClass}>
-          <Menu.Popup className={`${menuPopupClass} max-w-90 min-w-56`}>
+          <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) max-w-90 min-w-56 overflow-y-auto`}>
             {entries.length === 0 ? (
               <Menu.Item disabled className={menuItemClass}>
                 {t("appBar.recentEmpty")}
