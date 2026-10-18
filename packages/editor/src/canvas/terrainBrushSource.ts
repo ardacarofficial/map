@@ -1,3 +1,4 @@
+import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * The terrain brush as the canvas sees it: on (Autotile), a terrain that
  * still exists, and a tile layer active (terrain is a brush on ordinary tile
@@ -9,6 +10,11 @@ import { useEditorStore, type EditorState } from "../state/editorStore";
 
 /** The brush the paint tools use on the active layer now, or null (paint tiles as usual). */
 export function activeTerrainBrush(store: MapStore | undefined, s: EditorState = useEditorStore.getState()): TerrainBrush | null {
+  const smart = activeSmartStamp();
+  if (smart?.nineSlice?.road && useSmartStampSession.getState().usage === "road" && store && s.activeLayerId) {
+    const layer = store.document.getLayer(s.activeLayerId);
+    if (layer && !isGridLayer(layer) && !isEntityLayer(layer)) return smart.nineSlice.road;
+  }
   if (!s.terrainActive || !s.terrain || !store) return null;
   const doc = store.document;
   const layer = s.activeLayerId ? doc.getLayer(s.activeLayerId) : undefined;

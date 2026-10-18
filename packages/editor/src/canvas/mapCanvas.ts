@@ -1,3 +1,4 @@
+import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * The map canvas: Pixi application, scene sync and the frame loop. Input,
  * camera, tools and overlays live in their own modules:
@@ -522,6 +523,7 @@ export class MapCanvas {
     this.#unsubs.push(useUiStore.subscribe((s, prev) => {
       if (s.panelsHidden !== prev.panelsHidden) this.#camera.keepView();
     }));
+    this.#unsubs.push(useSmartStampSession.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useEditorStore.subscribe((s, prev) => this.#onEditorState(s, prev)));
     this.#unsubs.push(
       onTilesetImage((id) => {
@@ -546,6 +548,7 @@ export class MapCanvas {
     const self = this;
     const hook = {
       editor: useEditorStore,
+      get smartPreview() { return self.#scene?.smartPreviewPlan ?? null; },
       get store() {
         return useEditorStore.getState().project?.store ?? null;
       },
@@ -1039,6 +1042,7 @@ export class MapCanvas {
     this.#updateHoverEntity();
     this.#input.updateCursor(); // layer lock/visibility may have changed
     this.#overlays.draw();
+    this.#scene?.flush();
     this.#entities.draw();
     this.#drawRulers();
     this.#updateMinimapAutoHide();
@@ -1208,7 +1212,7 @@ export class MapCanvas {
     if (!map || !scene || !thumb) return;
     const cam = this.#camera;
     const cellDevicePx = Math.min(map.tileWidth, map.tileHeight) * cam.camera.zoom * cam.resolution;
-    const lod = nextLod(this.#lod, cellDevicePx);
+    const lod = !activeSmartStamp() && nextLod(this.#lod, cellDevicePx);
     if (lod) {
       // Keep the picture current while it is on screen (edits show on the next frame).
       if (thumb.pending) {

@@ -1,0 +1,104 @@
+import type * as BakeModule from "../ui/stamps/smartStampBake";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createDocument, makeCell, MapStore, serializeLevel, serializeStamp, parseStamp, type Stamp, type Tileset } from "@smap/core";
+import { clearTilesetImages, getTilesetImage, setTilesetImage } from "../state/tilesetImages";
+import { useEditorStore } from "../state/editorStore";
+import { useProjectLibrary } from "../io/projectLibrary";
+import { acceptSmartStamp, disableSmartStamp, prepareSmartStamp } from "./smartStampCommands";
+import { replaceStampContent } from "./stampActions";
+import { bakeSmartStamp } from "../ui/stamps/smartStampBake";
+import { MemoryFileSystem } from "../io/memoryFs";
+import { loadProject, saveProject } from "../io/projectIo";
+import { tmjExportFiles, unityExportFiles } from "../export/exportFiles";
+import { compositeOps } from "../export/pngComposite";
+import { layerDrawList } from "@smap/core";
+vi.mock("../ui/stamps/smartStampBake", async importOriginal => ({
+  ...await importOriginal<typeof BakeModule>(),
+  bakeSmartStamp: vi.fn(async (_stamp: Stamp, _id: string, target: Tileset) => ({ tilesetId: target.id, bytes: Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10), bitmap: { width: target.columns * target.tileWidth, height: target.rows * target.tileHeight, close: vi.fn() } as unknown as ImageBitmap })),
+}));
+const source: Tileset = { id: "source", name: "Source", imagePath: "tilesets/source.png", tileWidth: 5, tileHeight: 5, columns: 3, rows: 3, margin: 0, spacing: 0 };
+function setup(multi = false) {
+  const store = new MapStore(createDocument({ width: 20, height: 20, tileWidth: 5, tileHeight: 5 }));
+  store.dispatch({ type: "addTileset", tileset: source });
+  const layerId = store.dispatch({ type: "addLayer", layer: { name: "Ground" } });
+  const layer = { layerId, name: "Ground", cells: Uint32Array.from({ length: 9 }, (_, i) => makeCell(i + 1)) };
+  const stamp: Stamp = { id: "road", name: "Road", width: 3, height: 3, palette: Array.from({ length: 9 }, (_, tileId) => ({ tilesetId: source.id, tileId })), layers: [layer, ...(multi ? [{ ...layer, layerId: "overlay", name: "Overlay" }] : [])] };
+  setTilesetImage({ tilesetId: source.id, bytes: Uint8Array.of(1, 2, 3), bitmap: { width: 15, height: 15, close: vi.fn() } as unknown as ImageBitmap });
+  useEditorStore.getState().setProject({ name: "Test", store, levelPath: "levels/main.json" });
+  useProjectLibrary.getState().load({ stamps: [stamp], levels: [{ id: "main", name: "Main", path: "levels/main.json", world: { x: 0, y: 0 } }] });
+  return { stamp, store, layerId };
+}
+beforeEach(() => { clearTilesetImages(); vi.mocked(bakeSmartStamp).mockClear(); });
+describe("smart stamp authoring", () => {
+  it("a later-layer bake failure leaves no tileset, image or metadata behind", async () => {
+    const { store, stamp } = setup(true), before = serializeLevel(store.document);
+    vi.mocked(bakeSmartStamp).mockImplementationOnce(async (_stamp, _layer, target) => ({ tilesetId: target.id, bytes: new Uint8Array(), bitmap: { close: vi.fn() } as unknown as ImageBitmap })).mockRejectedValueOnce(new Error("decode failed"));
+    await expect(prepareSmartStamp(stamp)).rejects.toThrow("decode failed");
+    expect(serializeLevel(store.document)).toBe(before); expect(useProjectLibrary.getState().stamps[0]).toBe(stamp);
+    expect(store.document.tilesets).toHaveLength(1);
+  });
+  it("keeps source read-only, registers a separate generated group, preserves identity on rebuild and keeps used cells when disabled", async () => {
+    const { store, stamp, layerId } = setup(), original = getTilesetImage(source.id);
+    const p = await prepareSmartStamp(stamp); acceptSmartStamp(p);
+    const asset = store.document.tilesets.find(t => t.generated)!;
+    expect(asset.group).toBe("Üretilen"); expect(getTilesetImage(source.id)).toBe(original);
+    expect(asset.imagePath).not.toBe(source.imagePath);
+    store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: store.getOrAddPaletteIndex(asset.id, 16) }] });
+    const before = store.document.getLayer(layerId)!.getCell(1, 1);
+    disableSmartStamp(stamp.id); expect(store.document.getTileset(asset.id)).toBeDefined(); expect(store.document.getLayer(layerId)!.getCell(1, 1)).toBe(before);
+    const rebuilt = await prepareSmartStamp(useProjectLibrary.getState().stamps[0]!); acceptSmartStamp(rebuilt);
+    expect(store.document.tilesets).toHaveLength(2); expect(store.document.getTileset(asset.id)?.columns).toBe(asset.columns);
+  });
+  it("preserves/revalidates metadata through unchanged stamp-editor saves; content edits require rebuilding", async () => {
+    const { stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+    const smart = useProjectLibrary.getState().stamps[0]!;
+    const { nineSlice: _old, ...flat } = smart;
+    const edited = { ...flat, layers: flat.layers.map(l => ({ ...l, layerId: "temporary" })) };
+    expect(replaceStampContent(stamp.id, edited)?.nineSlice).toEqual(smart.nineSlice);
+    const changed = { ...edited, layers: edited.layers.map(l => ({ ...l, cells: Uint32Array.from(l.cells, (_, i) => makeCell(i === 0 ? 2 : i + 1)) })) };
+    expect(replaceStampContent(stamp.id, changed)?.nineSlice).toBeUndefined();
+  });
+  it("keeps canonical layer ids unique when the temporary editor inserts or reorders layers", () => {
+    const { stamp } = setup(true);
+    const saved = replaceStampContent(stamp.id, { ...stamp, layers: [
+      { ...stamp.layers[0]!, layerId: "temporary-new" },
+      { ...stamp.layers[0]!, layerId: "temporary-ground" },
+      stamp.layers[1]!,
+    ] })!;
+    expect(new Set(saved.layers.map(l => l.layerId)).size).toBe(3);
+    expect(parseStamp(serializeStamp(saved)).layers).toHaveLength(3);
+  });
+
+  it("content rebuilding allocates a fresh bank while retaining the old recipe and placed art", async () => {
+    const { store, stamp, layerId } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+    const old = store.document.tilesets.find(t => t.generated)!;
+    store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: store.getOrAddPaletteIndex(old.id, 0) }] });
+    const cells = new Uint32Array(stamp.layers[0]!.cells); cells[0] = makeCell(2);
+    replaceStampContent(stamp.id, { ...stamp, layers: [{ ...stamp.layers[0]!, cells }] });
+    const edited = useProjectLibrary.getState().stamps[0]!;
+    expect(edited.nineSlice).toBeUndefined();
+    acceptSmartStamp(await prepareSmartStamp(edited));
+    const next = useProjectLibrary.getState().stamps[0]!.nineSlice!.tileLayers[0]!.tilesetId;
+    expect(next).not.toBe(old.id); expect(store.document.getTileset(old.id)).toBeDefined();
+    expect(useProjectLibrary.getState().generatedRecipes).toHaveLength(2);
+    expect(useProjectLibrary.getState().generatedRecipes.find(r => r.tilesetId === old.id)?.stamp.layers[0]?.cells).toEqual(stamp.layers[0]?.cells);
+  });
+
+  it("saves and reopens generated PNGs and stamp metadata, exports the bank through Unity, TMJ and the PNG draw list", async () => {
+    const { stamp, store, layerId } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+    const asset = store.document.tilesets.find(t => t.generated)!;
+    store.dispatch({ type: "paintCells", layerId, cells: [{ x: 2, y: 3, cell: store.getOrAddPaletteIndex(asset.id, 16) }] });
+    const bytes = (id: string) => getTilesetImage(id)?.bytes;
+    const fs = new MemoryFileSystem("Test");
+    await saveProject(fs, { name: "Test", document: store.document, levelPath: "levels/main.json", stamps: useProjectLibrary.getState().stamps, generatedRecipes: useProjectLibrary.getState().generatedRecipes, tilesetBytes: bytes });
+    const loaded = await loadProject(fs, async () => ({ width: 40, height: 40, close() {} }) as ImageBitmap);
+    expect(loaded.document.tilesets.find(t => t.generated)?.id).toBe(asset.id);
+    expect(loaded.generatedRecipes).toHaveLength(1);
+    expect(loaded.generatedRecipes[0]?.stamp.layers[0]?.cells).toEqual(stamp.layers[0]?.cells);
+    for (const exported of [unityExportFiles(store.document, "main", bytes), tmjExportFiles(store.document, "main", bytes)]) {
+      expect(exported.missingImages).toEqual([]); expect(exported.files.some(f => f.data === bytes(asset.id))).toBe(true);
+    }
+    const list = layerDrawList(store.document, { layers: [layerId] });
+    expect(compositeOps(list, 1).some(op => "tilesetId" in op && op.tilesetId === asset.id)).toBe(true);
+  });
+});

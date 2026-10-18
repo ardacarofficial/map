@@ -1,3 +1,4 @@
+import { cellPaletteIndex, cellFlags } from "@smap/core";
 /**
  * Stamp library actions (v0.6): save the marquee as a multi-layer stamp,
  * make a stamp the brush, rename, delete. Stamps are flat copies: placing
@@ -191,7 +192,27 @@ export function replaceStampContent(id: string, content: Stamp): Stamp | null {
     ...(stamp.tags !== undefined ? { tags: stamp.tags } : {}),
     ...(stamp.favorite !== undefined ? { favorite: stamp.favorite } : {}),
   };
-  const { category: _c, tags: _t, favorite: _f, ...cells } = content;
+  const { category: _c, tags: _t, favorite: _f, nineSlice: _nine, ...rawCells } = content;
+  // The temporary stamp document has fresh layer ids. Keep canonical source ids by layer order/kind.
+  const sourceIds = new Set<string>();
+  const layers = rawCells.layers.map((layer, i) => {
+    const old = stamp.layers[i];
+    const wanted = old && !!old.grid === !!layer.grid && old.role === layer.role ? old.layerId : layer.layerId;
+    let layerId = wanted;
+    for (let n = 2; sourceIds.has(layerId); n++) layerId = `${wanted}-${n}`;
+    sourceIds.add(layerId);
+    return { ...layer, layerId };
+  });
+  const unchanged = stamp.width === content.width && stamp.height === content.height && stamp.layers.length === layers.length && layers.every((layer, i) => {
+    const old = stamp.layers[i]!;
+    return layer.layerId === old.layerId && layer.cells.length === old.cells.length && [...layer.cells].every((cell, j) => {
+      const prev = old.cells[j]!;
+      if (layer.grid) return cell === prev;
+      const a = content.palette[cellPaletteIndex(cell) - 1], b = stamp.palette[cellPaletteIndex(prev) - 1];
+      return cellFlags(cell) === cellFlags(prev) && a?.tilesetId === b?.tilesetId && a?.tileId === b?.tileId;
+    });
+  });
+  const cells = { ...rawCells, layers, ...(unchanged && stamp.nineSlice ? { nineSlice: stamp.nineSlice } : {}) };
   const next = withStampMeta(Object.freeze({ ...cells, id: stamp.id, name: stamp.name }) as Stamp, meta);
   library.addStamp(next);
   syncBrush(next);

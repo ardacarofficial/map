@@ -1,3 +1,5 @@
+import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
+import type { GeneratedRecipe } from "./smartStampRecipes";
 /**
  * App-level project actions: new / open / save / close, adding tilesets, and
  * dirty tracking. Wires the pure IO (`projectIo.ts`) to the stores, the
@@ -151,7 +153,7 @@ function activate(
   images: readonly TilesetImage[],
   target: ProjectFolder | null,
   levelText: string | null = null,
-  library: { stamps: Stamp[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[]; settings?: ProjectSettings } = {
+  library: { stamps: Stamp[]; generatedRecipes?: readonly GeneratedRecipe[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[]; settings?: ProjectSettings } = {
     stamps: [],
     brokenStampFiles: [],
     levels: defaultLevels(project.levelPath),
@@ -681,6 +683,7 @@ export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): ()
  * backup of the level. Updates the remembered disk text and the save status.
  */
 async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
+  await waitForSmartStampRegeneration();
   const ws = workspace;
   if (!ws) return;
   // An earlier request must not encode unsaved pixels while this write can fail.
@@ -695,6 +698,7 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
       ws.name = project.name;
       const levels = await ws.save(target.fs, {
         stamps: lib.stamps,
+        generatedRecipes: lib.generatedRecipes,
         keepStampFiles: lib.brokenStampFiles,
         tilesetBytes: (id) => getTilesetImage(id)?.bytes,
         settings: lib.settings,
@@ -900,6 +904,7 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
   const project: OpenProject = { name: loaded.name, store, levelPath: loaded.levelPath, levelId: loaded.levelId };
   activate(project, loaded.images, target, loaded.levelText, {
     stamps: loaded.stamps,
+    generatedRecipes: loaded.generatedRecipes,
     brokenStampFiles: loaded.brokenStamps,
     levels: loaded.levels,
     retiredLevelIds: loaded.retiredLevelIds,

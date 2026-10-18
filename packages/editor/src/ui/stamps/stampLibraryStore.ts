@@ -44,7 +44,7 @@ function write(key: string, value: string): void {
 }
 
 /** Which inspector field to focus next ("Kategori…" / "Etiketler…" in the card menu). */
-export type StampFocusField = "category" | "tags" | null;
+export type StampFocusField = "category" | "tags" | "nineSlice" | null;
 
 export interface StampLibraryState {
   filter: StampFilter;

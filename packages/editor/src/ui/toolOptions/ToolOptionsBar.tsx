@@ -1,3 +1,4 @@
+import { useSmartStampSession } from "../stamps/smartStampSession";
 import { Fragment, useSyncExternalStore } from "react";
 
 import { useUiStore } from "../uiStore";
@@ -20,6 +21,8 @@ registerBrushCommands();
  * the options bar above the canvas, left to right. Nothing on the world map.
  */
 export function ToolOptions() {
+  useSmartStampSession(s => s.usage);
+  useEditorStore(s => s.stamp);
   const world = useWorldView((s) => s.view === "world");
   useUiStore((s) => s.activeTilesetId);
   const tool = useEditorStore((s) => s.tool);

@@ -1,3 +1,4 @@
+import { generatedRecipePath, loadGeneratedRecipes, type GeneratedRecipe } from "./smartStampRecipes";
 /**
  * Project save / open over a `ProjectFileSystem`. No UI, no globals: the
  * caller supplies image bytes and an image decoder, so this runs in tests
@@ -47,6 +48,7 @@ export interface SaveProjectInput {
    * their file). `undefined` leaves the stamp files alone.
    */
   stamps?: readonly Stamp[];
+  generatedRecipes?: readonly GeneratedRecipe[];
   /** Stamp files that could not be read when the project was opened; never deleted. */
   keepStampFiles?: Iterable<string>;
   /**
@@ -93,6 +95,7 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
     const bytes = input.tilesetBytes(tileset.id);
     if (bytes) files.push({ path: tileset.imagePath, data: bytes });
   }
+  for (const recipe of input.generatedRecipes ?? []) if (doc.getTileset(recipe.tilesetId)?.generated) files.push({ path: generatedRecipePath(recipe.tilesetId), data: serializeStamp(recipe.stamp) });
   for (const stamp of input.stamps ?? []) files.push({ path: stampPath(stamp.id), data: serializeStamp(stamp) });
   files.push({ path: input.levelPath, data: serializeLevel(doc) });
   for (const level of input.otherLevels ?? []) {
@@ -212,6 +215,7 @@ export interface LoadedProject {
   retiredLevelIds: string[];
   /** Saved stamps (`stamps/*.json`), sorted by name. */
   stamps: Stamp[];
+  generatedRecipes: GeneratedRecipe[];
   /** Stamp files that could not be read (the project still opens). */
   brokenStamps: string[];
   /** Round 4: project settings (defaults when the file has none). */
@@ -275,6 +279,7 @@ export async function loadProject(
     levelId: level.id,
     retiredLevelIds: [...project.retiredLevelIds],
     stamps,
+    generatedRecipes: await loadGeneratedRecipes(fs, document.tilesets, stamps, broken),
     brokenStamps: broken,
     settings: project.settings,
   };

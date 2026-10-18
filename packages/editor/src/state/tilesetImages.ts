@@ -51,3 +51,6 @@ export function notifyTilesetImage(tilesetId: string): void {
   if (!images.has(tilesetId)) return;
   for (const l of listeners) l(tilesetId);
 }
+
+/** Releases a staged asset when an atomic bake fails. */
+export function removeTilesetImage(id: string): void { images.get(id)?.bitmap.close(); images.delete(id); }

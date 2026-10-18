@@ -1,3 +1,5 @@
+import { activeSmartStamp, useSmartStampSession } from "../stamps/smartStampSession";
+import { SmartStampOptions } from "./SmartStampOptions";
 /**
  * Built-in tool options (registered once by `registerBuiltinToolOptions`):
  * the shared collapsed "Boyut 1 ▾" chip for brush / eraser, the "Rastgele"
@@ -32,7 +34,7 @@ import { RandomToggle } from "./RandomToggle";
 /** The terrain picker shows on tile layers once the project has a terrain. */
 const showsTerrainPicker = (c: ToolOptionsContext) => {
   const active = useUiStore.getState().activeTilesetId ?? c.doc?.tilesets[0]?.id;
-  return isTileLayer(c.layer) && c.brush !== "random" && terrainSetEntries(c.doc).some(entry => entry.tileset.id === active);
+  return !activeSmartStamp() && isTileLayer(c.layer) && c.brush !== "random" && terrainSetEntries(c.doc).some(entry => entry.tileset.id === active);
 };
 
 // ---- Tile layer: the terrain brush (Arazi ▾ + Autotile)
@@ -69,7 +71,8 @@ function TerrainPicker() {
 
 /** Options bar: size only (the FIRÇA card shows the shape once the size is above 1). */
 function OptionsBrushSize() {
-  return <BrushSizeChip withShape={false} />;
+  const usage = useSmartStampSession(s => s.usage);
+  return <BrushSizeChip withShape={!!activeSmartStamp() && usage === "road"} />;
 }
 
 const TRANSFORMS: readonly { command: CommandId; icon: IconName; title: MessageKey }[] = [
@@ -101,10 +104,11 @@ let registered = false;
 export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
+  registerToolOptions(["brush", "eraser", "rect", "fill"], SmartStampOptions, { id: "smartStamp.usage", order: 15, when: () => !!activeSmartStamp() });
   registerToolOptions("select", SelectionScopeOptions, { id: "selection.scope", order: 10 });
-  registerToolOptions(["rect"], RectangleOptions, { id: "builtin.rectangle", order: 5, when: (c) => !isEntityLayer(c.layer) });
+  registerToolOptions(["rect"], RectangleOptions, { id: "builtin.rectangle", order: 5, when: (c) => !isEntityLayer(c.layer) && (!activeSmartStamp() || useSmartStampSession.getState().usage === "road") });
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
-  registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) });
+  registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) && !activeSmartStamp() });
   registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
   registerToolOptions(["brush", "eraser", "rect", "fill"], TerrainPicker, { id: "builtin.terrain", order: 30, when: showsTerrainPicker });
 }

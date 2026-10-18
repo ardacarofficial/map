@@ -1,3 +1,6 @@
+import { rectangleThickness } from "../state/rectangleOptions";
+import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
+import { smartGesturePlan, smartHoverGesture, smartRect } from "./smartStampGesture";
 /**
  * Everything drawn over the map layers: grid lines, map border, selection
  * region, collision outline, tool previews (brush tile, stamp, rectangle,
@@ -53,7 +56,7 @@ import { MaskPreview, TilePreview } from "./preview";
 import { activeRandomSet, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint, randomPlanKey } from "./randomPaint";
 import { activeTerrainBrush, terrainBrushKey } from "./terrainBrushSource";
-import { rectangleStampSource } from "./rectangleSource";
+import { smartRectangleUsage, rectangleStampSource } from "./rectangleSource";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
   dashSpans,
@@ -281,6 +284,30 @@ export class OverlayRenderer {
     if (host.showCollision) this.#drawCollisionOutline();
 
     const gesture = host.gesture;
+    const smart = activeSmartStamp(), session = useSmartStampSession.getState();
+    const smartCell = host.cursorCell(), smartLayer = activeLayer(host.scene?.store), smartAnchor = host.lineAnchor?.() ?? null;
+    if (gesture?.kind === "smart" || ((!gesture || (gesture.kind === "pick" && gesture.press === "eraseRect")) && smart && smartCell && smartLayer && (state.tool === "brush" || state.tool === "rect" || (state.tool === "eraser" && session.usage === "road")))) {
+      const scene = host.scene!;
+      let g = gesture?.kind === "smart" ? gesture : smartHoverGesture(scene.store, smart!, smartLayer!.id, smartCell!, state.tool === "rect" ? smartRectangleUsage(session.usage, rectangleThickness()) : session.usage, session.orientation, state.brushSize, state.brushShape, state.tool === "eraser", smartAnchor);
+      if (gesture?.kind === "pick" && gesture.press === "eraseRect") { g = { ...g, start: gesture.start, end: gesture.end, rectangle: true }; }
+      const v = host.visible;
+      const key = `smart:${smartAnchor?.x ?? ""},${smartAnchor?.y ?? ""}:${clipId(g.stamp)}:${scene.store.revision}:${scene.atlasVersion}:${g.layerId}:${g.usage}:${g.orientation}:${g.start.x},${g.start.y}:${g.end.x},${g.end.y}:${g.square}:${g.fromCenter}:${g.version}:${g.erase}:${g.thickness}:${state.brushSize}:${state.brushShape}:${v.x},${v.y},${v.width},${v.height}`;
+      try {
+        const plan = smartGesturePlan(g, v);
+        scene.setSmartPreview(plan, key);
+        const grid = this.#stampGridPreview; grid.clear(); grid.position.set(0, 0);
+        for (const layer of plan.layers) for (const w of layer.writes) if ("value" in w && w.value) {
+          grid.rect(w.x * map.tileWidth, w.y * map.tileHeight, map.tileWidth, map.tileHeight).fill({ color: layer.role === "collision" ? w.value === COLLISION_PASSABLE ? host.colors.collisionPassable : host.colors.collisionSolid : host.colors.terrainTint, alpha: 0.28 });
+          grid.visible = true;
+        }
+        this.#stampGridKey = null;
+      }
+      catch (error) { scene.setSmartPreview(null, null); console.warn("[canvas] smart preview failed", error); }
+      if (g.rectangle) this.#drawAccentOutline(smartRect(g));
+      else if (smartCell) this.#drawCellsOutline(footprintCells([smartCell], g.offsets));
+      return;
+    }
+    host.scene?.setSmartPreview(null, null);
     if (gesture?.kind === "move") {
       const r = movedRegion(gesture.region, gesture.dx, gesture.dy, map);
       if (r) this.#drawRegion(r);
@@ -435,7 +462,7 @@ export class OverlayRenderer {
       let writes: TerrainTileWrite[] = [];
       try {
         if (tool === "fill") {
-          if (doc.map.width * doc.map.height <= FILL_PREVIEW_MAX_AREA) writes = terrainFill(doc, layer.id, cell.x, cell.y, brush);
+          if (doc.map.width * doc.map.height <= FILL_PREVIEW_MAX_AREA) writes = terrainFill(doc, layer.id, cell.x, cell.y, brush, activeSmartStamp() ? { orientation: useSmartStampSession.getState().orientation, boundary: "empty" } : {});
         } else if (tool === "eraser") writes = terrainErase(doc, layer.id, cells, brush);
         else writes = terrainPaint(doc, layer.id, cells, brush);
       } catch (error) {

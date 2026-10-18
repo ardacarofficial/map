@@ -100,6 +100,7 @@ export async function openTilesetSettings(tilesetId: string | null = currentTile
   const store = activeStore();
   const tileset = tilesetId ? store?.document.getTileset(tilesetId) : undefined;
   if (!store || !tileset) return;
+  if (tileset.generated) { toast.info(t("smartStamp.fixedGrid")); return; }
   const image = getTilesetImage(tileset.id);
   if (!image) {
     toast.error(t("toast.missingTilesetImage", { path: tileset.imagePath }));
@@ -140,6 +141,7 @@ export async function openTilesetSettings(tilesetId: string | null = currentTile
  * was applied.
  */
 export async function applyTilesetGrid(tilesetId: string, spec: TileGridSpec): Promise<boolean> {
+  if (activeStore()?.document.getTileset(tilesetId)?.generated) { toast.info(t("smartStamp.fixedGrid")); return false; }
   const image = getTilesetImage(tilesetId);
   return runProjectRegrid(tilesetId, (store) =>
     store.dispatch({
@@ -171,6 +173,7 @@ const imageVersions = new Map<string, { bytes: Uint8Array; width: number; height
  */
 export async function replaceTilesetImage(tilesetId: string | null = currentTilesetId()): Promise<boolean> {
   if (!tilesetId || !activeStore()?.document.getTileset(tilesetId)) return false;
+  if (activeStore()?.document.getTileset(tilesetId)?.generated) { toast.info(t("smartStamp.fixedGrid")); return false; }
   const [file] = await pickFiles("image/png", false);
   if (!file) return false;
   const png = await decodeTilesetFile(file);
