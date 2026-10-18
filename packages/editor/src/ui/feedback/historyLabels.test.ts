@@ -135,3 +135,33 @@ describe("structural step labels", () => {
     expect(describeEntry(undefined)).toBeNull();
   });
 });
+
+describe("tileset edit descriptions", () => {
+  it("uses solid mark / clear verbs and named terrain definitions through undo and redo", async () => {
+    const { describeEntry } = await import("./historyLabels");
+    const { HistoryVerbs } = await import("../history/historyVerbs");
+    const { itemLabel } = await import("../history/historyModel");
+    const { store } = harness();
+    const verbs = new HistoryVerbs();
+    verbs.bind(store);
+    store.dispatch({ type: "setTileSolid", tilesetId: "t", tileIds: [0, 1], solid: true });
+    expect(describeEntry(store.peekUndo())).toBe("Katı işaretle");
+    expect(itemLabel(store.historyEntries().at(-1)!, null, verbs.labelOf(store.peekUndo()!.id))).toBe("Katı işaretle");
+    store.dispatch({ type: "setTileSolid", tilesetId: "t", tileIds: [0], solid: false });
+    expect(describeEntry(store.peekUndo())).toBe("Katı kaldır");
+    store.dispatch({ type: "setTerrainSet", tilesetId: "t", set: {
+      id: "terrain", name: "Grass", kind: "corner", terrains: [{ id: 1, name: "Çimen", color: "#00ff00" }], tiles: [],
+    } });
+    const entry = store.peekUndo()!;
+    expect(describeEntry(entry)).toBe("Arazi tanımla: Çimen");
+    expect(itemLabel(store.historyEntries().at(-1)!, null, verbs.labelOf(entry.id))).toBe("Arazi tanımla: Çimen");
+    store.undo();
+    expect(describeEntry(store.peekRedo())).toBe("Arazi tanımla: Çimen");
+    store.redo();
+    store.dispatch({ type: "setTerrainSet", tilesetId: "t", set: {
+      ...store.document.getTileset("t")!.terrainSets![0]!, tiles: [{ tileId: 0, corners: [1, 1, 1, 1] }],
+    } });
+    expect(describeEntry(store.peekUndo())).toBe("Arazi düzelt");
+    verbs.bind(undefined);
+  });
+});

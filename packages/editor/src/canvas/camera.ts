@@ -189,24 +189,15 @@ export function wheelZoomSteps(deltaPx: number, deltaMode: number, acc: number):
   return { steps: whole === 0 ? 0 : -whole, acc: next - whole * WHEEL_STEP_PX };
 }
 
-/** Smallest preset at which a tile is at least `px` CSS px (the last preset if none). */
-function stepForTilePx(tileSize: number, px: number, steps: readonly number[]): number {
-  return steps.find((s) => tileSize * s >= px - 1e-9) ?? steps[steps.length - 1]!;
-}
-
-/**
- * Zoom a level opens at: the largest preset that still fits the map
- * (`fit`), but no smaller than 50 % and a tile of ~16 CSS px (grid still
- * readable) and no larger than 100 % or a tile of ~32 CSS px. A big map
- * opens at a working zoom centred, not as a tiny overview.
- */
-export function initialZoom(fit: number, tileSize: number, steps: readonly number[] = ZOOM_PRESETS): number {
-  const ts = Math.max(1, tileSize);
-  const lo = Math.max(0.5, stepForTilePx(ts, 16, steps));
-  const hi = Math.max(1, stepForTilePx(ts, 32, steps));
-  let z = steps[0]!;
-  for (const s of steps) if (s <= fit * (1 + 1e-9)) z = s;
-  return Math.min(hi, Math.max(lo, z));
+/** Largest pixel-exact preset or whole-device-pixel tile step no greater than the fit. */
+export function initialZoom(fit: number, tileSize: number, resolution = 1, steps: readonly number[] = ZOOM_PRESETS): number {
+  const unit = Math.max(1, tileSize) * resolution;
+  let best = Math.floor(fit * unit + 1e-9) / unit;
+  for (const step of steps) {
+    if (step <= fit + 1e-9 && Math.abs(step * unit - Math.round(step * unit)) < 1e-9) best = Math.max(best, step);
+  }
+  // A map larger than one device pixel per tile can still be opened in full.
+  return best > 0 ? best : fit;
 }
 
 /** Pixel snapping for {@link fitZoom}: tile size (world px) and device pixels per CSS px. */

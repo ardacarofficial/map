@@ -545,16 +545,18 @@ export class OverlayRenderer {
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
+    const inner = k * (cam.camera.zoom >= 1 ? 2 : 1);
     for (let pass = 0; pass < 2; pass++) {
+      const thickness = pass === 1 ? inner : k;
       for (const e of edges) {
         const solidAfter = e.inside === "after";
-        const offset = solidAfter === (pass === 1) ? 0 : -k;
+        const offset = solidAfter === (pass === 1) ? 0 : -thickness;
         if (e.horizontal) {
           const a = cam.cellBox({ x: e.from, y: e.line, width: e.to - e.from, height: 0 });
-          g.rect(a.x0 * px, (a.y0 + offset) * px, (a.x1 - a.x0) * px, k * px);
+          g.rect(a.x0 * px, (a.y0 + offset) * px, (a.x1 - a.x0) * px, thickness * px);
         } else {
           const a = cam.cellBox({ x: e.line, y: e.from, width: 0, height: e.to - e.from });
-          g.rect((a.x0 + offset) * px, a.y0 * px, k * px, (a.y1 - a.y0) * px);
+          g.rect((a.x0 + offset) * px, a.y0 * px, thickness * px, (a.y1 - a.y0) * px);
         }
       }
       if (pass === 0) g.fill(FOOTPRINT_KEYLINE);
@@ -727,7 +729,7 @@ export class OverlayRenderer {
     const k = this.#host.camera.lineWidth();
     rectOutline(g, box.x0 - k, box.y0 - k, box.x1 + k, box.y1 + k, k, px);
     g.fill(FOOTPRINT_KEYLINE);
-    rectOutline(g, box.x0, box.y0, box.x1, box.y1, k, px);
+    rectOutline(g, box.x0, box.y0, box.x1, box.y1, k * (this.#host.camera.camera.zoom >= 1 ? 2 : 1), px);
     g.fill(color);
   }
 
@@ -799,7 +801,7 @@ export class OverlayRenderer {
     g.fill(CANVAS_COLORS.cursor);
   }
 
-  /** Cell / stamp footprint with a one-device-pixel colour line and outer keyline. */
+  /** Cell / stamp footprint with a zoom-dependent inner colour line and outer keyline. */
   #drawCellCursor(r: CellRegion): void {
     this.#drawAccentOutline(r, useEditorStore.getState().tool === "eraser" ? this.#host.colors.danger : this.#host.colors.accent);
   }

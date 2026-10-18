@@ -9,13 +9,11 @@ import type { CellRegion } from "../state/editorStore";
 import {
   cameraAnchored,
   clampZoom,
-  compensateViewShift,
   easeZoom,
   frameCamera,
   MAX_ZOOM,
   MIN_ZOOM,
   centeredCamera,
-  fitZoom,
   initialZoom,
   nearestZoomStep,
   nextZoomStep,
@@ -81,11 +79,11 @@ export class CameraController {
   #frameMode: FrameMode = "initial";
   #settleTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * The camera still shows the last {@link frameMap} result (the user has not
-   * panned or zoomed since): a view resize re-frames instead of leaving the
-   * map off-centre, e.g. when a side column widens.
+   * The camera still shows the last framing result (no user pan or zoom).
+   * Only the short opening layout settlement may re-fit on resize.
    */
   #framed = false;
+  #openingUntil = 0;
   readonly #map: () => MapInfo | undefined;
   readonly #requestRender: () => void;
 
@@ -110,33 +108,36 @@ export class CameraController {
 
   /** Sizes the view; frames the map if that is still pending. */
   resize(viewW: number, viewH: number, resolution: number): void {
+    const oldCenter = this.viewCenter();
+    const world = this.#worldAt(oldCenter);
     const resChanged = resolution !== this.resolution;
     this.resolution = resolution;
     this.viewW = viewW;
     this.viewH = viewH;
-    if (this.#pendingFrameMap || this.#framed) this.#applyFrame();
-    else if (resChanged) this.setZoom(this.zoomLevel, this.viewCenter());
+    if (this.#pendingFrameMap || (this.#framed && Date.now() < this.#openingUntil)) {
+      this.#applyFrame();
+      return;
+    }
+    const center = this.viewCenter();
+    const zoom = resChanged ? this.#quantize(this.zoomLevel) : this.camera.zoom;
+    this.camera = cameraAnchored(center, world, zoom);
+    if (this.#anim) {
+      this.#anim.anchorScreen = {
+        x: this.#anim.anchorScreen.x + center.x - oldCenter.x,
+        y: this.#anim.anchorScreen.y + center.y - oldCenter.y,
+      };
+    }
+    this.#requestRender();
   }
 
-  /**
-   * The view's left edge moved right by `shift` CSS px on screen (a side
-   * column changed width): keep the content where it was on screen, but keep
-   * the map's left edge in view if it was (see {@link compensateViewShift}).
-   * A view that still follows "frame the map" re-frames on resize instead.
-   * `keepMapEdge` false (world view): no map edge to keep.
-   */
-  shiftView(shift: number, keepMapEdge = true): void {
-    if (shift === 0 || this.#pendingFrameMap || this.#framed) return;
-    const x = compensateViewShift(this.camera.x, shift, keepMapEdge ? this.camera.x : null);
-    const dx = x - this.camera.x;
-    if (dx === 0) return;
-    this.camera = { ...this.camera, x };
-    if (this.#anim) this.#anim = { ...this.#anim, anchorScreen: { x: this.#anim.anchorScreen.x + dx, y: this.#anim.anchorScreen.y } };
-    this.#requestRender();
+  /** Ends opening layout settlement before a user interaction or a focus-mode layout change. */
+  keepView(): void {
+    this.#openingUntil = 0;
   }
 
   /** Frames the map ("fit") as soon as the view has a size. */
   requestFrameMap(): void {
+    this.#openingUntil = 0;
     this.#frameMode = "fit";
     this.#pendingFrameMap = true;
     if (this.viewW > 1 && this.viewH > 1) this.frameMap();
@@ -144,9 +145,10 @@ export class CameraController {
 
   /**
    * Shows a just-opened level as soon as the view has a size: centred at a
-   * working zoom preset (see `initialZoom`), not a tiny overview.
+   * pixel-exact fit zoom (see `initialZoom`).
    */
   requestInitialView(): void {
+    this.#openingUntil = Date.now() + 300;
     this.#frameMode = "initial";
     this.#pendingFrameMap = true;
     if (this.viewW > 1 && this.viewH > 1) this.initialView();
@@ -170,8 +172,9 @@ export class CameraController {
     this.#framed = true;
     const mw = map.width * map.tileWidth;
     const mh = map.height * map.tileHeight;
-    const fit = fitZoom(this.viewW, this.viewH, mw, mh, FRAME_PADDING, MAX_ZOOM);
-    const z = this.#quantize(this.#clamp(initialZoom(fit, Math.min(map.tileWidth, map.tileHeight))));
+    const fit = Math.min(Math.max(1, this.viewW - FRAME_PADDING * 2) / mw, Math.max(1, this.viewH - FRAME_PADDING * 2) / mh, this.maxZoom);
+    const z = initialZoom(fit, map.tileWidth, this.resolution);
+    this.minZoom = Math.min(this.minZoom, z);
     this.zoomLevel = z;
     this.camera = centeredCamera(this.viewW, this.viewH, mw, mh, z);
     this.#requestRender();
@@ -209,12 +212,10 @@ export class CameraController {
 
   /**
    * The view to remember for this level (map px at the view centre + zoom),
-   * or null while it still shows the opening view (reopening shows that
-   * again anyway). `camera` defaults to the current one.
+   * or null before the canvas has a usable size. `camera` defaults to the current one.
    */
   savedView(camera: Camera = this.camera): { cx: number; cy: number; zoom: number } | null {
-    // The untouched opening view is not remembered; a fitted ("Sığdır") view is: it differs from the opening one.
-    if (this.#pendingFrameMap || (this.#framed && this.#frameMode === "initial" && camera === this.camera) || this.viewW <= 1 || this.viewH <= 1) return null;
+    if (this.#pendingFrameMap || this.viewW <= 1 || this.viewH <= 1) return null;
     const zoom = this.#anim && camera === this.camera ? this.#quantize(this.#clamp(this.#anim.target)) : camera.zoom;
     const cx = (this.viewW / 2 - camera.x) / camera.zoom;
     const cy = (this.viewH / 2 - camera.y) / camera.zoom;
@@ -321,6 +322,7 @@ export class CameraController {
 
   /** Centers the map in the view (fit if it is larger than the view). */
   frameMap(): void {
+    this.#openingUntil = 0;
     if (this.viewW <= 1 || this.viewH <= 1) {
       this.#pendingFrameMap = true;
       return;

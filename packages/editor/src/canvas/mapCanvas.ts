@@ -40,6 +40,7 @@ import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
 import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
 import { t, type MessageKey } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
+import { useUiStore } from "../ui/uiStore";
 import { CameraController } from "./cameraController";
 import type { BlockedAction, BlockedReason, CanvasContextRequest, CanvasPickEvent, StrokeSummary } from "./canvasEvents";
 import { CANVAS_COLORS, readThemeColors, type CanvasColors } from "./colors";
@@ -328,7 +329,6 @@ export class MapCanvas {
   #lastFrameTime = 0;
   #ro: ResizeObserver | null = null;
   /** Screen x of the canvas' left edge at the last resize (null before the first). */
-  #viewLeft: number | null = null;
   #reportedZoom = NaN;
   #unsubs: (() => void)[] = [];
   readonly #rulers: Rulers;
@@ -463,7 +463,6 @@ export class MapCanvas {
     this.#applyRulers(true);
     this.#colors = readThemeColors(this.#container);
     const rect = this.#canvas.getBoundingClientRect();
-    this.#viewLeft = rect.left;
     const cam = this.#camera;
     cam.resolution = window.devicePixelRatio || 1;
     cam.viewW = Math.max(1, rect.width);
@@ -519,6 +518,10 @@ export class MapCanvas {
 
     this.#observeSize();
     this.#input.attach(this.#abort.signal);
+    window.addEventListener("pointerdown", () => this.#camera.keepView(), { capture: true, signal: this.#abort.signal });
+    this.#unsubs.push(useUiStore.subscribe((s, prev) => {
+      if (s.panelsHidden !== prev.panelsHidden) this.#camera.keepView();
+    }));
     this.#unsubs.push(useEditorStore.subscribe((s, prev) => this.#onEditorState(s, prev)));
     this.#unsubs.push(
       onTilesetImage((id) => {
@@ -986,12 +989,6 @@ export class MapCanvas {
     this.#app.renderer.resize(viewW, viewH, resolution);
     this.#input.invalidateRect();
     this.#camera.resize(viewW, viewH, resolution);
-    // A side column changed width (e.g. the library auto-widening for a wide
-    // tileset): the canvas' left edge moved, so pan by the same amount to keep
-    // the map where it was on screen (its left edge stays in view if it was).
-    const left = this.#canvas.getBoundingClientRect().left;
-    if (this.#viewLeft !== null) this.#camera.shiftView(left - this.#viewLeft, this.#view === "level");
-    this.#viewLeft = left;
     this.#requestRender();
   }
 

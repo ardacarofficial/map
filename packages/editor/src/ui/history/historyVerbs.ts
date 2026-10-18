@@ -1,12 +1,12 @@
 /** Capture changes while any right-column tab (or the whole column) is hidden. */
 import type { MapStore } from "@smap/core";
 
-import type { MessageKey } from "../../i18n";
+import type { HistoryVerb } from "../feedback/historyLabels";
 import { useEditorStore } from "../../state/editorStore";
 import { verbForChanges } from "./historyModel";
 
 export class HistoryVerbs {
-  readonly labels = new Map<number, MessageKey>();
+  readonly labels = new Map<number, HistoryVerb>();
   private store: MapStore | undefined;
   private unsubscribe: (() => void) | undefined;
 
@@ -28,7 +28,7 @@ export class HistoryVerbs {
     this.unsubscribe = store?.subscribe(event => { if (event.historyChanged) capture(); });
   }
 
-  labelOf(id: number): MessageKey | null { return this.labels.get(id) ?? null; }
+  labelOf(id: number): HistoryVerb | null { return this.labels.get(id) ?? null; }
 }
 
 export const historyVerbs = new HistoryVerbs();

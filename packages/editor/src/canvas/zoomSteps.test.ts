@@ -75,26 +75,25 @@ describe("wheelZoomSteps", () => {
 });
 
 describe("initialZoom", () => {
-  it("opens big maps at 100 % (32 px tiles), never below 50 %", () => {
-    expect(initialZoom(0.28, 32)).toBe(0.5);
-    expect(initialZoom(0.6, 32)).toBe(0.5);
-    expect(initialZoom(0.8, 32)).toBe(2 / 3);
-    expect(initialZoom(1.4, 32)).toBe(1);
-    expect(initialZoom(4, 32)).toBe(1);
+  it("chooses the largest whole-device-pixel tile step below fit without a working-zoom floor", () => {
+    expect(initialZoom(0.28, 32)).toBe(8 / 32);
+    expect(initialZoom(0.6, 32)).toBe(19 / 32);
+    expect(initialZoom(0.8, 32)).toBe(25 / 32);
+    expect(initialZoom(0.08, 32)).toBe(2 / 32);
+    expect(initialZoom(1.4, 32)).toBe(44 / 32);
   });
 
-  it("small tiles open larger so the grid stays readable", () => {
-    expect(initialZoom(0.3, 16)).toBe(1); // ≥ 16 px cells
-    expect(initialZoom(10, 16)).toBe(2); // ≤ 32 px cells
-    expect(initialZoom(10, 8)).toBe(4);
-    expect(initialZoom(10, 64)).toBe(1);
-  });
-
-  it("always returns a preset", () => {
-    fc.assert(
-      fc.property(fc.double({ min: 0.01, max: 50, noNaN: true }), fc.integer({ min: 4, max: 128 }), (fit, tile) => {
-        expect(ZOOM_PRESETS).toContain(initialZoom(fit, tile));
-      }),
-    );
+  it("never exceeds fit across tile sizes and device scales", () => {
+    fc.assert(fc.property(
+      fc.double({ min: 0.001, max: 16, noNaN: true }),
+      fc.integer({ min: 4, max: 128 }),
+      fc.constantFrom(1, 1.25, 1.5, 2),
+      (fit, tile, resolution) => {
+        const z = initialZoom(fit, tile, resolution);
+        expect(z).toBeGreaterThan(0);
+        expect(z).toBeLessThanOrEqual(fit + 1e-9);
+        if (fit * tile * resolution >= 1) expect(z * tile * resolution).toBeCloseTo(Math.round(z * tile * resolution));
+      },
+    ));
   });
 });

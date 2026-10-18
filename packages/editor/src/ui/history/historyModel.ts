@@ -10,6 +10,7 @@
  */
 import type { HistoryChange, MapStore } from "@smap/core";
 
+import { renderHistoryVerb, tilesetHistoryVerb, type HistoryVerb } from "../feedback/historyLabels";
 import type { StrokeSummary } from "../../canvas/canvasEvents";
 import { formatNumber, t, type MessageKey } from "../../i18n";
 
@@ -46,13 +47,13 @@ const KIND_LABEL: Partial<Record<HistoryItem["kind"], MessageKey>> = {
  * A transaction label wins, then the stroke verb, captured structural verb,
  * and finally the existing kind label for steps captured before binding.
  */
-export function itemLabel(item: HistoryItem, summary: StrokeSummary | null, verb: MessageKey | null = null): string {
+export function itemLabel(item: HistoryItem, summary: StrokeSummary | null, verb: HistoryVerb | null = null): string {
   if (item.label) return item.label;
   if (summary) {
     const tools = { brush: "history.paint", eraser: "history.erase", fill: "history.fill", rect: "history.rectangle", stamp: "history.stamp" } as const;
     return t("history.stroke", { tool: t(tools[summary.tool]), count: formatNumber(summary.cells) });
   }
-  if (verb) return t(verb);
+  if (verb) return renderHistoryVerb(verb);
   const key = KIND_LABEL[item.kind];
   if (key) return t(key);
   if (item.cellCount) return t("feedback.cells", { count: formatNumber(item.cellCount) });
@@ -60,7 +61,9 @@ export function itemLabel(item: HistoryItem, summary: StrokeSummary | null, verb
 }
 
 /** Structural verbs from public, reversible changes; no document mutation. */
-export function verbForChanges(changes: readonly HistoryChange[]): MessageKey | null {
+export function verbForChanges(changes: readonly HistoryChange[]): HistoryVerb | null {
+  const tilesetVerb = tilesetHistoryVerb(changes);
+  if (tilesetVerb) return tilesetVerb;
   const layers = changes.filter(c => c.kind === "layer");
   if (layers.length) {
     if (layers.every(c => c.before === null)) return "history.layerAdd";
@@ -91,7 +94,7 @@ export function verbForChanges(changes: readonly HistoryChange[]): MessageKey | 
 }
 
 /** The rows for `items` (core order: done oldest → newest, then undone next → last). */
-export function historyRows(items: readonly HistoryItem[], summaryOf: (id: number) => StrokeSummary | null, verbOf: (id: number) => MessageKey | null = () => null): HistoryRow[] {
+export function historyRows(items: readonly HistoryItem[], summaryOf: (id: number) => StrokeSummary | null, verbOf: (id: number) => HistoryVerb | null = () => null): HistoryRow[] {
   const doneCount = items.filter((i) => i.state === "done").length;
   const rows: HistoryRow[] = [
     { id: null, label: t("history.initial"), tool: null, kind: "initial", state: doneCount === 0 ? "current" : "done" },

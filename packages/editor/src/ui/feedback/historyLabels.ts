@@ -10,10 +10,10 @@
  * terrain definitions...) are described from their changes
  * ({@link describeEntry}: "Geri alındı: Katman eklendi").
  */
-import { patchCellCount, type ChangeCause, type HistoryEntry, type MapStore } from "@smap/core";
+import { patchCellCount, type ChangeCause, type HistoryChange, type HistoryEntry, type MapStore } from "@smap/core";
 
 import type { StrokeSummary } from "../../canvas/canvasEvents";
-import { formatNumber, t } from "../../i18n";
+import { formatNumber, t, type MessageKey } from "../../i18n";
 
 export type HistoryMove = "undo" | "redo";
 
@@ -86,6 +86,33 @@ export function strokeToolLabel(summary: StrokeSummary): string {
   return summary.tool === "stamp" ? t("feedback.stamp") : t(`tools.${summary.tool}`);
 }
 
+/** A localized verb, optionally carrying the terrain name from its change. */
+export type HistoryVerb = MessageKey | { key: MessageKey; params: { name: string } };
+
+export function renderHistoryVerb(verb: HistoryVerb): string {
+  return typeof verb === "string" ? t(verb) : t(verb.key, verb.params);
+}
+
+/** Meaning of a tileset metadata edit from its reversible UI-visible diff. */
+export function tilesetHistoryVerb(changes: readonly HistoryChange[]): HistoryVerb | null {
+  for (const change of changes) {
+    if (change.kind !== "tileset") continue;
+    const { before, after } = change;
+    const oldSolid = new Set(before.solidTiles ?? []);
+    const newSolid = new Set(after.solidTiles ?? []);
+    const addedSolid = [...newSolid].some(id => !oldSolid.has(id));
+    const removedSolid = [...oldSolid].some(id => !newSolid.has(id));
+    if (addedSolid || removedSolid) return addedSolid && removedSolid ? "history.solidEdit" : addedSolid ? "history.solidMark" : "history.solidClear";
+    const oldTerrains = (before.terrainSets ?? []).flatMap(set => set.terrains.map(terrain => ({ set: set.id, terrain })));
+    const newTerrains = (after.terrainSets ?? []).flatMap(set => set.terrains.map(terrain => ({ set: set.id, terrain })));
+    const added = newTerrains.find(next => !oldTerrains.some(prev => prev.set === next.set && prev.terrain.id === next.terrain.id));
+    if (added) return { key: "history.terrainDefine", params: { name: added.terrain.name } };
+    if (oldTerrains.some(prev => !newTerrains.some(next => prev.set === next.set && prev.terrain.id === next.terrain.id))) return "history.terrainRemove";
+    if (JSON.stringify(before.terrainSets ?? []) !== JSON.stringify(after.terrainSets ?? [])) return "history.terrainEdit";
+  }
+  return null;
+}
+
 /**
  * What a history step did, read from its changes, for steps the canvas did
  * not name (layer add / remove / move / props, resize, tileset and entity
@@ -112,6 +139,8 @@ export function describeEntry(entry: HistoryEntry | undefined): string | null {
     return t("feedback.layersChanged");
   }
   if (changes.some((c) => c.kind === "map")) return t("feedback.mapResized");
+  const tilesetVerb = tilesetHistoryVerb(changes);
+  if (tilesetVerb) return renderHistoryVerb(tilesetVerb);
   if (changes.some((c) => c.kind === "tileset" || c.kind === "palette")) return t("feedback.tileset");
   if (changes.some((c) => c.kind === "entityTypes")) return t("feedback.entityTypes");
   if (changes.some((c) => c.kind === "entities")) return t("feedback.entities");

@@ -1,12 +1,14 @@
 /**
  * Keeps editor state consistent with the document after any change,
  * including undo / redo:
- * - `activeLayerId` always names an existing layer (falls back to the layer
- *   at the removed one's position);
+ * - `activeLayerId` returns to a surviving recent selection, then a usable
+ *   layer near the removed one's position;
  * - the marquee region stays inside the map after a resize;
  * - `gridValue` is a value the active grid layer accepts (collision: 1/2,
  *   terrain: a defined terrain id).
  */
+import { isEntityLayer, isGridLayer, type MapStore, type TileLayer } from "@smap/core";
+
 import type { OpenProject } from "../state/editorStore";
 import { useEditorStore } from "../state/editorStore";
 import { clampRegion } from "./enablement";
@@ -14,16 +16,34 @@ import { validGridValue } from "./terrainActions";
 
 export function installLayerSync(): () => void {
   let unsubscribe: (() => void) | null = null;
-  let lastIndex = 0;
+  const memories = new WeakMap<MapStore, { ids: string[]; index: number; kind: string }>();
+  const kindOf = (layer: TileLayer) => isEntityLayer(layer) ? "entity" : isGridLayer(layer) ? "collision" : "tile";
 
   const fix = (project: OpenProject) => {
     const state = useEditorStore.getState();
     const layers = project.store.document.layers;
+    let memory = memories.get(project.store);
+    if (!memory) {
+      memory = { ids: [], index: 0, kind: "tile" };
+      memories.set(project.store, memory);
+    }
     const index = layers.findIndex((l) => l.id === state.activeLayerId);
     if (index >= 0) {
-      lastIndex = index;
+      memory.index = index;
+      memory.kind = kindOf(layers[index]!);
+      memory.ids = [layers[index]!.id, ...memory.ids.filter(id => id !== layers[index]!.id)].slice(0, 16);
     } else {
-      const next = layers[Math.min(lastIndex, layers.length - 1)] ?? null;
+      const recent = memory.ids.map(id => layers.find(layer => layer.id === id)).find(layer => layer !== undefined);
+      const position = Math.min(memory.index, layers.length - 1);
+      const rank = (layer: TileLayer) => {
+        const same = kindOf(layer) === memory.kind;
+        if (same && layer.visible && !layer.locked) return 0;
+        if (same && layer.visible) return 1;
+        if (layer.visible && !layer.locked) return 2;
+        return same ? 3 : 4;
+      };
+      const fallback = layers.map((layer, i) => ({ layer, i })).sort((a, b) => rank(a.layer) - rank(b.layer) || Math.abs(a.i - position) - Math.abs(b.i - position))[0]?.layer;
+      const next = recent ?? fallback ?? null;
       state.setActiveLayer(next?.id ?? null);
     }
     const { width, height } = project.store.document.map;

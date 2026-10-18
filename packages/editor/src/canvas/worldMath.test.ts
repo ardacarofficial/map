@@ -170,22 +170,20 @@ describe("CameraController world framing", () => {
 
 describe("CameraController level view memory", () => {
   const map = { width: 64, height: 48, tileWidth: 32, tileHeight: 32 };
-  it("remembers nothing for the untouched opening view", () => {
+  it("remembers the opening view so a level only frames on its first visit", () => {
     const cam = new CameraController(() => map, () => {});
     cam.resize(800, 600, 1);
     cam.initialView();
-    expect(cam.savedView()).toBeNull();
+    expect(cam.savedView()).toEqual({ cx: 1024, cy: 768, zoom: cam.camera.zoom });
   });
-  it("remembers a fitted view (Sığdır), which differs from the opening view", () => {
+  it("remembers an explicitly fitted view (Sığdır)", () => {
     const cam = new CameraController(() => map, () => {});
     cam.resize(800, 600, 1);
     cam.initialView();
-    const opening = cam.camera.zoom;
     cam.frameMap();
     const view = cam.savedView();
     expect(view).not.toBeNull();
     expect(view!.zoom).toBe(cam.camera.zoom);
-    expect(view!.zoom).not.toBe(opening);
   });
   it("restores zoom and centre, also in another view size", () => {
     const cam = new CameraController(() => map, () => {});

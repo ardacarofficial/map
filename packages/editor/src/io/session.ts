@@ -273,8 +273,7 @@ export async function newProject(options: NewProjectSetup): Promise<void> {
   const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
   activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, t("levels.firstMapName")), settings });
   if (options.tilesets && options.tilesets.length > 0) {
-    const added = addDecodedTilesets(project.store, options.tilesets);
-    if (added.length > 0) toast.success(t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows }));
+    addDecodedTilesets(project.store, options.tilesets);
   }
   // Starting a project is not an undo step.
   project.store.clearHistory();
@@ -492,22 +491,17 @@ export function addDecodedTilesets(store: MapStore, items: readonly PlannedTiles
   return added;
 }
 
-/** Adds one tileset (one undo step) and says so, with "Geri al". */
-function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec): boolean {
+/** Adds one tileset (one undo step); only automatic imports need a notification. */
+function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec, announce = false): boolean {
   const [tileset] = addDecodedTilesets(store, [{ png, name, spec }]);
   if (!tileset) return false;
-  announceAdded(store, [tileset]);
+  if (announce) announceAdded(store, tileset);
   return true;
 }
 
-/** "Tileset eklendi: X · 24 tile" / "4 tileset eklendi", with "Geri al" (undoes the one step that added them). */
-function announceAdded(store: MapStore, added: readonly Tileset[]): void {
-  if (added.length === 0) return;
-  const message =
-    added.length === 1
-      ? t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows })
-      : t("bulkImport.added", { count: added.length });
-  useToastStore.getState().push("success", message, 6000, undoStepAction(store));
+/** Automatic import notification; dialog confirmations already provide feedback. */
+function announceAdded(store: MapStore, tileset: Tileset): void {
+  useToastStore.getState().push("success", t("tilesetImport.added", { name: tileset.name, count: tileset.columns * tileset.rows }), 6000, undoStepAction(store));
 }
 
 /** The grid guess for a decoded PNG (alpha, file name; the last used size — or the map's — as a hint). */
@@ -587,7 +581,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     const guess = guessGrid(png, mapTile);
     const best = guess.suggestions[0];
     if (best && readAutoAdd() && isConfidentGuess(guess.suggestions, mapTile)) {
-      addDecodedTileset(project.store, png, guess.name, { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing });
+      addDecodedTileset(project.store, png, guess.name, { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }, true);
       return;
     }
     const choice = await promptTilesetGrid(png, { kind: "add" }, mapTile);
@@ -605,7 +599,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     for (const item of plan?.items ?? []) item.png.bitmap.close();
     return;
   }
-  announceAdded(store, addDecodedTilesets(store, plan.items, plan.group));
+  addDecodedTilesets(store, plan.items, plan.group);
 }
 
 /**
@@ -644,11 +638,9 @@ export async function createProjectFromTilesets(files: readonly File[]): Promise
   });
   const settings = normalizeProjectSettings({ tileWidth: first.spec.tileWidth, tileHeight: first.spec.tileHeight });
   activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, t("levels.firstMapName")), settings });
-  const added = addDecodedTilesets(project.store, items, group);
+  addDecodedTilesets(project.store, items, group);
   // Starting a project is not an undo step: the first Ctrl+Z must not take the tilesets away.
   project.store.clearHistory();
-  if (added.length === 1) toast.success(t("tilesetImport.added", { name: added[0]!.name, count: added[0]!.columns * added[0]!.rows }));
-  else if (added.length > 1) toast.success(t("bulkImport.added", { count: added.length }));
 }
 
 /** A finished save (manual or autosave). */
