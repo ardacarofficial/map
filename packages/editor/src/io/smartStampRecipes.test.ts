@@ -1,3 +1,4 @@
+import { buildLayout1RoadProfile } from "@smap/core";
 import { describe, expect, it } from "vitest";
 import { makeCell, type Stamp, type Tileset } from "@smap/core";
 import { affectedTilesetStamps } from "./smartStampRecipes";
@@ -6,7 +7,7 @@ import { usageText } from "../ui/tileset/RemoveTilesetDialog";
 
 const stamp: Stamp = { id: "road", name: "Road", width: 3, height: 3, palette: [{ tilesetId: "source", tileId: 0 }], layers: [{ layerId: "s", name: "Ground", cells: new Uint32Array(9).fill(makeCell(1)) }] };
 const bank: Tileset = { id: "bank", name: "Road (yol)", imagePath: "tilesets/bank.png", tileWidth: 5, tileHeight: 5, columns: 8, rows: 8, margin: 0, spacing: 0, generated: { kind: "nineSlice", stampId: "road", layerId: "s", sourceWidth: 3, sourceHeight: 3, layoutVersion: 1, sources: [{ tilesetId: "source", imageHash: "old" }, { tilesetId: "inner", imageHash: "old" }] } };
-const smart = { ...stamp, nineSlice: { border: 1 as const, tileLayers: [{ layerId: "s", tilesetId: bank.id }], road: { tilesetId: bank.id, setId: "road", terrainId: 1 } } };
+const smart = { ...stamp, nineSlice: { border: 1 as const, tileLayers: [{ layerId: "s", tilesetId: bank.id }], road: { tilesetId: bank.id, profile: buildLayout1RoadProfile(3, 3) } } };
 
 describe("tileset removal stamp dependencies", () => {
   it("counts an unpainted generated bank once across baked/road refs and archived recipes", () => {
@@ -28,6 +29,6 @@ describe("tileset removal stamp dependencies", () => {
     const unused: Stamp = { ...stamp, id: "unused", layers: [{ ...stamp.layers[0]!, cells: new Uint32Array(9) }] };
     expect(affectedTilesetStamps("source", [smart, other, unused], [], [bank])).toEqual(["other", "road"]);
     expect(affectedTilesetStamps("irrelevant", [smart, other], [], [bank])).toEqual([]);
-    expect(usageText(summarizeUsage([{ cells: 3, layers: ["l"], terrainCells: 0, terrains: 0 }], 2))).toContain("2 stamp etkileniyor.");
+    expect(usageText(summarizeUsage([{ cells: 3, layers: ["l"] }], 2))).toContain("2 stamp etkileniyor.");
   });
 });

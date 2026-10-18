@@ -44,7 +44,7 @@ import { revealSection, useLayoutStore } from "../ui/layout/layoutStore";
 import type { SectionId } from "../ui/layout/sections";
 import { toast } from "../ui/toast/toastStore";
 import { t } from "../i18n";
-import { addCollisionLayer } from "./terrainActions";
+import { addCollisionLayer } from "./collisionActions";
 import { addEntityLayer, deleteEntity } from "./entityActions";
 import { canSaveSelectionStamp } from "./stampActions";
 import { askRemoveLevel, duplicateLevel, openAdjacentLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
@@ -194,20 +194,6 @@ const COMMANDS: Command[] = [
     category: "file",
     enabled: hasProject,
     run: () => ui().setBackupsOpen(true),
-  },
-  {
-    id: "tileset.markSolid",
-    title: "commands.tileset.markSolid",
-    category: "tileset",
-    enabled: () => hasProject() && (editor().project?.store.document.tilesets.length ?? 0) > 0,
-    run: () => ui().toggleTilesetMode("solid"),
-  },
-  {
-    id: "tileset.defineTerrain",
-    title: "commands.tileset.defineTerrain",
-    category: "tileset",
-    enabled: () => hasProject() && (editor().project?.store.document.tilesets.length ?? 0) > 0,
-    run: () => ui().toggleTilesetMode("terrain"),
   },
   // ---- Edit
   {

@@ -1,12 +1,7 @@
-/**
- * What the tileset grid draws: the tiles (1 tile px = 1 canvas px, CSS
- * scales), the marks canvas (empty / solid tiles), the selection outline,
- * the hover label and the terrain block ghost.
- */
-import { terrainTemplateInfo, tileRect, type TerrainTemplate, type Tileset } from "@smap/core";
+
+import { tileRect, type Tileset } from "@smap/core";
 import { useMemo } from "react";
 
-import { templateGlyphs } from "../terrain/templateGlyph";
 import { cssColor } from "./cssColor";
 import { cellOf, outlinePath, type Cell, type GridSize } from "./selectionModel";
 
@@ -21,12 +16,6 @@ function colorChannels(name: string): [number, number, number] {
 /** Largest overlay canvas side in device px (very large tilesets at high zoom draw the marks at lower resolution). */
 const MAX_OVERLAY_PX = 8192;
 
-/**
- * Marks on top of the tileset image: fully transparent tiles dimmed, solid
- * tiles. In "Katı işaretle" mode solid tiles are tinted, hatched and
- * outlined; otherwise a small corner mark keeps the state visible without
- * getting in the way.
- */
 export function drawMarks(
   canvas: HTMLCanvasElement,
   tileset: Tileset,
@@ -35,13 +24,11 @@ export function drawMarks(
   cellH: number,
   cssW: number,
   cssH: number,
-  marking: boolean,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const solid = tileset.solidTiles ?? [];
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_OVERLAY_PX / Math.max(1, cssW), MAX_OVERLAY_PX / Math.max(1, cssH));
-  const nothing = solid.length === 0 && empty.size === 0;
+  const nothing = empty.size === 0;
   canvas.width = nothing ? 1 : Math.max(1, Math.round(cssW * dpr));
   canvas.height = nothing ? 1 : Math.max(1, Math.round(cssH * dpr));
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -61,52 +48,6 @@ export function drawMarks(
     for (const id of empty) {
       const { x0, y0, x1, y1 } = box(id);
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    }
-  }
-  if (solid.length === 0) return;
-  const [r, g, b] = colorChannels("--color-collision-solid");
-  const rgba = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
-  if (!marking && Math.min(cellW, cellH) < 10) return;
-  for (const id of solid) {
-    const { x0, y0, x1, y1 } = box(id);
-    const w = x1 - x0;
-    const h = y1 - y0;
-    if (marking) {
-      ctx.fillStyle = rgba(0.24);
-      ctx.fillRect(x0, y0, w, h);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x0, y0, w, h);
-      ctx.clip();
-      ctx.strokeStyle = rgba(0.75);
-      ctx.lineWidth = Math.max(1, Math.round(dpr));
-      const step = Math.max(4, Math.round(6 * dpr));
-      ctx.beginPath();
-      for (let d = -h; d < w; d += step) {
-        ctx.moveTo(x0 + d, y1);
-        ctx.lineTo(x0 + d + h, y0);
-      }
-      ctx.stroke();
-      ctx.restore();
-      const line = Math.max(1, Math.round(1.5 * dpr));
-      ctx.strokeStyle = rgba(1);
-      ctx.lineWidth = line;
-      ctx.strokeRect(x0 + line / 2, y0 + line / 2, w - line, h - line);
-    } else {
-      const s = Math.round(Math.max(4, Math.min(cellW, cellH) * 0.26) * dpr);
-      ctx.beginPath();
-      ctx.moveTo(x1 - s, y0);
-      ctx.lineTo(x1, y0);
-      ctx.lineTo(x1, y0 + s);
-      ctx.closePath();
-      ctx.fillStyle = rgba(1);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-      ctx.lineWidth = Math.max(1, Math.round(dpr));
-      ctx.beginPath();
-      ctx.moveTo(x1 - s, y0);
-      ctx.lineTo(x1, y0 + s);
-      ctx.stroke();
     }
   }
 }
@@ -212,72 +153,6 @@ export function CellLabel({
       style={{ left, top: flipBottom ? cell.row * cellH + 2 : top }}
     >
       {text}
-    </div>
-  );
-}
-
-/** Block-sized outline that follows the cursor; each cell shows its template glyph. */
-export function BlockGhost({
-  template,
-  left,
-  top,
-  cellW,
-  cellH,
-  columns,
-  rows,
-  invalid,
-  pinned,
-}: {
-  template: TerrainTemplate;
-  left: number;
-  top: number;
-  cellW: number;
-  cellH: number;
-  columns: number;
-  rows: number;
-  invalid: boolean;
-  pinned: boolean;
-}) {
-  const glyphs = useMemo(() => templateGlyphs(terrainTemplateInfo(template)), [template]);
-  const width = columns * cellW;
-  const height = rows * cellH;
-  const unit = Math.floor(Math.min(cellW, cellH) * 0.42 / 3);
-  return (
-    <div
-      aria-hidden
-      data-terrain-ghost
-      className={`pointer-events-none absolute ${invalid ? "bg-danger/15 outline-danger" : "bg-terrain-tint/10 outline-terrain-tint"} ${
-        pinned ? "" : "transition-[left,top] duration-75"
-      }`}
-      style={{ left, top, width, height, outlineWidth: 1, outlineStyle: pinned ? "solid" : "dashed", outlineOffset: -1 }}
-    >
-      {unit >= 2 && !invalid && (
-        <svg width={width} height={height} className="absolute inset-0" shapeRendering="crispEdges">
-          {glyphs.map((glyph, s) => {
-            const size = unit * 3;
-            const x0 = Math.round((s % columns) * cellW + (cellW - size) / 2);
-            const y0 = Math.round(Math.floor(s / columns) * cellH + (cellH - size) / 2);
-            if (!glyph) return null;
-            return (
-              <g key={s}>
-                <rect x={x0 - 1} y={y0 - 1} width={size + 2} height={size + 2} fill="var(--color-overlay)" />
-                {glyph.map((on, i) =>
-                  on ? (
-                    <rect
-                      key={i}
-                      x={x0 + (i % 3) * unit}
-                      y={y0 + Math.floor(i / 3) * unit}
-                      width={unit}
-                      height={unit}
-                      fill="var(--color-terrain-tint)"
-                    />
-                  ) : null,
-                )}
-              </g>
-            );
-          })}
-        </svg>
-      )}
     </div>
   );
 }

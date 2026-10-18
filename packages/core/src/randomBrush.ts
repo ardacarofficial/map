@@ -4,7 +4,7 @@
  * RNG — so a cell always gets the same tile for the same set and seed
  * (repainting is stable, redo and replays give the same picture).
  */
-import { cellHash } from "./terrain";
+import { cellHash } from "./hash";
 
 /** One candidate of a random brush. */
 export interface RandomTile {
@@ -14,7 +14,6 @@ export interface RandomTile {
   readonly weight?: number;
 }
 
-/** Salt so the brush is not correlated with terrain variant picks of the same seed. */
 const SALT = 0x9e3779b9;
 
 /**

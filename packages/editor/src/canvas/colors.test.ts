@@ -31,9 +31,8 @@ describe("canvas theme colours", () => {
     expect(theme({ "--color-map-bg": "transparent", "--color-popup": "#abc" })).toEqual(CANVAS_COLORS);
   });
 
-  it("keeps terrain violet when its token is absent and the accent changes", () => {
+  it("reads the accent token", () => {
     const colors = theme({ "--color-accent": "#123456" });
     expect(colors.accent).toBe(0x123456);
-    expect(colors.terrainTint).toBe(0xc39bff);
   });
 });

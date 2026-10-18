@@ -1,15 +1,4 @@
-/**
- * Labels for undo / redo feedback ("Geri alındı: Kalem (12 hücre)"). Pure.
- *
- * Labels are keyed by the core history step's stable id
- * (`HistoryEntry.id`, read with `peekUndo()` / `peekRedo()`), not by undo
- * depth: at the history limit the depth stays put while the oldest step
- * falls off, so a depth would name the wrong step. The canvas'
- * `onStrokeCommitted` summary — reported right after the step's commit —
- * names the step on top. Steps the canvas did not report (layer changes,
- * terrain definitions...) are described from their changes
- * ({@link describeEntry}: "Geri alındı: Katman eklendi").
- */
+
 import { patchCellCount, type ChangeCause, type HistoryChange, type HistoryEntry, type MapStore } from "@smap/core";
 
 import type { StrokeSummary } from "../../canvas/canvasEvents";
@@ -86,7 +75,6 @@ export function strokeToolLabel(summary: StrokeSummary): string {
   return summary.tool === "stamp" ? t("feedback.stamp") : t(`tools.${summary.tool}`);
 }
 
-/** A localized verb, optionally carrying the terrain name from its change. */
 export type HistoryVerb = MessageKey | { key: MessageKey; params: { name: string } };
 
 export function renderHistoryVerb(verb: HistoryVerb): string {
@@ -108,17 +96,7 @@ export function tilesetHistoryVerb(changes: readonly HistoryChange[]): HistoryVe
     if (before.group !== after.group) return "history.tilesetGroup";
     if (before.imagePath !== after.imagePath) return "history.tilesetImage";
     if (before.tileWidth !== after.tileWidth || before.tileHeight !== after.tileHeight || before.columns !== after.columns || before.rows !== after.rows || before.margin !== after.margin || before.spacing !== after.spacing) return "history.tilesetGrid";
-    const oldSolid = new Set(before.solidTiles ?? []);
-    const newSolid = new Set(after.solidTiles ?? []);
-    const addedSolid = [...newSolid].some(id => !oldSolid.has(id));
-    const removedSolid = [...oldSolid].some(id => !newSolid.has(id));
-    if (addedSolid || removedSolid) return addedSolid && removedSolid ? "history.solidEdit" : addedSolid ? "history.solidMark" : "history.solidClear";
-    const oldTerrains = (before.terrainSets ?? []).flatMap(set => set.terrains.map(terrain => ({ set: set.id, terrain })));
-    const newTerrains = (after.terrainSets ?? []).flatMap(set => set.terrains.map(terrain => ({ set: set.id, terrain })));
-    const added = newTerrains.find(next => !oldTerrains.some(prev => prev.set === next.set && prev.terrain.id === next.terrain.id));
-    if (added) return { key: "history.terrainDefine", params: { name: added.terrain.name } };
-    if (oldTerrains.some(prev => !newTerrains.some(next => prev.set === next.set && prev.terrain.id === next.terrain.id))) return "history.terrainRemove";
-    if (JSON.stringify(before.terrainSets ?? []) !== JSON.stringify(after.terrainSets ?? [])) return "history.terrainEdit";
+
   }
   return null;
 }

@@ -40,7 +40,7 @@ import {
   type StoreChangeEvent,
   type TileClip,
 } from "../src";
-import { makeStore, TERRAIN_TILESET, TILESET } from "./helpers";
+import { makeStore, TILESET } from "./helpers";
 
 // ------------------------------------------------------------------ rotation
 
@@ -134,7 +134,7 @@ describe("rotation", () => {
     const { store, cell } = makeStore(20, 20);
     store.dispatch({ type: "addLayer", layer: { id: "col", name: "Collision", type: "grid", role: "collision" } });
     store.dispatch({ type: "paintCells", layerId: "ground", cells: [{ x: 0, y: 0, cell: cell(1) }, { x: 1, y: 0, cell: cell(2) }, { x: 2, y: 0, cell: cell(3) }] });
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 2, y: 0, value: COLLISION_SOLID }] });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 2, y: 0, value: COLLISION_SOLID }] });
     store.clearHistory();
     const stamp = createStamp(store.document, ["ground", "col"], { x: 0, y: 0, width: 3, height: 1 }, { id: "row", name: "Row" });
     placeStamp(store, stamp, 10, 10, { rotate: 1 });
@@ -273,7 +273,7 @@ const PAL: Collection = {
   cells: [
     { x: 1, y: 1, tilesetId: "grass", tileId: 9, flags: FLIP_V },
     { x: 0, y: 0, tilesetId: "grass", tileId: 3 },
-    { x: 3, y: 0, tilesetId: "terrain", tileId: 5 },
+    { x: 3, y: 0, tilesetId: "art", tileId: 5 },
   ],
 };
 
@@ -301,7 +301,7 @@ describe("collections", () => {
     expect(remapCollectionsForTileset(list, "other", () => null)).toBe(list);
     expect(remapCollectionsForTileset(list, "grass", (id) => id)).toBe(list);
     const moved = remapCollectionsForTileset(list, "grass", (id) => (id === 3 ? null : id + 1));
-    expect(moved[0]!.cells.map((c) => [c.tilesetId, c.tileId])).toEqual([["terrain", 5], ["grass", 10]]);
+    expect(moved[0]!.cells.map((c) => [c.tilesetId, c.tileId])).toEqual([["art", 5], ["grass", 10]]);
     const sets = [normalizeRandomSet(SET)];
     expect(remapRandomSetsForTileset(sets, "grass", (id) => id)).toBe(sets);
     expect(remapRandomSetsForTileset(sets, "grass", () => null)).toEqual([]); // only the zero-weight stamp left
@@ -309,15 +309,15 @@ describe("collections", () => {
 
   it("setCollection / removeCollection are undoable; removeTileset drops refs in the same step", () => {
     const { store } = makeStore(8, 8);
-    store.dispatch({ type: "addTileset", tileset: TERRAIN_TILESET });
+    store.dispatch({ type: "addTileset", tileset: { ...TILESET, id: "art", columns: 12, rows: 10 } });
     store.dispatch({ type: "setCollection", collection: PAL });
     store.dispatch({ type: "setRandomSet", set: SET });
-    store.dispatch({ type: "setRandomSet", set: { id: "t", name: "T", candidates: [{ kind: "tile", tilesetId: "terrain", tileId: 1 }, { kind: "tile", tilesetId: "grass", tileId: 4 }] } });
+    store.dispatch({ type: "setRandomSet", set: { id: "t", name: "T", candidates: [{ kind: "tile", tilesetId: "art", tileId: 1 }, { kind: "tile", tilesetId: "grass", tileId: 4 }] } });
     store.clearHistory();
     const before = snap(store);
     store.dispatch({ type: "removeTileset", tilesetId: "grass" });
     expect(store.undoDepth).toBe(1);
-    expect(store.document.collections[0]!.cells.map((c) => c.tilesetId)).toEqual(["terrain"]);
+    expect(store.document.collections[0]!.cells.map((c) => c.tilesetId)).toEqual(["art"]);
     expect(store.document.randomSets.map((s) => [s.id, s.candidates.length])).toEqual([["t", 1]]);
     store.undo();
     expect(snap(store)).toBe(before);

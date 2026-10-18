@@ -22,12 +22,7 @@ import {
   isEntityLayer,
   isGridLayer,
   makeCell,
-  terrainErase,
-  terrainFill,
-  terrainPaint,
   type CellPoint,
-  type TerrainBrush,
-  type TerrainTileWrite,
   type MapDocument,
   type RandomSet,
   type TileClip,
@@ -54,7 +49,6 @@ import type { MapScene } from "./mapScene";
 import { MaskPreview, TilePreview } from "./preview";
 import { activeRandomSet, randomStampOf } from "./randomBrushSource";
 import { planRandomPaint, randomPlanKey } from "./randomPaint";
-import { activeTerrainBrush, terrainBrushKey } from "./terrainBrushSource";
 import { smartRectangleUsage, rectangleStampSource } from "./rectangleSource";
 import { rectGestureRegion, type Gesture } from "./toolController";
 import {
@@ -128,7 +122,7 @@ export class OverlayRenderer {
   readonly #preview = new Sprite();
   readonly #tilePreview = new TilePreview(CANVAS_COLORS.previewAlpha);
   readonly #fillPreview = new MaskPreview(CANVAS_COLORS.accent, CANVAS_COLORS.fillPreviewAlpha);
-  /** Grid (terrain / collision) layers of a saved stamp, drawn faintly as their overlays. */
+
   readonly #stampGridPreview = new Graphics();
   #stampGridKey: string | null = null;
   /** Screen-space brush size readout (shown briefly after `[` / `]`). */
@@ -288,7 +282,7 @@ export class OverlayRenderer {
         scene.setSmartPreview(plan, key);
         const grid = this.#stampGridPreview; grid.clear(); grid.position.set(0, 0);
         for (const layer of plan.layers) for (const w of layer.writes) if ("value" in w && w.value) {
-          grid.rect(w.x * map.tileWidth, w.y * map.tileHeight, map.tileWidth, map.tileHeight).fill({ color: layer.role === "collision" ? w.value === COLLISION_PASSABLE ? host.colors.collisionPassable : host.colors.collisionSolid : host.colors.terrainTint, alpha: 0.28 });
+          grid.rect(w.x * map.tileWidth, w.y * map.tileHeight, map.tileWidth, map.tileHeight).fill({ color: w.value === COLLISION_PASSABLE ? host.colors.collisionPassable : host.colors.collisionSolid, alpha: 0.28 });
           grid.visible = true;
         }
         this.#stampGridKey = null;
@@ -329,9 +323,7 @@ export class OverlayRenderer {
               this.#drawAccentOutline(r);
               if (r.width > 2 * thickness && r.height > 2 * thickness) this.#drawAccentOutline({ x: r.x + thickness, y: r.y + thickness, width: r.width - 2 * thickness, height: r.height - 2 * thickness });
             }
-          } else if (this.#terrainBrush()) {
-            this.#showTerrainRect(r, gesture.thickness ?? 0);
-            this.#drawAccentOutline(r);
+
           } else {
             this.#showPatternPreview(r, gesture.start, gesture.thickness ?? 0);
             this.#drawAccentOutline(r);
@@ -385,10 +377,6 @@ export class OverlayRenderer {
     }
     if (gridActive) return this.#drawGridCursor(state.tool, cell, one);
     const editable = isEditable(activeInfo(host.scene?.store));
-    const terrain = editable ? this.#terrainBrush() : null;
-    if (terrain && (state.tool === "brush" || state.tool === "eraser" || state.tool === "fill" || state.tool === "rect")) {
-      return this.#showTerrainPreview(state.tool, cell, terrain);
-    }
     switch (state.tool) {
       case "brush": {
         if (state.stamp) {
@@ -425,66 +413,6 @@ export class OverlayRenderer {
       default:
         return this.#drawCellCursor(one);
     }
-  }
-
-  // ------------------------------------------------------------------ terrain brush
-
-  #terrainBrush(): TerrainBrush | null {
-    return activeTerrainBrush(this.#host.scene?.store);
-  }
-
-  /**
-   * Live preview of the terrain brush: exactly the tiles a click would write
-   * (core `terrainPaint` / `terrainErase` / `terrainFill`, neighbours
-   * included), as ghosts, with the footprint outlined. Cached per cell, brush
-   * and document revision.
-   */
-  #showTerrainPreview(tool: "brush" | "eraser" | "fill" | "rect", cell: CellPoint, brush: TerrainBrush): void {
-    const scene = this.#host.scene;
-    const layer = activeLayer(scene?.store);
-    if (!scene || !layer) return;
-    const doc = scene.store.document;
-    const s = useEditorStore.getState();
-    const anchor = tool === "brush" || tool === "eraser" ? (this.#host.lineAnchor?.() ?? null) : null;
-    const cells = tool === "brush" || tool === "eraser" ? this.#brushCells(cell) : [cell];
-    const key = `terrain:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${tool}:${s.brushSize}${s.brushShape}:${anchor ? `${anchor.x},${anchor.y}>` : ""}${cell.x},${cell.y}`;
-    if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
-    else {
-      let writes: TerrainTileWrite[] = [];
-      try {
-        if (tool === "fill") {
-          if (doc.map.width * doc.map.height <= FILL_PREVIEW_MAX_AREA) writes = terrainFill(doc, layer.id, cell.x, cell.y, brush, activeSmartStamp() ? { orientation: useSmartStampSession.getState().orientation, boundary: "empty" } : {});
-        } else if (tool === "eraser") writes = terrainErase(doc, layer.id, cells, brush);
-        else writes = terrainPaint(doc, layer.id, cells, brush);
-      } catch (error) {
-        console.warn("[canvas] terrain preview failed", error);
-      }
-      this.#setTilePreview(key, terrainPreviewCells(writes));
-    }
-    this.#tilePreview.root.position.set(0, 0);
-    if (tool === "fill" || tool === "rect") return this.#drawCellCursor({ x: cell.x, y: cell.y, width: 1, height: 1 });
-    this.#drawCellsOutline(cells);
-  }
-
-  /** Terrain preview of a rectangle drag (capped like the tile rectangle preview). */
-  #showTerrainRect(r: CellRegion, thickness = 0): void {
-    const scene = this.#host.scene;
-    const layer = activeLayer(scene?.store);
-    const brush = this.#terrainBrush();
-    if (!scene || !layer || !brush || (thickness === 0 && r.width * r.height > RECT_PREVIEW_LIMIT)) return;
-    const key = `terrainR:${thickness}:${terrainBrushKey(brush)}:${layer.id}:${scene.store.revision}:${r.x},${r.y},${r.width},${r.height}`;
-    if (this.#tilePreview.key?.startsWith(`${key}|`) === true) this.#tilePreview.root.visible = true;
-    else {
-      const cells = [...rectangleBand(r, thickness, { x: 0, y: 0, width: scene.store.document.map.width, height: scene.store.document.map.height })];
-      let writes: TerrainTileWrite[] = [];
-      try {
-        writes = terrainPaint(scene.store.document, layer.id, cells, brush);
-      } catch (error) {
-        console.warn("[canvas] terrain preview failed", error);
-      }
-      this.#setTilePreview(key, terrainPreviewCells(writes));
-    }
-    this.#tilePreview.root.position.set(0, 0);
   }
 
   // ------------------------------------------------------------------ brush footprint
@@ -869,28 +797,24 @@ export class OverlayRenderer {
     this.#drawCellCursor({ x: origin.x, y: origin.y, width: clip.width, height: clip.height });
   }
 
-  /** Grid layers of a stamp as faint terrain / collision overlay cells. */
   #showStampGridPreview(key: string, clip: TileClip, mapping: Record<string, string>, origin: CellPoint): void {
     const layers = clip.layers.filter((l) => l.grid && mapping[l.layerId] !== undefined);
     if (layers.length === 0) return;
     const map = this.#host.scene!.store.document.map;
     const g = this.#stampGridPreview;
     const colors = this.#host.colors;
-    const fullKey = `${key}|${colors.collisionSolid},${colors.collisionPassable},${colors.terrainTint}`;
+    const fullKey = `${key}|${colors.collisionSolid},${colors.collisionPassable}`;
     if (this.#stampGridKey !== fullKey) {
       this.#stampGridKey = fullKey;
       g.clear();
       const tw = map.tileWidth;
       const th = map.tileHeight;
       for (const layer of layers) {
-        const collision = layer.role === "collision";
         // One fill per colour; runs of equal cells in a row are one rect.
-        const groups = collision
-          ? [
+        const groups = [
               { color: colors.collisionSolid, match: (v: number) => v !== 0 && v !== COLLISION_PASSABLE },
               { color: colors.collisionPassable, match: (v: number) => v === COLLISION_PASSABLE },
-            ]
-          : [{ color: colors.terrainTint, match: (v: number) => v !== 0 }];
+            ];
         for (const { color, match } of groups) {
           let any = false;
           for (let y = 0; y < clip.height; y++) {
@@ -1125,11 +1049,4 @@ function libraryId(stamps: object): number {
   let id = libraryIds.get(stamps);
   if (id === undefined) libraryIds.set(stamps, (id = nextLibraryId++));
   return id;
-}
-
-/** Ghost cells of terrain writes (erased cells show nothing; the outline marks them). */
-function terrainPreviewCells(writes: readonly TerrainTileWrite[]): PreviewCell[] {
-  const out: PreviewCell[] = [];
-  for (const w of writes) if (w.tile) out.push({ x: w.x, y: w.y, entry: { tilesetId: w.tile.tilesetId, tileId: w.tile.tileId }, flags: 0 });
-  return out;
 }

@@ -53,102 +53,10 @@ export {
   gridCount,
   tilesetProblem,
   relativePathProblem,
-  isTileSolid,
   normalizeTileset,
 } from "./tileset";
 
-export {
-  type Terrain,
-  type TerrainTemplate,
-  type TerrainTemplateFamily,
-  type TerrainTemplateInfo,
-  type TerrainVariant,
-  TERRAIN_TEMPLATES,
-  DEFAULT_TERRAIN_TEMPLATE,
-  terrainTemplateInfo,
-  terrainSlotForMask,
-  MAX_TERRAIN_ID,
-  CORNER_NE,
-  CORNER_SE,
-  CORNER_SW,
-  CORNER_NW,
-  BLOB_N,
-  BLOB_NE,
-  BLOB_E,
-  BLOB_SE,
-  BLOB_S,
-  BLOB_SW,
-  BLOB_W,
-  BLOB_NW,
-  BLOB47_MASKS,
-  reduceBlobMask,
-  blob47Slot,
-  corner16Slot,
-  isTerrainTemplate,
-  terrainSlotTileId,
-  terrainCandidates,
-  terrainProblem,
-  normalizeTerrain,
-  cellHash,
-  pickVariant,
-} from "./terrain";
-
-export {
-  type TerrainSlot,
-  TerrainTiles,
-  terrainSlotAt,
-  terrainTileAt,
-  deriveTerrainTiles,
-} from "./autotile";
-
-export {
-  type TerrainSet,
-  type TerrainSetKind,
-  type TerrainSetTerrain,
-  type TerrainTileTag,
-  type TerrainCorners,
-  MAX_SET_TERRAIN_ID,
-  TERRAIN_COLORS,
-  defaultTerrainColor,
-  normalizeTerrainSet,
-  terrainSetProblem,
-  terrainSetsProblem,
-  getTerrainSet,
-  terrainTagOf,
-  withTerrainSet,
-  withoutTerrainSet,
-  remapTerrainSet,
-  cornersOfCorner16Mask,
-  tagBlockWithTemplate,
-  flipCorners,
-  flipBlobMask,
-  legacyTerrainSetId,
-  legacyTerrainToSet,
-  migrateLegacyTerrains,
-} from "./terrainSet";
-
-export {
-  type TerrainBrush,
-  type TerrainTileWrite,
-  type TerrainSolveOptions,
-  type TerrainCellInfo,
-  DEFAULT_TERRAIN_EXPAND,
-  terrainPaint,
-  terrainErase,
-  terrainFill,
-  terrainFillRegion,
-  terrainCellInfo,
-} from "./terrainBrush";
-
-export {
-  type RgbaImage,
-  type TileGridRect,
-  type DetectedTerrainBlock,
-  type DetectTerrainOptions,
-  detectTerrainBlock,
-} from "./terrainDetect";
-
-export { type CollisionGrid, collisionAt, deriveCollision, solidPaletteMask } from "./collision";
+export { type CollisionGrid, collisionAt, deriveCollision } from "./collision";
 
 export {
   CHUNK_SHIFT,
@@ -213,14 +121,7 @@ export type {
   SetLayerPropsOp,
   LayerPropsPatch,
   ResizeMapOp,
-  PaintTerrainOp,
-  SetTerrainSetOp,
-  RemoveTerrainSetOp,
-  PaintTerrainBrushOp,
-  SetTileSolidOp,
-  DefineTerrainOp,
-  RemoveTerrainOp,
-  DeriveTerrainOp,
+  PaintGridOp,
   AddEntityOp,
   RemoveEntityOp,
   MoveEntityOp,
@@ -559,8 +460,6 @@ export {
   sampleNineSlice,
   planNineSliceRect,
   nineSliceBlits,
-  bakedNineSliceTerrainSet,
-  bakedNineSliceSolidTiles,
 } from "./nineSlice";
 
 export {
@@ -579,15 +478,11 @@ export {
   orthogonalBridge,
 } from "./smartStamp";
 
-export {
-  type TerrainTileReader,
-  type TerrainMembership,
-  type TerrainBlobSolveOptions,
-  terrainTileInfo,
-  terrainMembership,
-  solveBlobFromReader,
-} from "./terrainBrush";
-
-
 export { prepareNineSliceTileset, regenerateNineSliceTileset, type PrepareNineSliceTilesetOptions, type RegenerateNineSliceTilesetOptions } from "./generatedTileset";
 export { stampTilesetUsage, type StampTilesetUsage } from "./region";
+
+export { cellHash, pickVariant } from "./hash";
+export * from "./smartStamp/topology";
+export * from "./smartStamp/roadProfile";
+export * from "./smartStamp/roadSolver";
+export type { RgbaImage } from "./tilesetPixels";

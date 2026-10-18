@@ -28,7 +28,7 @@ function houseStore() {
   store.dispatch({ type: "addLayer", layer: { id: "ents", name: "Entities", type: "entity" } });
   store.dispatch({ type: "paintCells", layerId: "ground", cells: [0, 1, 2].flatMap((x) => [{ x, y: 1, cell: cell(1) }]) });
   store.dispatch({ type: "paintCells", layerId: "top", cells: [{ x: 0, y: 0, cell: cell(2) }, { x: 1, y: 0, cell: cell(3, FLIP_H) }] });
-  store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 0, y: 1, value: COLLISION_SOLID }] });
+  store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 0, y: 1, value: COLLISION_SOLID }] });
   store.clearHistory();
   return store;
 }

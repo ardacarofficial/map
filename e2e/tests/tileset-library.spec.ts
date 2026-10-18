@@ -4,15 +4,12 @@ import { confirmTilesetCard, dropFile, expect, sampleBytes, test, WELCOME_DROP }
 
 type Hook = {
   store: {
-    document: { collections: { id: string; name: string; cells: { tileId: number }[] }[]; tilesets: { id: string; name: string; group?: string; solidTiles?: number[] }[] };
+    document: { collections: { id: string; name: string; cells: { tileId: number }[] }[]; tilesets: { id: string; name: string; group?: string }[] };
   };
 };
 
 const tilesetIds = (page: Page) =>
   page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.document.tilesets.map((t) => t.id));
-
-const solidOf = (page: Page, id: string) =>
-  page.evaluate((id) => [...((window as unknown as { __smap: Hook }).__smap.store.document.tilesets.find((t) => t.id === id)?.solidTiles ?? [])], id);
 
 /** Drops several files at once onto `selector`. */
 async function dropFiles(page: Page, selector: string, files: { name: string; bytes: number[] }[]): Promise<void> {
@@ -128,38 +125,15 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, no confi
   expect(errors).toEqual([]);
 });
 
-test("tileset modes: right-drag in Katı unmarks, tile context menu, remove an unused tileset with Geri al", async ({ page }) => {
+test("tile context menu and removing an unused tileset with Geri al", async ({ page }) => {
   await startProject(page);
   await page.locator("[data-library-view='single']").click();
 
-  // Katı mode: left-drag marks three tiles, right-drag unmarks two of them.
-  await page.locator("[data-tileset-mode='solid']").click();
-  await expect(page.locator("[data-tileset-hint]")).toContainText("Sol: işaretle · Sağ: kaldır");
-  const a = await tileCenter(page, "overworld-32", 0, 0);
-  const c = await tileCenter(page, "overworld-32", 2, 0);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move(c.x, c.y, { steps: 6 });
-  await page.mouse.up();
-  await expect.poll(() => solidOf(page, "overworld-32")).toEqual([0, 1, 2]);
-  const b = await tileCenter(page, "overworld-32", 1, 0);
-  // The right button decides the direction (unmark), not the first tile.
-  await page.mouse.move(c.x, c.y);
-  await page.mouse.down({ button: "right" });
-  await page.mouse.move(b.x, b.y, { steps: 4 });
-  await page.mouse.up({ button: "right" });
-  await expect.poll(() => solidOf(page, "overworld-32")).toEqual([0]);
-  await expect(page.locator("[data-tile-menu]")).toHaveCount(0);
-
-  // Back to painting: right click on a tile opens its menu; "Katı yap" marks it.
-  await page.locator("[data-tileset-mode='pick']").click();
-  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
   const d = await tileCenter(page, "overworld-32", 3, 1);
   await page.mouse.click(d.x, d.y, { button: "right" });
   const menu = page.locator("[data-tile-menu]");
   await expect(menu).toBeVisible();
-  await menu.locator("[data-tile-menu-item='solid']").click();
-  await expect.poll(() => solidOf(page, "overworld-32")).toEqual([0, 11]);
+  await page.keyboard.press("Escape");
 
   // A second, unused tileset is removed right away with "Geri al".
   await dropFile(page, "body", "dungeon-16.png", sampleBytes("tilesets/dungeon-16.png"));
@@ -184,7 +158,6 @@ test("dock: compact header, searchable switcher, content default and remembered 
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await expect.poll(() => header.evaluate((el) => ({ height: el.getBoundingClientRect().height, fits: el.scrollWidth <= el.clientWidth }))).toEqual({ height: 32, fits: true });
-    for (const label of await header.locator("[data-header-group='mode'] [data-header-label]").all()) await expect(label).toBeVisible();
     if (viewport.width === 1440) {
       for (const label of await header.locator("[data-header-group='view'] [data-header-label]").all()) await expect(label).toBeVisible();
     }
@@ -296,7 +269,6 @@ test("dock palettes: create, drop through the header, rename and delete through 
   await page.locator("[data-palette-menu-item='delete']").click();
   await expect.poll(palettes).toEqual([]);
 });
-
 
 test("dock content default stays fixed across tilesets, views and tabs", async ({ page }) => {
   await startProject(page);

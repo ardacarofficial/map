@@ -9,27 +9,15 @@ import {
   type ReadonlyChunk,
 } from "./chunk";
 
-/**
- * Layer kinds. `"tile"` holds cells (palette index + flip flags); `"grid"`
- * (v0.3) holds small integers for terrain or collision; `"entity"` (v0.6)
- * holds placed entities and no cells.
- */
 export type LayerType = "tile" | "grid" | "entity";
 
-/**
- * What a grid layer is for.
- * - `"terrain"`: cell value = terrain id (0 = none). The linked tile layer
- *   (`targetLayerId`) is derived from it (autotile).
- * - `"collision"`: exceptions to the collision derived from solid tiles:
- *   {@link COLLISION_SOLID} forces solid, {@link COLLISION_PASSABLE} forces passable.
- */
-export type GridRole = "terrain" | "collision";
-
+/** Manual collision is the only grid role. */
+export type GridRole = "collision";
 /** Largest value a grid cell may hold. */
-export const MAX_GRID_VALUE = 0xffff;
+export const MAX_GRID_VALUE = 2;
 /** Collision grid value: force solid. */
 export const COLLISION_SOLID = 1;
-/** Collision grid value: force passable (e.g. a door in a solid wall tile). */
+/** Collision grid value: allow movement through this cell. */
 export const COLLISION_PASSABLE = 2;
 /** Largest value of a collision grid cell. */
 export const MAX_COLLISION_VALUE = 2;
@@ -228,29 +216,19 @@ export class TileLayer implements LayerProps {
   }
 }
 
-/**
- * A sparse grid of small integers (terrain ids or collision kinds), stored
- * and addressed exactly like a tile layer (32×32 chunks, `>> 5`, `& 31`);
- * cell 0 means "none". `getCell` returns the integer value.
- *
- * Written with the `paintTerrain` op only (`paintCells` rejects grid layers).
- * Role and link are fixed when the layer is created.
- */
+/** Sparse manual Collision grid. Writes use paintGrid; zero inherits the next grid below. */
 export class GridLayer extends TileLayer {
   override readonly type: LayerType = "grid";
   readonly role: GridRole;
-  /** Terrain role: id of the tile layer derived from this grid, or `null`. Always `null` for collision. */
-  readonly targetLayerId: string | null;
 
-  constructor(props: LayerProps, role: GridRole, targetLayerId: string | null = null) {
+  constructor(props: LayerProps, role: GridRole) {
     super(props);
     this.role = role;
-    this.targetLayerId = role === "terrain" ? targetLayerId : null;
   }
 
   /** Largest value this layer accepts. */
   get maxValue(): number {
-    return this.role === "collision" ? MAX_COLLISION_VALUE : MAX_GRID_VALUE;
+    return MAX_COLLISION_VALUE;
   }
 }
 
@@ -309,14 +287,13 @@ export function isTileLayer(layer: TileLayer | undefined | null): layer is TileL
   return layer instanceof TileLayer && layer.type === "tile";
 }
 
-/** True for grid (terrain / collision) layers. */
 export function isGridLayer(layer: TileLayer | undefined | null): layer is GridLayer {
   return layer instanceof GridLayer;
 }
 
 /** True when `value` names a grid role. */
 export function isGridRole(value: unknown): value is GridRole {
-  return value === "terrain" || value === "collision";
+  return value === "collision";
 }
 
 /** Returns a description of what is wrong with `props`, or `null`. */

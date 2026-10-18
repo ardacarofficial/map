@@ -87,38 +87,3 @@ test("rectangle outline: random saved stamp candidates stay inside the band", as
   expect(nonempty).toBeGreaterThan(0);
   expect(await page.evaluate(() => (window as unknown as { __smap: ToolsHook }).__smap.store.undoDepth)).toBe(1);
 });
-
-test("rectangle outline: terrain band and Shift/Alt modifiers", async ({ page }) => {
-  await openToolsProject(page, "blob47-godot-32.png");
-  await page.evaluate(async () => {
-    const { defineTerrain } = await import(/* @vite-ignore */ String("/src/commands/terrainActions.ts"));
-    const h = (window as unknown as { __smap: ToolsHook }).__smap;
-    const result = defineTerrain({ tilesetId: h.store.document.tilesets[0]!.id, template: "blob47-godot", origin: { col: 0, row: 0 }, setId: null, name: "Grass", color: "#5fb85f", background: 0 });
-    if (!result) throw new Error("terrain fixture failed");
-    h.store.clearHistory();
-  });
-  await outline(page);
-  await dragRectangle(page, 2, 2, 8, 7);
-  let cells = await mapCells(page, 15, 15);
-  expect(cells[2]![2]!.tileId).not.toBeNull();
-  expect(cells[4]![5]!.tileId).toBeNull();
-  expect(await page.evaluate(() => (window as unknown as { __smap: ToolsHook }).__smap.store.undoDepth)).toBe(1);
-  await page.locator("canvas[aria-label='map canvas']").first().focus();
-  await page.keyboard.press("Control+z");
-  // Modifier keys pressed during the drag avoid the temporary Alt eyedropper at press.
-  const { cellPoint } = await import("../support/toolFeatures");
-  const a = await cellPoint(page, 7, 7);
-  const b = await cellPoint(page, 10, 9);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.keyboard.down("Shift");
-  await page.keyboard.down("Alt");
-  await page.mouse.move(b.x, b.y, { steps: 5 });
-  await page.mouse.up();
-  await page.keyboard.up("Alt");
-  await page.keyboard.up("Shift");
-  cells = await mapCells(page, 15, 15);
-  expect(cells[4]![4]!.tileId).not.toBeNull();
-  expect(cells[10]![10]!.tileId).not.toBeNull();
-  expect(cells[7]![7]!.tileId).toBeNull();
-});

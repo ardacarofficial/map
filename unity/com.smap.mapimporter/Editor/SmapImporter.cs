@@ -153,6 +153,7 @@ namespace Smap.MapImporter
         /// <summary>
         /// "Collision (solid)": an invisible Tilemap (no renderer) filled with a
         /// grid-shaped collider tile, merged by a static CompositeCollider2D.
+        /// Only the exported manual Collision grid determines these cells; visual tiles never imply collision.
         /// Each collision kind gets its own object so it can have its own Unity layer.
         /// </summary>
         static void AddCollision(AssetImportContext ctx, SmapMap map, GameObject root)

@@ -1,15 +1,4 @@
-/**
- * "Geri al" button for a toast that undoes ONE specific history step (a
- * removed layer, terrain, entity type, a tileset grid edit).
- *
- * The step is named by its stable core id (`HistoryEntry.id`), not by the
- * undo depth: at the history limit the depth stays the same while old steps
- * fall off, so a depth check could undo the wrong step. The button undoes
- * only while that step is still on top of the store that is still open;
- * otherwise it does nothing and shows as disabled. Once the step itself has
- * been undone (Ctrl+Z, menu) or its document is closed, the action is spent
- * and the toast goes away instead of offering a stale button.
- */
+
 import type { MapStore } from "@smap/core";
 
 import { t } from "../i18n";

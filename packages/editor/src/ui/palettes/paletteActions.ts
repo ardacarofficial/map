@@ -7,7 +7,7 @@
 import { collectionClip, type Collection, type MapStore, type Tileset } from "@smap/core";
 
 import { addTilesToRandom } from "../../commands/randomBrush";
-import { tileLayerForPick } from "../../commands/terrainActions";
+import { tileLayerForPick } from "../../commands/tileLayerTarget";
 import { undoStepAction } from "../../commands/undoStepAction";
 import { t } from "../../i18n";
 import { useEditorStore, type ToolId } from "../../state/editorStore";

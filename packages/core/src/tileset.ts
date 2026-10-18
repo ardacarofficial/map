@@ -1,3 +1,4 @@
+import { normalizeRoadProfile, roadProfileProblem, type RoadProfile } from "./smartStamp/roadProfile";
 /**
  * Tileset metadata. Core never loads images; it only knows the grid layout.
  *
@@ -5,20 +6,12 @@
  * `tileId = row * columns + col`. Tiles are only ever appended, so existing
  * ids stay stable (same rule as Tiled and Godot).
  *
- * Since v0.3 a tileset also carries per-tile metadata that lives in the
- * project file: which tiles are solid (collision is derived from it) and the
- * terrains (autotile blocks) defined on it. Both are optional; a missing
- * field means "none". Change them with the `setTileSolid` / `defineTerrain` /
- * `removeTerrain` ops (undoable).
- *
  * Format 3 optionally records generated PNG provenance and source image hashes.
  * User PNGs remain read-only; explicit regeneration updates a separate generated
  * image at its existing id/path and preserves the append-only slot layout.
  */
 import { CELL_FLAG_MASK } from "./cell";
 import type { NineSliceInnerCorner } from "./nineSlice";
-import { normalizeTerrain, terrainProblem, type Terrain } from "./terrain";
-import { normalizeTerrainSet, terrainSetsProblem, type TerrainSet } from "./terrainSet";
 
 /** Content identity of an input PNG at the last successful bake. Hash actual PNG bytes (e.g. SHA-256), not file paths or mtimes. */
 export interface GeneratedTilesetSource {
@@ -91,6 +84,8 @@ export interface Tileset {
   readonly group?: string;
   /** Generated PNG provenance. Omitted = user-owned PNG; never overwrite a user asset to bake or regenerate. */
   readonly generated?: GeneratedTilesetMetadata;
+  /** Smart-owned complete road family, including archived custom variants. */
+  readonly roadProfile?: RoadProfile;
   /** Image path relative to the project folder, `/`-separated, e.g. `"tilesets/grass.png"`. */
   readonly imagePath: string;
   readonly tileWidth: number;
@@ -101,49 +96,16 @@ export interface Tileset {
   readonly margin: number;
   /** Pixels between adjacent tiles. */
   readonly spacing: number;
-  /** Tile ids marked solid ("katı"), ascending, no duplicates. Missing = none. */
-  readonly solidTiles?: readonly number[];
-  /**
-   * @deprecated Legacy (v0.3 grid-layer) terrains, sorted by id. Read from old
-   * files and converted to {@link terrainSets} on load; no longer written.
-   * Kept only so the old terrain API compiles until the editor migrates.
-   */
-  readonly terrains?: readonly Terrain[];
-  /**
-   * Terrain sets: terrain tags on this tileset's tiles (see `terrainSet.ts`),
-   * in display order. Missing = none.
-   */
-  readonly terrainSets?: readonly TerrainSet[];
+
 }
 
-/** True when `tileId` is marked solid in `tileset`. */
-export function isTileSolid(tileset: Tileset, tileId: number): boolean {
-  const solid = tileset.solidTiles;
-  if (!solid || solid.length === 0) return false;
-  // Binary search: the list is kept sorted.
-  let lo = 0;
-  let hi = solid.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const v = solid[mid]!;
-    if (v === tileId) return true;
-    if (v < tileId) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  return false;
-}
-
-/**
- * Frozen copy with canonical metadata: `solidTiles` sorted and de-duplicated,
- * terrains sorted by id and normalized; empty lists are omitted, so a tileset
- * without metadata looks exactly as before v0.3.
- */
 export function normalizeTileset(tileset: Tileset): Tileset {
   const base: Tileset = {
     id: tileset.id,
     name: tileset.name,
     ...(tileset.group !== undefined && tileset.group !== "" ? { group: tileset.group } : {}),
     ...(tileset.generated !== undefined ? { generated: normalizeGeneratedTilesetMetadata(tileset.generated) } : {}),
+    ...(tileset.roadProfile ? { roadProfile: normalizeRoadProfile(tileset.roadProfile) } : {}),
     imagePath: tileset.imagePath,
     tileWidth: tileset.tileWidth,
     tileHeight: tileset.tileHeight,
@@ -152,15 +114,8 @@ export function normalizeTileset(tileset: Tileset): Tileset {
     margin: tileset.margin,
     spacing: tileset.spacing,
   };
-  const solid = [...new Set(tileset.solidTiles ?? [])].sort((a, b) => a - b);
-  const terrains = (tileset.terrains ?? []).map(normalizeTerrain).sort((a, b) => a.id - b.id);
-  const terrainSets = (tileset.terrainSets ?? []).map((s) => (Object.isFrozen(s) ? s : normalizeTerrainSet(s)));
-  return Object.freeze({
-    ...base,
-    ...(solid.length > 0 ? { solidTiles: Object.freeze(solid) } : {}),
-    ...(terrains.length > 0 ? { terrains: Object.freeze(terrains) } : {}),
-    ...(terrainSets.length > 0 ? { terrainSets: Object.freeze(terrainSets) } : {}),
-  });
+
+  return Object.freeze(base);
 }
 
 /** Pixel rectangle of a tile inside its tileset image. */
@@ -238,28 +193,10 @@ export function tilesetProblem(tileset: Tileset): string | null {
     const { sourceWidth: w, sourceHeight: h } = tileset.generated;
     if (!Number.isSafeInteger(w * h + w + h + 48) || tileset.columns * tileset.rows < w * h + w + h + 48) return "generated grid is smaller than its fixed slot layout";
   }
-  if (tileset.solidTiles !== undefined) {
-    if (!Array.isArray(tileset.solidTiles)) return "solidTiles must be an array";
-    const seen = new Set<number>();
-    for (const id of tileset.solidTiles) {
-      if (!isValidTileId(tileset, id)) return `solid tile id ${String(id)} is outside the tileset`;
-      if (seen.has(id)) return `duplicate solid tile id ${id}`;
-      seen.add(id);
-    }
-  }
-  if (tileset.terrains !== undefined) {
-    if (!Array.isArray(tileset.terrains)) return "terrains must be an array";
-    const ids = new Set<number>();
-    for (const terrain of tileset.terrains) {
-      const problem = terrainProblem(tileset, terrain);
-      if (problem) return problem;
-      if (ids.has(terrain.id)) return `duplicate terrain id ${terrain.id}`;
-      ids.add(terrain.id);
-    }
-  }
-  if (tileset.terrainSets !== undefined) {
-    const problem = terrainSetsProblem(tileset, tileset.terrainSets);
+  if (tileset.roadProfile) {
+    const problem = roadProfileProblem(tileset.roadProfile);
     if (problem) return problem;
+    if (tileset.roadProfile.tiles.some(t => !isValidTileId(tileset, t.tileId))) return "road profile tile outside tileset";
   }
   return null;
 }

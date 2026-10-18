@@ -13,7 +13,7 @@ export const useSmartStampSession = create<{
 }));
 export function smartStamp(clip: TileClip | null = useEditorStore.getState().stamp): Stamp | null {
   const s = clip as Stamp | null;
-  return s?.nineSlice ? s : null;
+  return s?.nineSlice && !s.smartDisabled ? s : null;
 }
 export function activeSmartStamp(): Stamp | null {
   const state = useEditorStore.getState();

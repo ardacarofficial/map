@@ -140,37 +140,24 @@ export function effectiveZoom(override: number | null | undefined, global: numbe
 export interface LevelUsage {
   readonly cells: number;
   readonly layers: readonly string[];
-  readonly terrains: number;
-  readonly terrainCells: number;
 }
 
 export interface UsageSummary {
   /** Painted tile cells over all levels. */
   readonly cells: number;
-  /** Terrain-grid cells that use its terrains. */
-  readonly terrainCells: number;
-  /** Its terrains. */
-  readonly terrains: number;
+
   /** Levels with any painted cell. */
   readonly levels: number;
   readonly used: boolean;
   readonly stamps: number;
 }
 
-/**
- * Usage of a tileset over every level. "Used" means painted somewhere
- * (tile or terrain cells): its terrains alone go with it unnoticed.
- */
 export function summarizeUsage(perLevel: readonly LevelUsage[], stamps = 0): UsageSummary {
   let cells = 0;
-  let terrainCells = 0;
-  let terrains = 0;
   let levels = 0;
   for (const u of perLevel) {
     cells += u.cells;
-    terrainCells += u.terrainCells;
-    terrains = Math.max(terrains, u.terrains);
-    if (u.cells + u.terrainCells > 0) levels++;
+    if (u.cells > 0) levels++;
   }
-  return { cells, terrainCells, terrains, levels, stamps, used: cells + terrainCells + stamps > 0 };
+  return { cells, levels, stamps, used: cells + stamps > 0 };
 }

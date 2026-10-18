@@ -8,6 +8,8 @@ import { generatedRecipePath, loadGeneratedRecipes, type GeneratedRecipe } from 
  *   project.smap, levels/<level>.json, tilesets/*.png, stamps/, backups/
  */
 import {
+  DOCUMENT_FORMAT_VERSION,
+  fileFormatVersion,
   levelIdFromPath,
   PROJECT_FILE_NAME,
   parseLevel,
@@ -250,6 +252,8 @@ export async function loadProject(
     collections: project.collections,
   });
 
+  if (fileFormatVersion(projectText)! < DOCUMENT_FORMAT_VERSION && document.migrations.length === 0) document._setMigrations(["format.migrated"]);
+
   const images: TilesetImage[] = [];
   const missingImages: string[] = [];
   await Promise.all(
@@ -266,7 +270,7 @@ export async function loadProject(
   const order = new Map(project.tilesets.map((t, i) => [t.id, i]));
   images.sort((a, b) => (order.get(a.tilesetId) ?? 0) - (order.get(b.tilesetId) ?? 0));
   missingImages.sort();
-  const { stamps, broken } = await loadStamps(fs);
+  const { stamps, broken } = await loadStamps(fs, project.tilesets);
 
   return {
     name: project.name,
@@ -279,7 +283,7 @@ export async function loadProject(
     levelId: level.id,
     retiredLevelIds: [...project.retiredLevelIds],
     stamps,
-    generatedRecipes: await loadGeneratedRecipes(fs, document.tilesets, stamps, broken),
+    generatedRecipes: await loadGeneratedRecipes(fs, document.tilesets, [...(project.generatedRecipes ?? []), ...stamps], broken),
     brokenStamps: broken,
     settings: project.settings,
   };

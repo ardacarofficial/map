@@ -43,7 +43,7 @@ function sample() {
   const b = store.getOrAddPaletteIndex("grass", 7);
   store.dispatch({ type: "paintCells", layerId: ground, cells: [{ x: 1, y: 1, cell: makeCell(a) }, { x: 2, y: 1, cell: makeCell(a) }] });
   store.dispatch({ type: "paintCells", layerId: walls, cells: [{ x: 1, y: 2, cell: makeCell(b) }] });
-  store.dispatch({ type: "paintTerrain", layerId: coll, cells: [{ x: 1, y: 2, value: 1 }] });
+  store.dispatch({ type: "paintGrid", layerId: coll, cells: [{ x: 1, y: 2, value: 1 }] });
   return store;
 }
 

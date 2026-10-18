@@ -12,7 +12,6 @@ import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
   | "stamp.nineSlice"
-  | "stamp.toTerrain"
   | "selection.toggleScope"
   | "tool.brush"
   | "tool.eraser"
@@ -88,8 +87,6 @@ export type CommandId =
   | "tileset.add"
   | "tileset.settings"
   | "tileset.replaceImage"
-  | "tileset.markSolid"
-  | "tileset.defineTerrain"
   | "level.new"
   | "level.duplicate"
   | "level.remove"
@@ -104,7 +101,6 @@ export interface ShortcutDef {
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "stamp.nineSlice", keys: [] },
-  { command: "stamp.toTerrain", keys: [] },
   // Selection scope
   { command: "selection.toggleScope", keys: [] },
   { command: "tool.brush", keys: ["B"] },
@@ -187,8 +183,6 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "layer.addEntity", keys: [] },
   { command: "entity.editTypes", keys: [] },
   { command: "layer.addCollision", keys: [] },
-  { command: "tileset.markSolid", keys: [] },
-  { command: "tileset.defineTerrain", keys: [] },
   { command: "settings.language", keys: [] },
   { command: "settings.editShortcuts", keys: [] },
   { command: "edit.replaceTiles", keys: [] },

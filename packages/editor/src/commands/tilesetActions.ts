@@ -293,8 +293,6 @@ function describeResult(outcome: RegridOutcome): string {
   const cleared = r.clearedCells + outcome.sync.clearedCells;
   if (cleared > 0) parts.push(t("tilesetImport.resultCleared", { count: cleared }));
   if (r.outOfRange > 0) parts.push(t("tilesetImport.resultOutOfRange", { count: r.outOfRange }));
-  if (r.droppedSolidTiles > 0) parts.push(t("tilesetImport.resultDroppedSolid", { count: r.droppedSolidTiles }));
-  if (r.droppedTerrains.length > 0) parts.push(t("tilesetImport.resultDroppedTerrains", { count: r.droppedTerrains.length }));
   if (outcome.sync.levels > 0) parts.push(t("tilesetImport.resultLevels", { count: outcome.sync.levels }));
   if (outcome.sync.stamps > 0) parts.push(t("tilesetImport.resultStamps", { count: outcome.sync.stamps }));
   if (parts.length === 0) parts.push(t("tilesetImport.resultNothing"));
@@ -303,10 +301,9 @@ function describeResult(outcome: RegridOutcome): string {
 
 /** Result toast with "Geri al": one undo of the active level (the rest of the project follows). */
 function showResult(message: string, outcome: RegridOutcome): void {
-  const lossy = outcome.result.clearedCells + outcome.sync.clearedCells > 0 || outcome.result.droppedTerrains.length > 0;
+  const lossy = outcome.result.clearedCells + outcome.sync.clearedCells > 0;
   useToastStore.getState().push(lossy ? "warning" : "success", message, 8000, outcome.undo);
 }
-
 
 // ------------------------------------------------------------------ sync
 

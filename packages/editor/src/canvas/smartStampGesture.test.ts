@@ -1,15 +1,16 @@
+import { buildLayout1RoadProfile } from "@smap/core";
 import { smartRectangleUsage } from "./rectangleSource";
 import { describe, expect, it } from "vitest";
-import { applySmartStampPlan, bakedNineSliceTerrainSet, createDocument, FLIP_H, FLIP_V, makeCell, MapStore, nineSliceLayout, planSmartStampRoad, type Stamp, type TerrainMembership } from "@smap/core";
+import { applySmartStampPlan, buildRoadProfile, createDocument, FLIP_H, FLIP_V, makeCell, MapStore, nineSliceLayout, planSmartStampRoad, type Stamp, type RoadMembership } from "@smap/core";
 import { addRoadSamples, smartGesturePlan, smartHoverGesture, smartMembership, smartRect } from "./smartStampGesture";
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 
 function fixture(width = 80, height = 60) {
   const store = new MapStore(createDocument({ width, height, tileWidth: 5, tileHeight: 5 }));
   const layerId = store.dispatch({ type: "addLayer", layer: { name: "Ground" } });
-  const stamp: Stamp = { id: "road", name: "Road", width: 3, height: 3, palette: Array.from({ length: 9 }, (_, tileId) => ({ tilesetId: "source", tileId })), layers: [{ layerId, name: "Ground", cells: Uint32Array.from({ length: 9 }, (_, i) => makeCell(i + 1)) }], nineSlice: { border: 1, tileLayers: [{ layerId, tilesetId: "generated" }], road: { tilesetId: "generated", setId: "road", terrainId: 1 } } };
+  const stamp: Stamp = { id: "road", name: "Road", width: 3, height: 3, palette: Array.from({ length: 9 }, (_, tileId) => ({ tilesetId: "source", tileId })), layers: [{ layerId, name: "Ground", cells: Uint32Array.from({ length: 9 }, (_, i) => makeCell(i + 1)) }], nineSlice: { border: 1, tileLayers: [{ layerId, tilesetId: "generated" }], road: { tilesetId: "generated", profile: buildLayout1RoadProfile(3, 3) } } };
   const ts = { id: "generated", name: "Road (yol)", imagePath: "tilesets/road.png", tileWidth: 5, tileHeight: 5, columns: 8, rows: Math.ceil(nineSliceLayout(stamp).slots / 8), margin: 0, spacing: 0 };
-  store.dispatch({ type: "addTileset", tileset: { ...ts, terrainSets: [bakedNineSliceTerrainSet(stamp, layerId, { id: "road", name: "Road", terrainId: 1 })] } });
+  store.dispatch({ type: "addTileset", tileset: { ...ts, roadProfile: buildRoadProfile(stamp, layerId) } });
   return { store, stamp, layerId };
 }
 describe("smart gestures", () => {
@@ -64,9 +65,9 @@ describe("smart gestures", () => {
     expect(membership.bounds).toEqual({ x: 1, y: 1, width: 512, height: 512 });
     // Reproduce the former bounding-box membership with the same Set lookup.
     let denseQueries = 0;
-    const dense: TerrainMembership = { bounds: membership.bounds, contains: (x, y) => { denseQueries++; return g.members.has(`${x},${y}`); } };
+    const dense: RoadMembership = { bounds: membership.bounds, contains: (x, y) => { denseQueries++; return g.members.has(`${x},${y}`); } };
     let sparseQueries = 0;
-    const sparse: TerrainMembership = { ...membership, contains: (x, y) => { sparseQueries++; return membership.contains(x, y); } };
+    const sparse: RoadMembership = { ...membership, contains: (x, y) => { sparseQueries++; return membership.contains(x, y); } };
     const options = { revision: store.revision, orientation: g.orientation, mapping: g.mapping };
     const before = planSmartStampRoad(store.document, stamp, layerId, dense, options);
     const after = planSmartStampRoad(store.document, stamp, layerId, sparse, options);
@@ -89,7 +90,7 @@ describe("smart gestures", () => {
     for (let i = 0; i < 5; i++) { beforeMs.push(legacyPlan()); afterMs.push(currentPlan()); }
     const median = (values: number[]) => values.sort((a, b) => a - b)[2]!.toFixed(2);
     console.info(`1024² diagonal (1,1)→(512,512), 1023 members; CPU median/5: before=${median(beforeMs)}ms after=${median(afterMs)}ms; membership queries=${denseQueries}→${sparseQueries}`);
-  });
+  }, 30_000);
   it("road rectangle bands use full membership and erase plans suppress old tiles and repair neighbours", () => {
     const { store, stamp, layerId } = fixture();
     const g = { ...smartHoverGesture(store, stamp, layerId, { x: 2, y: 2 }, "road", 0, 1, "square"), rectangle: true, thickness: 1, end: { x: 8, y: 7 } };

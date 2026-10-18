@@ -57,7 +57,6 @@ function ReplacementForm({ draft }: { draft: ReplacementDraft }) {
           <button type="button" data-replace-swatch={target} aria-label={t(`replaceTiles.${target}`)} title={t("replaceTiles.pickHint")} onClick={() => {
             const ui = useUiStore.getState();
             if (ui.panelsHidden) ui.togglePanels();
-            ui.setTilesetMode("pick");
             useLayoutStore.getState().setRecentHidden(false);
             useLayoutStore.getState().setDockTab("tileset");
             beginReplacementPick(target);

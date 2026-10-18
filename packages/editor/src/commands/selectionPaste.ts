@@ -12,7 +12,7 @@ export function prepareSelectionPaste(store: MapStore, clip: TileClip): Record<s
     if (id === null) {
       const source = clip.layers.find(l => l.layerId === entry.clipLayerId)!;
       id = store.dispatch({ type: "addLayer", layer: source.grid
-        ? { name: source.name, type: "grid", role: source.role ?? "terrain" }
+        ? { name: source.name, type: "grid", role: source.role ?? "collision" }
         : { name: source.name }, index: previous === null ? 0 : store.document.indexOfLayer(previous) + 1 });
     }
     previous = id;

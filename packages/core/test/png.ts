@@ -103,7 +103,7 @@ export function loadSample(name: string): RgbaImage {
 /**
  * `image` pasted into a bigger canvas at tile offset (`dx`, `dy`); the
  * border is filled with tiles copied from `filler` (cycled), like a real
- * tileset where the terrain block sits among other tiles.
+ * tileset where the artwork block sits among other tiles.
  */
 export function embedImage(image: RgbaImage, tile: number, dx: number, dy: number, cols: number, rows: number, filler: RgbaImage): RgbaImage {
   const width = cols * tile;

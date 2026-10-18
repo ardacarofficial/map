@@ -30,7 +30,7 @@ function setup(): { level: MapStore; stamp: Stamp } {
     cells: [0, 1, 2].flatMap((x) => [0, 1].map((y) => ({ x: 5 + x, y: 5 + y, cell: makeCell(a) }))),
   });
   level.dispatch({ type: "paintCells", layerId: roof, cells: [{ x: 6, y: 5, cell: makeCell(b, FLIP_H | FLIP_D) }] });
-  level.dispatch({ type: "paintTerrain", layerId: coll, cells: [{ x: 7, y: 6, value: 1 }] });
+  level.dispatch({ type: "paintGrid", layerId: coll, cells: [{ x: 7, y: 6, value: 1 }] });
   const stamp = createStamp(level.document, [ground, roof, coll], { x: 5, y: 5, width: 3, height: 2 }, { id: "ev", name: "Ev" });
   return { level, stamp: Object.freeze({ ...stamp, category: "Binalar", tags: ["köy"], favorite: true }) };
 }
@@ -90,7 +90,7 @@ describe("stamp editor documents", () => {
     for (const layer of doc.layers) {
       const cells = [];
       for (let y = 0; y < doc.map.height; y++) for (let x = 0; x < doc.map.width; x++) if (!(layer.name === "Çatı" && x === 7 && y === 5)) cells.push({ x, y, cell: 0 });
-      if (layer.type === "grid") store.dispatch({ type: "paintTerrain", layerId: layer.id, cells: cells.map((c) => ({ x: c.x, y: c.y, value: 0 })) });
+      if (layer.type === "grid") store.dispatch({ type: "paintGrid", layerId: layer.id, cells: cells.map((c) => ({ x: c.x, y: c.y, value: 0 })) });
       else store.dispatch({ type: "paintCells", layerId: layer.id, cells });
     }
     const shrunk = stampFromDocument(store.document, stamp)!;
@@ -107,7 +107,7 @@ describe("stamp editor documents", () => {
     for (const layer of doc.layers) {
       const all = [];
       for (let y = 0; y < doc.map.height; y++) for (let x = 0; x < doc.map.width; x++) all.push({ x, y });
-      if (layer.type === "grid") store.dispatch({ type: "paintTerrain", layerId: layer.id, cells: all.map((c) => ({ ...c, value: 0 })) });
+      if (layer.type === "grid") store.dispatch({ type: "paintGrid", layerId: layer.id, cells: all.map((c) => ({ ...c, value: 0 })) });
       else store.dispatch({ type: "paintCells", layerId: layer.id, cells: all.map((c) => ({ ...c, cell: 0 })) });
     }
     expect(contentBounds(store.document)).toBeNull();

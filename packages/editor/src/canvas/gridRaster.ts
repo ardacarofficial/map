@@ -1,18 +1,11 @@
-/**
- * Pure logic of the grid-layer overlays (terrain tint, collision overlay):
- * one 32×32 code raster per chunk, which store changes invalidate which
- * chunk, a small generation-based chunk cache, the RGBA image of a raster
- * and the outline edges of solid areas. No Pixi, no DOM: unit tested.
- */
+
 import {
   CHUNK_AREA,
   CHUNK_MASK,
   CHUNK_SHIFT,
   COLLISION_PASSABLE,
   COLLISION_SOLID,
-  cellPaletteIndex,
   isGridLayer,
-  isTileLayer,
   type ChunkKey,
   type MapDocument,
   type StoreChangeEvent,
@@ -22,8 +15,6 @@ import {
 
 /** Collision raster codes. */
 export const COLL_NONE = 0;
-/** Solid because a tile there is marked solid. */
-export const COLL_SOLID = 1;
 /** Forced solid by a collision layer. */
 export const COLL_FORCED_SOLID = 2;
 /** Forced passable by a collision layer (an exception). */
@@ -31,7 +22,7 @@ export const COLL_FORCED_PASSABLE = 3;
 
 /** True for the codes that block movement. */
 export function isSolidCode(code: number): boolean {
-  return code === COLL_SOLID || code === COLL_FORCED_SOLID;
+  return code === COLL_FORCED_SOLID;
 }
 
 /**
@@ -45,21 +36,10 @@ export function collisionChunkRaster(
   doc: MapDocument,
   cx: number,
   cy: number,
-  solid: Uint8Array,
   out: Uint8Array = new Uint8Array(CHUNK_AREA),
 ): Uint8Array {
   out.fill(COLL_NONE);
   const layers = doc.layers;
-  for (const layer of layers) {
-    if (!isTileLayer(layer)) continue;
-    const chunk = layer.getChunk(cx, cy);
-    if (!chunk) continue;
-    const data = chunk.data;
-    for (let i = 0; i < CHUNK_AREA; i++) {
-      const v = data[i]!;
-      if (v !== 0 && solid[cellPaletteIndex(v)] === 1) out[i] = COLL_SOLID;
-    }
-  }
   // Exceptions bottom to top, so the topmost collision layer wins.
   for (const layer of layers) {
     if (!isGridLayer(layer) || layer.role !== "collision") continue;
@@ -73,16 +53,6 @@ export function collisionChunkRaster(
     }
   }
   clipToMap(out, cx, cy, doc.map.width, doc.map.height);
-  return out;
-}
-
-/**
- * Terrain tint raster of a grid layer chunk: 1 where a value is painted.
- * `data` is the layer chunk's data (or undefined for an empty chunk).
- */
-export function paintedChunkRaster(data: ArrayLike<number> | undefined, out: Uint8Array = new Uint8Array(CHUNK_AREA)): Uint8Array {
-  out.fill(0);
-  if (data) for (let i = 0; i < CHUNK_AREA; i++) if (data[i] !== 0) out[i] = 1;
   return out;
 }
 
@@ -204,27 +174,12 @@ export interface Invalidation {
 const NOTHING: Invalidation = Object.freeze({ all: false, keys: Object.freeze([]) });
 const EVERYTHING: Invalidation = Object.freeze({ all: true, keys: Object.freeze([]) });
 
-/**
- * Collision overlay chunks a store change affects:
- * - cell changes of tile layers and collision layers (terrain grids change
- *   collision only through their derived tile layer, which is listed too);
- * - everything on `tilesets` (solid metadata), `layers` (order, add/remove)
- *   and `map` (resize). `palette` is append-only and changes nothing.
- * `isTerrainGrid(layerId)` tells terrain grid layers apart.
- */
-export function collisionInvalidation(e: StoreChangeEvent, isTerrainGrid: (layerId: string) => boolean): Invalidation {
-  if (e.structure.includes("tilesets") || e.structure.includes("layers") || e.structure.includes("map")) return EVERYTHING;
+export function collisionInvalidation(e: StoreChangeEvent, isCollisionGrid: (layerId: string) => boolean): Invalidation {
+  if (e.structure.includes("layers") || e.structure.includes("map")) return EVERYTHING;
   if (e.cells.length === 0) return NOTHING;
   const keys: ChunkKey[] = [];
-  for (const d of e.cells) if (!isTerrainGrid(d.layerId)) keys.push(...d.chunks);
+  for (const d of e.cells) if (isCollisionGrid(d.layerId)) keys.push(...d.chunks);
   return keys.length > 0 ? { all: false, keys } : NOTHING;
-}
-
-/** Terrain tint chunks of layer `layerId` a store change affects (`layers` / `map` → all). */
-export function layerInvalidation(e: StoreChangeEvent, layerId: string): Invalidation {
-  if (e.structure.includes("layers") || e.structure.includes("map")) return EVERYTHING;
-  const d = e.cells.find((c) => c.layerId === layerId);
-  return d && d.chunks.length > 0 ? { all: false, keys: d.chunks } : NOTHING;
 }
 
 /**
@@ -313,7 +268,7 @@ export function solidEdges(
   const w = x1 - x0;
   const h = y1 - y0;
   if (w <= 0 || h <= 0) return out;
-  // Row of solid flags with one extra row/column of margin on each side.
+
   const W = w + 2;
   const H = h + 2;
   const grid = new Uint8Array(W * H);

@@ -8,7 +8,7 @@ import type { MapDocument, TileClip, Tileset } from "@smap/core";
 
 import { consumeReplacementPick } from "../../commands/replaceTiles";
 import type { CanvasPickEvent } from "../../canvas/canvasEvents";
-import { tileLayerForPick } from "../../commands/terrainActions";
+import { tileLayerForPick } from "../../commands/tileLayerTarget";
 import { useEditorStore, type EditorState, type ToolId } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { useStampLibrary } from "../stamps/stampLibraryStore";
@@ -19,13 +19,6 @@ import { useTilesetView, type PanelSelection } from "./tilesetViewStore";
 /** Tools that keep working with a new tileset pick; any other tool switches to the brush. */
 const KEEPS_TOOL: readonly ToolId[] = ["brush", "fill", "rect"];
 
-/**
- * Makes `ids` of `tileset` the brush (see `brushFor`): one tile → plain
- * selection, several → a stamp clip. Ends a random brush, moves off a
- * terrain / collision layer onto a tile layer, and switches to the brush
- * unless fill or rectangle is active. Returns false when nothing was left
- * to select (e.g. only transparent tiles).
- */
 export function commitTilesetSelection(
   tileset: Tileset,
   ids: readonly number[],

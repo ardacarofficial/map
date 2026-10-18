@@ -38,18 +38,15 @@ export function askRemoveTileset(request: RemoveRequest): Promise<boolean> {
   return new Promise((resolve) => useRemove.setState({ request, resolve }));
 }
 
-/** "3 level'da 412 hücre ve 1 arazi kullanıyor". */
 export function usageText(usage: UsageSummary): string {
   const parts: string[] = [];
   if (usage.cells > 0) parts.push(t("tilesetLib.usageCells", { count: usage.cells }));
-  if (usage.terrainCells > 0) parts.push(t("tilesetLib.usageTerrainCells", { count: usage.terrainCells }));
   const what = parts.join(t("tilesetLib.usageAnd"));
-  const terrains = usage.terrains > 0 ? t("tilesetLib.usageTerrains", { count: usage.terrains }) : "";
   const stamps = usage.stamps > 0 ? t("smartStamp.usageStamps", { count: usage.stamps }) : "";
   if (usage.levels === 0) return stamps;
   const maps = usage.levels > 1
-    ? t("tilesetLib.usageLevels", { levels: usage.levels, what, terrains })
-    : t("tilesetLib.usageOneLevel", { what, terrains });
+    ? t("tilesetLib.usageLevels", { levels: usage.levels, what })
+    : t("tilesetLib.usageOneLevel", { what });
   return [maps, stamps].filter(Boolean).join(" ");
 }
 

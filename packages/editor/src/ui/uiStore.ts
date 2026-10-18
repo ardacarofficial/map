@@ -1,12 +1,6 @@
 import { create } from "zustand";
 
 /**
- * What a click in the tileset panel does: pick tiles (default), toggle
- * "katı" (solid), mark a terrain block (rough rectangle), or (legacy) random.
- */
-export type TilesetMode = "pick" | "solid" | "terrain" | "random";
-
-/**
  * What the library column shows. Built-in tabs: "tileset", "stamps",
  * "entities"; more can be added with `registerLibraryTab` (ui/panels/LibraryPanel).
  */
@@ -30,7 +24,6 @@ export interface UiState {
   draggingFiles: boolean;
   /** True while the project passed at start-up is opening (the editor frame shows instead of the welcome screen). */
   startupOpening: boolean;
-  tilesetMode: TilesetMode;
   libraryTab: LibraryTab;
   saveStampOpen: boolean;
   entityTypesOpen: boolean;
@@ -48,9 +41,6 @@ export interface UiState {
   setBusy(busy: boolean): void;
   setDraggingFiles(dragging: boolean): void;
   setStartupOpening(opening: boolean): void;
-  /** Sets the mode; setting the current mode again goes back to "pick". */
-  toggleTilesetMode(mode: TilesetMode): void;
-  setTilesetMode(mode: TilesetMode): void;
   setLibraryTab(tab: LibraryTab): void;
   setSaveStampOpen(open: boolean): void;
   /** Opens / closes the entity types dialog; `startNew` opens it on a new type. */
@@ -67,7 +57,6 @@ export const useUiStore = create<UiState>()((set) => ({
   busy: false,
   draggingFiles: false,
   startupOpening: false,
-  tilesetMode: "pick",
   libraryTab: "tileset",
   saveStampOpen: false,
   entityTypesOpen: false,
@@ -83,8 +72,6 @@ export const useUiStore = create<UiState>()((set) => ({
   setBusy: (busy) => set({ busy }),
   setDraggingFiles: (draggingFiles) => set({ draggingFiles }),
   setStartupOpening: (startupOpening) => set({ startupOpening }),
-  toggleTilesetMode: (mode) => set((s) => ({ tilesetMode: s.tilesetMode === mode ? "pick" : mode })),
-  setTilesetMode: (tilesetMode) => set({ tilesetMode }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
   setEntityTypesOpen: (entityTypesOpen, startNew = false, selectId = null) =>

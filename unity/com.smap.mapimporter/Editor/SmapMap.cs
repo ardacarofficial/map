@@ -159,6 +159,7 @@ namespace Smap.MapImporter
         public int[] cells;
     }
 
+    /// <summary>Manual Collision grid exported as row-major RLE; no tile flags are consulted.</summary>
     [Serializable]
     public sealed class SmapCollision
     {

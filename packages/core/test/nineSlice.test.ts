@@ -1,8 +1,9 @@
+import { buildRoadProfile } from "../src/smartStamp/roadProfile";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { FLIP_D, FLIP_H, FLIP_V, cellFlags, makeCell, rotateCellFlags } from "../src/cell";
-import { BLOB47_MASKS } from "../src/terrain";
-import { bakedNineSliceTerrainSet, bakedNineSliceSolidTiles, composeOrientation, nineSliceBlits, nineSliceLayout, nineSliceProblem, planNineSliceRect, sampleNineSlice } from "../src/nineSlice";
+import { BLOB47_MASKS } from "../src/smartStamp/topology";
+import { composeOrientation, nineSliceBlits, nineSliceLayout, nineSliceProblem, planNineSliceRect, sampleNineSlice } from "../src/nineSlice";
 
 import { source } from "./smartStampHelpers";
 
@@ -55,7 +56,7 @@ describe("nine-slice contract", () => {
         }
         if (b.sourceRect.width * b.sourceRect.height !== b.destinationRect.width * b.destinationRect.height) throw new Error("blit requires resampling");
       }
-      const set = bakedNineSliceTerrainSet(s, "s", { id: "road", name: "Road", terrainId: 1 });
+      const set = buildRoadProfile(s, "s");
       expect(set.tiles.filter(t => t.tileId >= l.bank).map(t => t.mask)).toEqual(BLOB47_MASKS);
       expect([...areas]).toEqual(new Array(l.slots).fill(size * size));
     }), { numRuns: 45 });
@@ -124,12 +125,6 @@ describe("quarter-blit pixel contract", () => {
     expect(blits.filter(b => b.slot === l.bank + BLOB47_MASKS.indexOf(255)).every(b => b.tile.tilesetId === "source")).toBe(true);
     expect(blits.filter(b => b.slot === l.bank + BLOB47_MASKS.indexOf(85)).every(b => b.tile.tilesetId === "inner")).toBe(true);
   });
-});
-
-
-it("assigns conservative composite solidity without changing copied tile solidity", () => {
-  const s = source(), l = nineSliceLayout(s);
-  expect(bakedNineSliceSolidTiles(s, "s", tile => tile.tileId === 0)).toEqual([0, l.collapsedWidth, l.collapsedHeight, l.isolated, ...[0, 4, 16, 20, 28].map(mask => l.bank + BLOB47_MASKS.indexOf(mask))].sort((a, b) => a - b));
 });
 
 it("samples arbitrary compact caps with the same periodic phase as wide rectangles", () => {

@@ -26,7 +26,7 @@ function house() {
   const b = store.getOrAddPaletteIndex("grass", 6);
   store.dispatch({ type: "paintCells", layerId: ground, cells: [{ x: 2, y: 2, cell: makeCell(a) }, { x: 3, y: 3, cell: makeCell(a) }] });
   store.dispatch({ type: "paintCells", layerId: roof, cells: [{ x: 3, y: 2, cell: makeCell(b, FLIP_H) }] });
-  store.dispatch({ type: "paintTerrain", layerId: coll, cells: [{ x: 2, y: 2, value: 1 }] });
+  store.dispatch({ type: "paintGrid", layerId: coll, cells: [{ x: 2, y: 2, value: 1 }] });
   const doc = store.document;
   return createStamp(doc, doc.layers.map((l) => l.id), { x: 2, y: 2, width: 2, height: 2 }, { id: "ev", name: "Ev" });
 }

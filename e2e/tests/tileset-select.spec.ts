@@ -110,15 +110,7 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const sel = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().selection);
   expect(sel?.tileId).toBe(18);
 
-  // ---- The mode control switches directly to Katı; Esc returns to picking.
-  await page.locator("[data-tileset-mode='solid']").click();
-  await expect(page.locator("[data-tileset-mode='solid']")).toHaveAttribute("aria-checked", "true");
-  await page.locator("[data-tileset-mode='terrain']").click();
-  await expect(page.locator("[data-tileset-mode='terrain']")).toHaveAttribute("aria-checked", "true");
-  await grid.focus();
-  await page.keyboard.press("Escape");
-  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
-  await expect(page.locator("[data-tileset-mode='pick']")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-tileset-modes]")).toHaveCount(0);
 
   expect(errors).toEqual([]);
 });
@@ -207,17 +199,4 @@ test("selected tile starts a 4×4 marquee, randomizes immediately, and mode hint
   });
   expect(candidates).toBe(ids);
 
-  // Both modes reuse the existing 32px row, giving the grid its full height.
-  const viewport = page.locator("[data-tileset-viewport]");
-  const before = (await viewport.boundingBox())!;
-  for (const mode of ["solid", "terrain"]) {
-    await page.locator(`[data-tileset-mode='${mode}']`).click();
-    await expect(page.locator("[data-tileset-side] [data-tileset-hint]")).toBeVisible();
-    await expect(page.locator("[data-library-view]")).toHaveCount(0);
-    await expect(page.locator("[data-palette-new]")).toHaveCount(0);
-    const during = (await viewport.boundingBox())!;
-    expect(during.y).toBe(before.y);
-    expect(during.height).toBe(before.height);
-    await page.locator("[data-tileset-side]").getByRole("button", { name: "Bitti", exact: true }).click();
-  }
 });

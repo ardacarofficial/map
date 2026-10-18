@@ -44,7 +44,7 @@ export interface LayerInfo {
   readonly id: string;
   readonly visible: boolean;
   readonly locked: boolean;
-  /** Grid (terrain / collision) layer: holds values, not tiles. */
+
   readonly grid: boolean;
   getCell(x: number, y: number): number;
 }

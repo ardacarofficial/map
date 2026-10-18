@@ -1,3 +1,4 @@
+import { normalizeRoadProfile, roadProfileProblem, type RoadProfile } from "./smartStamp/roadProfile";
 /**
  * Multi-layer stamps (v0.6): a named, saved selection of every layer of an
  * area (ground, walls, roof, collision…) that is placed with one click.
@@ -40,6 +41,7 @@ export interface Stamp extends TileClip {
   readonly favorite?: boolean;
   /** Explicit nine-slice bake references; omitted stamps retain flat placement semantics. */
   readonly nineSlice?: StampNineSlice;
+  readonly smartDisabled?: boolean;
 }
 
 /** Persisted nine-slice metadata. Generated assets are ordinary project tilesets; no map-cell links are stored. */
@@ -48,7 +50,7 @@ export interface StampNineSlice {
   /** Exactly one entry per source tile layer, in source layer order. Grids have no baked asset. */
   readonly tileLayers: readonly { readonly layerId: string; readonly tilesetId: string }[];
   /** Optional single-layer road profile. Must refer to one of tileLayers' generated tilesets. */
-  readonly road?: { readonly tilesetId: string; readonly setId: string; readonly terrainId: number };
+  readonly road?: { readonly tilesetId: string; readonly profile: RoadProfile };
 }
 
 /** Validates metadata shape and source correspondence. Asset existence is checked by smart placement against the document. */
@@ -68,7 +70,7 @@ export function stampNineSliceProblem(source: TileClip, value: unknown): string 
   }
   if (meta["road"] !== undefined) {
     const road = meta["road"] as Record<string, unknown> | null;
-    if (!road || typeof road !== "object" || typeof road["tilesetId"] !== "string" || !assets.has(road["tilesetId"]) || typeof road["setId"] !== "string" || !road["setId"] || typeof road["terrainId"] !== "number" || !Number.isInteger(road["terrainId"]) || road["terrainId"] < 1 || road["terrainId"] > 255) return "nineSlice road requires a baked tileset, set id and terrain id 1..255";
+    if (!road || typeof road !== "object" || typeof road["tilesetId"] !== "string" || !assets.has(road["tilesetId"]) || roadProfileProblem(road["profile"])) return "nineSlice road requires a baked tileset and complete road profile";
     const layerId = sourceLayers[layers.findIndex(l => (l as Record<string, unknown>)["tilesetId"] === road["tilesetId"])]!.layerId;
     return nineSliceProblem(source, { roadLayerId: layerId });
   }
@@ -79,7 +81,7 @@ export function stampNineSliceProblem(source: TileClip, value: unknown): string 
 export function normalizeStampNineSlice(source: TileClip, value: StampNineSlice): StampNineSlice {
   const problem = stampNineSliceProblem(source, value);
   if (problem) throw new Error(problem);
-  return Object.freeze({ border: 1, tileLayers: Object.freeze(value.tileLayers.map(l => Object.freeze({ layerId: l.layerId, tilesetId: l.tilesetId }))), ...(value.road ? { road: Object.freeze({ tilesetId: value.road.tilesetId, setId: value.road.setId, terrainId: value.road.terrainId }) } : {}) });
+  return Object.freeze({ border: 1, tileLayers: Object.freeze(value.tileLayers.map(l => Object.freeze({ layerId: l.layerId, tilesetId: l.tilesetId }))), ...(value.road ? { road: Object.freeze({ tilesetId: value.road.tilesetId, profile: normalizeRoadProfile(value.road.profile) }) } : {}) });
 }
 
 /** Library metadata of a stamp (round 4). */
@@ -293,7 +295,7 @@ export function placeStamp(store: MapStore, stamp: TileClip, x: number, y: numbe
       if (target === null) {
         const layer = clip.layers[i]!;
         const index = previous === null ? 0 : store.document.indexOfLayer(previous) + 1;
-        const role: GridRole = layer.role ?? "terrain";
+        const role: GridRole = layer.role ?? "collision";
         target = store.dispatch({
           type: "addLayer",
           layer: layer.grid ? { name: layer.name, type: "grid", role } : { name: layer.name },

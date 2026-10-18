@@ -467,22 +467,6 @@ interface FollowResult {
   kept: number;
 }
 
-/**
- * Moves `store`'s copy of `want` to its grid:
- *
- * 1. When the level's own undo (or redo) step is exactly the recorded
- *    change, it is undone (redone): byte for byte.
- * 2. Otherwise, when a recorded change led from `want`'s grid to the
- *    current one (the level was edited since), the grid goes back with the
- *    core op and every cell that change touched comes back to the tile it
- *    held, as long as the cell still holds what the change left there
- *    (cells painted since keep the new paint and are counted as kept).
- *    Solid flags and terrains are set to `want`'s. One undo step.
- * 3. Otherwise the core op remaps by pixel position (the edit itself).
- *
- * Every change made here is recorded too, so the next undo / redo of the
- * edit finds its way back the same way.
- */
 function followGrid(store: MapStore, want: Tileset): FollowResult {
   const out: FollowResult = { cleared: 0, restored: 0, kept: 0 };
   const records = levelRecords.get(store) ?? [];
@@ -546,7 +530,6 @@ function followGrid(store: MapStore, want: Tileset): FollowResult {
     out.cleared = result.clearedCells;
     out.restored = restoreCells(store, back);
     out.kept += back.length - out.restored;
-    matchMetadata(store, want);
     store.commit();
   } catch (error) {
     store.rollback();
@@ -583,35 +566,6 @@ function restoreCells(store: MapStore, cells: readonly RegridCell[]): number {
     written += list.length;
   }
   return written;
-}
-
-/**
- * Solid flags and terrains of `store`'s copy of `want` set to `want`'s: a
- * remap back by pixel position may lose some that the exact tileset (the
- * active level's) still has. Keeps the levels' project data equal, so a
- * level opened later does not have to be rebuilt.
- */
-function matchMetadata(store: MapStore, want: Tileset): void {
-  const have = store.document.getTileset(want.id);
-  if (!have || !sameGrid(have, want)) return;
-  const haveSolid = new Set(have.solidTiles ?? []);
-  const wantSolid = new Set(want.solidTiles ?? []);
-  const add = [...wantSolid].filter((id) => !haveSolid.has(id) && isValidTileId(have, id));
-  const remove = [...haveSolid].filter((id) => !wantSolid.has(id));
-  if (add.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: add, solid: true });
-  if (remove.length > 0) store.dispatch({ type: "setTileSolid", tilesetId: want.id, tileIds: remove, solid: false });
-  // Terrain sets (tags on tiles, CLAUDE.md › Autotile).
-  const wantSets = want.terrainSets ?? [];
-  for (const set of have.terrainSets ?? []) {
-    if (!wantSets.some((x) => x.id === set.id)) store.dispatch({ type: "removeTerrainSet", tilesetId: want.id, setId: set.id });
-  }
-  for (const set of wantSets) {
-    try {
-      store.dispatch({ type: "setTerrainSet", tilesetId: want.id, set }); // a no-op when equal
-    } catch {
-      // A set that does not fit this level's copy: the level is rebuilt from its text when opened (withProjectData).
-    }
-  }
 }
 
 // ------------------------------------------------------------------ tileset list (add / remove / name / group / order)

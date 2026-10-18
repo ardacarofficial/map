@@ -13,13 +13,12 @@ import {
 } from "../../src";
 import { TILESET } from "../helpers";
 
-const SOLID: Tileset = { ...TILESET, solidTiles: [1] };
 const ITEMS: Tileset = { ...TILESET, id: "items", name: "Items", imagePath: "tilesets/items.png" };
 
 /** 3×2 map: ground (grass, a solid tile), deco (items), an entity layer, top (empty). */
 function setup() {
   const store = new MapStore(createDocument({ width: 3, height: 2 }));
-  store.dispatch({ type: "addTileset", tileset: SOLID });
+  store.dispatch({ type: "addTileset", tileset: TILESET });
   store.dispatch({ type: "addTileset", tileset: ITEMS });
   store.dispatch({ type: "addLayer", layer: { id: "ground", name: "Ground" } });
   store.dispatch({ type: "addLayer", layer: { id: "things", name: "Things", type: "entity" } });
@@ -38,6 +37,8 @@ function setup() {
     ],
   });
   store.dispatch({ type: "paintCells", layerId: "deco", cells: [{ x: 1, y: 1, cell: makeCell(i) }] });
+  store.dispatch({ type: "addLayer", layer: { id: "collision", name: "Collision", type: "grid", role: "collision" } });
+  store.dispatch({ type: "paintGrid", layerId: "collision", cells: [{x:0,y:0,value:1},{x:1,y:0,value:1},{x:2,y:1,value:1}] });
   return store;
 }
 
@@ -78,7 +79,7 @@ describe("export layer selection", () => {
       layers: { name: string; type: string }[];
       tilesets: { name: string }[];
     };
-    expect(tmj.layers.map((l) => `${l.type}:${l.name}`)).toEqual(["objectgroup:Things", "tilelayer:Deco"]);
+    expect(tmj.layers.map((l) => `${l.type}:${l.name}`)).toEqual(["objectgroup:Things", "tilelayer:Deco", "objectgroup:Collision"]);
     expect(tmj.tilesets.map((t) => t.name)).toEqual(["Items"]);
   });
 

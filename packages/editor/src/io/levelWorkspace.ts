@@ -1,28 +1,5 @@
 import type { GeneratedRecipe } from "./smartStampRecipes";
-/**
- * The levels of the open project (v1.0) and what is loaded of them.
- *
- * Only the active level has to be in memory. A level stays cached (its
- * `MapStore`, and with it its undo history) while it has unsaved changes,
- * is not on disk yet, or has undo / redo steps; a clean level without
- * history is dropped when another level is opened and read from its file
- * again next time. Saving writes every dirty level plus `project.smap`.
- *
- * **Project data** (tilesets with their solid flags and terrains, entity
- * types) lives in every level's `MapDocument`. The active level's copy is
- * the current one (`project.smap` is written from it). A cached level picks
- * it up when it becomes active again: appended tilesets and generated provenance
- * update in place (not an undo step); any other difference rebuilds the level's store from
- * its own text, which keeps every edit but starts its undo history fresh.
- *
- * **Paths** are chosen once, when a level is added or duplicated, and stay
- * stable: renaming a level changes its name only (its id never changes
- * either). Removed levels lose their file on the next save, after
- * `project.smap` no longer lists them.
- *
- * Pure (no React, no stores, no toasts) so it runs in tests with an
- * in-memory folder; `session.ts` wires it to the app.
- */
+
 import {
   addLevel,
   createDocument,

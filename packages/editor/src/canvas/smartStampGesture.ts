@@ -1,5 +1,5 @@
 /** Gesture geometry only; connectivity and tile selection stay in core's planners. */
-import { stampLayerMapping, normalizeRect, orthogonalBridge, planSmartStampArea, planSmartStampRoad, rectangleBandContains, terrainMembership, type CellPoint, type CellRect, type MapStore, type Stamp, type StampLayerTarget, type SmartStampPlan, type TerrainMembership } from "@smap/core";
+import { stampLayerMapping, normalizeRect, orthogonalBridge, planSmartStampArea, planSmartStampRoad, rectangleBandContains, roadMembership, type CellPoint, type CellRect, type MapStore, type Stamp, type StampLayerTarget, type SmartStampPlan, type RoadMembership } from "@smap/core";
 import { brushFootprint, constrainRect, footprintCells } from "./footprint";
 
 export interface SmartGesture {
@@ -21,12 +21,12 @@ export function addRoadSamples(g: SmartGesture, points: readonly CellPoint[]): v
   }
   g.version++;
 }
-export function smartMembership(g: SmartGesture): TerrainMembership {
+export function smartMembership(g: SmartGesture): RoadMembership {
   if (g.rectangle) {
     const r = smartRect(g);
     return { bounds: r, contains: (x, y) => rectangleBandContains(r, g.thickness, x, y) };
   }
-  return terrainMembership([...g.members].map(key => {
+  return roadMembership([...g.members].map(key => {
     const [x, y] = key.split(",").map(Number) as [number, number];
     return { x, y };
   }));

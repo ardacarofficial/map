@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { confirmTilesetCard, dropFile, expect, readOpfsText, sampleBytes, test } from "../support/fixtures";
+import { expect, readOpfsText, test } from "../support/fixtures";
 import { acceptRoadStamp, cellPoint, dragRoad, makeRoadStamp } from "../support/smartStamp";
 
 async function preview(page: Page) {
@@ -181,32 +181,7 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
   expect(provenance).toEqual({ stamps: 0, recipes: 1 });
 });
 
-
-for (const native of [{ file: "wang16-32.png", width: 4, height: 4, count: 15 }, { file: "blob47-godot-32.png", width: 12, height: 4, count: 47 }]) {
-  test(`native stamp to terrain: ${native.file} opens TerrainCard confirmation`, async ({ page }) => {
-    await page.goto("/"); await dropFile(page, "body", native.file, sampleBytes(`tilesets/${native.file}`)); await confirmTilesetCard(page);
-    await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
-    await page.evaluate(async ({ width, height }) => {
-      const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
-      const { saveSelectionAsStamp } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
-      const { useStampLibrary } = await import(/* @vite-ignore */ String("/src/ui/stamps/stampLibraryStore.ts"));
-      const { runCommand } = await import(/* @vite-ignore */ String("/src/commands/registry.ts"));
-      const editor = useEditorStore.getState(), store = editor.project.store, ts = store.document.tilesets[0], layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
-      const cells = []; for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) cells.push({ x, y, cell: store.getOrAddPaletteIndex(ts.id, y * ts.columns + x) });
-      store.dispatch({ type: "paintCells", layerId: layer.id, cells }); editor.setRegion({ x: 0, y: 0, width, height });
-      const stamp = saveSelectionAsStamp("Native"); editor.setRegion(null); useStampLibrary.getState().select(stamp.id); runCommand("stamp.toTerrain");
-    }, native);
-    const terrain = page.locator("[data-inspector-terrain='define']"); await expect(terrain).toBeVisible();
-    await terrain.locator("[data-action='terrain-define']").click();
-    const count = await page.evaluate(async () => {
-      const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
-      return useEditorStore.getState().project.store.document.tilesets[0].terrainSets[0].tiles.length;
-    });
-    expect(count).toBe(native.count);
-  });
-}
-
-test("multi-layer smart stamp: area skips hidden layers and road explicitly selects one layer", async ({ page }) => {
+test("multi-layer smart stamp: area skips hidden layers and retains area-only behavior", async ({ page }) => {
   await page.goto("/"); await makeRoadStamp(page);
   await page.evaluate(async () => {
     const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
@@ -222,13 +197,7 @@ test("multi-layer smart stamp: area skips hidden layers and road explicitly sele
     return [...useEditorStore.getState().project.store.document.layers.find((l: { name: string }) => l.name === "Overlay").chunks()].length === 0;
   });
   expect(overlayEmpty).toBe(true);
-  await page.getByRole("radio", { name: "Yol", exact: true }).click();
-  const dialog = page.getByRole("dialog"); await expect(dialog.getByText("Yol yalnızca seçtiğiniz katmanı kullanan bir arazi fırçası olur.")).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Araziyi kullan" })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Katman" }).click();
-  await page.getByRole("menuitem", { name: "Zemin", exact: true }).click();
-  await dialog.getByRole("button", { name: "Araziyi kullan" }).click();
-  await expect(page.locator("[data-smart-stamp-mode]")).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "Yol", exact: true })).toBeDisabled();
 });
 
 test("9 dilim property has one label and toggle; rebuild appears only for edited bake content", async ({ page }) => {

@@ -1,18 +1,10 @@
-/**
- * Keeps editor state consistent with the document after any change,
- * including undo / redo:
- * - `activeLayerId` returns to a surviving recent selection, then a usable
- *   layer near the removed one's position;
- * - the marquee region stays inside the map after a resize;
- * - `gridValue` is a value the active grid layer accepts (collision: 1/2,
- *   terrain: a defined terrain id).
- */
+
 import { isEntityLayer, isGridLayer, type MapStore, type TileLayer } from "@smap/core";
 
 import type { OpenProject } from "../state/editorStore";
 import { useEditorStore } from "../state/editorStore";
 import { clampRegion } from "./enablement";
-import { validGridValue } from "./terrainActions";
+import { validGridValue } from "./collisionActions";
 
 export function installLayerSync(): () => void {
   let unsubscribe: (() => void) | null = null;

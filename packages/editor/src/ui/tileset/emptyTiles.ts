@@ -37,7 +37,8 @@ export function useEmptyTiles(tileset: Tileset, bitmap: ImageBitmap | undefined)
   const { tileWidth, tileHeight, margin, spacing, columns, rows } = tileset;
   return useMemo(
     () => (bitmap ? emptyTilesOf({ ...tileset, tileWidth, tileHeight, margin, spacing, columns, rows }, bitmap) : NONE),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the grid matters, not solid / terrain metadata
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only grid dimensions affect transparent tile detection
     [bitmap, tileWidth, tileHeight, margin, spacing, columns, rows],
   );
 }

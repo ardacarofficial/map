@@ -30,9 +30,7 @@ export const CANVAS_COLORS = {
   fillPreviewAlpha: 0.35,
   /** Brush / rectangle footprint on a grid layer (accent). */
   gridBrushAlpha: 0.35,
-  /** Painted cells of the active terrain layer — token `--color-terrain-tint` (default: violet). */
-  terrainTint: 0xc39bff,
-  terrainTintAlpha: 0.15,
+
   /** Solid cells of the collision overlay — token `--color-collision-solid`. */
   collisionSolid: 0xff5468,
   collisionSolidAlpha: 0.3,
@@ -73,7 +71,6 @@ export function readThemeColors(el: Element): CanvasColors {
     accent: token("--color-accent", CANVAS_COLORS.accent),
     collisionSolid: token("--color-collision-solid", CANVAS_COLORS.collisionSolid),
     collisionPassable: token("--color-collision-pass", CANVAS_COLORS.collisionPassable),
-    terrainTint: token("--color-terrain-tint", CANVAS_COLORS.terrainTint),
     entitySpawn: token("--color-entity-spawn", CANVAS_COLORS.entitySpawn),
     entityPortal: token("--color-entity-portal", CANVAS_COLORS.entityPortal),
     danger: token("--color-danger", CANVAS_COLORS.danger),

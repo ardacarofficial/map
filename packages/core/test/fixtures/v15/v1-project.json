@@ -1,0 +1,51 @@
+{
+  "format": "smap-project",
+  "documentFormatVersion": 1,
+  "name": "Frozen v1",
+  "levels": [
+    {
+      "id": "main",
+      "name": "Main",
+      "path": "levels/main.json",
+      "world": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "tilesets": [
+    {
+      "id": "terrain",
+      "name": "Terrain",
+      "imagePath": "tilesets/terrain.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 12,
+      "rows": 10,
+      "margin": 0,
+      "spacing": 0,
+      "terrains": [
+        {
+          "id": 1,
+          "name": "Grass",
+          "tilesetId": "terrain",
+          "template": "blob47-godot",
+          "origin": {
+            "col": 0,
+            "row": 0
+          }
+        },
+        {
+          "id": 2,
+          "name": "Sand",
+          "tilesetId": "terrain",
+          "template": "corner16",
+          "origin": {
+            "col": 8,
+            "row": 0
+          }
+        }
+      ]
+    }
+  ]
+}

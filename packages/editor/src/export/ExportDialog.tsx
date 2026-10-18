@@ -346,7 +346,6 @@ function ExportForm({
             />
           )}
 
-
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 border-l border-line-subtle pl-4">
@@ -377,8 +376,6 @@ function ExportForm({
                   : t("export.ready")}
             </span>
           </Section>
-
-          <WarningsNotice warnings={derived.warnings.filter((w) => w.code === "collisionExceptions")} />
 
           {chosen === "json" && (
             <Section label={t("export.files")}>
@@ -631,32 +628,6 @@ function Notice({ tone, children }: { tone: "warning" | "info"; children: ReactN
 /** Map file last, so it reads first in the list. */
 function displayOrder(paths: readonly string[], mapFile: string): string[] {
   return [mapFile, ...paths.filter((p) => !p.endsWith(mapFile))];
-}
-
-/** The exporter's warnings, translated; nothing when the export lost nothing. */
-function WarningsNotice({ warnings }: { warnings: readonly ExportWarning[] }) {
-  if (warnings.length === 0) return null;
-  return (
-    <Notice tone="warning">
-      <span className="font-medium">{t("export.warnings")}</span>
-      <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
-        {warnings.map((warning) => (
-          <li key={warning.message}>{warningText(warning)}</li>
-        ))}
-      </ul>
-    </Notice>
-  );
-}
-
-function warningText(warning: ExportWarning): string {
-  switch (warning.code) {
-    case "missingTilesets":
-      return t("export.warnMissingTilesets", { ids: warning.tilesets.join(", ") });
-    case "tileIdsOutOfRange":
-      return t("export.warnTileOutOfRange", { tileset: warning.tileset, ids: warning.tileIds.join(", ") });
-    case "collisionExceptions":
-      return t("export.warnCollisionExceptions", { layers: warning.layers.join(", ") });
-  }
 }
 
 /** Toolbar icon for file.export. */

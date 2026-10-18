@@ -5,7 +5,7 @@
  * Stamps are flat copies (CLAUDE.md → Yapılmayacaklar): nothing in a level
  * refers to a stamp file, so deleting one only removes it from the library.
  */
-import { parseStamp, STAMPS_DIR, stampPath, type Stamp } from "@smap/core";
+import { parseStamp, STAMPS_DIR, stampPath, type Stamp, type Tileset } from "@smap/core";
 
 import type { ProjectFileSystem } from "./fs";
 
@@ -24,7 +24,7 @@ export function sortStamps(stamps: readonly Stamp[]): Stamp[] {
 }
 
 /** Reads every stamp file. A malformed file is reported in `broken`, never fatal. */
-export async function loadStamps(fs: ProjectFileSystem): Promise<LoadedStamps> {
+export async function loadStamps(fs: ProjectFileSystem, tilesets: readonly Tileset[] = []): Promise<LoadedStamps> {
   const names = (await fs.list(STAMPS_DIR)).filter(isStampFile);
   const stamps: Stamp[] = [];
   const broken: string[] = [];
@@ -32,7 +32,7 @@ export async function loadStamps(fs: ProjectFileSystem): Promise<LoadedStamps> {
   for (const name of names) {
     const path = `${STAMPS_DIR}/${name}`;
     try {
-      const stamp = parseStamp(await fs.readText(path));
+      const stamp = parseStamp(await fs.readText(path), tilesets);
       // Two files claiming the same id: keep the one whose file name matches.
       if (seen.has(stamp.id)) {
         broken.push(path);

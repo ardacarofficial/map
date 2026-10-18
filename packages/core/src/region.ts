@@ -115,25 +115,6 @@ export interface MoveRegionResult {
   readonly rect: CellRect;
 }
 
-/**
- * Moves the content of `rect` on the given layers by (`dx`, `dy`) cells —
- * cut + paste as ONE undo step (nested into an open transaction if any).
- *
- * - Tile and grid layers: the cells of `rect` are cleared and written at
- *   the new place; empty cells of the moved block do not erase the
- *   destination. Cells that land outside the map are dropped.
- * - Locked layers are left alone entirely.
- * - A derived terrain tile layer is never written by hand: its terrain
- *   grid is moved instead (added automatically when only the tile layer is
- *   listed) and the tiles are re-derived.
- * - Entity layers: entities whose top-left cell is inside `rect` move by
- *   (`dx · tileWidth`, `dy · tileHeight`) pixels; those that would leave
- *   the map are removed.
- *
- * `dx = dy = 0` changes nothing (no undo step).
- *
- * @throws Error on an unknown layer or an invalid rectangle / offset.
- */
 export function moveRegion(store: MapStore, layerIds: readonly string[], rect: CellRect, dx: number, dy: number): MoveRegionResult {
   const ok =
     [rect.x, rect.y, rect.width, rect.height, dx, dy].every(Number.isInteger) && rect.width >= 1 && rect.height >= 1;
@@ -147,13 +128,6 @@ export function moveRegion(store: MapStore, layerIds: readonly string[], rect: C
   for (const id of layerIds) {
     const layer = doc.getLayer(id);
     if (!layer) throw new Error(`moveRegion: unknown layer "${id}"`);
-    if (isTileLayer(layer)) {
-      const owner = doc.layers.find((l) => isGridLayer(l) && l.role === "terrain" && l.targetLayerId === id);
-      if (owner) {
-        add(owner.id);
-        continue;
-      }
-    }
     add(id);
   }
   if (dx === 0 && dy === 0) return { rect: moved };
@@ -193,7 +167,7 @@ export function moveRegion(store: MapStore, layerIds: readonly string[], rect: C
       if (clears.length === 0) continue;
       if (isGridLayer(layer)) {
         const cells: GridWrite[] = [...clears.map((c) => ({ ...c, value: 0 })), ...block.map((b) => ({ x: b.x, y: b.y, value: b.v }))];
-        store.dispatch({ type: "paintTerrain", layerId: id, cells });
+        store.dispatch({ type: "paintGrid", layerId: id, cells });
       } else {
         const cells: CellWrite[] = [...clears.map((c) => ({ ...c, cell: EMPTY_CELL })), ...block.map((b) => ({ x: b.x, y: b.y, cell: b.v }))];
         store.dispatch({ type: "paintCells", layerId: id, cells });
@@ -213,42 +187,27 @@ export function moveRegion(store: MapStore, layerIds: readonly string[], rect: C
 export interface TilesetUsage {
   /** Tile-layer cells that show a tile of the tileset. */
   readonly cells: number;
-  /** Ids of the layers holding those cells or terrain cells, bottom to top. */
+
   readonly layers: string[];
-  /** Number of terrains defined on the tileset. */
-  readonly terrains: number;
-  /** Terrain-grid cells painted with one of its terrains. */
-  readonly terrainCells: number;
 }
 
-/**
- * How much of document `doc` uses tileset `tilesetId` — for the "remove
- * tileset?" confirmation ("3 katmanda 412 hücre"). For a project, sum it
- * over the levels. An unknown tileset counts palette cells only (0 terrains).
- */
 export function tilesetUsage(doc: MapDocument, tilesetId: string): TilesetUsage {
   const indices = new Set<number>();
   doc.palette.entries().forEach((entry, i) => {
     if (entry.tilesetId === tilesetId) indices.add(i + 1);
   });
-  const terrainIds = new Set((doc.getTileset(tilesetId)?.terrains ?? []).map((t) => t.id));
   let cells = 0;
-  let terrainCells = 0;
   const layers: string[] = [];
   for (const layer of doc.layers) {
     let n = 0;
     if (isTileLayer(layer) && indices.size > 0) {
       for (const chunk of layer.chunks()) for (const cell of chunk.data) if (cell !== EMPTY_CELL && indices.has(cellPaletteIndex(cell))) n++;
       cells += n;
-    } else if (isGridLayer(layer) && layer.role === "terrain" && terrainIds.size > 0) {
-      for (const chunk of layer.chunks()) for (const value of chunk.data) if (value !== 0 && terrainIds.has(value)) n++;
-      terrainCells += n;
     }
     if (n > 0) layers.push(layer.id);
   }
-  return { cells, layers, terrains: terrainIds.size, terrainCells };
+  return { cells, layers };
 }
-
 
 /** Stamp references to a tileset. Counts actual tile cells separately from smart bake/profile dependencies. */
 export interface StampTilesetUsage {

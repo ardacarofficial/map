@@ -4,8 +4,7 @@ import type { TileClip } from "./clip";
 import type { CellPoint, CellRect } from "./geometry";
 import type { PaletteEntry } from "./palette";
 import { MAX_COLLISION_VALUE, MAX_GRID_VALUE } from "./layer";
-import { BLOB47_MASKS, reduceBlobMask } from "./terrain";
-import { defaultTerrainColor, normalizeTerrainSet, type TerrainSet } from "./terrainSet";
+import { BLOB47_MASKS } from "./smartStamp/topology";
 
 /** D4 orientation encoded as the existing unsigned H/V/D cell flag bits; transpose precedes mirrors. */
 export type NineSliceOrientation = number;
@@ -208,35 +207,4 @@ export function nineSliceBlits(source: TileClip, layerId: string, tileWidth: num
   emit(layout.isolated, [0, n - 1, n * m - 1, (m - 1) * n]);
   BLOB47_MASKS.forEach((mask, rank) => emit(layout.bank + rank, nineSliceMaskSources(source, mask), mask));
   return out;
-}
-
-/** Tags source copies and compact caps as matching variants, plus every explicit bank mask; empty slots remain untagged. */
-export function bakedNineSliceTerrainSet(source: TileClip, layerId: string, options: { readonly id: string; readonly name: string; readonly terrainId: number; readonly color?: string }): TerrainSet {
-  const problem = nineSliceProblem(source, { roadLayerId: layerId });
-  if (problem) throw new Error(problem);
-  if (!Number.isInteger(options.terrainId) || options.terrainId < 1 || options.terrainId > 255 || !options.id || !options.name || (options.color !== undefined && !/^#[0-9a-fA-F]{6}$/.test(options.color))) throw new Error("invalid baked terrain definition");
-  const { width: n, height: m } = source, l = nineSliceLayout(source), layer = source.layers.find(v => v.layerId === layerId)!;
-  const tiles: { tileId: number; terrainId: number; mask: number }[] = [];
-  const tag = (tileId: number, x: number, y: number, w: number, h: number, indices: readonly number[]) => {
-    if (!indices.some(i => layer.cells[i] !== 0)) return;
-    const offsets = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
-    let mask = 0;
-    offsets.forEach(([dx, dy], bit) => { if (x + dx! >= 0 && y + dy! >= 0 && x + dx! < w && y + dy! < h) mask |= 1 << bit; });
-    tiles.push({ tileId, terrainId: options.terrainId, mask: reduceBlobMask(mask) });
-  };
-  for (let y = 0; y < m; y++) for (let x = 0; x < n; x++) tag(y * n + x, x, y, n, m, [y * n + x]);
-  for (let y = 0; y < m; y++) tag(l.collapsedWidth + y, 0, y, 1, m, [y * n, y * n + n - 1]);
-  for (let x = 0; x < n; x++) tag(l.collapsedHeight + x, x, 0, n, 1, [x, (m - 1) * n + x]);
-  tag(l.isolated, 0, 0, 1, 1, [0, n - 1, n * m - 1, (m - 1) * n]);
-  BLOB47_MASKS.forEach((mask, rank) => tiles.push({ tileId: l.bank + rank, terrainId: options.terrainId, mask }));
-  return normalizeTerrainSet({ id: options.id, name: options.name, kind: "blob", terrains: [{ id: options.terrainId, name: options.name, color: options.color ?? defaultTerrainColor(options.terrainId) }], tiles });
-}
-
-
-/**
- * Ordinary tileset solid tile ids for this bake. Source copies retain source solidity; composite slots use
- * conservative OR of contributing tile solidity, including optional authored inner quadrants. Call once during baking.
- */
-export function bakedNineSliceSolidTiles(source: TileClip, layerId: string, isSolid: (tile: PaletteEntry) => boolean, innerCorner?: NineSliceInnerCorner): readonly number[] {
-  return [...new Set(nineSliceBlits(source, layerId, 2, 2, innerCorner).filter(b => isSolid(b.tile)).map(b => b.slot))].sort((a, b) => a - b);
 }

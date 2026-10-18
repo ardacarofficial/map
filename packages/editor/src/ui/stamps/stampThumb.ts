@@ -1,9 +1,4 @@
-/**
- * Stamp thumbnails: a stamp's tile layers composited into a small canvas.
- * Reuses the PNG export's compositing (`compositeOps` / `replayOps`), so
- * flips, rotations (FLIP_D) and oversized tiles look the same as in an exported image.
- * Grid layers (terrain / collision) carry no pixels and are not drawn.
- */
+
 import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
 
 import { compositeOps, type CanvasOp } from "../../export/pngComposite";

@@ -1,3 +1,4 @@
+import type { Stamp } from "./stamp";
 /**
  * Project-level data (v1.0–v1.2): the ordered level list with stable level
  * ids and world positions, portal helpers and world-map links.
@@ -52,6 +53,8 @@ export interface ProjectLevel extends LevelRef {
 
 /** Contents of `project.smap` (input form: optional fields may be missing). */
 export interface ProjectData {
+  /** Archived smart recipes carried by older project roots; sidecar files are also supported. */
+  readonly generatedRecipes?: readonly Stamp[];
   readonly name: string;
   /** Ordered level list. */
   readonly levels: readonly LevelRef[];
@@ -138,6 +141,7 @@ export function normalizeProject(data: ProjectData): Project {
     return Object.freeze({ id, name: level.name, path: level.path, world: Object.freeze({ x: world.x, y: world.y }) });
   });
   return Object.freeze({
+    ...(data.generatedRecipes?.length ? { generatedRecipes: Object.freeze([...data.generatedRecipes]) } : {}),
     name: data.name,
     levels: Object.freeze(levels),
     tilesets: data.tilesets,

@@ -21,8 +21,8 @@ describe("library tabs", () => {
   });
 
   it("accepts new tabs in order and removes them again", () => {
-    const off = registerLibraryTab({ id: "terrain", label: "terrain.list", order: 15, Component: () => null });
-    expect(libraryTabsFor({ doc: undefined, layer: undefined }).map((t) => t.id)).toEqual(["stamps", "terrain"]);
+    const off = registerLibraryTab({ id: "custom", label: "panels.stamps", order: 15, Component: () => null });
+    expect(libraryTabsFor({ doc: undefined, layer: undefined }).map((t) => t.id)).toEqual(["stamps", "custom"]);
     off();
     expect(libraryTabsFor({ doc: undefined, layer: undefined }).map((t) => t.id)).toEqual(["stamps"]);
   });

@@ -2,7 +2,7 @@ import { useLayoutEffect, useState, type RefObject } from "react";
 
 /** Measure both label variants, including labels kept out of flow in compact mode. */
 export function useHeaderLabels(ref: RefObject<HTMLDivElement | null>) {
-  const [labels, setLabels] = useState({ view: true, mode: true });
+  const [labels, setLabels] = useState({ view: true });
   useLayoutEffect(() => {
     const header = ref.current;
     if (!header) return;
@@ -14,10 +14,10 @@ export function useHeaderLabels(ref: RefObject<HTMLDivElement | null>) {
       const gap = Number.parseFloat(style.columnGap) || 0;
       const available = header.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
       let base = Math.max(0, children.length - 1) * gap;
-      const widths = { view: { full: 0, compact: 0 }, mode: { full: 0, compact: 0 } };
+      const widths = { view: { full: 0, compact: 0 } };
       for (const child of children) {
         const group = child.getAttribute("data-header-group");
-        if (group === "view" || group === "mode") {
+        if (group === "view") {
           const spans = [...child.querySelectorAll<HTMLElement>("[data-header-label]")];
           const delta = spans.reduce((sum, span) => sum + span.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(span.parentElement!).columnGap) || 0), 0);
           const hidden = spans.some((span) => getComputedStyle(span).position === "absolute");
@@ -30,9 +30,8 @@ export function useHeaderLabels(ref: RefObject<HTMLDivElement | null>) {
       }
       setLabels((previous) => {
         // Restore with 8px spare space. Required widths stay independent of the rendered variant.
-        const mode = base + widths.mode.full + widths.view.compact + (previous.mode ? 0 : 8) <= available;
-        const view = mode && base + widths.mode.full + widths.view.full + (previous.view ? 0 : 8) <= available;
-        return previous.mode === mode && previous.view === view ? previous : { mode, view };
+        const view = base + widths.view.full + (previous.view ? 0 : 8) <= available;
+        return previous.view === view ? previous : { view };
       });
     };
     const observed = new Set<Element>();

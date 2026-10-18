@@ -1,13 +1,4 @@
-/**
- * Shared pieces of the exporters: which tile layers and tilesets are
- * exported, the cells of a tile layer in a fixed order, and the image file
- * names written next to the exported map.
- *
- * Only tile layers are exported as cells (entity layers are exported as
- * entities / objects by each exporter). Grid layers (terrain / collision) are not:
- * a terrain grid's look is already in its derived tile layer, and collision
- * exceptions are folded into the derived collision grid.
- */
+/** Shared export layer selection, deterministic cells and image names. Manual grids are exported separately. */
 import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V } from "../cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT } from "../chunk";
 import type { MapDocument } from "../document";
@@ -68,8 +59,7 @@ export type ExportWarning =
       readonly tileset: string;
       readonly tileIds: readonly number[];
       readonly message: string;
-    }
-  | { readonly code: "collisionExceptions"; readonly layers: readonly string[]; readonly message: string };
+    };
 
 /** Tile layers (grid and entity layers excluded), bottom to top; only `layers` when given. */
 export function exportedLayers(doc: MapDocument, layers?: readonly string[]): TileLayer[] {

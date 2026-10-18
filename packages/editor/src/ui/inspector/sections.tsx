@@ -1,16 +1,11 @@
 import type { Stamp } from "@smap/core";
 import { SmartStampProperties } from "../stamps/SmartStampProperties";
-/**
- * Built-in Denetçi cards, one per inspector mode (see `mode.ts`):
- * entity, marquee region, brush (FIRÇA), terrain brush (ARAZİ, from
- * `ui/terrain/TerrainCard`), collision kind and the map summary.
- */
+
 import {
   COLLISION_PASSABLE,
   COLLISION_SOLID,
   entityCell,
   isEntityLayer,
-  isTileSolid,
   SPAWN_TYPE_ID,
   tilePosition,
   type MapDocument,
@@ -32,7 +27,6 @@ import {
 } from "../../commands/randomBrush";
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { activeStampId, defaultStampName } from "../../commands/stampActions";
-import { setTilesSolid } from "../../commands/terrainActions";
 import { formatNumber, t, type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import type { CommandId } from "../../shortcuts/shortcuts";
@@ -46,11 +40,7 @@ import { PropRow as FieldRow, PropField } from "../primitives/PropRow";
 import { TextField } from "../primitives/TextField";
 import { Tooltip } from "../primitives/Tooltip";
 import { TileSwatch } from "../primitives/TileSwatch";
-import { Toggle } from "../primitives/Toggle";
 import { useCanSaveSelectionStamp } from "../stamps/useCanSaveSelectionStamp";
-import { useUiStore } from "../uiStore";
-import { TerrainCard } from "../terrain/TerrainCard";
-import { resolveTerrain } from "../terrain/terrainModel";
 import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
 import { saveClipAsStamp } from "../tileset/SelectionSection";
 import { SelectionScopeSection } from "./SelectionScopeSection";
@@ -98,8 +88,7 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
   const selection = useEditorStore((s) => s.selection);
   const randomSet = useEditorStore((s) => s.randomSet);
   const random = useIsRandomBrush();
-  const terrain = useEditorStore((s) => s.terrainActive && resolveTerrain(ctx.doc, s.terrain) !== null);
-  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet, random, terrain });
+  const blocker = fillBlocker(ctx.doc, { activeLayerId, gridValue, stamp, selection, randomSet, random });
   const map = ctx.doc.map;
   const move = (next: Partial<CellRegion>) => setRegion(clampRegionTo({ ...region, ...next }, map.width, map.height));
   return (
@@ -258,7 +247,6 @@ function RandomPreview({ doc }: { doc: MapDocument }) {
 
 function TileDetails({ tileset, tileId }: { tileset: Tileset; tileId: number }) {
   const pos = tilePosition(tileset, tileId);
-  const solid = isTileSolid(tileset, tileId);
   return (
     <>
       <PropGrid>
@@ -273,9 +261,7 @@ function TileDetails({ tileset, tileId }: { tileset: Tileset; tileId: number }) 
             </span>
           </ReadField>
         </PropRow>
-        <PropRow label={t("properties.solid")}>
-          <Toggle checked={solid} onChange={(checked) => setTilesSolid(tileset.id, [tileId], checked)} label={t("properties.solid")} />
-        </PropRow>
+
       </PropGrid>
     </>
   );
@@ -414,8 +400,8 @@ function WeightRow({ visual, label, weight, onWeight, onRemove }: {
 // ------------------------------------------------------------------ collision layer
 
 const COLLISION_KINDS: { value: number; label: MessageKey; hint: MessageKey; swatch: string }[] = [
-  { value: COLLISION_SOLID, label: "collision.forceSolid", hint: "collision.forceSolidHint", swatch: "bg-collision-solid" },
-  { value: COLLISION_PASSABLE, label: "collision.forcePass", hint: "collision.forcePassHint", swatch: "bg-collision-pass" },
+  { value: COLLISION_SOLID, label: "collision.blocked", hint: "collision.blockedHint", swatch: "bg-collision-solid" },
+  { value: COLLISION_PASSABLE, label: "collision.passable", hint: "collision.passableHint", swatch: "bg-collision-pass" },
 ];
 
 function CollisionSection() {
@@ -448,22 +434,6 @@ function CollisionSection() {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------ dock solid flags
-
-function SolidSection({ ctx }: { ctx: InspectorContext }) {
-  const activeId = useUiStore((s) => s.activeTilesetId);
-  const tileset = ctx.doc.tilesets.find((tileset) => tileset.id === activeId) ?? ctx.doc.tilesets[0];
-  const count = tileset?.solidTiles?.length ?? 0;
-  return (
-    <div data-inspector-solid="">
-      <SectionHeader>{t("inspector.solidTiles")}</SectionHeader>
-      <PropGrid><PropRow label={t("inspector.thisTileset")}>
-        <span className="text-sm text-text tabular" data-solid-count={count}>{t("inspector.solidCount", { count: formatNumber(count) })}</span>
-      </PropRow></PropGrid>
     </div>
   );
 }
@@ -523,8 +493,6 @@ export function registerBuiltinInspectorSections(): void {
   registerInspectorSection({ id: "builtin.entity", order: 10, when: (c) => c.mode === "entity", Component: EntitySection });
   registerInspectorSection({ id: "builtin.region", order: 10, when: (c) => c.mode === "region" && c.region !== null, Component: RegionSection });
   registerInspectorSection({ id: "builtin.brush", order: 20, when: (c) => c.mode === "brush", Component: BrushSection });
-  registerInspectorSection({ id: "builtin.terrain", order: 20, when: (c) => c.mode === "terrain", Component: TerrainCard });
-  registerInspectorSection({ id: "builtin.solid", order: 20, when: (c) => c.mode === "solid", Component: SolidSection });
   registerInspectorSection({ id: "builtin.collision", order: 20, when: (c) => c.mode === "collision", Component: CollisionSection });
   registerInspectorSection({ id: "builtin.map", order: 90, when: (c) => c.mode === "map", Component: MapSection });
 }

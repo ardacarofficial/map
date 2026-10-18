@@ -17,7 +17,7 @@
 import { CELL_FLAG_MASK, FLIP_H, FLIP_V } from "./cell";
 import type { CellRect } from "./geometry";
 import { stampIdProblem } from "./stamp";
-import { cellHash } from "./terrain";
+import { cellHash } from "./hash";
 
 /** A single tile candidate. `flags` are cell flip bits (`FLIP_H | FLIP_V | FLIP_D`), default 0. */
 export interface RandomTileCandidate {

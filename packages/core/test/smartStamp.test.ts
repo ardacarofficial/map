@@ -1,12 +1,14 @@
+import type { MapDocument } from "../src";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createDocument } from "../src/document";
 import { MapStore } from "../src/store";
 import { serializeLevel, parseLevel } from "../src/serialize";
-import { bakedNineSliceTerrainSet, nineSliceLayout, orientPoint } from "../src/nineSlice";
-import { terrainCellInfo, terrainMembership } from "../src/terrainBrush";
-import { FLIP_H, FLIP_V, FLIP_D, cellFlags } from "../src/cell";
-import { flipBlobMask } from "../src/terrainSet";
+import { nineSliceLayout, orientPoint } from "../src/nineSlice";
+import { buildRoadProfile } from "../src/smartStamp/roadProfile";
+import { roadTileInfo, roadMembership } from "../src/smartStamp/roadSolver";
+import { FLIP_H, FLIP_V, FLIP_D, cellFlags, cellPaletteIndex } from "../src/cell";
+import { flipBlobMask } from "../src/smartStamp/topology";
 import type { Stamp } from "../src/stamp";
 import type { CellPoint } from "../src/geometry";
 import { applySmartStampArea, applySmartStampPlan, applySmartStampRoad, orthogonalBridge, planSmartStampArea, planSmartStampRoad } from "../src/smartStamp";
@@ -14,9 +16,9 @@ import { source } from "./smartStampHelpers";
 
 export function fixture(width = 24, height = 24, seed = 17) {
   const s = source(4, 5), l = nineSliceLayout(s);
-  const set = bakedNineSliceTerrainSet(s, "s", { id: "road", name: "Road", terrainId: 1 });
-  const stamp: Stamp = { ...s, id: "road", name: "Road", nineSlice: { border: 1, tileLayers: [{ layerId: "s", tilesetId: "baked" }], road: { tilesetId: "baked", setId: "road", terrainId: 1 } } };
-  const store = new MapStore(createDocument({ width, height, seed, tilesets: [{ id: "baked", name: "Baked", imagePath: "tilesets/baked.png", tileWidth: 32, tileHeight: 32, columns: l.slots, rows: 1, margin: 0, spacing: 0, terrainSets: [set] }] }));
+  const set = buildRoadProfile(s, "s");
+  const stamp: Stamp = { ...s, id: "road", name: "Road", nineSlice: { border: 1, tileLayers: [{ layerId: "s", tilesetId: "baked" }], road: { tilesetId: "baked", profile: buildRoadProfile(s, "s") } } };
+  const store = new MapStore(createDocument({ width, height, seed, tilesets: [{ id: "baked", name: "Baked", imagePath: "tilesets/baked.png", tileWidth: 32, tileHeight: 32, columns: l.slots, rows: 1, margin: 0, spacing: 0, roadProfile: set }] }));
   store.dispatch({ type: "addLayer", layer: { id: "l", name: "Road" } });
   for (let i = 0; i < l.slots; i++) store.getOrAddPaletteIndex("baked", i);
   store.clearHistory();
@@ -47,14 +49,14 @@ describe("smart stamp plans", () => {
     applySmartStampArea(store, stamp, { x: -20, y: -20, width: 2, height: 2 }); expect(cells(store)).toBe(before);
   });
 
-  it("collapses collision conservatively and rejects unequal terrain-grid caps before changing anything", () => {
+  it("collapses manual collision conservatively and rejects invalid values before changing anything", () => {
     const { store, stamp } = fixture();
     const values = new Uint32Array(20); values[0] = 2; values[3] = 1;
     const grid = { layerId: "g", name: "Grid", grid: true as const, role: "collision" as const, cells: values };
     applySmartStampArea(store, { ...stamp, layers: [...stamp.layers, grid] }, { x: 1, y: 1, width: 1, height: 1 });
     expect(store.document.layers[1]!.getCell(1, 1)).toBe(1);
     const before = cells(store);
-    expect(() => applySmartStampArea(store, { ...stamp, layers: [...stamp.layers, { ...grid, role: "terrain" }] }, { x: 2, y: 2, width: 1, height: 1 })).toThrow(/equal/);
+    expect(() => applySmartStampArea(store, { ...stamp, layers: [...stamp.layers, { ...grid, cells: new Uint32Array(20).fill(3) }] }, { x: 2, y: 2, width: 1, height: 1 })).toThrow(/grid value/);
     expect(cells(store)).toBe(before);
   });
 
@@ -71,31 +73,31 @@ describe("smart stamp plans", () => {
 
   it("uses complete membership for window previews, including area-road repairs on both sides", () => {
     const { store, stamp } = fixture(128, 128);
-    applySmartStampRoad(store, stamp, "l", terrainMembership([{ x: 8, y: 9 }, { x: 9, y: 9 }]));
+    applySmartStampRoad(store, stamp, "l", roadMembership([{ x: 8, y: 9 }, { x: 9, y: 9 }]));
     const rect = { x: 10, y: 3, width: 90, height: 90 }, window = { x: 7, y: 7, width: 8, height: 7 };
     const full = planSmartStampArea(store.document, stamp, rect, opts(store));
     const visible = planSmartStampArea(store.document, stamp, rect, { ...opts(store), window });
     const inWindow = (p: CellPoint) => p.x >= window.x - 1 && p.y >= window.y - 1 && p.x < window.x + window.width + 1 && p.y < window.y + window.height + 1;
     expect(visible.layers[0]!.writes).toEqual(full.layers[0]!.writes.filter(inWindow));
     applySmartStampPlan(store, full);
-    const road = terrainCellInfo(store.document, "l", 9, 9, "baked", "road");
+    const road = roadCellInfo(store.document, "l", 9, 9, "baked", "road");
     expect(road?.kind === "blob" && (road.mask & 4)).toBe(4);
-    const area = terrainCellInfo(store.document, "l", 10, 9, "baked", "road");
+    const area = roadCellInfo(store.document, "l", 10, 9, "baked", "road");
     expect(area?.kind === "blob" && (area.mask & 64)).toBe(64);
   });
 
   it("has partition-invariant topology, reordered deterministic writes, idempotence, undo and reopen", () => {
     fc.assert(fc.property(fc.array(fc.record({ x: fc.integer({ min: 0, max: 15 }), y: fc.integer({ min: 0, max: 15 }) }), { minLength: 1, maxLength: 50 }), fc.integer({ min: 0, max: 0xffff }), (points, seed) => {
-      const a = fixture(16, 16, seed), b = fixture(16, 16, seed), membership = terrainMembership(points);
+      const a = fixture(16, 16, seed), b = fixture(16, 16, seed), membership = roadMembership(points);
       const plan = planSmartStampRoad(a.store.document, a.stamp, "l", membership, opts(a.store));
-      expect(planSmartStampRoad(a.store.document, a.stamp, "l", terrainMembership([...points].reverse()), opts(a.store))).toEqual(plan);
+      expect(planSmartStampRoad(a.store.document, a.stamp, "l", roadMembership([...points].reverse()), opts(a.store))).toEqual(plan);
       const window = { x: 3, y: 4, width: 5, height: 6 };
       expect(planSmartStampRoad(a.store.document, a.stamp, "l", membership, { ...opts(a.store), window }).layers[0]!.writes).toEqual(plan.layers[0]!.writes.filter(p => p.x >= 2 && p.x < 9 && p.y >= 3 && p.y < 11));
       applySmartStampPlan(a.store, plan);
-      b.store.beginTransaction(); for (const point of points) applySmartStampRoad(b.store, b.stamp, "l", terrainMembership([point])); b.store.commit();
+      b.store.beginTransaction(); for (const point of points) applySmartStampRoad(b.store, b.stamp, "l", roadMembership([point])); b.store.commit();
       // Every partition resolves the same final masks and hash-selected variants.
       expect(cells(a.store)).toBe(cells(b.store));
-      for (const p of points) expect(terrainCellInfo(a.store.document, "l", p.x, p.y, "baked", "road")).toEqual(terrainCellInfo(b.store.document, "l", p.x, p.y, "baked", "road"));
+      for (const p of points) expect(roadCellInfo(a.store.document, "l", p.x, p.y, "baked", "road")).toEqual(roadCellInfo(b.store.document, "l", p.x, p.y, "baked", "road"));
       const after = cells(a.store), depth = a.store.undoDepth;
       applySmartStampRoad(a.store, a.stamp, "l", membership); expect(cells(a.store)).toBe(after); expect(a.store.undoDepth).toBe(depth);
       expect(serializeLevel(parseLevel(after, a.store.document.tilesets))).toBe(after);
@@ -105,7 +107,7 @@ describe("smart stamp plans", () => {
 
   it("emits oriented flags and refuses quarter-turns on nonsquare map tiles", () => {
     const { store, stamp } = fixture();
-    applySmartStampRoad(store, stamp, "l", terrainMembership([{ x: 1, y: 1 }, { x: 2, y: 1 }]), { orientation: FLIP_H });
+    applySmartStampRoad(store, stamp, "l", roadMembership([{ x: 1, y: 1 }, { x: 2, y: 1 }]), { orientation: FLIP_H });
     expect(cellFlags(store.document.getLayer("l")!.getCell(1, 1))).toBe(FLIP_H);
     const nonsquare = new MapStore(createDocument({ width: 4, height: 4, tileWidth: 16, tileHeight: 32 }));
     expect(() => planSmartStampArea(nonsquare.document, stamp, { x: 0, y: 0, width: 2, height: 2 }, { revision: 0, orientation: FLIP_D })).toThrow(/square/);
@@ -132,14 +134,14 @@ describe("road shape and mapping regressions", () => {
     store.dispatch({ type: "paintCells", layerId: "l", cells: [{ x: 7, y: 4, cell: manual }] });
     store.clearHistory(); const before = cells(store);
     store.beginTransaction();
-    for (let i = 0; i < path.length; i += 3) applySmartStampRoad(store, stamp, "l", terrainMembership(path.slice(i, i + 3)));
+    for (let i = 0; i < path.length; i += 3) applySmartStampRoad(store, stamp, "l", roadMembership(path.slice(i, i + 3)));
     store.commit(); expect(store.undoDepth).toBe(1);
     expect(store.document.getLayer("l")!.getCell(7, 4)).toBe(manual);
-    expect(terrainCellInfo(store.document, "l", 6, 5, "baked", "road")).toMatchObject({ kind: "blob", mask: 85 });
+    expect(roadCellInfo(store.document, "l", 6, 5, "baked", "road")).toMatchObject({ kind: "blob", mask: 85 });
     const full = cells(store);
-    applySmartStampRoad(store, stamp, "l", terrainMembership([{ x: 5, y: 5 }]), { erase: true });
+    applySmartStampRoad(store, stamp, "l", roadMembership([{ x: 5, y: 5 }]), { erase: true });
     expect(store.document.getLayer("l")!.getCell(5, 5)).toBe(0);
-    expect(terrainCellInfo(store.document, "l", 4, 5, "baked", "road")).toMatchObject({ kind: "blob", mask: 64 });
+    expect(roadCellInfo(store.document, "l", 4, 5, "baked", "road")).toMatchObject({ kind: "blob", mask: 64 });
     store.undo(); expect(cells(store)).toBe(full); store.undo(); expect(cells(store)).toBe(before);
   });
 
@@ -176,17 +178,16 @@ describe("road shape and mapping regressions", () => {
   });
 });
 
-
 describe("D4 road equivariance", () => {
   it("transforms membership, selected masks and emitted flags together for all eight orientations", () => {
     const points = [...orthogonalBridge({ x: 3, y: 2 }, { x: 9, y: 7 }), ...orthogonalBridge({ x: 5, y: 4 }, { x: 10, y: 4 })];
     const a = fixture(16, 16);
-    applySmartStampRoad(a.store, a.stamp, "l", terrainMembership(points));
+    applySmartStampRoad(a.store, a.stamp, "l", roadMembership(points));
     for (const orientation of [0, FLIP_H, FLIP_V, FLIP_D, (FLIP_H | FLIP_D) >>> 0, (FLIP_V | FLIP_D) >>> 0, (FLIP_H | FLIP_V) >>> 0, (FLIP_H | FLIP_V | FLIP_D) >>> 0]) {
       const b = fixture(16, 16), transformed = points.map(p => orientPoint(p, 16, 16, orientation));
-      applySmartStampRoad(b.store, b.stamp, "l", terrainMembership(transformed), { orientation });
+      applySmartStampRoad(b.store, b.stamp, "l", roadMembership(transformed), { orientation });
       for (const p of points) {
-        const q = orientPoint(p, 16, 16, orientation), old = terrainCellInfo(a.store.document, "l", p.x, p.y, "baked", "road")!, rotated = terrainCellInfo(b.store.document, "l", q.x, q.y, "baked", "road")!;
+        const q = orientPoint(p, 16, 16, orientation), old = roadCellInfo(a.store.document, "l", p.x, p.y, "baked", "road")!, rotated = roadCellInfo(b.store.document, "l", q.x, q.y, "baked", "road")!;
         expect(old.kind).toBe("blob"); expect(rotated.kind).toBe("blob");
         if (old.kind === "blob" && rotated.kind === "blob") expect(rotated.mask).toBe(flipBlobMask(old.mask, !!(orientation & FLIP_H), !!(orientation & FLIP_V), !!(orientation & FLIP_D)));
         expect(cellFlags(b.store.document.getLayer("l")!.getCell(q.x, q.y))).toBe(orientation);
@@ -213,7 +214,6 @@ describe("raw-grid and empty-source placement", () => {
     expect(cells(store)).toBe(before); expect(store.undoDepth).toBe(0);
   });
 });
-
 
 it("area plans are pure, window-equivalent and reversible across random caps, crops and D4 orientations", () => {
   fc.assert(fc.property(fc.record({ x: fc.integer({ min: -20, max: 20 }), y: fc.integer({ min: -20, max: 20 }), width: fc.integer({ min: 1, max: 128 }), height: fc.integer({ min: 1, max: 128 }) }), fc.constantFrom(0, FLIP_H, FLIP_V, FLIP_D, (FLIP_H | FLIP_D) >>> 0), fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 20, maxLength: 20 }), (rect, orientation, values) => {
@@ -253,3 +253,8 @@ it("preserves intentional source holes and the surrounding authored variants in 
   }
   expect(plan.layers[0]!.writes.some(w => w.x === 3 && w.y === 3)).toBe(false);
 });
+
+function roadCellInfo(doc: MapDocument, layerId: string, x: number, y: number, tilesetId: string, _profileId: string) {
+  const cell = doc.getLayer(layerId)!.getCell(x,y);
+  return roadTileInfo(doc.getTileset(tilesetId)!.roadProfile!, tilesetId, cell ? doc.palette.get(cellPaletteIndex(cell)) : null, cellFlags(cell));
+}

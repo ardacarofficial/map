@@ -76,9 +76,8 @@
 
   /* ---- Map overlays (canvas + tileset panel). Opaque hex; alpha is applied where drawn. */
   --color-map-bg: #151c23;
-  --color-collision-solid: #ff5468; /* solid tiles / cells: warm red, reads on dark and on grass */
-  --color-collision-pass: #5cb2ff; /* "force passable" exception cells: sky blue (≠ teal accent) */
-  --color-terrain-tint: #c39bff; /* terrain blocks and painted terrain cells: soft violet (≠ accent) */
+  --color-collision-solid: #ff5468; /* manually blocked cells: warm red, reads on dark and on grass */
+  --color-collision-pass: #5cb2ff; /* manually passable cells: sky blue (≠ teal accent) */
 
   /* ---- Type */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;

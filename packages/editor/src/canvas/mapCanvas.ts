@@ -173,11 +173,7 @@ export interface CanvasHandle {
   cellRectToScreen(region: { x: number; y: number; width: number; height: number }): ScreenRect | null;
   /** Size of the bottom-right box the minimap takes (margin included), or null when it is hidden. */
   minimapCorner(): { width: number; height: number } | null;
-  /**
-   * Fills `region` on the active layer with the current brush (tile, stamp
-   * pattern, random set or terrain / collision value) as one undo step,
-   * reported by {@link onStrokeCommitted} as "fill". No-op mid-gesture.
-   */
+
   fillRegion(region: { x: number; y: number; width: number; height: number }): void;
 
   // ---------------------------------------------------------------- round 3
@@ -229,8 +225,6 @@ export interface ScreenRect {
 
 function gridOverlayColors(c: CanvasColors): GridOverlayColors {
   return {
-    terrainTint: c.terrainTint,
-    terrainTintAlpha: c.terrainTintAlpha,
     collisionSolid: c.collisionSolid,
     collisionSolidAlpha: c.collisionSolidAlpha,
     collisionPassable: c.collisionPassable,
@@ -929,9 +923,7 @@ export class MapCanvas {
       s.entityTypeId !== prev.entityTypeId ||
       s.selectedEntityId !== prev.selectedEntityId ||
       s.brushSize !== prev.brushSize ||
-      s.brushShape !== prev.brushShape ||
-      s.terrain !== prev.terrain ||
-      s.terrainActive !== prev.terrainActive
+      s.brushShape !== prev.brushShape
     ) {
       const sized = s.brushSize !== prev.brushSize || s.brushShape !== prev.brushShape;
       if (sized && this.#view === "level" && usesBrushSize(s.tool)) this.#overlays.showSizeReadout();
@@ -1136,7 +1128,6 @@ export class MapCanvas {
     else this.#lastFrameTime = 0;
   }
 
-  /** Terrain tint of the active terrain layer; collision overlay when toggled or a collision layer is active. */
   #updateGridOverlays(): void {
     const overlays = this.#gridOverlays;
     const s = useEditorStore.getState();
@@ -1147,7 +1138,6 @@ export class MapCanvas {
     overlays.update({
       visible: this.#visible,
       showCollision: this.#showCollision,
-      terrainLayer: grid?.role === "terrain" ? grid : null,
     });
   }
 

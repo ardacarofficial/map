@@ -1,12 +1,4 @@
-/**
- * What the tool options bar shows. Each entry is a small component for one
- * or more tools, optionally limited to a context (e.g. "a terrain layer is
- * active"). The bar renders every entry that matches the current tool and
- * context, ordered by `order` (lower first, left to right).
- *
- * Built-in entries live in `builtins.tsx`; later features add their own with
- * `registerToolOptions` (no edits to the bar needed).
- */
+
 import type { MapDocument, TileLayer } from "@smap/core";
 import type { ComponentType } from "react";
 

@@ -27,6 +27,7 @@ test("template → new project dialog → Oluştur: layers, size and first map n
   await dialog.getByRole("button", { name: "Oluştur" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Object.hasOwn(window, "__smap"))).toBe(true);
   const info = await page.evaluate(() => {
     const h = (window as unknown as { __smap: { store: { document: { map: { width: number; height: number }; layers: { name: string }[] } } } }).__smap;
     return { w: h.store.document.map.width, h: h.store.document.map.height, layers: h.store.document.layers.map((l) => l.name) };

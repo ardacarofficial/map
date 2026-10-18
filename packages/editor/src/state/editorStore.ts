@@ -19,16 +19,6 @@ export interface CellRegion {
   height: number;
 }
 
-/** Terrain the terrain brush paints (a terrain of a tileset's terrain set; core `TerrainBrush`). */
-export interface TerrainChoice {
-  tilesetId: string;
-  setId: string;
-  terrainId: number;
-}
-
-/** Brush size the terrain brush starts with (wider than a single tile so edges show at once). */
-export const DEFAULT_TERRAIN_BRUSH_SIZE = 3;
-
 export interface TileSelection {
   tilesetId: string;
   tileId: number;
@@ -70,11 +60,7 @@ export interface EditorState {
    * `selection`. Type is core's `TileClip`.
    */
   stamp: TileClip | null;
-  /**
-   * Value painted when the active layer is a grid layer (brush/rect/fill write
-   * it, eraser writes 0). Terrain layers: the terrain's grid value. Collision
-   * layers: 1 = force solid, 2 = force passable.
-   */
+
   gridValue: number;
   /** Show derived collision as an overlay on the canvas. */
   collisionOverlay: boolean;
@@ -92,18 +78,6 @@ export interface EditorState {
   entityTypeId: string | null;
   /** Selected entity on the map (entity layer), shown in Özellik. */
   selectedEntityId: string | null;
-  /**
-   * Terrain chosen for the terrain brush (kept while the brush paints tiles,
-   * so the Autotile toggle can return to it), or null.
-   */
-  terrain: TerrainChoice | null;
-  /**
-   * Terrain brush on: brush / rectangle / fill / eraser on the active tile
-   * layer paint `terrain` with core `paintTerrainBrush` (Autotile toggle).
-   */
-  terrainActive: boolean;
-  /** Brush size kept for the other mode while the terrain brush is on / off. */
-  otherBrushSize: number;
 
   setProject(project: OpenProject | null): void;
   /**
@@ -133,14 +107,6 @@ export interface EditorState {
   setRandomSet(set: { tilesetId: string; tileId: number; weight?: number }[]): void;
   setEntityTypeId(id: string | null): void;
   setSelectedEntity(id: string | null): void;
-  /**
-   * Chooses `terrain` and turns the terrain brush on (null: off). Turning it
-   * on swaps in the terrain brush size (3 the first time); turning it off
-   * restores the tile brush size. Clears a clip on the brush.
-   */
-  setTerrain(terrain: TerrainChoice | null): void;
-  /** Autotile toggle: terrain brush on (needs a chosen terrain) / off. */
-  setTerrainActive(active: boolean): void;
 }
 
 /**
@@ -152,7 +118,7 @@ function defaultLayerId(doc: MapDocument): string | null {
   return (layers.filter((l) => !isEntityLayer(l)).at(-1) ?? layers.at(-1))?.id ?? null;
 }
 
-export const useEditorStore = create<EditorState>()((set, get) => ({
+export const useEditorStore = create<EditorState>()((set) => ({
   project: null,
   tool: "brush",
   selection: null,
@@ -173,9 +139,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   randomSet: [],
   entityTypeId: null,
   selectedEntityId: null,
-  terrain: null,
-  terrainActive: false,
-  otherBrushSize: DEFAULT_TERRAIN_BRUSH_SIZE,
 
   setProject: (project) =>
     set({
@@ -188,8 +151,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       randomSet: [],
       selectedEntityId: null,
       recentTiles: [],
-      ...terrainOff(get()),
-      terrain: null,
     }),
   switchLevel: (project, activeLayerId) =>
     set({
@@ -203,17 +164,17 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       hoverCell: null,
     }),
   setTool: (tool) => set({ tool }),
-  // A tile, clip or random set on the brush means "paint tiles": the terrain brush goes off.
-  setSelection: (selection) => set(selection ? { selection, ...terrainOff(get()) } : { selection }),
+
+  setSelection: (selection) => set({ selection }),
   setActiveLayer: (activeLayerId) => set({ activeLayerId }),
   toggleGrid: () => set((s) => ({ gridVisible: !s.gridVisible })),
   setHoverCell: (hoverCell) => set({ hoverCell }),
   setZoom: (zoom) => set({ zoom }),
   setDirty: (dirty) => set({ dirty }),
   setRegion: (region) => set({ region }),
-  setStamp: (stamp) => set(stamp ? { stamp, ...terrainOff(get()) } : { stamp }),
+  setStamp: (stamp) => set({ stamp }),
   setGridValue: (gridValue) => set({ gridValue }),
-  setRandomSet: (randomSet) => set(randomSet.length > 0 ? { randomSet, ...terrainOff(get()) } : { randomSet }),
+  setRandomSet: (randomSet) => set({ randomSet }),
   setEntityTypeId: (entityTypeId) => set({ entityTypeId }),
   setSelectedEntity: (selectedEntityId) => set({ selectedEntityId }),
   setBrushSize: (size) => set({ brushSize: Math.max(1, Math.min(16, Math.round(size))) }),
@@ -221,28 +182,5 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   pushRecentTile: (tile) => set((s) => ({ recentTiles: pushRecent(s.recentTiles, { tilesetId: tile.tilesetId, tileId: tile.tileId }) })),
   pushRecentItem: (item) => set((s) => ({ recentTiles: pushRecent(s.recentTiles, item) })),
   toggleCollisionOverlay: () => set((s) => ({ collisionOverlay: !s.collisionOverlay })),
-  setTerrain: (terrain) => {
-    if (!terrain) {
-      set({ terrain: null, ...terrainOff(get()) });
-      return;
-    }
-    set({ terrain: { ...terrain }, stamp: null, ...terrainOn(get()) });
-  },
-  setTerrainActive: (active) => {
-    const s = get();
-    if (active && !s.terrain) return;
-    set(active ? { stamp: null, ...terrainOn(s) } : terrainOff(s));
-  },
+
 }));
-
-/** State change that turns the terrain brush on (brush sizes swapped); empty when already on. */
-function terrainOn(s: EditorState): Partial<EditorState> {
-  if (s.terrainActive) return {};
-  return { terrainActive: true, brushSize: s.otherBrushSize, otherBrushSize: s.brushSize };
-}
-
-/** State change that turns the terrain brush off (brush sizes swapped back); empty when already off. */
-function terrainOff(s: EditorState): Partial<EditorState> {
-  if (!s.terrainActive) return {};
-  return { terrainActive: false, brushSize: s.otherBrushSize, otherBrushSize: s.brushSize };
-}

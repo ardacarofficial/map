@@ -6,11 +6,6 @@ export function rectangleBandContains(r: CellRect, thickness: number, x: number,
   return thickness === 0 || Math.min(x - r.x, y - r.y, r.x + r.width - 1 - x, r.y + r.height - 1 - y) < thickness;
 }
 
-/**
- * Band cells in row order, once each. Thick bands naturally become filled.
- * `clip` limits iteration; edges are always measured against the original rectangle.
- * Geometry is independent of the tile/pattern/terrain source consuming it.
- */
 export function* rectangleBand(r: CellRect, thickness = 0, clip: CellRect = r): Generator<CellPoint> {
   const x0 = Math.max(r.x, clip.x);
   const y0 = Math.max(r.y, clip.y);

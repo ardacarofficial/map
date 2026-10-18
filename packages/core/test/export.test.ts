@@ -49,7 +49,7 @@ interface Game {
   collision: { solid: number[] };
 }
 
-/** 4×3 map: grass (8×8, 32px) + items; layers ground, deco, a terrain grid and a collision grid. */
+/** 4×3 map: grass (8×8, 32px) + items; layers ground, deco and a manual Collision grid. */
 function setup() {
   const store = new MapStore(createDocument({ width: 4, height: 3 }));
   store.dispatch({ type: "addTileset", tileset: TILESET });
@@ -123,10 +123,10 @@ describe("game JSON export", () => {
     expect(game.collision.solid).toEqual([12]);
   });
 
-  it("collision is the derived grid (solid tiles + exceptions), RLE row-major from the top-left", () => {
+  it("collision comes from manual grids, RLE row-major from the top-left", () => {
     const store = setup();
-    store.dispatch({ type: "setTileSolid", tilesetId: "grass", tileIds: [1, 9], solid: true }); // (0,0) and (3,0)
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 3, y: 0, value: COLLISION_PASSABLE }, { x: 3, y: 2, value: COLLISION_SOLID }] });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{x:0,y:0,value:1},{x:3,y:0,value:1}] });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 3, y: 0, value: COLLISION_PASSABLE }, { x: 3, y: 2, value: COLLISION_SOLID }] });
     const game = JSON.parse(exportGameJson(store.document)) as Game;
     expect(game.collision.solid).toEqual([0, 1, 10, 1]); // (0,0) solid … (3,2) = last cell solid
     const grid = deriveCollision(store.document);
@@ -222,7 +222,7 @@ describe("TMJ export", () => {
 
   it("matches the hand-checked snapshot", () => {
     const store = setup();
-    store.dispatch({ type: "setTileSolid", tilesetId: "items", tileIds: [5, 2], solid: true });
+    store.dispatch({ type: "removeLayer", layerId: "col" });
     const result = exportTmj(store.document, "main");
     expect(result.fileName).toBe("main.tmj");
     expect(result.warnings).toEqual([]);
@@ -298,29 +298,7 @@ describe("TMJ export", () => {
       "spacing": 2,
       "tilecount": 8,
       "tileheight": 16,
-      "tilewidth": 16,
-      "tiles": [
-        {
-          "id": 2,
-          "properties": [
-            {
-              "name": "solid",
-              "type": "bool",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": 5,
-          "properties": [
-            {
-              "name": "solid",
-              "type": "bool",
-              "value": true
-            }
-          ]
-        }
-      ]
+      "tilewidth": 16
     }
   ],
   "tilewidth": 32,
@@ -349,12 +327,11 @@ describe("TMJ export", () => {
     expect(tmj.layers[0]!.data).toEqual([0x8000_0001, 0x4000_0001, 0xa000_0001]);
   });
 
-  it("warns about collision exceptions and honours a custom image path", () => {
+  it("exports collision objects without a warning and honours a custom image path", () => {
     const store = setup();
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 0, y: 0, value: COLLISION_SOLID }] });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 0, y: 0, value: COLLISION_SOLID }] });
     const result = exportTmj(store.document, "main", { imagePath: (image) => `../tilesets/${image.fileName}` });
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toMatchObject({ code: "collisionExceptions", layers: expect.any(Array) });
+    expect(result.warnings).toEqual([]);
     const tmj = JSON.parse(result.text) as { tilesets: { image: string }[] };
     expect(tmj.tilesets.map((t) => t.image)).toEqual(["../tilesets/grass.png", "../tilesets/items.png"]);
   });

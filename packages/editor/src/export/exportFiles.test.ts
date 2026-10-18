@@ -39,13 +39,12 @@ describe("tmjExportFiles", () => {
     expect(tmj.tilesets.map((ts) => ts.image)).toEqual(["grass.png", "grass-2.png"]);
   });
 
-  it("passes the exporter's warnings through", () => {
+  it("exports manual collision without a loss warning", () => {
     const { store } = sampleStore();
     const collision = store.dispatch({ type: "addLayer", layer: { name: "Walls", type: "grid", role: "collision" } });
-    store.dispatch({ type: "paintTerrain", layerId: collision, cells: [{ x: 0, y: 0, value: 1 }] });
+    store.dispatch({ type: "paintGrid", layerId: collision, cells: [{ x: 0, y: 0, value: 1 }] });
     const set = tmjExportFiles(store.document, "main", bytes);
-    expect(set.warnings.length).toBe(1);
-    expect(set.warnings[0]).toMatchObject({ code: "collisionExceptions", layers: ["Walls"] });
+    expect(set.warnings).toEqual([]);
   });
 });
 

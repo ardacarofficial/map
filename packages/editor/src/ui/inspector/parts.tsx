@@ -1,4 +1,4 @@
-/** Shared property-panel parts. Keep these props compatible with terrain and stamps. */
+
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";

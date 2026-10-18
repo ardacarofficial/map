@@ -6,12 +6,10 @@ import { useEditorStore } from "../../../state/editorStore";
 import { useStructureVersion } from "../../hooks";
 import { Button } from "../../primitives/Button";
 import { Icon } from "../../primitives/Icon";
-import { clearTerrainDraft, useTerrainDraft } from "../../terrain/terrainDraft";
 import { PaletteGrid, paletteKey } from "../../palettes/PaletteGrid";
 import { paletteRows } from "../../palettes/paletteModel";
 import { usePaletteStore } from "../../palettes/paletteStore";
 import { effectiveZoom } from "../libraryModel";
-import { isEditMode } from "../modeModel";
 import { TilesetGrid } from "../TilesetGrid";
 import { GridHostContext, type GridHost } from "./gridHost";
 import { installTilesetPickSync } from "../tilesetSelect";
@@ -80,10 +78,6 @@ function TilesetLibrary({
   const view = useTilesetView((s) => s.view);
   const zoomMap = useTilesetView((s) => s.zoom);
   const globalZoom = useTilesetView((s) => s.globalZoom);
-  const mode = useUiStore((s) => s.tilesetMode);
-  const setMode = useUiStore((s) => s.setTilesetMode);
-  const terrainEditing = useTerrainDraft((s) => s.draft !== null || s.fix !== null);
-  const fixing = useTerrainDraft((s) => s.fix !== null);
   const setActive = useUiStore((s) => s.setActiveTileset);
   const map = useEditorStore((s) => s.project?.store.document.map);
   const mapTileW = map?.tileWidth ?? 32;
@@ -91,7 +85,6 @@ function TilesetLibrary({
   const stack = view === "all";
   // A palette has nothing to tag: editing applies to tilesets only.
   const showingPalette = !stack && palette !== null;
-  const editing = isEditMode(mode) && !showingPalette;
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -172,11 +165,6 @@ function TilesetLibrary({
     }),
     [stack],
   );
-
-  // The "Rastgele" mode is gone: a stale value (old command, saved UI state) falls back to Seç.
-  useEffect(() => {
-    if (mode === "random") setMode("pick");
-  }, [mode, setMode]);
 
   // ---- zoom (anchored at the cursor)
 
@@ -301,12 +289,6 @@ function TilesetLibrary({
           return;
         }
       }
-      if (terrainEditing || mode !== "pick") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (terrainEditing) clearTerrainDraft();
-        else setMode("pick");
-      }
       return;
     }
     const has = (key: string | undefined) => (key && keyHandlers.current.has(key) ? key : null);
@@ -332,7 +314,7 @@ function TilesetLibrary({
       data-tileset-scroll
       data-tileset-view={view}
       data-tileset-shown={showingPalette ? paletteKey(palette.id) : active.id}
-      className={`relative min-h-0 min-w-0 flex-1 overflow-auto bg-bg/40 outline-none ${editing ? mode === "solid" ? "shadow-[inset_0_0_0_1px_var(--color-collision-solid)]" : "shadow-[inset_0_0_0_1px_var(--color-terrain-tint)]" : "focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent-line)]"} ${pan.cursor}`}
+      className={`relative min-h-0 min-w-0 flex-1 overflow-auto bg-bg/40 outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent-line)] ${pan.cursor}`}
       style={{ padding: stack ? 0 : PADDING }}
       {...pan.handlers}
     >
@@ -363,7 +345,7 @@ function TilesetLibrary({
       <TileDragGhost />
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" onKeyDown={onKeyDown} data-tileset-library="dock" data-tileset-dock>
         <DockHeader tilesets={tilesets} palettes={palettes} active={active} palette={showingPalette ? palette : null}
-          mode={mode} fixing={fixing} onMode={setMode} onSelect={setActive}
+          onSelect={setActive}
           override={override} onResetOverride={() => zoomSource(shown.key, null)} globalZoom={globalZoom} shownScale={shownScale} displayTileSize={Math.round(shown.tileH * scaleOfSource(shown))} onZoom={zoomGlobal} />
         {viewport}
       </div>

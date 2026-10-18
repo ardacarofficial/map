@@ -42,12 +42,6 @@ export function missingStampTilesets(stamp: Stamp, doc: MapDocument): string[] {
   return [...new Set(stamp.palette.map((e) => e.tilesetId))].filter((id) => !doc.getTileset(id)).sort();
 }
 
-/**
- * A fresh store holding `stamp` for editing: tile size and project data
- * (tilesets, terrains, entity types…) from `source` (the open level), one
- * layer per stamp layer bottom to top, no undo history.
- * @throws Error when the stamp uses a tileset `source` does not have.
- */
 export function stampEditStore(stamp: Stamp, source: MapDocument): MapStore {
   const missing = missingStampTilesets(stamp, source);
   if (missing.length > 0) throw new Error(`stamp ${stamp.id} uses missing tilesets: ${missing.join(", ")}`);

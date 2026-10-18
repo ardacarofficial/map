@@ -1,9 +1,8 @@
 import { queueSmartStampRegeneration } from "../state/smartStampJobs";
 export { waitForSmartStampRegeneration } from "../state/smartStampJobs";
-import { useUiStore } from "../ui/uiStore";
 import { sameBakeRecipe } from "../io/smartStampRecipes";
 import { revealSection, useLayoutStore } from "../ui/layout/layoutStore";
-import { terrainTemplateInfo, bakedNineSliceSolidTiles, bakedNineSliceTerrainSet, cellFlags, cellPaletteIndex, makeStampId, nineSliceProblem, prepareNineSliceTileset, type MapStore, type NineSliceInnerCorner, type Stamp, type StampNineSlice, type Tileset } from "@smap/core";
+import { buildRoadProfile, makeStampId, nineSliceProblem, prepareNineSliceTileset, type MapStore, type NineSliceInnerCorner, type Stamp, type StampNineSlice, type Tileset } from "@smap/core";
 import { create } from "zustand";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
@@ -12,11 +11,10 @@ import { bakeSmartStamp, pngHash } from "../ui/stamps/smartStampBake";
 import { useStampLibrary } from "../ui/stamps/stampLibraryStore";
 import { useToastStore, toast } from "../ui/toast/toastStore";
 import { t } from "../i18n";
-import { useTerrainDraft, startDraft, startFix, startDefine } from "../ui/terrain/terrainDraft";
 import { registerCommands } from "./registry";
 import { activeStampId, pickStamp } from "./stampActions";
 
-export const useSmartStampDialog = create<{ stampId: string | null; roadChoiceId: string | null; open(id: string | null): void; chooseRoad(id: string | null): void }>()(set => ({ stampId: null, roadChoiceId: null, open: stampId => { if (stampId) { const toasts = useToastStore.getState(); for (const item of toasts.toasts) if (item.kind !== "error") toasts.dismiss(item.id); } set({ stampId }); }, chooseRoad: roadChoiceId => set({ roadChoiceId }) }));
+export const useSmartStampDialog = create<{ stampId: string | null; open(id: string | null): void; }>()(set => ({ stampId: null, open: stampId => { if (stampId) { const toasts = useToastStore.getState(); for (const item of toasts.toasts) if (item.kind !== "error") toasts.dismiss(item.id); } set({ stampId }); } }));
 class SmartStampChangedError extends Error {
   constructor() { super(t("smartStamp.changed")); }
 }
@@ -45,12 +43,12 @@ export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInn
       const id = old?.id ?? makeStampId(`generated-${stamp.id}-${assets.length + 1}`, [...doc.tilesets.map(t => t.id), ...[...allTilesetImages()].map(i => i.tilesetId)]);
       let tileset = prepareNineSliceTileset(stamp, layer.layerId, { id, imagePath: old?.imagePath ?? `tilesets/${id}.png`, tileWidth: doc.map.tileWidth, tileHeight: doc.map.tileHeight, tilesets: doc.tilesets, imageHashes: hashes, ...(innerCorner !== undefined ? { innerCorner } : {}) });
       if (!nineSliceProblem(stamp, { roadLayerId: layer.layerId })) {
-        const set = bakedNineSliceTerrainSet(stamp, layer.layerId, { id: "road", name: stamp.name, terrainId: 1 });
-        tileset = { ...tileset, terrainSets: [set] };
-        // A multi-layer stamp is area-only. Choosing a road layer must be an explicit operation.
-        if (stamp.layers.length === 1) road = { tilesetId: id, setId: set.id, terrainId: 1 };
+        const profile = old?.roadProfile ?? buildRoadProfile(stamp, layer.layerId);
+        tileset = { ...tileset, roadProfile: profile };
+        // Multi-layer stamps retain their existing area-only behavior.
+        if (stamp.layers.length === 1) road = { tilesetId: id, profile };
       }
-      tileset = { ...tileset, group: old?.group ?? t("smartStamp.generated"), solidTiles: bakedNineSliceSolidTiles(stamp, layer.layerId, e => doc.getTileset(e.tilesetId)?.solidTiles?.includes(e.tileId) ?? false, tileset.generated?.innerCorner) };
+      tileset = { ...tileset, group: old?.group ?? t("smartStamp.generated") };
       const image = await bakeSmartStamp(stamp, layer.layerId, tileset, doc.tilesets);
       assets.push({ tileset, image }); tileLayers.push({ layerId: layer.layerId, tilesetId: id });
     }
@@ -88,11 +86,6 @@ export function acceptSmartStamp(prepared: PreparedSmartStamp, regeneration = fa
       const old = store.document.getTileset(a.tileset.id);
       if (old) {
         store.dispatch({ type: "setTilesetMeta", tilesetId: old.id, name: a.tileset.name });
-        // Rebuilding can change the chosen inner art and conservative solidity; all tags keep fixed slots.
-        for (const set of a.tileset.terrainSets ?? []) if (!old.terrainSets?.some(s => s.id === set.id)) store.dispatch({ type: "setTerrainSet", tilesetId: old.id, set });
-        const solids = a.tileset.solidTiles ?? [], previous = old.solidTiles ?? [];
-        store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: previous.filter(id => !solids.includes(id)), solid: false });
-        store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: solids.filter(id => !previous.includes(id)), solid: true });
       } else {
         added.push(a.tileset.id); setTilesetImage(a.image);
         store.dispatch({ type: "addTileset", tileset: a.tileset });
@@ -121,35 +114,11 @@ export function disableSmartStamp(id: string): void {
 export function focusNineSlice(id: string): void {
   const editor = useEditorStore.getState(), tool = editor.tool;
   editor.setSelectedEntity(null);
-  useUiStore.getState().setTilesetMode("pick");
   pickStamp(id);
   if (tool === "rect" || tool === "fill") editor.setTool(tool);
   revealSection("properties");
   useLayoutStore.getState().setRightTab("inspector");
   useStampLibrary.getState().requestFocus(id, "nineSlice");
-}
-export function stampToTerrain(id: string): void {
-  const stamp = useProjectLibrary.getState().stamps.find(s => s.id === id);
-  const doc = useEditorStore.getState().project?.store.document;
-  if (!stamp || !doc) return;
-  if (stamp.nineSlice) {
-    const bank = stamp.nineSlice.road;
-    if (bank) startFix(bank);
-    else useSmartStampDialog.getState().chooseRoad(stamp.id);
-    return;
-  }
-  const layer = stamp.layers.length === 1 ? stamp.layers[0] : undefined;
-  if (!layer || layer.grid || layer.cells.some(c => c === 0 || cellFlags(c))) { toast.warning(t("smartStamp.nativeMissing")); return; }
-  const entries = [...layer.cells].map(c => stamp.palette[cellPaletteIndex(c) - 1]!);
-  const ts = doc.getTileset(entries[0]!.tilesetId), first = entries[0]!.tileId;
-  if (!ts || entries.some((e, i) => e.tilesetId !== ts.id || e.tileId !== first + Math.floor(i / stamp.width) * ts.columns + i % stamp.width)) { toast.warning(t("smartStamp.nativeMissing")); return; }
-  startDefine(ts.id);
-  if (!startDraft(ts, { col: first % ts.columns, row: Math.floor(first / ts.columns), columns: stamp.width, rows: stamp.height })) toast.warning(t("smartStamp.nativeMissing"));
-  const state = useTerrainDraft.getState(), draft = state.draft;
-  if (draft) {
-    const candidates = draft.candidates.filter(c => { const info = terrainTemplateInfo(c.template); return c.origin.col >= first % ts.columns && c.origin.row >= Math.floor(first / ts.columns) && c.origin.col + info.columns <= first % ts.columns + stamp.width && c.origin.row + info.rows <= Math.floor(first / ts.columns) + stamp.height; });
-    state.setDraft({ ...draft, candidates, index: 0 });
-  }
 }
 let installed = false;
 export function installSmartStamps(): void {
@@ -157,7 +126,6 @@ export function installSmartStamps(): void {
   const selected = () => useStampLibrary.getState().selectedId ?? activeStampId(useEditorStore.getState().stamp);
   registerCommands([
     { id: "stamp.nineSlice", title: "smartStamp.command", category: "edit", enabled: () => !!selected(), run: () => { const id = selected(); if (id) focusNineSlice(id); } },
-    { id: "stamp.toTerrain", title: "smartStamp.toTerrain", category: "edit", enabled: () => !!selected(), run: () => { const id = selected(); if (id) stampToTerrain(id); } },
   ]);
   let stopWatching: (() => void) | undefined;
   useEditorStore.subscribe((state, prev) => {

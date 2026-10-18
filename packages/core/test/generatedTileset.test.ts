@@ -1,3 +1,4 @@
+import { buildLayout1RoadProfile } from "../src/smartStamp/roadProfile";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createDocument, MapStore, cellFlags, FLIP_H, makeCell, serializeProject, parseProject, serializeLevel, parseLevel, tilesetUsage, stampTilesetUsage, prepareNineSliceTileset, regenerateNineSliceTileset, generatedTilesetStale, BLOB47_MASKS, nineSliceBlits, nineSliceLayout, type Stamp, type Tileset } from "../src";
@@ -76,7 +77,7 @@ describe("generated nine-slice assets", () => {
     const c = makeCell(store.getOrAddPaletteIndex(baked.id, 0), FLIP_H); store.getOrAddPaletteIndex(baked.id, 62);
     store.dispatch({ type: "paintCells", layerId: "l", cells: [{ x: 0, y: 0, cell: c }, { x: 1, y: 1, cell: c }] });
     expect(tilesetUsage(store.document, baked.id).cells).toBe(2);
-    const saved: Stamp = { ...stamp, palette: [...stamp.palette, { tilesetId: baked.id, tileId: 62 }], layers: [...stamp.layers, { layerId: "g", name: "Grid", grid: true, cells: new Uint32Array(9).fill(1) }], nineSlice: { border: 1, tileLayers: [{ layerId: "s", tilesetId: baked.id }], road: { tilesetId: baked.id, setId: "road", terrainId: 1 } } };
+    const saved: Stamp = { ...stamp, palette: [...stamp.palette, { tilesetId: baked.id, tileId: 62 }], layers: [...stamp.layers, { layerId: "g", name: "Grid", grid: true, cells: new Uint32Array(9).fill(1) }], nineSlice: { border: 1, tileLayers: [{ layerId: "s", tilesetId: baked.id }], road: { tilesetId: baked.id, profile: buildLayout1RoadProfile(3, 3) } } };
     expect(stampTilesetUsage(saved, "source")).toEqual({ cells: 9, layers: ["s"], bakedLayers: [], road: false });
     expect(stampTilesetUsage(saved, baked.id)).toEqual({ cells: 0, layers: [], bakedLayers: ["s"], road: true });
     expect(stampTilesetUsage({ ...saved, layers: [{ ...saved.layers[0]!, cells: new Uint32Array(9).fill(makeCell(10, FLIP_H)) }] }, baked.id).cells).toBe(9);
@@ -85,7 +86,7 @@ describe("generated nine-slice assets", () => {
 
 it("serializes generated metadata in fixed v3 key order, never inferring it from a name on old assets", () => {
   const baked = prepareNineSliceTileset(stamp, "s", options()), text = serializeProject({ name: "P", levels: [], tilesets: [art, baked] }), parsed = JSON.parse(text);
-  expect(parsed.documentFormatVersion).toBe(3);
+  expect(parsed.documentFormatVersion).toBe(4);
   expect(Object.keys(parsed.tilesets[1])).toEqual(["id", "name", "generated", "imagePath", "tileWidth", "tileHeight", "columns", "rows", "margin", "spacing"]);
   expect(Object.keys(parsed.tilesets[1].generated)).toEqual(["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion", "sources"]);
   expect(Object.keys(parsed.tilesets[1].generated.sources[0])).toEqual(["tilesetId", "imageHash"]);
@@ -166,7 +167,6 @@ it("persists inner-corner tile/flags and restores the exact recipe for PNG-only 
   expect(cleared.generated!.innerCorner).toBeUndefined();
   expect(cleared.generated!.sources).toEqual([{ tilesetId: "source", imageHash: "s-old" }]);
 });
-
 
 it("cache provenance survives every structural undo/redo and rollback without changing history", () => {
   fc.assert(fc.property(fc.string({ minLength: 1, maxLength: 40 }), fc.boolean(), (hash, rollback) => {

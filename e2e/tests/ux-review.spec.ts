@@ -47,12 +47,12 @@ test("1366×768: opening frames the whole map; Tab in both directions keeps zoom
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
   await canvas.focus();
   await page.keyboard.press("Tab");
-  await expect(page.locator("[data-tileset-mode='terrain']")).toBeHidden();
+  await expect(page.locator("[data-tileset-side]")).toBeHidden();
   await expect.poll(async () => (await view(page)).zoom).toBe(before.zoom);
   expect((await view(page)).cx).toBeCloseTo(before.cx);
   expect((await view(page)).cy).toBeCloseTo(before.cy);
   await page.keyboard.press("Tab");
-  await expect(page.locator("[data-tileset-mode='terrain']")).toBeVisible();
+  await expect(page.locator("[data-tileset-side]")).toBeVisible();
   await expect.poll(async () => (await view(page)).zoom).toBe(before.zoom);
   expect((await view(page)).cx).toBeCloseTo(before.cx);
   expect((await view(page)).cy).toBeCloseTo(before.cy);
@@ -80,21 +80,6 @@ test("a multi-tile tileset brush is paint in history; hidden layers block the ne
   await page.mouse.click(point.x + 40, point.y);
   await expect(page.locator("[data-toaster]")).toContainText("katmanı gizli");
   expect(await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.undoDepth)).toBe(before);
-});
-
-test("a rough 7×1 non-terrain strip shows the muted no-template state without markers", async ({ page }) => {
-  await openMap(page);
-  await page.locator("[data-tileset-mode='terrain']").click();
-  const grid = page.locator("[data-tileset-grid='overworld-32']");
-  const box = (await grid.boundingBox())!;
-  const size = 32 * Number(await grid.getAttribute("data-tileset-scale"));
-  await page.mouse.move(box.x + size / 2, box.y + size * 4.5);
-  await page.mouse.down();
-  await page.mouse.move(box.x + size * 6.5, box.y + size * 4.5, { steps: 8 });
-  await page.mouse.up();
-  await expect(page.locator("[data-terrain-no-template]")).toHaveText("Bu blokta şablon bulunamadı");
-  await expect(page.locator("[data-terrain-candidate]")).toHaveCount(0);
-  await expect(page.locator("[data-terrain-tags]")).toHaveCount(0);
 });
 
 test("F6 cycles regions, restores panels, skips collapsed dock and stays inside modals", async ({ page }) => {
@@ -137,35 +122,6 @@ test("1366×768: Fit shows the whole 256px tileset in the visible dock", async (
   await page.locator("[data-tileset-zoom-fit]").click();
   await expect.poll(() => page.locator("[data-tileset-viewport]").evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator("[data-tileset-grid]")).toHaveAttribute("data-tileset-scale", "0.5");
-});
-
-test("1366×768: terrain, size, random and transform controls never overlap", async ({ page }) => {
-  await openMap(page);
-  await page.evaluate(() => {
-    const h = (window as unknown as { __smap: Hook }).__smap;
-    const tilesetId = h.store.document.tilesets[0]!.id;
-    h.store.dispatch({ type: "setTerrainSet", tilesetId, set: { id: "grass", name: "Grass", kind: "corner", terrains: [{ id: 1, name: "Çimen", color: "#00ff00" }], tiles: [] } });
-    h.editor.getState().setSelection({ tilesetId, tileId: 0 });
-    h.editor.getState().setTerrain({ tilesetId, setId: "grass", terrainId: 1 });
-    h.editor.getState().setBrushSize(3);
-  });
-  const toolbar = page.getByRole("toolbar", { name: "Araç seçenekleri" });
-  await expect(toolbar.locator("[data-size-chip]")).toContainText("3");
-  await expect(toolbar.locator("[data-action=makeRandom]")).toBeVisible();
-  await expect(toolbar.locator("[data-tool-option=terrain]")).toBeVisible();
-  await expect(toolbar.locator("[data-tool-option=transforms]")).toBeVisible();
-  await expect.poll(() => toolbar.evaluate(el => {
-    const rects = Array.from(el.querySelectorAll<HTMLElement>("button, input, [role=switch]")).map(node => ({ label: node.getAttribute("aria-label") ?? node.textContent, rect: node.getBoundingClientRect() })).filter(({ rect }) => rect.width > 0 && rect.height > 0);
-    return rects.flatMap((a, i) => rects.slice(i + 1).filter(b => Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 0.5 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 0.5).map(b => [a.label, b.label]));
-  })).toEqual([]);
-  await toolbar.locator("[data-tool-autotile]").uncheck();
-  await expect(toolbar.locator("[data-terrain-current]")).toHaveText("Kapalı");
-  await page.evaluate(() => {
-    const h = (window as unknown as { __smap: Hook }).__smap;
-    const tilesetId = h.store.document.tilesets[0]!.id;
-    h.editor.getState().setRandomSet([{ tilesetId, tileId: 0 }, { tilesetId, tileId: 1 }]);
-  });
-  await expect(toolbar.locator("[data-tool-option=terrain]")).toHaveCount(0);
 });
 
 test("short inspector leaves most of the column to 12 layers; list keys select and reveal rows", async ({ page }) => {

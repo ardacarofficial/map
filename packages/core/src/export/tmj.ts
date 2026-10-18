@@ -1,26 +1,5 @@
-/**
- * Tiled JSON map (TMJ) export: orthogonal, right-down, finite, tile layers
- * as plain GID arrays, tilesets embedded.
- *
- * - GID = tileset `firstgid` + tileId, OR-ed with the cell's flip bits. Our
- *   cell flag layout and meaning are Tiled's (H 0x80000000, V 0x40000000,
- *   D 0x20000000 = x/y swap applied before H and V; rotations are D+H / H+V /
- *   D+V), so the flag bits are copied as they are.
- * - `options.layers` limits the tile layers; entity layers are always written.
- * - Collision: solid tiles get the tile property `solid: true` (bool). The
- *   exceptions painted on collision grid layers have no Tiled equivalent
- *   without objects; they are not exported and a warning says so.
- * - Grid layers are skipped (their derived tile layers carry the visuals).
- * - Entity layers (v0.6) become object layers (`objectgroup`), in layer
- *   order between the tile layers. Each entity is a rectangle object:
- *   `x`, `y` = its top-left pixel, `width` / `height` its size, `name` =
- *   its id, `type` (Tiled 1.10 writes the class as `type`) = its type name,
- *   and one custom property per field of its type. Field mapping: string /
- *   enum / levelRef → `string` (levelRef = level id, `""` when unset),
- *   int → `int`, float → `float`, bool → `bool`, point → `string` `"x,y"`
- *   (pixels, `""` when unset). Every entity also gets the string property
- *   `typeId`. Object ids are 1, 2, … in layer and entity order.
- */
+
+import { deriveCollision } from "../collision";
 import { CELL_INDEX_MASK } from "../cell";
 import type { MapDocument } from "../document";
 import { entitySize, resolveEntityFields, type ResolvedEntityField } from "../entity";
@@ -53,7 +32,7 @@ export interface TmjOptions extends ExportLayerOptions {
 }
 
 export interface TmjResult extends ExportResult {
-  /** Things the TMJ cannot carry (e.g. collision exceptions). */
+
   readonly warnings: readonly ExportWarning[];
 }
 
@@ -146,7 +125,6 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
   const tilesets = images.map((image, i) => {
     const { tileset } = image;
     const size = tilesetImageSize(tileset);
-    const solid = tileset.solidTiles ?? [];
     return {
       columns: tileset.columns,
       firstgid: firstGids[i]!,
@@ -159,31 +137,28 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
       tilecount: tileCount(tileset),
       tileheight: tileset.tileHeight,
       tilewidth: tileset.tileWidth,
-      ...(solid.length > 0
-        ? { tiles: solid.map((id) => ({ id, properties: [{ name: "solid", type: "bool", value: true }] })) }
-        : {}),
+
     };
   });
 
-  const warnings: ExportWarning[] = [];
-  const exceptionLayers = doc.layers.filter((l) => isGridLayer(l) && l.role === "collision" && l.chunkCount > 0);
-  if (exceptionLayers.length > 0) {
-    const layers = exceptionLayers.map((l) => l.name);
-    warnings.push({
-      code: "collisionExceptions",
-      layers,
-      message: `Collision exceptions (${layers.join(", ")}) are not exported to TMJ; only the "solid" tile property is.`,
-    });
-  }
-  // Cells of missing tilesets / out-of-range tile ids are skipped by layerCells; report them.
-  warnings.push(...exportWarnings(doc, options.layers));
+  const warnings = exportWarnings(doc, options.layers);
+  const collision = collisionRectangles(doc);
+  const names = new Set(written.map(l => l.name));
+  let collisionName = "Collision";
+  for (let n = 2; names.has(collisionName); n++) collisionName = `Collision ${n}`;
+  const collisionLayer = {
+    draworder: "topdown", id: written.length + 1, name: collisionName,
+    objects: collision.map(r => ({ height: r.height * tileHeight, id: nextObjectId++, name: "", rotation: 0, type: "", visible: false, width: r.width * tileWidth, x: r.x * tileWidth, y: r.y * tileHeight })),
+    opacity: 1, properties: [{ name: "smapRole", type: "string", value: "collision" }], type: "objectgroup", visible: false, x: 0, y: 0,
+  };
+  const layers = doc.layers.some(isGridLayer) ? [...tmjLayers, collisionLayer] : tmjLayers;
 
   const text = writeJson({
     compressionlevel: -1,
     height,
     infinite: false,
-    layers: tmjLayers,
-    nextlayerid: written.length + 1,
+    layers,
+    nextlayerid: layers.length + 1,
     nextobjectid: nextObjectId,
     orientation: "orthogonal",
     renderorder: "right-down",
@@ -196,4 +171,23 @@ export function exportTmj(doc: MapDocument, levelName: string, options: TmjOptio
     width,
   });
   return { fileName: exportBaseName(levelName) + ".tmj", text, images, warnings };
+}
+
+/** Identical horizontal runs merge across adjacent rows; creation order is deterministic y/x. */
+function collisionRectangles(doc: MapDocument): { x: number; y: number; width: number; height: number }[] {
+  const { width, height, data } = deriveCollision(doc);
+  const rects: { x: number; y: number; width: number; height: number }[] = [];
+  let previous = new Map<string, typeof rects[number]>();
+  for (let y = 0; y < height; y++) {
+    const current = new Map<string, typeof rects[number]>();
+    for (let x = 0; x < width;) {
+      if (!data[y * width + x]) { x++; continue; }
+      const start = x; while (x < width && data[y * width + x]) x++;
+      const key = `${start},${x - start}`, old = previous.get(key);
+      if (old) { old.height++; current.set(key, old); }
+      else { const rect = { x: start, y, width: x - start, height: 1 }; rects.push(rect); current.set(key, rect); }
+    }
+    previous = current;
+  }
+  return rects;
 }

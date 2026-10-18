@@ -73,13 +73,13 @@ describe("zoom and usage", () => {
     expect(effectiveZoom(null, 2, 1.5)).toBe(2);
     expect(effectiveZoom(undefined, null, 1.5)).toBe(1.5);
   });
-  it("sums usage over levels; terrains alone do not make it used", () => {
+  it("sums painted tile usage over levels", () => {
     const u = summarizeUsage([
-      { cells: 400, layers: ["a"], terrains: 1, terrainCells: 0 },
-      { cells: 12, layers: ["b"], terrains: 1, terrainCells: 5 },
-      { cells: 0, layers: [], terrains: 1, terrainCells: 0 },
+      { cells: 400, layers: ["a"] },
+      { cells: 12, layers: ["b"] },
+      { cells: 0, layers: [] },
     ]);
-    expect(u).toEqual({ cells: 412, terrainCells: 5, terrains: 1, levels: 2, stamps: 0, used: true });
-    expect(summarizeUsage([{ cells: 0, layers: [], terrains: 2, terrainCells: 0 }]).used).toBe(false);
+    expect(u).toEqual({ cells: 412, levels: 2, stamps: 0, used: true });
+    expect(summarizeUsage([{ cells: 0, layers: [] }]).used).toBe(false);
   });
 });

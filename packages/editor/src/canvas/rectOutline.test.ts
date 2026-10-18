@@ -1,4 +1,4 @@
-import { FLIP_H, MapStore, cellFlags, cellPaletteIndex, createDocument, makeCell, rectangleBand, serializeLevel, tagBlockWithTemplate, terrainPaint, withTerrainSet, type CellPoint, type Tileset } from "@smap/core";
+import { FLIP_H, MapStore, cellFlags, cellPaletteIndex, createDocument, makeCell, rectangleBand, serializeLevel, type CellPoint, type Tileset } from "@smap/core";
 import fc from "fast-check";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -108,28 +108,6 @@ describe("rectangle outline gestures", () => {
     expect(serializeLevel(store.document)).toBe(after);
   });
 
-  it("terrain preview writes, including repairs, equal the committed solver result", () => {
-    const tagged = tagBlockWithTemplate(withTerrainSet(ts, { id: "b", name: "B", kind: "blob", terrains: [{ id: 1, name: "T", color: "#ffffff" }], tiles: [] }), "b", 1, "blob47", { col: 0, row: 0 });
-    const { store, layerId, drag, up, controller, setPoint, contextRequest } = setup(tagged);
-    const brush = { tilesetId: "t", setId: "b", terrainId: 1 };
-    useEditorStore.getState().setTerrain(brush);
-    const expected = terrainPaint(store.document, layerId, [...rectangleBand(r, 1)], brush);
-    drag(); up();
-    expect(expected.length).toBeGreaterThan(0);
-    for (const p of expected) {
-      const cell = store.document.getLayer(layerId)!.getCell(p.x, p.y);
-      expect(store.document.palette.get(cellPaletteIndex(cell)) ?? null).toEqual(p.tile);
-      expect(cellFlags(cell)).toBe(0);
-    }
-    expect(store.document.getLayer(layerId)!.getCell(5, 4)).toBe(0);
-    expect(store.undoDepth).toBe(1);
-    setPoint({ x: 2, y: 2 });
-    controller.pointerDown({ ...e(2), button: 2 }, { x: 2, y: 2 });
-    controller.pointerUp({ ...e(0), button: 2 });
-    expect(useEditorStore.getState().terrainActive).toBe(true);
-    expect(contextRequest).not.toHaveBeenCalled();
-  });
-
   it("Shift and Alt retain their geometry; options are captured at press; cancel makes no edits", () => {
     const { store, controller, drag, up } = setup();
     const g = drag(true, true);
@@ -202,7 +180,6 @@ describe("rectangle outline gestures", () => {
     expect(store.undoDepth).toBe(1);
   });
 });
-
 
 describe("outline preview geometry", () => {
   it("equals the full band cropped to the viewport, with source flags intact", () => {

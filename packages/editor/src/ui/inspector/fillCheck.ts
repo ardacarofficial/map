@@ -14,8 +14,7 @@ export function fillBlocker(
   s: Pick<EditorState, "activeLayerId" | "gridValue" | "stamp" | "selection" | "randomSet"> & {
     /** The random brush is active (also stamp candidates / scatter, see `currentRandomSet`). */
     readonly random?: boolean;
-    /** The terrain brush paints the active tile layer. */
-    readonly terrain?: boolean;
+
   },
 ): MessageKey | null {
   const layer = doc && s.activeLayerId ? doc.getLayer(s.activeLayerId) : undefined;
@@ -24,6 +23,6 @@ export function fillBlocker(
   if (layer.locked) return "selectionBar.fillLocked";
   if (!layer.visible) return "selectionBar.fillHidden";
   if (isGridLayer(layer)) return s.gridValue === COLLISION_SOLID || s.gridValue === COLLISION_PASSABLE ? null : "selectionBar.fillNoBrush";
-  if (s.terrain || s.stamp || s.random || isRandomBrush(s.randomSet)) return null;
+  if (s.stamp || s.random || isRandomBrush(s.randomSet)) return null;
   return s.selection && doc.getTileset(s.selection.tilesetId) ? null : "selectionBar.fillNoBrush";
 }

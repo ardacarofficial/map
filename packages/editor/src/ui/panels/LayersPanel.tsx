@@ -19,7 +19,7 @@ import {
   unitOf,
   useLayerUi,
 } from "../../commands/layerActions";
-import { addCollisionLayer } from "../../commands/terrainActions";
+import { addCollisionLayer } from "../../commands/collisionActions";
 import { addEntityLayer } from "../../commands/entityActions";
 import { formatNumber, t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";

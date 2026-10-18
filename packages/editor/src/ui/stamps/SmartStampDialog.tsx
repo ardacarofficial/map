@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { createDocument, MapStore, planSmartStampArea, planSmartStampRoad, nineSliceProblem, type NineSliceInnerCorner, type Stamp } from "@smap/core";
+import { buildLayout1RoadProfile, createDocument, MapStore, planSmartStampArea, planSmartStampRoad, nineSliceProblem, type NineSliceInnerCorner, type Stamp } from "@smap/core";
 import { useEffect, useRef, useState } from "react";
 import { acceptSmartStamp, discardSmartStamp, prepareSmartStamp, useSmartStampDialog, type PreparedSmartStamp } from "../../commands/smartStampCommands";
 import { t } from "../../i18n";
@@ -9,7 +9,7 @@ import { AdvancedDisclosure, DialogBody, DialogFooter, DialogHeader, dialogLayou
 import { backdropClass, popupClass, dialogWidthM } from "../dialogs/styles";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/TextField";
-import { MenuSelect } from "../terrain/TerrainMenus";
+import { MenuSelect } from "../primitives/MenuSelect";
 
 const SHAPES = [
   [[1, 2], [2, 2], [3, 2]], [[2, 1], [2, 2]], [[2, 1], [2, 2], [3, 2]],
@@ -26,9 +26,9 @@ function BakePreview({ prepared, index }: { prepared: PreparedSmartStamp; index:
     canvas.width = 5 * w; canvas.height = 5 * h; ctx.imageSmoothingEnabled = false;
     const store = new MapStore(createDocument({ width: 5, height: 5, tileWidth: w, tileHeight: h }));
     for (const a of prepared.assets) store.dispatch({ type: "addTileset", tileset: a.tileset });
-    for (const layer of prepared.stamp.layers) store.dispatch({ type: "addLayer", layer: layer.grid ? { name: layer.name, type: "grid", role: layer.role ?? "terrain" } : { name: layer.name } });
+    for (const layer of prepared.stamp.layers) store.dispatch({ type: "addLayer", layer: layer.grid ? { name: layer.name, type: "grid", role: layer.role ?? "collision" } : { name: layer.name } });
     const layerId = store.document.layers[0]!.id;
-    const road = { tilesetId: ts?.id ?? "", setId: "road", terrainId: 1 };
+    const road = { tilesetId: ts?.id ?? "", profile: ts?.roadProfile ?? buildLayout1RoadProfile(prepared.stamp.width, prepared.stamp.height) };
     const sourceLayer = prepared.stamp.layers.find(l => l.layerId === ts?.generated?.layerId)!;
     const stamp = { ...prepared.stamp, layers: sourceLayer ? [sourceLayer] : [], nineSlice: { border: 1 as const, tileLayers: [{ layerId: sourceLayer?.layerId ?? "", tilesetId: ts?.id ?? "" }], road } };
     const points = SHAPES[index]!;
@@ -52,7 +52,7 @@ export function SmartStampDialog() {
   const id = useSmartStampDialog(s => s.stampId);
   const stamp = useProjectLibrary(s => s.stamps.find(x => x.id === id));
   const close = () => useSmartStampDialog.getState().open(null);
-  return <><RoadLayerDialog /><Dialog.Root open={!!stamp} onOpenChange={open => { if (!open) close(); }}><Dialog.Portal><Dialog.Backdrop className={backdropClass} /><Dialog.Popup className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`} data-smart-stamp-dialog="">{stamp && <Conversion key={stamp.id} stamp={stamp} close={close} />}</Dialog.Popup></Dialog.Portal></Dialog.Root></>;
+  return <Dialog.Root open={!!stamp} onOpenChange={open => { if (!open) close(); }}><Dialog.Portal><Dialog.Backdrop className={backdropClass} /><Dialog.Popup className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`} data-smart-stamp-dialog="">{stamp && <Conversion key={stamp.id} stamp={stamp} close={close} />}</Dialog.Popup></Dialog.Portal></Dialog.Root>;
 }
 function Conversion({ stamp, close }: { stamp: Stamp; close(): void }) {
   const [advanced, setAdvanced] = useState(false), [inner, setInner] = useState<NineSliceInnerCorner | null | undefined>(undefined);
@@ -90,24 +90,4 @@ function Conversion({ stamp, close }: { stamp: Stamp; close(): void }) {
     </DialogBody>
     <DialogFooter><Button variant="secondary" onClick={close}>{t("common.cancel")}</Button><Button variant="primary" disabled={!prepared || !!error} onClick={submit}>{t("smartStamp.prepare")}</Button></DialogFooter>
   </>;
-}
-
-/** Multi-layer road conversion is an explicit single-layer terrain choice. */
-function RoadLayerDialog() {
-  const id = useSmartStampDialog(s => s.roadChoiceId);
-  const stamp = useProjectLibrary(s => s.stamps.find(s => s.id === id));
-  const [choice, setChoice] = useState("");
-  const doc = useEditorStore(s => s.project?.store.document);
-  const close = () => { useSmartStampDialog.getState().chooseRoad(null); setChoice(""); };
-  const options = (stamp?.nineSlice?.tileLayers ?? []).filter(l => doc?.getTileset(l.tilesetId)?.terrainSets?.some(set => set.id === "road")).map(l => ({ value: l.tilesetId, label: stamp!.layers.find(s => s.layerId === l.layerId)!.name }));
-  const apply = () => {
-    if (!choice) return;
-    useEditorStore.getState().setTerrain({ tilesetId: choice, setId: "road", terrainId: 1 });
-    useEditorStore.getState().setTool("brush"); close();
-  };
-  return <Dialog.Root open={!!stamp} onOpenChange={open => { if (!open) close(); }}><Dialog.Portal><Dialog.Backdrop className={backdropClass} /><Dialog.Popup className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}>
-    <DialogHeader title={t("smartStamp.toTerrain")} subtitle={stamp?.name} onClose={close} />
-    <DialogBody className="flex flex-col gap-3"><p className="text-sm text-muted">{t("smartStamp.chooseLayerHint")}</p><MenuSelect label={t("smartStamp.layer")} value={choice} options={[{ value: "", label: t("smartStamp.chooseLayer") }, ...options]} onChange={value => setChoice(String(value))} /></DialogBody>
-    <DialogFooter><Button variant="secondary" onClick={close}>{t("common.cancel")}</Button><Button variant="primary" disabled={!choice} onClick={apply}>{t("smartStamp.useTerrain")}</Button></DialogFooter>
-  </Dialog.Popup></Dialog.Portal></Dialog.Root>;
 }

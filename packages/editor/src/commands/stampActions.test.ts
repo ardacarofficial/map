@@ -29,7 +29,7 @@ describe("stamp layers", () => {
     const a = store.getOrAddPaletteIndex("grass", 5);
     store.dispatch({ type: "paintCells", layerId: ground, cells: [{ x: 2, y: 2, cell: makeCell(a) }] });
     store.dispatch({ type: "paintCells", layerId: roof, cells: [{ x: 8, y: 8, cell: makeCell(a) }] });
-    store.dispatch({ type: "paintTerrain", layerId: coll, cells: [{ x: 3, y: 3, value: 1 }] });
+    store.dispatch({ type: "paintGrid", layerId: coll, cells: [{ x: 3, y: 3, value: 1 }] });
     const doc = store.document;
     expect(stampLayerIds(doc)).toEqual([ground, roof, coll]); // every layer but the entity layer
     // The roof tile is outside the region: only Zemin and Collision are saved.

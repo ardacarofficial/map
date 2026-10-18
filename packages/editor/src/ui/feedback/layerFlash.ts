@@ -10,11 +10,6 @@ interface LayerFlashState {
   token: number;
 }
 
-/**
- * "Look here" for the layers panel: when the program switches or creates a
- * layer on the user's behalf (e.g. picking a terrain on a tile layer), the
- * row it chose is briefly highlighted next to the toast that explains it.
- */
 export const useLayerFlash = create<LayerFlashState>()(() => ({ layerId: null, token: 0 }));
 
 let timer: ReturnType<typeof setTimeout> | undefined;

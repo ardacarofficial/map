@@ -77,7 +77,7 @@ describe("builtin transform options", () => {
 });
 
 describe("builtin random option", () => {
-  it("appears between size and terrain for brush, fill and rectangle on tile layers only", () => {
+  it("appears after size for brush, fill and rectangle on tile layers only", () => {
     registerBuiltinToolOptions();
     const store = new MapStore(createDocument({ width: 8, height: 8 }));
     const tileId = store.dispatch({ type: "addLayer", layer: { name: "Tiles" } });

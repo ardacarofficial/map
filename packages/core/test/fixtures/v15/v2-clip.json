@@ -1,0 +1,77 @@
+{
+  "format": "smap-clip",
+  "documentFormatVersion": 2,
+  "width": 3,
+  "height": 3,
+  "palette": [
+    {
+      "index": 1,
+      "tilesetId": "source",
+      "tileId": 0
+    },
+    {
+      "index": 2,
+      "tilesetId": "source",
+      "tileId": 1
+    },
+    {
+      "index": 3,
+      "tilesetId": "source",
+      "tileId": 2
+    },
+    {
+      "index": 4,
+      "tilesetId": "source",
+      "tileId": 3
+    },
+    {
+      "index": 5,
+      "tilesetId": "source",
+      "tileId": 4
+    },
+    {
+      "index": 6,
+      "tilesetId": "source",
+      "tileId": 5
+    },
+    {
+      "index": 7,
+      "tilesetId": "source",
+      "tileId": 6
+    },
+    {
+      "index": 8,
+      "tilesetId": "source",
+      "tileId": 7
+    },
+    {
+      "index": 9,
+      "tilesetId": "source",
+      "tileId": 8
+    }
+  ],
+  "layers": [
+    {
+      "layerId": "s",
+      "name": "Road",
+      "data": "AQAAAAIAAAADAAAABAAAAAUAAAAGAAAABwAAAAgAAAAJAAAA"
+    },
+    {
+      "layerId": "old-grid",
+      "name": "Old",
+      "grid": true,
+      "role": "terrain",
+      "cells": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ]
+}

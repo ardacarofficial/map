@@ -178,24 +178,18 @@ function activate(
   useUiStore.getState().setActiveTileset(project.store.document.tilesets[0]?.id ?? null);
   useEditorStore.getState().setProject(project);
   useEditorStore.getState().setTool("brush");
-  announceTerrainMigration(project.store.document, level.id);
+  announceFormatMigration(project.store.document, level.id);
 }
 
-/**
- * An old project was converted to the terrain-as-brush format on load
- * (terrain grid layers dropped, tileset terrains turned into terrain sets;
- * core `MapDocument.migrations`): the level counts as changed, so the next
- * save writes the new format, and a toast says so.
- */
-function announceTerrainMigration(document: MapDocument, levelId: string): void {
-  const migrated = document.migrations.length > 0 || document.tilesets.some((ts) => (ts.terrains?.length ?? 0) > 0);
+/** Mark conversion for an ordinary save; opening a legacy file must not schedule an overwrite. */
+function announceFormatMigration(document: MapDocument, levelId: string): void {
+  const migrated = document.migrations.length > 0;
   if (!migrated) return;
   const ws = workspace;
   if (ws && !ws.isDirty(levelId)) ws.markDirty(levelId);
   if (!useEditorStore.getState().dirty) useEditorStore.getState().setDirty(true);
   publishLevelState();
-  if (folder) autosave?.notifyChange();
-  toast.info(t("terrain.migrated"));
+  toast.info(t("format.migrated"));
 }
 
 /** Human-readable (Turkish) message for an IO error. */
@@ -1033,7 +1027,7 @@ async function switchToLevel(levelId: string): Promise<boolean> {
   try {
     entry = await ws.activate(levelId, folder?.fs ?? null);
     if (fromDisk) warnPalette(level.name, entry.store.document);
-    if (fromDisk && entry.store.document.migrations.length > 0) announceTerrainMigration(entry.store.document, levelId);
+    if (fromDisk && entry.store.document.migrations.length > 0) announceFormatMigration(entry.store.document, levelId);
   } catch (error) {
     console.error(error);
     toast.error(t("levels.openFailed", { name: level.name, detail: describeError(error) }));

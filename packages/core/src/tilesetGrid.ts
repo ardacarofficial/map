@@ -483,11 +483,6 @@ export function tilesetImageExtent(grid: TileGrid): { width: number; height: num
   };
 }
 
-/**
- * `tileset` re-sliced with `spec` over an image of the given size: new
- * columns / rows, same metadata (solid flags and terrains are NOT remapped
- * here; the store ops do that).
- */
 export function tilesetWithGrid(tileset: Tileset, spec: TileGridSpec, imageWidth: number, imageHeight: number): Tileset {
   return {
     ...tileset,

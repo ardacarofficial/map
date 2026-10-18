@@ -22,9 +22,7 @@ import { Tooltip } from "../primitives/Tooltip";
 import { openStampEditor } from "../stampEditor/stampEditorSession";
 import { StarGlyph, TagGlyph } from "./glyphs";
 import { parseTags, stampCategories } from "./stampFilters";
-import { useUiStore } from "../uiStore";
 import { useRandomBrush } from "../../commands/randomBrush";
-import { useTerrainDraft } from "../terrain/terrainDraft";
 import { useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
 
@@ -62,12 +60,7 @@ export function installStampInspector(): void {
   useRandomBrush.subscribe((state, prev) => {
     if (state.stamps !== prev.stamps && state.stamps.length > 0) clear();
   });
-  useUiStore.subscribe((state, prev) => {
-    if (state.tilesetMode === "terrain" && state.tilesetMode !== prev.tilesetMode) clear();
-  });
-  useTerrainDraft.subscribe((state, prev) => {
-    if ((state.draft !== null && state.draft !== prev.draft) || (state.fix !== null && state.fix !== prev.fix)) clear();
-  });
+
   useStampLibrary.subscribe((state, prev) => {
     if (state.selectedId !== prev.selectedId) register();
   });

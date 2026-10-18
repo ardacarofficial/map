@@ -9,7 +9,7 @@ export async function loadGeneratedRecipes(fs: ProjectFileSystem, assets: readon
   for (const asset of assets) {
     if (!asset.generated) continue;
     try {
-      const stamp = parseStamp(await fs.readText(generatedRecipePath(asset.id)));
+      const stamp = parseStamp(await fs.readText(generatedRecipePath(asset.id)), assets);
       if (stamp.id !== asset.generated.stampId || stamp.width !== asset.generated.sourceWidth || stamp.height !== asset.generated.sourceHeight || !stamp.layers.some(l => l.layerId === asset.generated!.layerId)) throw new Error("Generated recipe provenance does not match its atlas");
       recipes.push({ tilesetId: asset.id, stamp });
     }

@@ -1,10 +1,10 @@
 # blob47-godot-32.png
 
-32px tiles, 12 columns x 4 rows (384x128), row-major. Editor template: `blob47-godot`.
+32px tiles, 12 columns x 4 rows (384x128), row-major.
 Layout: the Godot 3 "3x3 minimal" autotile template (godot-docs `tutorials/2d/img/autotile_template_3x3_minimal.png`), the layout most ready-made blob tilesets use.
 Slot 22 (col 10, row 1) is unused and transparent.
 
-Terrain: grass over dirt. A neighbour bit set = neighbour cell is also grass.
+Artwork: grass over dirt. A neighbour bit set = neighbour cell is also grass.
 
 Bitmask (cr31 convention): N=1, NE=2, E=4, SE=8, S=16, SW=32, W=64, NW=128.
 Reduction rule: a corner bit counts only if BOTH adjacent edge bits are set; this yields exactly 47 masks.

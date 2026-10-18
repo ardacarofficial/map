@@ -35,16 +35,12 @@ export interface ExportResult {
   readonly text: string;
   /** Tileset images referenced by the map; copy `sourcePath` → `fileName` into the same folder. */
   readonly images: readonly ExportImage[];
-  /**
-   * Things the export left out (cells of missing tilesets, out-of-range
-   * tile ids; TMJ also collision exceptions). Empty when nothing was lost.
-   * Optional in the type only for objects built before it existed; every
-   * exporter fills it.
-   */
+
   readonly warnings?: readonly ExportWarning[];
 }
 
 /** Options of the game JSON / Unity export. All optional; the defaults export everything. */
+/** Manual Collision is independent of selected visual layers, including hidden grids. */
 export interface GameExportOptions extends ExportLayerOptions {
   /**
    * Write the derived collision (default `true`). `false` writes an

@@ -9,11 +9,6 @@ import type { BlockedReason, PickResult } from "./tools";
 
 export type { BlockedReason } from "./tools";
 
-/**
- * A left press on the map could not do anything: the active layer
- * `layerId` is locked, hidden, derived from a terrain (paint the terrain
- * layer) or of the wrong kind for the tool (e.g. brush on an entity layer).
- */
 export interface BlockedAction {
   readonly reason: BlockedReason;
   readonly layerId: string;
@@ -62,7 +57,6 @@ export function pickEvent(result: PickResult, clip: TileClip | null, region: Cel
   return null;
 }
 
-/** Grid value pick event (terrain / collision layer). */
 export function gridPickEvent(value: number, region: CellRegion): CanvasPickEvent {
   return { kind: "grid", value, region: { x: region.x, y: region.y, width: region.width, height: region.height } };
 }

@@ -1,4 +1,3 @@
-import { useSmartStampDialog } from "../../commands/smartStampCommands";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { activeSmartStamp, useSmartStampSession } from "../stamps/smartStampSession";
@@ -10,9 +9,9 @@ export function SmartStampOptions() {
   const stamp = activeSmartStamp();
   return <div className="flex shrink-0 items-center gap-2" data-smart-stamp-mode={usage}>
     <OptionLabel>{t("smartStamp.usage")}</OptionLabel>
-    <Segmented label={t("smartStamp.usage")} value={usage} onValueChange={value => { if (value === "road" && !stamp?.nineSlice?.road) { if (stamp) useSmartStampDialog.getState().chooseRoad(stamp.id); } else setUsage(value); }} items={[
+    <Segmented label={t("smartStamp.usage")} value={usage} onValueChange={setUsage} items={[
       { value: "area", label: t("smartStamp.area") },
-      { value: "road", label: t("smartStamp.road"), disabled: !stamp?.nineSlice?.tileLayers.length, ...(!stamp?.nineSlice?.road ? { tooltip: t("smartStamp.singleLayer") } : {}) },
+      { value: "road", label: t("smartStamp.road"), disabled: !stamp?.nineSlice?.road, ...(!stamp?.nineSlice?.road ? { tooltip: t("smartStamp.singleLayer") } : {}) },
     ]} />
   </div>;
 }

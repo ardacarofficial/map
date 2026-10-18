@@ -1,22 +1,9 @@
-/**
- * World-space overlays of grid layers:
- * - terrain tint: the painted cells of the active terrain layer, faintly in
- *   the accent colour (the derived tile layer shows the real look);
- * - collision: derived collision (solid tiles + collision-layer exceptions).
- *
- * Each is one 32×32-pixel texture per chunk (one pixel per cell) drawn as a
- * nearest-filtered sprite scaled to the chunk: one draw call per chunk,
- * crisp at every zoom. Rasters are built lazily for visible chunks only and
- * cached; store changes mark the affected chunks stale (see `gridRaster.ts`).
- */
 import {
   CHUNK_AREA,
   CHUNK_SHIFT,
   CHUNK_SIZE,
   chunkKey,
   isGridLayer,
-  solidPaletteMask,
-  type GridLayer,
   type MapStore,
   type StoreChangeEvent,
 } from "@smap/core";
@@ -27,25 +14,17 @@ import {
   COLL_FORCED_PASSABLE,
   COLL_FORCED_SOLID,
   COLL_NONE,
-  COLL_SOLID,
   ChunkCache,
   collisionChunkRaster,
   collisionInvalidation,
-  layerInvalidation,
   PATTERN_SCALE,
-  paintedChunkRaster,
   patternImage,
-  rasterImage,
-  rgba,
-  type CodeColors,
   type CodePattern,
 } from "./gridRaster";
 import { releaseTexture } from "./releaseTexture";
 
 /** Colours the overlays need (from `CANVAS_COLORS` / theme tokens). */
 export interface GridOverlayColors {
-  readonly terrainTint: number;
-  readonly terrainTintAlpha: number;
   readonly collisionSolid: number;
   readonly collisionSolidAlpha: number;
   readonly collisionPassable: number;
@@ -57,8 +36,7 @@ export interface GridOverlayState {
   /** Cells on screen. */
   readonly visible: CellRegion;
   readonly showCollision: boolean;
-  /** Terrain layer to tint (the active one), or null. */
-  readonly terrainLayer: GridLayer | null;
+
 }
 
 interface ChunkImage {
@@ -190,24 +168,19 @@ export class GridOverlays {
   /** World-space root (above the layers, below the tool previews). */
   readonly root = new Container();
   readonly #store: MapStore;
-  readonly #terrain: ChunkOverlay;
   readonly #collision: ChunkOverlay;
-  #terrainLayer: GridLayer | null = null;
-  #solid: Uint8Array | null = null;
   readonly #unsubscribe: () => void;
   readonly #onChange: () => void;
 
   constructor(store: MapStore, colors: GridOverlayColors, onChange: () => void) {
     this.#store = store;
     this.#onChange = onChange;
-    this.#terrain = new ChunkOverlay(flatImage(terrainColors(colors)));
     this.#collision = new ChunkOverlay(collisionImage(colors), PATTERN_SCALE);
-    this.root.addChild(this.#terrain.root, this.#collision.root);
+    this.root.addChild(this.#collision.root);
     this.#unsubscribe = store.subscribe((e) => this.#handle(e));
   }
 
   setColors(colors: GridOverlayColors): void {
-    this.#terrain.setImage(flatImage(terrainColors(colors)));
     this.#collision.setImage(collisionImage(colors));
   }
 
@@ -216,20 +189,11 @@ export class GridOverlays {
     const { tileWidth: tw, tileHeight: th } = this.#store.document.map;
     const range = chunkRange(s.visible);
 
-    const terrain = s.terrainLayer && s.terrainLayer.visible ? s.terrainLayer : null;
-    if (terrain !== this.#terrainLayer) {
-      this.#terrain.clear();
-      this.#terrainLayer = terrain;
-    }
-    this.#terrain.root.visible = terrain !== null;
-    if (terrain) this.#terrain.update(range, tw, th, (cx, cy, out) => paintedChunkRaster(terrain.getChunk(cx, cy)?.data, out));
-
     this.#collision.root.visible = s.showCollision;
     if (s.showCollision) {
       const doc = this.#store.document;
       this.#collision.update(range, tw, th, (cx, cy, out) => {
-        this.#solid ??= solidPaletteMask(doc);
-        return collisionChunkRaster(doc, cx, cy, this.#solid, out);
+        return collisionChunkRaster(doc, cx, cy, out);
       });
     }
   }
@@ -242,7 +206,6 @@ export class GridOverlays {
 
   destroy(): void {
     this.#unsubscribe();
-    this.#terrain.destroy();
     this.#collision.destroy();
     this.root.destroy({ children: true });
   }
@@ -251,25 +214,11 @@ export class GridOverlays {
     const doc = this.#store.document;
     const coll = collisionInvalidation(e, (id) => {
       const l = doc.getLayer(id);
-      return isGridLayer(l) && l.role === "terrain";
+      return isGridLayer(l);
     });
     if (coll.all || coll.keys.length > 0) this.#collision.cache.invalidate(coll);
-    if (e.structure.length > 0) this.#solid = null; // tilesets (solid flags) or palette grew
-    if (this.#terrainLayer) {
-      const t = layerInvalidation(e, this.#terrainLayer.id);
-      if (t.all || t.keys.length > 0) this.#terrain.cache.invalidate(t);
-    }
     if (coll.all || coll.keys.length > 0) this.#onChange();
   }
-}
-
-function terrainColors(c: GridOverlayColors): CodeColors {
-  return [null, rgba(c.terrainTint, c.terrainTintAlpha)];
-}
-
-/** Flat colour per code, one texture pixel per cell. */
-function flatImage(colors: CodeColors): ImageFn {
-  return (raster) => rasterImage(raster, colors);
 }
 
 /**
@@ -280,7 +229,6 @@ function flatImage(colors: CodeColors): ImageFn {
 export function collisionPatterns(c: GridOverlayColors): (CodePattern | null)[] {
   const out: (CodePattern | null)[] = [];
   out[COLL_NONE] = null;
-  out[COLL_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.45, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.2), kind: "/" };
   out[COLL_FORCED_SOLID] = { color: c.collisionSolid, fillAlpha: c.collisionSolidAlpha * 0.8, markAlpha: Math.min(1, c.collisionSolidAlpha * 2.8), kind: "x" };
   out[COLL_FORCED_PASSABLE] = { color: c.collisionPassable, fillAlpha: c.collisionPassableAlpha * 0.4, markAlpha: Math.min(1, c.collisionPassableAlpha * 2), kind: "dots" };
   return out;

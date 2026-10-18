@@ -1,7 +1,4 @@
-/**
- * Pure helpers for painting grid (terrain / collision) layers: brush, eraser,
- * rectangle and fill produce `paintTerrain` writes. No Pixi, no DOM.
- */
+
 import { floodFillRuns, type CellBounds, type CellPoint, type CellSource, type GridWrite, type FillRun } from "@smap/core";
 
 import type { CellRegion, ToolId } from "../state/editorStore";

@@ -16,7 +16,7 @@ async function setup(page: Page) {
       const cell = store.getOrAddPaletteIndex(store.document.tilesets[0].id, i + 1);
       store.dispatch({ type: "paintCells", layerId, cells: [{ x: 3, y: 3, cell }, { x: 4, y: 3, cell }] });
     }
-    store.dispatch({ type: "paintTerrain", layerId: collision, cells: [{ x: 3, y: 3, value: 1 }, { x: 4, y: 3, value: 2 }] });
+    store.dispatch({ type: "paintGrid", layerId: collision, cells: [{ x: 3, y: 3, value: 1 }, { x: 4, y: 3, value: 2 }] });
     store.clearHistory();
     s.setActiveLayer(ground);
     s.setTool("select");
@@ -135,7 +135,6 @@ test("changing scope during a drag keeps the captured layers; Escape restores pr
   await expect.poll(() => cells(page)).toEqual(before);
   await expect.poll(() => cells(page, 7, 5)).toEqual(before.map(l => ({ ...l, cells: [0, 0] })));
 });
-
 
 test("scope has one visible control, keyboard navigation, and a palette toggle", async ({ page }) => {
   await setup(page);

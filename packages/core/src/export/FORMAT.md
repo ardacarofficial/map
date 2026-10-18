@@ -3,7 +3,7 @@
 The engine-facing map format written by `exportGameJson(doc)` and, under the
 `.smapmap` extension, by `exportUnityMap(doc, levelName)`. It is separate from
 the editor's save format (`smap-level`): no palette, no chunks, no editor
-state (locks, terrain grids, seeds). One format serves "JSON dışa aktarma"
+state (locks, grid layers, seeds). One format serves "JSON dışa aktarma"
 and the Unity importer (`unity/com.smap.mapimporter`).
 
 ## Files
@@ -88,8 +88,8 @@ Key order is fixed and always as shown. All fields are always present
 Options (`exportGameJson(doc, options)`, `exportUnityMap(doc, name, options)`):
 `layers` limits `layers` (and the tilesets / images) to the given tile layer
 ids; `collision: false` writes an all-passable `collision.solid` (one run of
-`width * height`). The collision is always derived from every tile layer,
-whatever `layers` says. Entities are always written.
+`width * height`). Collision always uses every manual Collision grid,
+including hidden grids, independently of `layers`. Entities are always written.
 
 `entities` and `spawn` were added in v0.6 without bumping `smapExport`:
 readers that do not know them ignore them (Unity's `JsonUtility` skips
@@ -120,15 +120,14 @@ is readable by Unity's `JsonUtility`, so the importer needs no JSON library.
 A dense ground layer costs about 5× more numbers than a dense array would.
 That stays acceptable at the sizes this editor targets.
 
-Grid layers (terrain and collision) are **not** exported. A terrain grid's
-look is in its derived tile layer, which is exported like any tile layer.
-Collision exceptions are folded into `collision`.
+Grid layers are folded into `collision`; they do not appear in the visual `layers` array.
 
 ### Collision
 
-`collision.solid` is the derived collision (`deriveCollision`): solid tiles
-on any tile layer (hidden layers too), overridden by collision exception
-layers. It is run-length encoded over the whole map, row-major from the
+`collision.solid` comes only from manual Collision grids (`deriveCollision`).
+The topmost nonzero value wins: 1 blocks movement, 2 allows movement;
+zero inherits the next grid below, and no value means passable. Hidden and
+locked grids still contribute. Tile artwork never implies collision. It is run-length encoded over the whole map, row-major from the
 top-left cell (`index = y * width + x`). Runs alternate passable/solid and
 **always start with a passable run**, which may be `0`. The runs sum to
 `width * height`.
@@ -232,10 +231,17 @@ orthogonal, `right-down`, finite, `version` "1.10". Tile layers are dense
 GID arrays (one map row per line), and tilesets are embedded. GID =
 `firstgid + tileId` with Tiled's flip bits (H `0x80000000`, V `0x40000000`,
 D `0x20000000`), the same layout as the editor's cells. `firstgid` starts
-at 1 and grows by each tileset's `tilecount`. Solid tiles get the bool tile
-property `solid: true`. Collision exception layers cannot be expressed
-without objects, so they are not exported, and `warnings` says so. Godot 4
-(via a Tiled importer) and Phaser read this file.
+at 1 and grows by each tileset's `tilecount`. Godot 4 (via a Tiled importer)
+and Phaser read this file.
+
+Manual Collision is an invisible `objectgroup` named `Collision`, with the
+string property `smapRole=collision`. If a visual/entity layer uses that
+name, the export group gets the first available `Collision 2`, `Collision 3`,
+etc. Its invisible rectangle objects use pixel coordinates with y down.
+Identical horizontal blocked-cell runs merge across adjacent rows; objects
+are ordered by starting y, then x. There are no per-tile solidity properties
+and no collision-loss warning. Entity and collision object ids share one
+sequence.
 
 Entity layers become object layers (`"type": "objectgroup"`,
 `draworder: "topdown"`) in their place in the layer order; layer `id`s
@@ -247,3 +253,12 @@ string `typeId`, plus one per type field: `int` → `int`, `float` →
 `float`, `bool` → `bool`, `string` / `enum` / `levelRef` → `string`
 (`""` when unset), `point` → `string` `"x,y"` (`""` when unset). Object
 ids are 1, 2, … in layer then entity order; `nextobjectid` follows them.
+
+## Editor format compatibility
+
+The separate editor format is now `documentFormatVersion: 4`. Raw migration
+removes legacy marking metadata and invisible legacy grids without deriving
+or changing tile cells, palette order, flips, layer properties or source PNGs.
+Saved nine-slice stamps retain their generated PNG slots and a smart-owned
+complete road profile, including custom variants. The game wire format above
+remains `smapExport: 1`, with stride 5 and the same collision RLE.

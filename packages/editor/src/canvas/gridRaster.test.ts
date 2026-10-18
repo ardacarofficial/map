@@ -6,7 +6,6 @@ import {
   collisionAt,
   createDocument,
   makeCell,
-  solidPaletteMask,
   type StoreChangeEvent,
 } from "@smap/core";
 import fc from "fast-check";
@@ -17,14 +16,10 @@ import {
   COLL_FORCED_PASSABLE,
   COLL_FORCED_SOLID,
   COLL_NONE,
-  COLL_SOLID,
   ChunkCache,
   collisionChunkRaster,
   collisionInvalidation,
   isSolidCode,
-  layerInvalidation,
-  paintedChunkRaster,
-  rasterImage,
   solidEdges,
 } from "./gridRaster";
 
@@ -35,10 +30,8 @@ function setup(width = 40, height = 36) {
   store.dispatch({ type: "addTileset", tileset: TILESET });
   for (let t = 0; t < 4; t++) store.getOrAddPaletteIndex("ts", t);
   store.dispatch({ type: "addLayer", layer: { id: "ground", name: "G" } });
-  store.dispatch({ type: "addLayer", layer: { id: "terrain", name: "T", type: "grid", role: "terrain", targetLayerId: "ground" } });
   store.dispatch({ type: "addLayer", layer: { id: "col", name: "C", type: "grid", role: "collision" } });
   store.dispatch({ type: "addLayer", layer: { id: "col2", name: "C2", type: "grid", role: "collision" } });
-  store.dispatch({ type: "setTileSolid", tilesetId: "ts", tileIds: [1], solid: true }); // palette 2
   store.clearHistory();
   return store;
 }
@@ -74,7 +67,7 @@ describe("grid paint helpers", () => {
     // A ring of 1s around (3,3) .. a hole of 0 inside.
     const ring = [];
     for (let y = 1; y <= 5; y++) for (let x = 1; x <= 5; x++) if (x === 1 || x === 5 || y === 1 || y === 5) ring.push({ x, y: Math.min(y, 5), value: 1 });
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: ring.filter((c) => c.y < 6) });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: ring.filter((c) => c.y < 6) });
     const layer = store.document.getLayer("col")!;
     const inside = gridFillWrites(layer, 3, 3, 2, store.document.map);
     expect(inside).toHaveLength(9);
@@ -96,13 +89,12 @@ describe("collision chunk raster", () => {
           store.dispatch({ type: "paintCells", layerId: "ground", cells: tiles.map((t) => ({ x: t.x, y: t.y, cell: t.v === 0 ? 0 : makeCell(t.v) })) });
           for (const top of [false, true]) {
             const cells = exceptions.filter((e) => e.top === top).map((e) => ({ x: e.x, y: e.y, value: e.v }));
-            store.dispatch({ type: "paintTerrain", layerId: top ? "col2" : "col", cells });
+            store.dispatch({ type: "paintGrid", layerId: top ? "col2" : "col", cells });
           }
           const doc = store.document;
-          const solid = solidPaletteMask(doc);
           for (let cy = 0; cy <= 1; cy++) {
             for (let cx = 0; cx <= 1; cx++) {
-              const r = collisionChunkRaster(doc, cx, cy, solid);
+              const r = collisionChunkRaster(doc, cx, cy);
               for (let i = 0; i < 1024; i++) {
                 const x = cx * 32 + (i & 31);
                 const y = cy * 32 + (i >> 5);
@@ -116,62 +108,31 @@ describe("collision chunk raster", () => {
     );
   });
 
-  it("codes tell tile solidity, forced solid and forced passable apart", () => {
+  it("codes reflect only manual blocked and passable cells", () => {
     const store = setup();
-    // "ground" is derived from the terrain layer (core refuses direct writes there): paint a plain layer.
+
     store.dispatch({ type: "addLayer", layer: { id: "plain", name: "P" } });
     store.dispatch({ type: "paintCells", layerId: "plain", cells: [{ x: 0, y: 0, cell: makeCell(2) }, { x: 1, y: 0, cell: makeCell(2) }] });
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 1, y: 0, value: COLLISION_PASSABLE }, { x: 2, y: 0, value: COLLISION_SOLID }] });
-    const r = collisionChunkRaster(store.document, 0, 0, solidPaletteMask(store.document));
-    expect([r[0], r[1], r[2], r[3]]).toEqual([COLL_SOLID, COLL_FORCED_PASSABLE, COLL_FORCED_SOLID, COLL_NONE]);
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 1, y: 0, value: COLLISION_PASSABLE }, { x: 2, y: 0, value: COLLISION_SOLID }] });
+    const r = collisionChunkRaster(store.document, 0, 0);
+    expect([r[0], r[1], r[2], r[3]]).toEqual([COLL_NONE, COLL_FORCED_PASSABLE, COLL_FORCED_SOLID, COLL_NONE]);
   });
 
-  it("painted raster and image: transparent rasters need no texture", () => {
-    const data = new Uint32Array(1024);
-    expect(rasterImage(paintedChunkRaster(data), [null, [1, 2, 3, 4]])).toBeNull();
-    data[33] = 7;
-    const img = rasterImage(paintedChunkRaster(data), [null, [1, 2, 3, 4]])!;
-    expect(Array.from(img.slice(33 * 4, 33 * 4 + 4))).toEqual([1, 2, 3, 4]);
-    expect(img[0]).toBe(0);
-  });
 });
 
-describe("overlay invalidation", () => {
-  const isTerrain = (id: string) => id === "terrain";
-
-  it("collision: tile and collision cells mark their chunks; terrain grid cells do not", () => {
-    const inv = collisionInvalidation(
-      event({ cells: [{ layerId: "terrain", chunks: ["5,5"] }, { layerId: "ground", chunks: ["0,0"] }, { layerId: "col", chunks: ["1,0"] }] }),
-      isTerrain,
-    );
-    expect(inv).toEqual({ all: false, keys: ["0,0", "1,0"] });
-    expect(collisionInvalidation(event({ cells: [{ layerId: "terrain", chunks: ["0,0"] }] }), isTerrain).keys).toEqual([]);
+describe("manual collision overlay invalidation", () => {
+  const isCollision = (id: string) => id.startsWith("col");
+  it("only collision cell chunks invalidate; layer order and map resize invalidate everything", () => {
+    expect(collisionInvalidation(event({cells:[{layerId:"ground",chunks:["0,0"]},{layerId:"col",chunks:["1,0"]}]}),isCollision)).toEqual({all:false,keys:["1,0"]});
+    for (const s of ["layers","map"] as const) expect(collisionInvalidation(event({structure:[s]}),isCollision).all).toBe(true);
+    expect(collisionInvalidation(event({structure:["palette"]}),isCollision)).toEqual({all:false,keys:[]});
   });
-
-  it("collision: tilesets (solid flags), layers and map invalidate everything; palette nothing", () => {
-    for (const s of ["tilesets", "layers", "map"] as const) expect(collisionInvalidation(event({ structure: [s] }), isTerrain).all).toBe(true);
-    expect(collisionInvalidation(event({ structure: ["palette"] }), isTerrain)).toEqual({ all: false, keys: [] });
-  });
-
-  it("collision overlay follows real store events (setTileSolid, paintTerrain, undo)", () => {
-    const store = setup();
-    const seen: ReturnType<typeof collisionInvalidation>[] = [];
-    store.subscribe((e) => seen.push(collisionInvalidation(e, isTerrain)));
-    store.dispatch({ type: "setTileSolid", tilesetId: "ts", tileIds: [2], solid: true });
-    expect(seen.at(-1)!.all).toBe(true);
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 33, y: 2, value: 1 }] });
-    expect(seen.at(-1)).toEqual({ all: false, keys: [chunkKey(1, 0)] });
-    store.undo();
-    expect(seen.at(-1)!.keys).toContain(chunkKey(1, 0));
-  });
-
-  it("terrain tint: only the layer's own chunks", () => {
-    expect(layerInvalidation(event({ cells: [{ layerId: "terrain", chunks: ["2,1"] }, { layerId: "ground", chunks: ["0,0"] }] }), "terrain")).toEqual({
-      all: false,
-      keys: ["2,1"],
-    });
-    expect(layerInvalidation(event({ structure: ["layers"] }), "terrain").all).toBe(true);
-    expect(layerInvalidation(event({ structure: ["tilesets"] }), "terrain").all).toBe(false);
+  it("paintGrid and undo invalidate the same chunks", () => {
+    const store=setup(), seen: ReturnType<typeof collisionInvalidation>[]=[];
+    store.subscribe(e => seen.push(collisionInvalidation(e,isCollision)));
+    store.dispatch({type:"paintGrid",layerId:"col",cells:[{x:33,y:2,value:1}]});
+    expect(seen.at(-1)).toEqual({all:false,keys:[chunkKey(1,0)]});
+    store.undo(); expect(seen.at(-1)!.keys).toContain(chunkKey(1,0));
   });
 });
 

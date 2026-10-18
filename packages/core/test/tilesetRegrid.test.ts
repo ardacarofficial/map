@@ -11,7 +11,6 @@ import {
   type StoreChangeEvent,
   type Tileset,
 } from "../src";
-import { BLOB_ID, CORNER_ID, derivedMismatches, makeTerrainStore } from "./helpers";
 
 /** 4×4 tiles of 32 px (128×128 image). */
 const TS: Tileset = {
@@ -47,16 +46,15 @@ const entries = (store: MapStore) => store.document.palette.entries().map((e) =>
 describe("updateTilesetGrid", () => {
   it("32 → 16 px: every old tile maps (cells keep showing the same pixels); one undo step restores bytes", () => {
     const store = setup([0, 1, 4, 5, 15]);
-    store.dispatch({ type: "setTileSolid", tilesetId: "ts", tileIds: [1, 15], solid: true });
     store.clearHistory();
     const before = snap(store);
     const events: StoreChangeEvent[] = [];
     store.subscribe((e) => events.push(e));
 
     const result = store.dispatch({ type: "updateTilesetGrid", tilesetId: "ts", tileWidth: 16, tileHeight: 16, margin: 0, spacing: 0 });
-    expect(result).toEqual({ remapped: 4, dropped: 0, outOfRange: 0, clearedCells: 0, droppedSolidTiles: 0, droppedTerrains: [] });
+    expect(result).toEqual({ remapped: 4, dropped: 0, outOfRange: 0, clearedCells: 0 });
     const ts = store.document.getTileset("ts")!;
-    expect(ts).toMatchObject({ tileWidth: 16, tileHeight: 16, columns: 8, rows: 8, solidTiles: [2, 54] });
+    expect(ts).toMatchObject({ tileWidth: 16, tileHeight: 16, columns: 8, rows: 8 });
     expect(entries(store)).toEqual([0, 2, 16, 18, 54]);
     // Cells untouched (same palette indices, flags kept).
     expect(store.document.getLayer("a")!.getCell(0, 0)).toBe(makeCell(1, FLIP_H));
@@ -81,14 +79,13 @@ describe("updateTilesetGrid", () => {
     store.dispatch({ type: "setLayerProps", layerId: "b", props: { locked: false } });
     store.dispatch({ type: "paintCells", layerId: "b", cells: [{ x: 5, y: 1, cell: makeCell(2) }, { x: 6, y: 1, cell: makeCell(3) }] });
     store.dispatch({ type: "setLayerProps", layerId: "b", props: { locked: true } });
-    store.dispatch({ type: "setTileSolid", tilesetId: "ts", tileIds: [1, 2], solid: true });
     store.clearHistory();
     const before = snap(store);
 
     const result = store.dispatch({ type: "updateTilesetGrid", tilesetId: "ts", tileWidth: 32, tileHeight: 32, margin: 0, spacing: 0 });
     // 0 → 0, 2 → 1, 18 → 5; 1 and 9 sit at odd 16 px positions.
-    expect(result).toEqual({ remapped: 2, dropped: 2, outOfRange: 0, clearedCells: 3, droppedSolidTiles: 1, droppedTerrains: [] });
-    expect(store.document.getTileset("ts")).toMatchObject({ columns: 4, rows: 4, solidTiles: [1] });
+    expect(result).toEqual({ remapped: 2, dropped: 2, outOfRange: 0, clearedCells: 3 });
+    expect(store.document.getTileset("ts")).toMatchObject({ columns: 4, rows: 4 });
     const a = store.document.getLayer("a")!;
     expect([0, 1, 2, 3, 4].map((x) => a.getCell(x, 0))).toEqual([makeCell(1, FLIP_H), 0, makeCell(3), 0, makeCell(5)]);
     expect(store.document.getLayer("b")!.getCell(5, 1)).toBe(0);
@@ -125,58 +122,22 @@ describe("updateTilesetGrid", () => {
     expect(() => store.dispatch({ type: "updateTilesetGrid", tilesetId: "ts", tileWidth: 16, tileHeight: 16, margin: 0, spacing: 0, imageWidth: 1.5 })).toThrow(RangeError);
     expect(store.undoDepth).toBe(0);
   });
-
-  it("terrains move with their block, or are dropped; variants remap; derived tiles stay consistent; undo is exact", () => {
-    const store = makeTerrainStore(12, 12);
-    store.dispatch({
-      type: "defineTerrain",
-      terrain: { id: CORNER_ID, name: "Sand", tilesetId: "terrain", template: "corner16", origin: { col: 8, row: 0 }, variants: [{ slot: 15, tileIds: [100, 119] }] },
-    });
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: [{ x: 2, y: 2, value: BLOB_ID }, { x: 3, y: 2, value: BLOB_ID }, { x: 7, y: 7, value: CORNER_ID }] });
-    store.clearHistory();
-    const before = snap(store);
-
-    // 1 px spacing → 32 + 1 = 33 px pitch: only tile (0, 0) stays aligned; both blocks break.
-    const broken = store.dispatch({ type: "updateTilesetGrid", tilesetId: "terrain", tileWidth: 32, tileHeight: 32, margin: 0, spacing: 1, imageWidth: 384, imageHeight: 320 });
-    expect(broken.droppedTerrains).toEqual([BLOB_ID, CORNER_ID]);
-    expect(store.document.getTileset("terrain")!.terrains).toBeUndefined();
-    expect(store.document.getLayer("tiles")!.chunkCount).toBe(0);
-    expect(derivedMismatches(store.document)).toEqual([]);
-    store.undo();
-    expect(snap(store)).toBe(before);
-
-    // 32 → 16: blocks map onto 2× spread positions — not the same shape, dropped too.
-    const half = store.dispatch({ type: "updateTilesetGrid", tilesetId: "terrain", tileWidth: 16, tileHeight: 16, margin: 0, spacing: 0 });
-    expect(half.droppedTerrains).toEqual([BLOB_ID, CORNER_ID]);
-    store.undo();
-
-    // Wider image (same tile size): blocks keep their pixels at new ids, variants follow.
-    const wide = store.dispatch({ type: "replaceTilesetImage", tilesetId: "terrain", imageWidth: 16 * 32, imageHeight: 320 });
-    expect(wide.droppedTerrains).toEqual([]);
-    const ts = store.document.getTileset("terrain")!;
-    expect(ts.columns).toBe(16);
-    expect(ts.terrains!.find((t) => t.id === CORNER_ID)).toMatchObject({ origin: { col: 8, row: 0 }, variants: [{ slot: 15, tileIds: [8 * 16 + 4, 9 * 16 + 11] }] });
-    expect(derivedMismatches(store.document)).toEqual([]);
-    store.undo();
-    expect(snap(store)).toBe(before);
-  });
 });
 
 describe("replaceTilesetImage", () => {
   it("taller image: ids preserved (appending rows keeps everything)", () => {
     const store = setup([0, 3, 15]);
     const r = store.dispatch({ type: "replaceTilesetImage", tilesetId: "ts", imageWidth: 128, imageHeight: 192 });
-    expect(r).toEqual({ remapped: 0, dropped: 0, outOfRange: 0, clearedCells: 0, droppedSolidTiles: 0, droppedTerrains: [] });
+    expect(r).toEqual({ remapped: 0, dropped: 0, outOfRange: 0, clearedCells: 0 });
     expect(store.document.getTileset("ts")).toMatchObject({ columns: 4, rows: 6 });
     expect(entries(store)).toEqual([0, 3, 15]);
     expect(store.undoDepth).toBe(1);
   });
 
-  it("shorter image: out-of-range entries and cells are kept (reported), solid flags dropped; growing back restores ids", () => {
+  it("shorter image: out-of-range entries and cells are kept (reported); growing back restores ids", () => {
     const store = setup([0, 3, 9, 15]);
-    store.dispatch({ type: "setTileSolid", tilesetId: "ts", tileIds: [3, 15], solid: true });
     const r = store.dispatch({ type: "replaceTilesetImage", tilesetId: "ts", imageWidth: 128, imageHeight: 64 });
-    expect(r).toMatchObject({ remapped: 0, dropped: 0, outOfRange: 2, clearedCells: 0, droppedSolidTiles: 1 });
+    expect(r).toMatchObject({ remapped: 0, dropped: 0, outOfRange: 2, clearedCells: 0 });
     expect(entries(store)).toEqual([0, 3, 9, 15]);
     expect(store.document.getLayer("a")!.getCell(3, 0)).toBe(makeCell(4));
     expect(paletteWarnings(store.document)).toEqual([

@@ -26,7 +26,7 @@ describe("shared fill region", () => {
   it("invalidates on writes, undo, redo, layer and document changes", () => {
     const { store, layer, id } = fixture();
     const first = fillRegionPlan(store, layer, { x: 0, y: 0 });
-    store.dispatch({ type: "paintTerrain", layerId: id, cells: Array.from({ length: 6 }, (_, y) => ({ x: 4, y, value: 1 })) });
+    store.dispatch({ type: "paintGrid", layerId: id, cells: Array.from({ length: 6 }, (_, y) => ({ x: 4, y, value: 1 })) });
     const left = fillRegionPlan(store, layer, { x: 0, y: 0 });
     expect(left).not.toBe(first);
     expect([...runPoints(left.runs)]).toHaveLength(24);
@@ -88,7 +88,6 @@ describe("shared fill region", () => {
     expect(fillRegionPlan(store, layer, { x: 0, y: 0.5 }).runs).toEqual([]);
   });
 });
-
 
 describe("run fill writes", () => {
   it("matches point-fill writes for mixed patterns, no-ops and flags in exact order", () => {

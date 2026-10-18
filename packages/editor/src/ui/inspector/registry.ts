@@ -1,13 +1,4 @@
-/**
- * Sections of the Denetçi (inspector, right column "Denetçi" tab). The
- * inspector is contextual: `mode` (see `mode.ts`, first match wins) says
- * what it is about — the selected entity, a marquee region, the brush, the
- * terrain brush, the collision kind or the map. Built-in sections
- * (`sections.tsx`) show one card per mode; later features add their own
- * with `registerInspectorSection` and pick the modes they belong to in
- * `when` (e.g. `c.mode === "brush"`). Matching sections are shown in
- * `order` (lower first, top to bottom).
- */
+
 import type { Entity, EntityLayer, MapDocument, TileLayer } from "@smap/core";
 import type { ComponentType } from "react";
 

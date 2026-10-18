@@ -14,7 +14,7 @@ for (const kind of ["tile", "grid"] as const) {
       if (kind === "tile") state.setSelection({ tilesetId: store.document.tilesets[0].id, tileId: 9 });
       state.setTool("fill");
       const wall = Array.from({ length: 48 }, (_, y) => kind === "grid" ? { x: 32, y, value: 1 } : { x: 32, y, cell: store.getOrAddPaletteIndex(store.document.tilesets[0].id, 1) });
-      store.dispatch({ type: kind === "grid" ? "paintTerrain" : "paintCells", layerId: id, cells: wall });
+      store.dispatch({ type: kind === "grid" ? "paintGrid" : "paintCells", layerId: id, cells: wall });
       store.clearHistory();
       (window as unknown as { __smap: { setCamera(x: number, y: number, z: number): void } }).__smap.setCamera(40, 40, 0.25);
     }, kind);
@@ -27,7 +27,7 @@ for (const kind of ["tile", "grid"] as const) {
       const state = useEditorStore.getState();
       const store = state.project.store;
       const wall = Array.from({ length: 48 }, (_, y) => kind === "grid" ? { x: 16, y, value: 1 } : { x: 16, y, cell: store.getOrAddPaletteIndex(store.document.tilesets[0].id, 1) });
-      store.dispatch({ type: kind === "grid" ? "paintTerrain" : "paintCells", layerId: state.activeLayerId, cells: wall });
+      store.dispatch({ type: kind === "grid" ? "paintGrid" : "paintCells", layerId: state.activeLayerId, cells: wall });
       store.clearHistory();
     }, kind);
     await page.mouse.move(position.x + 8, position.y);

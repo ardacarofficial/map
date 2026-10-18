@@ -22,7 +22,7 @@ beforeEach(() => {
   collision = store.dispatch({ type: "addLayer", layer: { name: "Collision", type: "grid", role: "collision" } });
   const cell = store.getOrAddPaletteIndex("t", 1);
   for (const layerId of [ground, roof]) store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell }, { x: 2, y: 1, cell }] });
-  store.dispatch({ type: "paintTerrain", layerId: collision, cells: [{ x: 1, y: 1, value: 2 }] });
+  store.dispatch({ type: "paintGrid", layerId: collision, cells: [{ x: 1, y: 1, value: 2 }] });
   store.clearHistory();
   const s = useEditorStore.getState();
   s.setProject({ name: "test", store, levelPath: "main.json" });
@@ -35,7 +35,7 @@ const snapshot = () => resolveSelectionScope(store.document, ground, "visible");
 const bytes = () => serializeLevel(store.document);
 
 describe("selection layer snapshots", () => {
-  it("defaults to active; visible includes collision and never entities or terrain grids", () => {
+  it("defaults to active; visible includes collision and never entities", () => {
     store.dispatch({ type: "addLayer", layer: { name: "Entities", type: "entity" } });
     expect(useEditorStore.getState().selectionScope).toBe("active");
     expect(resolveSelectionScope(store.document, ground, "active").layerIds).toEqual([ground]);

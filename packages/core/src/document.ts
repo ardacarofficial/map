@@ -3,16 +3,10 @@ import { isEntityLayer, isGridLayer, type EntityLayer, type GridLayer, type Tile
 import { collectionsProblem, normalizeCollection, type Collection } from "./collection";
 import { Palette } from "./palette";
 import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomSet";
-import type { Terrain } from "./terrain";
 import { normalizeTileset, type Tileset } from "./tileset";
 
-/**
- * The single file-format version number for project and level files.
- * 2 (October 2026): terrain sets as tile tags, legacy terrain grid layers
- * migrated away (see `serialize.ts`).
- * 3: explicit nine-slice stamp metadata and generated tileset provenance/source PNG hashes. Versions 1 and 2 remain readable; old stamps stay flat.
- */
-export const DOCUMENT_FORMAT_VERSION = 3;
+/** Editor project/level/stamp/clip format. Legacy conversion is raw JSON and preserves stored tile cells. */
+export const DOCUMENT_FORMAT_VERSION = 4;
 /** Default tile size in pixels. */
 export const DEFAULT_TILE_SIZE = 32;
 /**
@@ -91,8 +85,6 @@ export class MapDocument {
   #props: MapProps = Object.freeze({ background: null, name: "" });
   readonly #seed: number;
   #migrations: readonly string[] = Object.freeze([]);
-  /** terrain id → terrain (rebuilt lazily after tileset changes). */
-  #terrains: Map<number, Terrain> | null = null;
 
   constructor(map: MapInfo, seed = 0) {
     const problem = mapInfoProblem(map);
@@ -103,18 +95,13 @@ export class MapDocument {
   }
 
   /**
-   * Seed for terrain variant selection: a cell with several candidate tiles
+   * Seed for coordinate variant selection: a cell with several candidate tiles
    * shows `candidates[hash(seed, x, y) % n]`. Saved with the level.
    */
   get seed(): number {
     return this.#seed;
   }
 
-  /**
-   * What `parseLevel` converted from an older format (e.g. legacy terrain
-   * grid layers removed), in a fixed order; empty for a current file. When
-   * non-empty the level should be saved to write the new form.
-   */
   get migrations(): readonly string[] {
     return this.#migrations;
   }
@@ -230,21 +217,6 @@ export class MapDocument {
     return isGridLayer(layer) ? layer : undefined;
   }
 
-  /** Terrain by id, searched in every tileset. */
-  getTerrain(id: number): Terrain | undefined {
-    return this.terrainMap().get(id);
-  }
-
-  /** All terrains of all tilesets, keyed by id. Do not mutate. */
-  terrainMap(): ReadonlyMap<number, Terrain> {
-    if (!this.#terrains) {
-      const map = new Map<number, Terrain>();
-      for (const tileset of this.#tilesets) for (const t of tileset.terrains ?? []) map.set(t.id, t);
-      this.#terrains = map;
-    }
-    return this.#terrains;
-  }
-
   /** True when (`x`, `y`) is an integer cell inside the map bounds. */
   inBounds(x: number, y: number): boolean {
     return (
@@ -260,7 +232,6 @@ export class MapDocument {
   /** @internal */
   _addTileset(tileset: Tileset): void {
     this.#tilesets.push(normalizeTileset(tileset));
-    this.#terrains = null;
   }
 
   /** @internal Replaces the tileset with the same id (validated by the caller). */
@@ -268,14 +239,12 @@ export class MapDocument {
     const index = this.#tilesets.findIndex((t) => t.id === tileset.id);
     if (index < 0) throw new Error(`no tileset "${tileset.id}"`);
     this.#tilesets[index] = normalizeTileset(tileset);
-    this.#terrains = null;
   }
 
   /** @internal Replaces the whole tileset list (order = display order; validated by the caller). */
   _setTilesets(tilesets: readonly Tileset[]): void {
     this.#tilesets.length = 0;
     for (const tileset of tilesets) this.#tilesets.push(Object.isFrozen(tileset) ? tileset : normalizeTileset(tileset));
-    this.#terrains = null;
   }
 
   /** @internal Replaces the user-defined entity types (validated by the caller). */

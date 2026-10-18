@@ -3,7 +3,6 @@ import {
   COLLISION_SOLID,
   LayerMergeError,
   SPAWN_TYPE_ID,
-  isTileLayer,
   layerCellsAsRegion,
   layerContentBounds,
   makeCell,
@@ -19,7 +18,7 @@ import {
   type Tileset,
   uniqueLayerName,
 } from "../src";
-import { BLOB_ID, TERRAIN_TILESET, TILESET, derivedMismatches, makeStore, makeTerrainStore } from "./helpers";
+import { TILESET, makeStore } from "./helpers";
 
 const WATER: Tileset = { ...TILESET, id: "water", name: "Water", imagePath: "tilesets/water.png" };
 
@@ -58,77 +57,26 @@ describe("addTileset is undoable", () => {
     expect(store.undoDepth).toBe(0);
     expect(store.document.getTileset("water")).toBeDefined();
   });
-
-  it("a tileset bringing terrains derives existing grid values in the same step", () => {
-    const store = makeTerrainStore(8, 8);
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: [{ x: 3, y: 3, value: 7 }] });
-    store.clearHistory();
-    const before = serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets });
-    const other: Tileset = {
-      ...TERRAIN_TILESET,
-      id: "t2",
-      terrains: [{ id: 7, name: "X", tilesetId: "t2", template: "corner16", origin: { col: 8, row: 0 } }],
-    };
-    store.dispatch({ type: "addTileset", tileset: other });
-    expect(store.undoDepth).toBe(1);
-    expect(store.document.getLayer("tiles")!.getCell(3, 3)).not.toBe(0);
-    expect(derivedMismatches(store.document)).toEqual([]);
-    store.undo();
-    // Palette entries added by the derivation stay (append-only); the rest is as before.
-    expect(store.document.getTileset("t2")).toBeUndefined();
-    expect(store.document.getLayer("tiles")!.getCell(3, 3)).toBe(0);
-    expect(serializeProject({ name: "p", levels: [], tilesets: store.document.tilesets })).toBe(before);
-  });
 });
 
 describe("removeTileset", () => {
-  it("clears every cell using it, removes terrains and solid flags; one undo step restores all byte-exactly", () => {
-    const store = makeTerrainStore(12, 12);
-    store.dispatch({ type: "addTileset", tileset: TILESET });
-    store.dispatch({ type: "setTileSolid", tilesetId: "terrain", tileIds: [1, 2], solid: true });
-    store.dispatch({ type: "addLayer", layer: { id: "deco", name: "Deco" } });
-    const grass = store.getOrAddPaletteIndex("grass", 3);
-    const own = store.getOrAddPaletteIndex("terrain", 100);
-    store.dispatch({ type: "paintCells", layerId: "deco", cells: [{ x: 0, y: 0, cell: makeCell(grass) }, { x: 1, y: 0, cell: makeCell(own) }] });
-    store.dispatch({ type: "setLayerProps", layerId: "deco", props: { locked: true } });
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: rectCells(4, 4, 7, 7).map((p) => ({ ...p, value: BLOB_ID })) });
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: [{ x: 10, y: 10, value: 9 }] }); // undefined terrain id
-    store.clearHistory();
-
-    const usage = tilesetUsage(store.document, "terrain");
-    let derived = 0;
-    for (const chunk of store.document.getLayer("tiles")!.chunks()) for (const v of chunk.data) if (v !== 0) derived++;
-    expect(derived).toBeGreaterThan(0);
-    expect(usage.cells).toBe(1 + derived);
-    expect(usage.layers).toEqual(["tiles", "terrain", "deco"]);
-    expect(usage.terrains).toBe(2);
-    expect(usage.terrainCells).toBe(16);
-    expect(tilesetUsage(store.document, "grass")).toEqual({ cells: 1, layers: ["deco"], terrains: 0, terrainCells: 0 });
-
-    const before = snap(store);
-    const paletteSize = store.document.palette.size;
-    const events = structures(store);
-    store.dispatch({ type: "removeTileset", tilesetId: "terrain" });
-    expect(store.undoDepth).toBe(1);
-    const doc = store.document;
-    expect(doc.tilesets.map((t) => t.id)).toEqual(["grass"]);
-    expect(doc.getTerrain(BLOB_ID)).toBeUndefined();
-    expect(doc.palette.size).toBe(paletteSize); // entries stay, unused
-    expect(doc.getLayer("deco")!.getCell(0, 0)).toBe(makeCell(grass));
-    expect(doc.getLayer("deco")!.getCell(1, 0)).toBe(0); // locked layer cleared too
-    expect(doc.getLayer("tiles")!.chunkCount).toBe(0);
-    expect(doc.getLayer("terrain")!.getCell(5, 5)).toBe(0);
-    expect(doc.getLayer("terrain")!.getCell(10, 10)).toBe(9); // not one of its terrains
-    expect(derivedMismatches(doc)).toEqual([]);
-    expect(events.at(-1)).toContain("tilesets");
-    expect(tilesetUsage(doc, "terrain")).toEqual({ cells: 0, layers: [], terrains: 0, terrainCells: 0 });
-
-    const after = snap(store);
-    store.undo();
-    expect(snap(store)).toBe(before);
-    expect(store.document.tilesets.map((t) => t.id)).toEqual(["terrain", "grass"]);
-    store.redo();
-    expect(snap(store)).toBe(after);
+  it("clears all owned tile cells including locked layers, retains manual collision and undoes byte-exactly", () => {
+    const { store, ground, top } = makeStore(12,12);
+    store.dispatch({ type: "addTileset", tileset: WATER });
+    const water = store.getOrAddPaletteIndex("water", 2);
+    store.dispatch({ type: "paintCells", layerId: ground, cells: [{x:1,y:1,cell:1},{x:2,y:1,cell:water}] });
+    store.dispatch({ type: "paintCells", layerId: top, cells: [{x:3,y:1,cell:1}] });
+    store.dispatch({ type: "setLayerProps", layerId: top, props: {locked:true} });
+    store.dispatch({ type: "addLayer", layer: { id:"collision",name:"Collision",type:"grid",role:"collision" } });
+    store.dispatch({ type: "paintGrid", layerId: "collision", cells:[{x:1,y:1,value:1}] });
+    const before=snap(store);store.clearHistory();
+    expect(tilesetUsage(store.document,"grass")).toEqual({cells:2,layers:[ground,top]});
+    store.dispatch({type:"removeTileset",tilesetId:"grass"});
+    expect(store.document.getLayer(ground)!.getCell(1,1)).toBe(0);
+    expect(store.document.getLayer(top)!.getCell(3,1)).toBe(0);
+    expect(store.document.getLayer(ground)!.getCell(2,1)).toBe(water);
+    expect(store.document.getLayer("collision")!.getCell(1,1)).toBe(1);
+    const after=snap(store);store.undo();expect(snap(store)).toBe(before);store.redo();expect(snap(store)).toBe(after);
   });
 
   it("throws on an unknown tileset", () => {
@@ -159,14 +107,14 @@ describe("tileset metadata and order", () => {
   it("moveTileset reorders the list (display order); undoable; validates the index", () => {
     const { store } = makeStore(4, 4);
     store.dispatch({ type: "addTileset", tileset: WATER });
-    store.dispatch({ type: "addTileset", tileset: TERRAIN_TILESET });
+    store.dispatch({ type: "addTileset", tileset: { ...TILESET, id: "collision" } });
     store.clearHistory();
-    store.dispatch({ type: "moveTileset", tilesetId: "terrain", index: 0 });
-    expect(store.document.tilesets.map((t) => t.id)).toEqual(["terrain", "grass", "water"]);
-    store.dispatch({ type: "moveTileset", tilesetId: "terrain", index: 0 });
+    store.dispatch({ type: "moveTileset", tilesetId: "collision", index: 0 });
+    expect(store.document.tilesets.map((t) => t.id)).toEqual(["collision", "grass", "water"]);
+    store.dispatch({ type: "moveTileset", tilesetId: "collision", index: 0 });
     expect(store.undoDepth).toBe(1);
     store.undo();
-    expect(store.document.tilesets.map((t) => t.id)).toEqual(["grass", "water", "terrain"]);
+    expect(store.document.tilesets.map((t) => t.id)).toEqual(["grass", "water", "collision"]);
     expect(() => store.dispatch({ type: "moveTileset", tilesetId: "grass", index: 3 })).toThrow(RangeError);
   });
 
@@ -212,7 +160,7 @@ describe("duplicateLayer", () => {
   it("name defaults to a unique form of the source name; collision grids copy as collision", () => {
     const { store } = makeStore(8, 8);
     store.dispatch({ type: "addLayer", layer: { id: "col", name: "Col", type: "grid", role: "collision" } });
-    store.dispatch({ type: "paintTerrain", layerId: "col", cells: [{ x: 2, y: 2, value: COLLISION_SOLID }] });
+    store.dispatch({ type: "paintGrid", layerId: "col", cells: [{ x: 2, y: 2, value: COLLISION_SOLID }] });
     const id = store.dispatch({ type: "duplicateLayer", layerId: "col" });
     const copy = store.document.getGridLayer(id)!;
     expect(copy.role).toBe("collision");
@@ -220,61 +168,23 @@ describe("duplicateLayer", () => {
     expect(copy.getCell(2, 2)).toBe(COLLISION_SOLID);
   });
 
-  it("a terrain grid duplicates as a new grid + derived tile layer pair", () => {
-    const store = makeTerrainStore(12, 12);
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: rectCells(2, 2, 6, 6).map((p) => ({ ...p, value: BLOB_ID })) });
-    store.clearHistory();
-    const before = snap(store);
-    const id = store.dispatch({ type: "duplicateLayer", layerId: "terrain", name: "T2" });
-    const doc = store.document;
-    const grid = doc.getGridLayer(id)!;
-    expect(grid.role).toBe("terrain");
-    expect(grid.targetLayerId).not.toBe("tiles");
-    const tiles = doc.getLayer(grid.targetLayerId!)!;
-    expect(isTileLayer(tiles)).toBe(true);
-    expect(doc.layers.map((l) => l.id)).toEqual(["tiles", tiles.id, "terrain", id]);
-    expect(tiles.getCell(4, 4)).toBe(doc.getLayer("tiles")!.getCell(4, 4));
-    expect(derivedMismatches(doc)).toEqual([]);
-    expect(store.undoDepth).toBe(1);
-    // The copy derives on its own.
-    store.dispatch({ type: "paintTerrain", layerId: id, cells: [{ x: 9, y: 9, value: BLOB_ID }] });
-    expect(tiles.getCell(9, 9)).not.toBe(0);
-    expect(doc.getLayer("tiles")!.getCell(9, 9)).toBe(0);
-    while (store.undo());
-    expect(snap(store)).toBe(before);
-  });
-
   it("names copies uniquely within the level", () => {
-    const store = makeTerrainStore(8, 8);
+    const { store } = makeStore(8, 8);
+    store.dispatch({ type: "addLayer", layer: { id: "collision", name: "Collision", type: "grid", role: "collision" } });
     const doc = store.document;
-    const id = store.dispatch({ type: "duplicateLayer", layerId: "terrain" });
+    const id = store.dispatch({ type: "duplicateLayer", layerId: "collision" });
     const grid = doc.getGridLayer(id)!;
-    const tilesName = doc.getLayer(grid.targetLayerId!)!.name;
-    expect(tilesName).not.toBe(doc.getLayer("tiles")!.name);
-    expect(grid.name).not.toBe(doc.getLayer("terrain")!.name);
-    const id2 = store.dispatch({ type: "duplicateLayer", layerId: "terrain", name: "Pair", targetName: "Pair" });
+    expect(grid.name).not.toBe(doc.getLayer("collision")!.name);
+    const id2 = store.dispatch({ type: "duplicateLayer", layerId: "collision", name: "Pair" });
     const grid2 = doc.getGridLayer(id2)!;
-    expect(doc.getLayer(grid2.targetLayerId!)!.name).toBe("Pair");
-    expect(grid2.name).toBe("Pair 2");
-    const tilesCopy = store.dispatch({ type: "duplicateLayer", layerId: "tiles", name: "Pair" });
-    expect(doc.getLayer(tilesCopy)!.name).toBe("Pair 3");
+    expect(grid2.name).toBe("Pair");
+    const tilesCopy = store.dispatch({ type: "duplicateLayer", layerId: "ground", name: "Pair" });
+    expect(doc.getLayer(tilesCopy)!.name).toBe("Pair 2");
     const all = doc.layers.map((l) => l.name);
     expect(new Set(all).size).toBe(all.length);
-    expect(uniqueLayerName(doc, "Pair")).toBe("Pair 4");
+    expect(uniqueLayerName(doc, "Pair")).toBe("Pair 3");
     expect(uniqueLayerName(doc, "Fresh")).toBe("Fresh");
     expect(uniqueLayerName(doc, "Fresh", ["Fresh"])).toBe("Fresh 2");
-  });
-
-  it("a derived tile layer alone copies as a plain tile layer", () => {
-    const store = makeTerrainStore(8, 8);
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: [{ x: 3, y: 3, value: BLOB_ID }] });
-    const id = store.dispatch({ type: "duplicateLayer", layerId: "tiles" });
-    const copy = store.document.getLayer(id)!;
-    expect(isTileLayer(copy)).toBe(true);
-    expect(copy.getCell(3, 3)).toBe(store.document.getLayer("tiles")!.getCell(3, 3));
-    // Hand-paintable (not derived).
-    const cell = makeCell(store.getOrAddPaletteIndex("terrain", 5));
-    expect(store.dispatch({ type: "paintCells", layerId: id, cells: [{ x: 0, y: 0, cell }] }).cells).toHaveLength(1);
   });
 
   it("an entity layer copies with new entity ids and without the spawn point", () => {
@@ -321,7 +231,8 @@ describe("mergeLayerDown", () => {
   });
 
   it("refuses with a typed error and changes nothing", () => {
-    const store = makeTerrainStore(8, 8);
+    const { store } = makeStore(8, 8);
+    store.dispatch({ type: "addLayer", layer: { id: "collision", name: "Collision", type: "grid", role: "collision" } });
     store.dispatch({ type: "addLayer", layer: { id: "a", name: "A" } });
     store.dispatch({ type: "addLayer", layer: { id: "b", name: "B" } });
     store.dispatch({ type: "addLayer", layer: { id: "ents", name: "E", type: "entity" } });
@@ -337,20 +248,15 @@ describe("mergeLayerDown", () => {
       }
       return "merged";
     };
-    expect(reason("tiles")).toBe("noLayerBelow");
-    expect(reason("terrain")).toBe("notTileLayer");
+    expect(reason("ground")).toBe("noLayerBelow");
+    expect(reason("collision")).toBe("notTileLayer");
     expect(reason("a")).toBe("belowNotTileLayer");
     expect(reason("ents")).toBe("notTileLayer");
     expect(reason("c")).toBe("belowNotTileLayer");
-    store.dispatch({ type: "moveLayer", layerId: "a", index: 1 }); // tiles, a, terrain, ...
-    expect(reason("a")).toBe("derived");
-    store.dispatch({ type: "moveLayer", layerId: "b", index: 0 }); // b, tiles, a, ...
-    expect(reason("tiles")).toBe("derived");
     store.dispatch({ type: "setLayerProps", layerId: "b", props: { locked: true } });
-    store.dispatch({ type: "moveLayer", layerId: "a", index: 1 }); // b, a, tiles
-    expect(reason("a")).toBe("locked");
+    expect(reason("b")).toBe("locked");
     expect(() => store.dispatch({ type: "mergeLayerDown", layerId: "zz" })).toThrow(/unknown layer/);
-    expect(store.undoDepth).toBe(4);
+    expect(store.undoDepth).toBe(1);
     while (store.undo());
     expect(snap(store)).toBe(before);
   });
@@ -413,28 +319,28 @@ describe("moveRegion", () => {
     expect(g.chunkCount === 0 || g.getCell(3, 1) === 0).toBe(true);
   });
 
-  it("skips locked layers, moves the terrain grid of a derived layer, and moves entities in the rect", () => {
-    const store = makeTerrainStore(12, 12);
+  it("skips locked layers and moves manual collision and entities in the rect", () => {
+    const { store } = makeStore(12, 12);
+    store.dispatch({ type: "addLayer", layer: { id: "collision", name: "Collision", type: "grid", role: "collision" } });
     store.dispatch({ type: "addLayer", layer: { id: "locked", name: "L" } });
-    const c = makeCell(store.getOrAddPaletteIndex("terrain", 3));
+    const c = makeCell(store.getOrAddPaletteIndex("grass", 3));
     store.dispatch({ type: "paintCells", layerId: "locked", cells: [{ x: 3, y: 3, cell: c }] });
     store.dispatch({ type: "setLayerProps", layerId: "locked", props: { locked: true } });
-    store.dispatch({ type: "paintTerrain", layerId: "terrain", cells: rectCells(2, 2, 4, 4).map((p) => ({ ...p, value: BLOB_ID })) });
+    store.dispatch({ type: "paintGrid", layerId: "collision", cells: rectCells(2, 2, 4, 4).map((p) => ({ ...p, value: 1 })) });
     store.dispatch({ type: "addLayer", layer: { id: "ents", name: "E", type: "entity" } });
     store.dispatch({ type: "addEntity", layerId: "ents", entity: { id: "in", typeId: "portal", x: 3 * 32 + 5, y: 3 * 32 } });
     store.dispatch({ type: "addEntity", layerId: "ents", entity: { id: "out", typeId: "portal", x: 9 * 32, y: 9 * 32 } });
     store.dispatch({ type: "addEntity", layerId: "ents", entity: { id: "edge", typeId: "portal", x: 2 * 32, y: 2 * 32 } });
     store.clearHistory();
     const before = snap(store);
-    moveRegion(store, ["tiles", "locked", "ents"], { x: 2, y: 2, width: 3, height: 3 }, 4, -2);
+    moveRegion(store, ["collision", "locked", "ents"], { x: 2, y: 2, width: 3, height: 3 }, 4, -2);
     const doc = store.document;
     expect(store.undoDepth).toBe(1);
     expect(doc.getLayer("locked")!.getCell(3, 3)).toBe(c);
-    const grid = doc.getLayer("terrain")!;
+    const grid = doc.getLayer("collision")!;
     expect(grid.getCell(3, 3)).toBe(0);
-    expect(grid.getCell(7, 1)).toBe(BLOB_ID);
-    expect(grid.getCell(6, 0)).toBe(BLOB_ID);
-    expect(derivedMismatches(doc)).toEqual([]);
+    expect(grid.getCell(7, 1)).toBe(1);
+    expect(grid.getCell(6, 0)).toBe(1);
     expect(doc.findEntity("in")!.entity).toMatchObject({ x: 7 * 32 + 5, y: 1 * 32 });
     expect(doc.findEntity("out")!.entity).toMatchObject({ x: 9 * 32, y: 9 * 32 });
     expect(doc.findEntity("edge")!.entity).toMatchObject({ x: 6 * 32, y: 0 });
