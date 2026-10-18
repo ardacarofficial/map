@@ -862,7 +862,6 @@ export const en: Messages = {
     backupOpened: "Backup opened ({time}). Save it if you like it.",
     backupFailed: "Could not open backup: {detail}",
     reloaded: "Reloaded from disk: {name}",
-    saved: "Saved: {name}",
     opened: "Opened: {name}",
     notPng: "Only PNG tilesets can be added: {name}",
     imageDecodeFailed: "Couldn't read image: {name}",

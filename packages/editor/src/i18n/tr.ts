@@ -865,7 +865,6 @@ export const tr = {
     backupOpened: "Yedek açıldı ({time}). Beğendiysen kaydet.",
     backupFailed: "Yedek açılamadı: {detail}",
     reloaded: "Diskten yüklendi: {name}",
-    saved: "Kaydedildi: {name}",
     opened: "Açıldı: {name}",
     notPng: "Yalnızca PNG tileset eklenebilir: {name}",
     imageDecodeFailed: "Görsel okunamadı: {name}",

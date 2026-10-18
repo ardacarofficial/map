@@ -752,8 +752,7 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
       if (workspace !== ws) return true;
       settleDirty(libRevision);
       useSaveStatus.setState({ diskConflict: null });
-      // Short: the app bar's save indicator keeps saying it (autosave shows no toast at all).
-      toast.success(t("toast.saved", { name: project.name || target.fs.name }), 1500);
+      // Saving is reported by the app-bar indicator, without a toast (§4.8).
       addRecent(target, project);
       return true;
     } catch (error) {

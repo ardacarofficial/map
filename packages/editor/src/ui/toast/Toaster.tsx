@@ -1,7 +1,6 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 
 import { t } from "../../i18n";
-import { CANVAS_HOST_ATTR } from "../canvas/canvasHandle";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
 import { useToastStore, type Toast, type ToastKind } from "./toastStore";
@@ -20,43 +19,6 @@ const ICON_COLOR: Record<ToastKind, string> = {
   error: "text-danger",
 };
 
-/** Gap between the toast stack and the bottom edge it sits on (CSS px). */
-const EDGE_GAP = 12;
-
-/**
- * Where the stack goes: bottom-centre of the map canvas, 12 px above its
- * bottom edge (which is the status bar when the dock is collapsed), so the
- * dock below stays usable. Without a canvas (welcome screen) the stack sits
- * 12 px above the status bar, centred in the window (the class fallback).
- */
-function useCanvasBottom(active: boolean): CSSProperties | undefined {
-  const [place, setPlace] = useState<CSSProperties | undefined>(undefined);
-  useEffect(() => {
-    if (!active) return;
-    let timer = 0;
-    const measure = () => {
-      const host = document.querySelector(`[${CANVAS_HOST_ATTR}]`);
-      const r = host?.getBoundingClientRect();
-      const next =
-        r && r.width > 0 && r.height > 0
-          ? { left: Math.round(r.left + r.width / 2), bottom: Math.round(window.innerHeight - r.bottom + EDGE_GAP), maxWidth: Math.max(0, Math.round(r.width - 32)) }
-          : undefined;
-      setPlace((c) => (c?.left === next?.left && c?.bottom === next?.bottom && c?.maxWidth === next?.maxWidth ? c : next));
-    };
-    const loop = () => {
-      measure();
-      timer = window.setTimeout(loop, 250);
-    };
-    loop();
-    window.addEventListener("resize", measure);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", measure);
-    };
-  }, [active]);
-  return active ? place : undefined;
-}
-
 /**
  * One-line notifications, bottom-centre. Only the buttons take the pointer:
  * a stroke that runs under a toast keeps drawing (the toast pauses while a
@@ -64,12 +26,10 @@ function useCanvasBottom(active: boolean): CSSProperties | undefined {
  */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
-  const place = useCanvasBottom(toasts.length > 0);
   return (
     <div
       aria-live="polite"
       data-toaster
-      style={place}
       className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+12px)] left-1/2 z-50 flex w-dialog-m max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2"
     >
       {toasts.map((toast) => (
