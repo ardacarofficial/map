@@ -1278,7 +1278,7 @@ export const tr = {
     "generated": "Üretilen",
     "dialogTitle": "9 dilim stamp",
     "facts": "{width} × {height} · {count} katman",
-    "composition": "Çeyrek parçalar · Kare iç köşe · Katılık: katkıların birleşimi",
+    "composition": "Eksik dönüş ve kavşak parçaları bu 9 tile'dan üretilir",
     "preparing": "Önizlemeler hazırlanıyor…",
     "advanced": "Gelişmiş",
     "innerCorner": "İç köşe",

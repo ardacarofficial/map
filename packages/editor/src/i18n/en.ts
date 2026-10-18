@@ -1275,7 +1275,7 @@ export const en: Messages = {
     "generated": "Generated",
     "dialogTitle": "9-slice stamp",
     "facts": "{width} × {height} · {count} layers",
-    "composition": "Source quarters · Square inner joins · Combined solidity",
+    "composition": "Missing turns and junctions are built from these 9 tiles",
     "preparing": "Preparing previews…",
     "advanced": "Advanced",
     "innerCorner": "Inner corner",
