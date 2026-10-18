@@ -292,7 +292,7 @@ export const tr = {
     "view.toggleLevels": "Proje ağacı",
     "view.toggleProperties": "Denetçi sekmeleri",
     "view.toggleLayers": "Katmanlar bölümü",
-    "view.toggleRecent": "Alt panel (Tileset · Son kullanılanlar)",
+    "view.toggleRecent": "Son kullanılanlar",
     "view.toggleRulers": "Cetveller",
     "view.resetLayout": "Düzeni sıfırla",
     "layer.duplicate": "Katmanı çoğalt",
