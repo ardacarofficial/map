@@ -29,6 +29,7 @@ import { Button, IconButton } from "../primitives/Button";
 import { NativeSelect } from "../primitives/NativeSelect";
 import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
+import { PropRow, PropField } from "../primitives/PropRow";
 import { Toggle } from "../primitives/Toggle";
 import { askText } from "./TextPrompt";
 
@@ -119,21 +120,13 @@ export function RandomSetControls() {
             const stamp = library.find((s) => s.id === c.stampId);
             const weight = c.weight ?? 1;
             return (
-              <div key={c.stampId} className="group flex h-row items-center gap-2 rounded-sm pr-1 pl-1.5">
-                <Icon name="stamp" size={16} className={stamp ? "text-muted" : "text-danger"} />
-                <span className="min-w-0 flex-1 truncate text-sm text-text">{stamp?.name ?? c.stampId}</span>
-                <span className="flex h-control-sm shrink-0 items-center rounded-sm bg-field ring-1 ring-inset ring-line">
-                  <IconButton size="sm" aria-label={t("random.dec")} disabled={weight <= MIN_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, -1)} >
-                    <Icon name="minus" size={16} />
+              <div key={c.stampId} className="group rounded-sm px-1">
+                <PropRow label={<span className="flex items-center gap-2" title={stamp?.name ?? c.stampId}><Icon name="stamp" size={16} className={stamp ? "shrink-0 text-muted" : "shrink-0 text-danger"} /><span className="truncate">{stamp?.name ?? c.stampId}</span></span>}>
+                  <PropField value={weight} aria-label={t("random.weight")} min={MIN_WEIGHT} max={MAX_WEIGHT} scrub onCommit={(next) => setRandomStampWeight(c.stampId, Math.round(next) - weight)} />
+                  <IconButton size="sm" aria-label={t("random.remove")} onClick={() => removeRandomStamp(c.stampId)} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+                    <Icon name="x" size={12} />
                   </IconButton>
-                  <span className="w-4 text-center text-xs text-text tabular">{weight}</span>
-                  <IconButton size="sm" aria-label={t("random.inc")} disabled={weight >= MAX_WEIGHT} onClick={() => setRandomStampWeight(c.stampId, 1)} >
-                    <Icon name="plus" size={16} />
-                  </IconButton>
-                </span>
-                <IconButton size="sm" aria-label={t("random.remove")} onClick={() => removeRandomStamp(c.stampId)} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-                  <Icon name="x" size={12} />
-                </IconButton>
+                </PropRow>
               </div>
             );
           })}

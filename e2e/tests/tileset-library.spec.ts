@@ -267,6 +267,9 @@ test("dock palettes: create, drop through the header, rename and delete through 
   await page.mouse.move(cell.x, cell.y);
   await page.mouse.down();
   await page.mouse.move(cell.x + 12, cell.y, { steps: 3 });
+  // In-grid movement stays a marquee; leaving the grid reveals palette targets.
+  const sourceBox = (await page.locator("[data-tileset-grid='overworld-32']").boundingBox())!;
+  await page.mouse.move(cell.x + 12, sourceBox.y - 4, { steps: 4 });
   const target = page.locator(`[data-tileset-side] [data-palette-drop='${paletteId}']`);
   await expect(target).toBeVisible();
   await expect(target).toHaveAttribute("data-palette-card", paletteId);

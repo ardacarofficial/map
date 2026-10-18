@@ -220,6 +220,7 @@ function LevelField({
       <TextField
         size="md"
         value={value}
+        onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => onChange(e.target.value)}
         inputMode={numeric ? "numeric" : undefined}
         autoFocus={autoFocus}

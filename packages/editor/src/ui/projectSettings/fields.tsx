@@ -239,6 +239,7 @@ export function LayerListEditor({ layers, onChange }: { layers: LayerSpec[]; onC
               <LayerKindIcon kind={layer.kind} className="mx-1 shrink-0 text-muted" />
               <TextField size="md"
                 value={layer.name}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => set(index, { name: e.target.value })}
                 placeholder={t("newProject.layerNamePlaceholder")}
                 aria-label={t("newProject.layerNamePlaceholder")}

@@ -122,10 +122,9 @@ test("stamp library: search, category chips, ★, Kategori submenu, place from c
   await page.locator("[data-stamp-card-size]").fill("200");
   await expect.poll(async () => (await cards.first().boundingBox())!.width).toBeGreaterThan(width0);
 
-  // Selecting a card shows it in the Denetçi; double-click puts it on the brush and one click places it.
+  // Single click selects the card, shows its inspector and arms the brush.
   await card(page, "Köy Evi").click();
   await expect(page.locator("[data-stamp-inspector]")).toBeVisible();
-  await card(page, "Köy Evi").dblclick();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().stamp?.width ?? null)).toBe(3);
   const canvas = page.locator("canvas[aria-label='map canvas']").first();
   await canvas.focus();
@@ -176,9 +175,8 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   await expect(maps).toHaveCount(1);
   await page.locator("[data-library-tab-button='stamps']").click();
 
-  // Denetçi → Düzenle: the stamp opens in its own tab with the banner.
-  await card(page, "Kulübe").click();
-  await page.locator("[data-stamp-inspector] [data-action='editStamp']").click();
+  // Double-click opens the same stamp editor as Düzenle.
+  await card(page, "Kulübe").dblclick();
   await expect(page.locator("[data-stamp-banner]")).toBeVisible();
   await expect(page.locator("[data-stamp-tab]")).toHaveAttribute("aria-selected", "true");
   expect(await levelId(page)).toBe(`stamp:${id}`);
@@ -234,4 +232,53 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   const body = await page.locator("body").innerText();
   for (const banned of [/linked prefab/i, /linked placements/i, /Used in \d+ maps/i, /Apply to \d+/i, /Detach/i, /Place linked/i]) expect(body).not.toMatch(banned);
   expect(errors).toEqual([]);
+});
+
+test("stamp cards arm with click or Enter, yield to a marquee at pointer-down, and clear on a tile pick", async ({ page }) => {
+  await page.goto("/");
+  await startWithTileset(page);
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { saveSelectionAsStamp } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
+    const editor = useEditorStore.getState();
+    const store = editor.project.store;
+    const layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
+    store.dispatch({ type: "paintCells", layerId: layer.id, cells: [{ x: 2, y: 2, cell: store.getOrAddPaletteIndex(store.document.tilesets[0].id, 9) }] });
+    editor.setTool("select");
+    editor.setRegion({ x: 2, y: 2, width: 1, height: 1 });
+    saveSelectionAsStamp("Marquee test");
+    useEditorStore.getState().setRegion(null);
+    useEditorStore.getState().setTool("fill");
+  });
+  const stampCard = card(page, "Marquee test");
+  await stampCard.click();
+  await expect(page.locator("[data-inspector-section]")).toHaveCount(1);
+  await expect.poll(() => page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    return useEditorStore.getState().tool;
+  })).toBe("fill");
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    useEditorStore.getState().setTool("select");
+  });
+  const canvas = page.locator("canvas[aria-label='map canvas']").first();
+  await canvas.focus();
+  await page.keyboard.press("Shift+Digit1");
+  await page.waitForTimeout(300);
+  const a = (await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(5, 5)))!;
+  const b = (await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.cellCenter(7, 7)))!;
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await expect(page.locator("[data-stamp-inspector]")).toHaveCount(0);
+  await page.mouse.move(b.x, b.y, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.locator("[data-inspector]")).toHaveAttribute("data-inspector-mode", "region");
+  await expect(page.locator("[data-inspector-section]")).toHaveCount(1);
+  await stampCard.focus();
+  await stampCard.press("Enter");
+  await expect(page.locator("[data-stamp-inspector]")).toBeVisible();
+  const grid = page.locator("[data-tileset-grid]").first();
+  await grid.click({ position: { x: 8, y: 8 } });
+  await expect(page.locator("[data-stamp-inspector]")).toHaveCount(0);
+  await expect(page.locator("[data-inspector]")).toHaveAttribute("data-inspector-mode", "brush");
 });

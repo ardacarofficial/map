@@ -54,6 +54,7 @@ function TerrainPicker() {
           role="switch"
           aria-label={t("terrain.autotile")}
           data-tool-autotile=""
+          data-terrain-autotile=""
           checked={active && valid}
           disabled={!valid}
           onChange={(e) => setAutotile(e.target.checked)}

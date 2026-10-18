@@ -46,6 +46,11 @@ describe("tileset selection gestures", () => {
     expect(isRectangle(ts, gestureIds(ts, g, c(1, 1)))).toBe(true);
   });
 
+  it("plain drag from the selected tile replaces it with a 4×4 marquee", () => {
+    const gesture = startGesture(ts, c(0, 0), { ctrl: false, shift: false }, { ids: [0], anchor: c(0, 0) });
+    expect(gestureIds(ts, gesture, c(3, 3))).toEqual([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27]);
+  });
+
   it("drag outside the grid is clamped", () => {
     expect(rectIds(ts, c(6, 7), c(20, 20))).toEqual([62, 63]);
   });

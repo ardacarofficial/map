@@ -106,6 +106,7 @@ function BulkCard({ request }: { request: BulkRequest }) {
           <TextField size="md"
             autoFocus
             value={newGroup}
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => setNewGroup(e.target.value)}
             aria-label={t("tilesetLib.groupName")}
             placeholder={t("tilesetLib.groupName")}

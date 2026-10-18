@@ -164,6 +164,7 @@ function SettingsForm({ onDone }: { onDone(): void }) {
             <TextField size="md"
               id={nameId}
               value={name}
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setName(e.target.value)}
               spellCheck={false}
               autoComplete="off"

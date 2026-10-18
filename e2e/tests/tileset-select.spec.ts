@@ -181,3 +181,43 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   await page.locator("[data-tileset-zoom-override]").click();
   await expect.poll(scale).toBe(before);
 });
+
+test("selected tile starts a 4×4 marquee, randomizes immediately, and mode hints stay in the dock header", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/");
+  await dropFile(page, WELCOME_DROP, "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+  await confirmTilesetCard(page);
+  const image = page.locator("[data-tileset-grid]").first();
+  const a = await tilesetCell(image, 0, 0);
+  const b = await tilesetCell(image, 3, 3);
+  await page.mouse.click(a.x, a.y);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.mouse.up();
+  const ids = "0,1,2,3,8,9,10,11,16,17,18,19,24,25,26,27";
+  await expect(page.locator("[data-selected-tiles]")).toHaveAttribute("data-selected-tiles", ids);
+  await page.locator("[data-action='makeRandom']").click();
+  await expect(page.locator("[data-action='makeRandom']")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-random-tile]")).toHaveCount(16);
+  await expect(page.locator("[data-random-brush] [role='spinbutton']")).toHaveCount(16);
+  const candidates = await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    return useEditorStore.getState().randomSet.map((tile: { tileId: number }) => tile.tileId).join(",");
+  });
+  expect(candidates).toBe(ids);
+
+  // Both modes reuse the existing 32px row, giving the grid its full height.
+  const viewport = page.locator("[data-tileset-viewport]");
+  const before = (await viewport.boundingBox())!;
+  for (const mode of ["solid", "terrain"]) {
+    await page.locator(`[data-tileset-mode='${mode}']`).click();
+    await expect(page.locator("[data-tileset-side] [data-tileset-hint]")).toBeVisible();
+    await expect(page.locator("[data-library-view]")).toHaveCount(0);
+    await expect(page.locator("[data-palette-new]")).toHaveCount(0);
+    const during = (await viewport.boundingBox())!;
+    expect(during.y).toBe(before.y);
+    expect(during.height).toBe(before.height);
+    await page.locator("[data-tileset-side]").getByRole("button", { name: "Bitti", exact: true }).click();
+  }
+});

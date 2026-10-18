@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 
 import type { CanvasHandle } from "../../canvas";
+import { useEditorStore } from "../../state/editorStore";
+import { useStampLibrary } from "../stamps/stampLibraryStore";
 import { t } from "../../i18n";
 import { toast } from "../toast/toastStore";
 import { CANVAS_HOST_ATTR, setCanvasHandle } from "./canvasHandle";
@@ -56,6 +58,9 @@ export function CanvasHost() {
       {...{ [CANVAS_HOST_ATTR]: "" }}
       tabIndex={0}
       // Clicking the canvas focuses it so `Tab` (hide panels) works right away.
+      onPointerDownCapture={(e) => {
+        if (e.button === 0 && useEditorStore.getState().tool === "select") useStampLibrary.getState().select(null);
+      }}
       onPointerDown={(e) => e.currentTarget.focus({ preventScroll: true })}
       className="relative h-full w-full overflow-hidden bg-canvas outline-none focus-visible:outline-none"
     />

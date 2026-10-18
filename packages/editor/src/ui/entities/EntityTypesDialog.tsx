@@ -295,7 +295,7 @@ function DraftForm({
               value={draft.name}
               onChange={(e) => onChange({ ...draft, name: e.target.value })}
               autoFocus={!saved}
-              onFocus={(e) => !saved && e.currentTarget.select()}
+              onFocus={(e) => e.currentTarget.select()}
               maxLength={64}
               spellCheck={false}
               autoComplete="off"
@@ -408,6 +408,7 @@ function FieldRowEditor({
           <span>{t("entities.fieldName")}</span>
         <TextField size="md"
           value={field.name}
+          onFocus={(e) => e.currentTarget.select()}
           aria-label={t("entities.fieldName")}
           onChange={(e) => onChange({ ...field, name: e.target.value })}
           maxLength={64}

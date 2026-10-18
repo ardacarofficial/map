@@ -22,7 +22,6 @@ import {
   clearRandomSet,
   MAX_WEIGHT,
   MIN_WEIGHT,
-  randomChances,
   removeRandomTile,
   setRandomWeight,
   useRandomBrush,
@@ -40,6 +39,7 @@ import { EntityProperties } from "../entities/EntityProperties";
 import { openMapSettings } from "../mapSettings/mapSettingsStore";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
+import { PropRow as FieldRow, PropField } from "../primitives/PropRow";
 import { TextField } from "../primitives/TextField";
 import { Tooltip } from "../primitives/Tooltip";
 import { TileSwatch } from "../primitives/TileSwatch";
@@ -347,8 +347,7 @@ function StampNameForm({ doc, clip, onDone }: { doc: MapDocument; clip: TileClip
  */
 function RandomDetails({ doc }: { doc: MapDocument }) {
   const set = useEditorStore((s) => s.randomSet);
-  const stamps = useRandomBrush((s) => s.stamps);
-  const chances = randomChances([...set, ...stamps]);
+  const groups = [...new Set(set.map((tile) => tile.tilesetId))];
   return (
     <div data-random-brush>
       <SectionHeader
@@ -361,27 +360,24 @@ function RandomDetails({ doc }: { doc: MapDocument }) {
         {t("inspector.random")}
       </SectionHeader>
       {set.length > 0 && (
-        <ul className="mx-3 mb-2 flex max-h-48 flex-col overflow-y-auto">
-          {set.map((tile, i) => {
-            const tileset = doc.getTileset(tile.tilesetId);
-            return (
-              <WeightRow
-                key={`t:${tile.tilesetId}:${tile.tileId}`}
-                visual={tileset ? <TileSwatch tileset={tileset} tileId={tile.tileId} size={16} className="rounded-xs" /> : <span className="size-4 rounded-xs bg-line" />}
-                label={
-                  <>
-                    <span className="font-mono text-text tabular">#{tile.tileId}</span>
-                    {doc.tilesets.length > 1 && <span className="ml-1.5">{tileset?.name ?? tile.tilesetId}</span>}
-                  </>
-                }
-                chance={chances[i] ?? 0}
-                weight={tile.weight ?? 1}
-                onWeight={(d) => setRandomWeight(tile, d)}
-                onRemove={() => removeRandomTile(tile)}
-              />
-            );
+        <div className="mx-3 mb-2 flex flex-col">
+          {groups.map((tilesetId) => {
+            const tileset = doc.getTileset(tilesetId);
+            return <div key={tilesetId}>
+              <div className="flex h-row items-center truncate text-xs font-medium text-muted" title={tileset?.name ?? tilesetId}>{tileset?.name ?? tilesetId}</div>
+              <ul className="flex flex-col">
+                {set.filter((tile) => tile.tilesetId === tilesetId).map((tile) => <WeightRow
+                  key={tile.tileId}
+                  visual={tileset ? <TileSwatch tileset={tileset} tileId={tile.tileId} size={16} className="rounded-xs" /> : <span className="size-4 rounded-xs bg-line" />}
+                  label={<span className="font-mono text-text tabular">#{tile.tileId}</span>}
+                  weight={tile.weight ?? 1}
+                  onWeight={(delta) => setRandomWeight(tile, delta)}
+                  onRemove={() => removeRandomTile(tile)}
+                />)}
+              </ul>
+            </div>;
           })}
-        </ul>
+        </div>
       )}
       <div className="px-3">
         <RandomSetControls />
@@ -390,49 +386,21 @@ function RandomDetails({ doc }: { doc: MapDocument }) {
   );
 }
 
-function WeightRow({
-  visual,
-  label,
-  chance,
-  weight,
-  onWeight,
-  onRemove,
-}: {
+function WeightRow({ visual, label, weight, onWeight, onRemove }: {
   visual: ReactNode;
   label: ReactNode;
-  chance: number;
   weight: number;
   onWeight(delta: number): void;
   onRemove(): void;
 }) {
-  return (
-    <li className="group flex h-row items-center gap-2 rounded-sm pr-1 pl-1 hover:bg-hover">
-      {visual}
-      <span className="min-w-0 flex-1 truncate text-sm text-muted">{label}</span>
-      <span className="w-9 shrink-0 text-right text-xs text-faint tabular">{t("random.chance", { percent: chance })}</span>
-      <span className="flex h-control-sm shrink-0 items-center rounded-sm bg-field ring-1 ring-inset ring-line">
-        <StepGlyph icon="minus" label={t("random.dec")} disabled={weight <= MIN_WEIGHT} onClick={() => onWeight(-1)} />
-        <span className="w-4 text-center text-xs text-text tabular">{weight}</span>
-        <StepGlyph icon="plus" label={t("random.inc")} disabled={weight >= MAX_WEIGHT} onClick={() => onWeight(1)} />
-      </span>
-      <IconButton size="sm"
-        aria-label={t("random.remove")}
-        title={t("random.remove")}
-        onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-      >
+  return <li className="group rounded-sm px-1 hover:bg-hover">
+    <FieldRow label={<span className="flex items-center gap-2">{visual}{label}</span>}>
+      <PropField value={weight} aria-label={t("random.weight")} min={MIN_WEIGHT} max={MAX_WEIGHT} scrub onCommit={(next) => onWeight(Math.round(next) - weight)} />
+      <IconButton size="sm" aria-label={t("random.remove")} title={t("random.remove")} onClick={onRemove} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
         <Icon name="x" size={16} />
       </IconButton>
-    </li>
-  );
-}
-
-function StepGlyph({ icon, label, disabled, onClick }: { icon: "plus" | "minus"; label: string; disabled: boolean; onClick(): void }) {
-  return (
-    <IconButton size="sm" aria-label={label} title={label} disabled={disabled} onClick={onClick}>
-      <Icon name={icon} size={16} />
-    </IconButton>
-  );
+    </FieldRow>
+  </li>;
 }
 
 // ------------------------------------------------------------------ collision layer

@@ -97,6 +97,7 @@ async function pickOption(page: Page, trigger: string, value: string) {
 test("blob47-godot: rough rectangle → template found, define, paint next to a manual tile, erase, undo", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 1366, height: 768 });
   const image = await openProject(page, "blob47-godot-32.png");
 
   // A manual (untagged) tile on the layer: the blank cell (10, 1) = tile 22.
@@ -108,6 +109,17 @@ test("blob47-godot: rough rectangle → template found, define, paint next to a 
     h.store.clearHistory();
   });
 
+  // A library stamp must yield to terrain editing without stacking a card.
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { saveSelectionAsStamp } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
+    useEditorStore.getState().setTool("select");
+    useEditorStore.getState().setRegion({ x: 8, y: 5, width: 1, height: 1 });
+    saveSelectionAsStamp("Library stamp");
+  });
+  await page.locator("[data-stamp-library] [data-stamp-id]").click();
+  await expect(page.locator("[data-stamp-inspector]")).toBeVisible();
+
   // ---- Define: a sloppy drag over part of the block is enough.
   await roughSelect(page, image, 2, 1, 9, 2);
   const candidate = page.locator("[data-terrain-candidate]");
@@ -116,11 +128,22 @@ test("blob47-godot: rough rectangle → template found, define, paint next to a 
   const card = page.locator("[data-inspector-terrain='define']");
   await expect(card).toBeVisible();
   await expect(card.locator("[data-terrain-preview]")).toHaveAttribute("data-terrain-preview-missing", "0");
-  await card.locator("[data-terrain-name-input]").fill("Çimen");
+  await expect(page.locator("[data-stamp-inspector]")).toHaveCount(0);
+  await expect(page.locator("[data-inspector-section]")).toHaveCount(1);
+  const defineButton = card.locator("[data-action='terrain-define']");
+  expect(await defineButton.evaluate((el) => {
+    const inspector = el.closest("[data-inspector]")!;
+    const button = el.getBoundingClientRect();
+    const viewport = inspector.getBoundingClientRect();
+    return inspector.scrollTop === 0 && button.top >= viewport.top && button.bottom <= viewport.bottom;
+  })).toBe(true);
+  await expect(card.locator("[data-terrain-name-input]")).toBeFocused();
+  await page.keyboard.type("Çimen");
+  await expect(card.locator("[data-terrain-name-input]")).toHaveValue("Çimen");
   await page.screenshot({ path: `${OUT}01-blob-define.png` });
   await card.locator("[data-action='terrain-define']").click();
 
-  await expect(page.locator("[data-terrain-sets] [data-terrain-name='Çimen']")).toBeVisible();
+  await expect(page.locator("[data-tool-option='terrain'] [data-terrain-current]")).toHaveAttribute("data-terrain-current", "Çimen");
   const sets = await terrainSets(page);
   expect(sets).toHaveLength(1);
   await expect(page.locator("[data-terrain-set-heading]")).toHaveCount(0);
@@ -192,7 +215,7 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   let card = page.locator("[data-inspector-terrain='define']");
   await card.locator("[data-terrain-name-input]").fill("Toprak");
   await card.locator("[data-action='terrain-define']").click();
-  await expect(page.locator("[data-terrain-sets] [data-terrain-name='Toprak']")).toBeVisible();
+  await expect(page.locator("[data-tool-option='terrain'] [data-terrain-current]")).toHaveAttribute("data-terrain-current", "Toprak");
   const setId = (await terrainSets(page))[0]!.id;
 
   // ---- ... then "Çimen" from the same block in the same set, over Toprak (the transitions).
@@ -204,7 +227,7 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   await card.locator("[data-terrain-name-input]").fill("Çimen");
   await page.screenshot({ path: `${OUT}03-corner-define-second.png` });
   await card.locator("[data-action='terrain-define']").click();
-  await expect(page.locator("[data-terrain-sets] [data-terrain-name='Çimen']")).toBeVisible();
+  await expect(page.locator("[data-tool-option='terrain'] [data-terrain-current]")).toHaveAttribute("data-terrain-current", "Çimen");
   const sets = await terrainSets(page);
   expect(sets).toHaveLength(1);
   await expect(page.locator("[data-terrain-set-heading]")).toHaveCount(0);
@@ -212,7 +235,8 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   expect(sets[0]!.background).toBe(1);
 
   // ---- Toprak everywhere in a rectangle (tile 0 = all dirt).
-  await page.locator("[data-terrain-sets] [data-terrain-name='Toprak']").click();
+  await page.locator("[data-terrain-current]").click();
+  await page.locator("[data-terrain-option='Toprak']").click();
   await page.locator("canvas[aria-label='map canvas']").first().focus();
   await page.keyboard.press("r");
   const r0 = await cellPoint(page, 1, 1);
@@ -225,7 +249,8 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   expect(await tileAt(page, 1, 1)).toBe(0);
 
   // ---- Çimen with the 3 × 3 brush: grass inside, transition tiles around, dirt beyond.
-  await page.locator("[data-terrain-sets] [data-terrain-name='Çimen']").click();
+  await page.locator("[data-terrain-current]").click();
+  await page.locator("[data-terrain-option='Çimen']").click();
   await page.keyboard.press("b");
   expect((await editorState(page)).brushSize).toBe(3);
   const c = await cellPoint(page, 5, 4);
@@ -254,6 +279,7 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
   expect(await tileAt(page, 3, 4)).toBe(0);
 
   // ---- Düzelt shows the tags; a corner click retags one tile (undoable).
+  await page.locator("[data-tileset-mode='terrain']").click();
   await page.locator("[data-action='terrain-fix']").click();
   await expect(page.locator("[data-inspector-terrain='fix']")).toBeVisible();
   await expect(page.locator(`[data-terrain-tags='${setId}']`)).toBeVisible();

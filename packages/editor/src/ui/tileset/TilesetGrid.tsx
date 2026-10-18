@@ -88,8 +88,8 @@ function focusSet(tileset: Tileset, fixSet: string | null, draftSet: string | nu
 }
 
 type Drag =
-  /** `alt`: the rectangle goes to the random brush; `carry`: a press on the selection that may drag its tiles into a palette. */
-  | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell; alt: boolean; carry: PendingTileDrag | null }
+  /** `alt`: add the rectangle to the random brush; `carry`: snapshot at press, activated only outside the grid. */
+  | { kind: "select"; pointerId: number; gesture: SelectGesture; cell: Cell; press: { x: number; y: number }; alt: boolean; carry: PendingTileDrag | null }
   | { kind: "solid"; pointerId: number }
   /** Arazi: a rough rectangle over a terrain block. */
   | { kind: "rough"; pointerId: number; start: Cell; cell: Cell };
@@ -301,12 +301,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
           const b = boundsOf(tileset, kept);
           if (items.length > 0 && b) carry = new PendingTileDrag({ kind: "tileset", tilesetId: tileset.id }, items, { col: cell.col - b.col, row: cell.row - b.row }, e.clientX, e.clientY);
         }
-        updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell, alt: false, carry });
+        updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell, press: { x: e.clientX, y: e.clientY }, alt: false, carry });
         return;
       }
       case "randomRect": {
         e.currentTarget.setPointerCapture(e.pointerId);
-        updateDrag({ kind: "select", pointerId: e.pointerId, gesture: startGesture(tileset, cell, { ctrl: false, shift: false }, null), cell, alt: true, carry: null });
+        updateDrag({ kind: "select", pointerId: e.pointerId, gesture: startGesture(tileset, cell, { ctrl: false, shift: false }, null), cell, press: { x: e.clientX, y: e.clientY }, alt: true, carry: null });
         return;
       }
       case "solid":
@@ -346,7 +346,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         if (items.length > 0 && b) g.carry = new PendingTileDrag(
           { kind: "tileset", tilesetId: tileset.id }, items,
           { col: g.gesture.anchor.col - b.col, row: g.gesture.anchor.row - b.row },
-          e.clientX - 4, e.clientY,
+          g.press.x, g.press.y,
         );
       }
       // Inside the grid, even a press on a highlighted tile is a marquee.
@@ -504,9 +504,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
               data-random-tile={r.tileId}
               className="pointer-events-none absolute rounded-xs bg-accent-soft/30 outline-1 outline-accent"
               style={{ left: col * cellW, top: row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
-            >
-
-            </div>
+            />
           );
         })}
         {picking && hover && hoverId !== null && !shownSet.has(hoverId) && !drag && (

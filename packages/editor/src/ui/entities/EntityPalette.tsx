@@ -266,6 +266,7 @@ function NewTypeRow({ doc }: { doc: MapDocument }) {
         <TextField size="sm"
           autoFocus
           value={name}
+          onFocus={(e) => e.currentTarget.select()}
           aria-label={t("entities.name")}
           placeholder={t("entities.typeNamePlaceholder")}
           onChange={(e) => setName(e.target.value)}

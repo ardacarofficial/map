@@ -5,8 +5,8 @@
  *   template ("Şablon ▾" with the other candidates), the set to add to,
  *   name, colour, background and the 3×3 preview → "Tanımla" (one undo step).
  * - Fix ("Düzelt"): what clicks in the tileset do, and "Bitti".
- * - Terrain brush: set ▾, the set's terrains with colours, Autotile, the 3×3
- *   auto-connect preview, background, "Düzelt" / remove.
+ * - Dock editing: terrain list, preview, background, "Düzelt" / remove.
+ * - Terrain brush: plain facts; painting controls live in the options bar.
  */
 import { TERRAIN_COLORS, type TerrainSet, type Tileset } from "@smap/core";
 import { useState, type ReactNode } from "react";
@@ -15,7 +15,6 @@ import {
   defineTerrain,
   removeTerrainSet,
   renameTerrainSet,
-  setAutotile,
   setTerrainBackground,
   setTerrainColor,
 } from "../../commands/terrainActions";
@@ -24,10 +23,9 @@ import { useEditorStore } from "../../state/editorStore";
 import { Button } from "../primitives/Button";
 import { Divider } from "../primitives/Divider";
 import { Icon, type IconName } from "../primitives/Icon";
-import { PropRow } from "../primitives/PropRow";
+import { PropRow, PropValue } from "../primitives/PropRow";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { TextField } from "../primitives/TextField";
-import { Toggle } from "../primitives/Toggle";
 import { Tooltip } from "../primitives/Tooltip";
 import type { InspectorContext } from "../inspector/registry";
 import { RenameInput } from "../primitives/RenameInput";
@@ -35,7 +33,7 @@ import { TileSwatch } from "../primitives/TileSwatch";
 import { useUiStore } from "../uiStore";
 import { clearTerrainDraft, startFix, useTerrainDraft, type TerrainDraft } from "./terrainDraft";
 import { TerrainDot, TerrainSets } from "./TerrainList";
-import { MenuSelect, TerrainPickerMenu, selectTriggerClass, type SelectOption } from "./TerrainMenus";
+import { MenuSelect, type SelectOption } from "./TerrainMenus";
 import { draftResult, kindOfTemplate, previewTiles, resolveTerrain, templateLabel, type TerrainRef } from "./terrainModel";
 
 const CELL = 32;
@@ -216,7 +214,6 @@ function FixFace({ ctx, fix }: { ctx: InspectorContext; fix: TerrainRef }) {
 
 function BrushFace({ ctx }: { ctx: InspectorContext }) {
   const choice = useEditorStore((s) => s.terrain);
-  const active = useEditorStore((s) => s.terrainActive);
   const [renaming, setRenaming] = useState(false);
   const found = resolveTerrain(ctx.doc, choice);
   if (!found || !choice) {
@@ -231,10 +228,6 @@ function BrushFace({ ctx }: { ctx: InspectorContext }) {
   return (
     <div data-inspector-terrain={found.terrain.name}>
       <SectionHeader padding={12} title={t("terrain.cardTitle")} />
-      <PropGrid><PropRow label={t("terrain.brush")}>
-        <TerrainPickerMenu doc={ctx.doc} value={choice} triggerClass={selectTriggerClass} label={t("terrain.brush")} placeholder={t("toolOptions.pickTerrain")} />
-      </PropRow></PropGrid>
-      <div className="px-3"><PropRow label={t("terrain.autotile")}><Toggle checked={active} data-terrain-autotile label={t("terrain.autotile")} onChange={setAutotile} /></PropRow></div>
       <div className="flex px-3 py-2">
         <TerrainPreview tileset={tileset} set={set} terrainId={choice.terrainId} />
       </div>
@@ -271,11 +264,29 @@ function BrushFace({ ctx }: { ctx: InspectorContext }) {
   );
 }
 
+/** Painting shows chosen-set facts; editing stays in the dock's Arazi context. */
+function TerrainFacts({ ctx }: { ctx: InspectorContext }) {
+  const choice = useEditorStore((s) => s.terrain);
+  const found = resolveTerrain(ctx.doc, choice);
+  if (!found) return null;
+  return <div data-inspector-terrain={found.terrain.name}>
+    <SectionHeader padding={12} title={t("terrain.cardTitle")} />
+    <PropGrid>
+      <PropRow label={t("terrain.name")}><PropValue align="left">{found.terrain.name}</PropValue></PropRow>
+      <PropRow label={t("terrain.set")}><PropValue align="left">{found.set.name}</PropValue></PropRow>
+      <PropRow label={t("terrain.template")}><PropValue align="left">{t(found.set.kind === "corner" ? "terrain.kindCorner" : "terrain.kindBlob")}</PropValue></PropRow>
+      <PropRow label={t("terrain.tiles")}><PropValue align="left">{found.set.tiles.length}</PropValue></PropRow>
+    </PropGrid>
+  </div>;
+}
+
 /** The ARAZİ card (registered by the inspector for mode "terrain"). */
 export function TerrainCard({ ctx }: { ctx: InspectorContext }) {
   const draft = useTerrainDraft((s) => s.draft);
   const fix = useTerrainDraft((s) => s.fix);
+  const mode = useUiStore((s) => s.tilesetMode);
   if (draft) return <DefineFace ctx={ctx} draft={draft} />;
   if (fix && resolveTerrain(ctx.doc, fix)) return <FixFace ctx={ctx} fix={fix} />;
+  if (mode !== "terrain") return <TerrainFacts ctx={ctx} />;
   return <BrushFace ctx={ctx} />;
 }

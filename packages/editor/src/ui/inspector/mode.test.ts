@@ -45,6 +45,17 @@ describe("inspector mode (first match wins)", () => {
     expect(mode({ layer: "entity", tool: "entity" })).toBe("map");
     expect(mode({ layer: "none" })).toBe("map");
   });
+  it("library stamps yield to every higher-priority context and replace the brush/map group", () => {
+    expect(mode({ libraryStamp: true })).toBe("stamp");
+    expect(mode({ libraryStamp: true, tool: "hand" })).toBe("stamp");
+    expect(mode({ libraryStamp: true, brush: "stamp" })).toBe("stamp");
+    expect(mode({ libraryStamp: true, entitySelected: true })).toBe("entity");
+    expect(mode({ libraryStamp: true, terrainEdit: true })).toBe("terrain");
+    expect(mode({ libraryStamp: true, solidEdit: true })).toBe("solid");
+    expect(mode({ libraryStamp: true, tool: "select", region: true })).toBe("region");
+    expect(mode({ libraryStamp: true, layer: "collision" })).toBe("collision");
+    expect(mode({ libraryStamp: true, terrainBrush: true })).toBe("terrain");
+  });
   it("reads the brush content", () => {
     expect(brushContent({ stamp: {}, randomSet: [1, 2], selection: {} })).toBe("stamp");
     expect(brushContent({ stamp: null, randomSet: [1, 2], selection: {} })).toBe("random");

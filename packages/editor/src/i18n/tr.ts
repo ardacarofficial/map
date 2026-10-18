@@ -110,7 +110,6 @@ export const tr = {
     add: "Tileset ekle",
     missingImage: "Görsel bulunamadı: {path}",
     zoomFit: "Sığdır",
-    solidCount: "{count} katı",
     done: "Bitti",
   },
   tilesetPanel: {
@@ -173,6 +172,7 @@ export const tr = {
     removeSet: "Seti sil",
     hintDrag: "Bloğu kabaca sürükleyerek seç",
     noCandidate: "Bu seçimde bilinen bir arazi şablonu bulunamadı; bloğun tamamını kapsayacak şekilde sürükle",
+    tiles: "Tile sayısı",
     migrated: "Proje yeni arazi biçimine taşındı",
   },
   collision: {
@@ -623,11 +623,9 @@ export const tr = {
     list: "Stamp listesi",
   },
   random: {
+    weight: "Ağırlık",
     clear: "Temizle",
-    inc: "Ağırlığı artır",
-    dec: "Ağırlığı azalt",
     remove: "Fırçadan çıkar",
-    chance: "%{percent}",
   },
   entities: {
     inLayer: "Bu katmanda",

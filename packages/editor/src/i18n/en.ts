@@ -107,7 +107,6 @@ export const en: Messages = {
     add: "Add tileset",
     missingImage: "Image not found: {path}",
     zoomFit: "Fit",
-    solidCount: "{count} solid",
     done: "Done",
   },
   tilesetPanel: {
@@ -170,6 +169,7 @@ export const en: Messages = {
     removeSet: "Delete set",
     hintDrag: "Drag roughly over the terrain block",
     noCandidate: "No known terrain template found in this selection; drag over the whole block",
+    tiles: "Tiles",
     migrated: "The project was moved to the new terrain format",
   },
   collision: {
@@ -620,11 +620,9 @@ export const en: Messages = {
     list: "Stamp list",
   },
   random: {
+    weight: "Weight",
     clear: "Clear",
-    inc: "Increase weight",
-    dec: "Decrease weight",
     remove: "Remove from brush",
-    chance: "{percent}%",
   },
   entities: {
     inLayer: "On this layer",

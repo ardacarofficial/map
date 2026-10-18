@@ -8,9 +8,10 @@
  * 3. a marquee region (select tool)       → "region"
  * 4. collision layer active               → "collision"
  * 5. terrain brush on a tile layer        → "terrain"
- * 6. a paint tool (or a clip on the brush) on a tile layer → "brush"
+ * 6. a selected library stamp              → "stamp"
+ * 7. a paint tool (or a clip on the brush) on a tile layer → "brush"
  *    (with nothing picked the card says "Önce bir tile seç")
- * 7. otherwise                            → "map"
+ * 8. otherwise                            → "map"
  */
 import type { ToolId } from "../../state/editorStore";
 import type { TilesetMode } from "../uiStore";
