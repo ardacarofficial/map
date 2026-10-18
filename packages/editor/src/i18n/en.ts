@@ -1251,6 +1251,7 @@ export const en: Messages = {
   },
 
   smartStamp: {
+    usageStamps: "Affects {count} stamps.",
     recipeMissing: "Source recipe missing for {name}.",
     layer: "Layer",
     chooseLayer: "Choose layer",

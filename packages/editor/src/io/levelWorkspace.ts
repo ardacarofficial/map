@@ -11,8 +11,8 @@ import type { GeneratedRecipe } from "./smartStampRecipes";
  * **Project data** (tilesets with their solid flags and terrains, entity
  * types) lives in every level's `MapDocument`. The active level's copy is
  * the current one (`project.smap` is written from it). A cached level picks
- * it up when it becomes active again: appended tilesets are added in place
- * (not an undo step); any other difference rebuilds the level's store from
+ * it up when it becomes active again: appended tilesets and generated provenance
+ * update in place (not an undo step); any other difference rebuilds the level's store from
  * its own text, which keeps every edit but starts its undo history fresh.
  *
  * **Paths** are chosen once, when a level is added or duplicated, and stay
@@ -570,7 +570,10 @@ export function withProjectData(store: MapStore, source: MapDocument): MapStore 
   if (same(doc.entityTypes, source.entityTypes) && same(doc.randomSets, source.randomSets) && same(doc.collections, source.collections)) {
     const have = doc.tilesets;
     const want = source.tilesets;
-    if (have.length <= want.length && have.every((ts, i) => same(ts, want[i]))) {
+    if (have.length <= want.length && have.every((ts, i) => same({ ...ts, generated: undefined }, { ...want[i], generated: undefined }) && !!ts.generated === !!want[i]?.generated)) {
+      for (const tileset of want.slice(0, have.length)) if (tileset.generated) {
+        store.dispatch({ type: "setTilesetMeta", tilesetId: tileset.id, generated: tileset.generated, undoable: false });
+      }
       for (const tileset of want.slice(have.length)) store.dispatch({ type: "addTileset", tileset, undoable: false });
       return store;
     }

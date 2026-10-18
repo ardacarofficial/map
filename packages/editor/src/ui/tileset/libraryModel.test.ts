@@ -79,7 +79,7 @@ describe("zoom and usage", () => {
       { cells: 12, layers: ["b"], terrains: 1, terrainCells: 5 },
       { cells: 0, layers: [], terrains: 1, terrainCells: 0 },
     ]);
-    expect(u).toEqual({ cells: 412, terrainCells: 5, terrains: 1, levels: 2, used: true });
+    expect(u).toEqual({ cells: 412, terrainCells: 5, terrains: 1, levels: 2, stamps: 0, used: true });
     expect(summarizeUsage([{ cells: 0, layers: [], terrains: 2, terrainCells: 0 }]).used).toBe(false);
   });
 });

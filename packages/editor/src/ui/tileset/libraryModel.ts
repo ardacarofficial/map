@@ -154,13 +154,14 @@ export interface UsageSummary {
   /** Levels with any painted cell. */
   readonly levels: number;
   readonly used: boolean;
+  readonly stamps: number;
 }
 
 /**
  * Usage of a tileset over every level. "Used" means painted somewhere
  * (tile or terrain cells): its terrains alone go with it unnoticed.
  */
-export function summarizeUsage(perLevel: readonly LevelUsage[]): UsageSummary {
+export function summarizeUsage(perLevel: readonly LevelUsage[], stamps = 0): UsageSummary {
   let cells = 0;
   let terrainCells = 0;
   let terrains = 0;
@@ -171,5 +172,5 @@ export function summarizeUsage(perLevel: readonly LevelUsage[]): UsageSummary {
     terrains = Math.max(terrains, u.terrains);
     if (u.cells + u.terrainCells > 0) levels++;
   }
-  return { cells, terrainCells, terrains, levels, used: cells + terrainCells > 0 };
+  return { cells, terrainCells, terrains, levels, stamps, used: cells + terrainCells + stamps > 0 };
 }

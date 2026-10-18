@@ -108,6 +108,9 @@ export interface SetTilesetMetaOp {
   readonly group?: string | null;
   /** Refresh provenance after a successful staged PNG regeneration, retaining origin and slot layout. Existing generated assets only. */
   readonly generated?: GeneratedTilesetMetadata;
+  /** Cache-only provenance refresh. Requires generated and forbids name/group edits.
+   * Survives undo/redo/rollback without adding a step or clearing redo. */
+  readonly undoable?: false;
 }
 
 /**

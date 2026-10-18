@@ -1,5 +1,5 @@
 /** Immutable bake provenance, using the existing v3 stamp codec. Never a map-cell or prefab link. */
-import { parseStamp, serializeClip, type Stamp, type Tileset } from "@smap/core";
+import { parseStamp, serializeClip, stampTilesetUsage, type Stamp, type Tileset } from "@smap/core";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 export interface GeneratedRecipe { readonly tilesetId: string; readonly stamp: Stamp }
 export const generatedRecipePath = (tilesetId: string): string => `tilesets/${tilesetId}.recipe.json`;
@@ -20,4 +20,26 @@ export async function loadGeneratedRecipes(fs: ProjectFileSystem, assets: readon
     }
   }
   return recipes;
+}
+
+/** Distinct library/archived stamp recipes affected by removal, including inner art
+ * and generated banks that depend on another generated bank. Ignore orphan sidecars. */
+export function affectedTilesetStamps(tilesetId: string, stamps: readonly Stamp[], recipes: readonly GeneratedRecipe[], tilesets: readonly Tileset[]): string[] {
+  const missing = new Set([tilesetId]), affected = new Set<string>();
+  let grew: boolean;
+  do {
+    grew = false;
+    for (const asset of tilesets) if (asset.generated && (missing.has(asset.id) || asset.generated.sources.some(s => missing.has(s.tilesetId)))) {
+      affected.add(asset.generated.stampId);
+      if (!missing.has(asset.id)) { missing.add(asset.id); grew = true; }
+    }
+  } while (grew);
+  const retainedRecipes = recipes.filter(r => tilesets.some(ts => ts.id === r.tilesetId));
+  for (const stamp of [...stamps, ...retainedRecipes.map(r => r.stamp)]) {
+    if ([...missing].some(id => {
+      const usage = stampTilesetUsage(stamp, id);
+      return usage.cells > 0 || usage.bakedLayers.length > 0 || usage.road;
+    })) affected.add(stamp.id);
+  }
+  return [...affected].sort();
 }

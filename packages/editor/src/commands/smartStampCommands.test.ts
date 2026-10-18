@@ -4,8 +4,8 @@ import { createDocument, makeCell, MapStore, serializeLevel, serializeStamp, par
 import { clearTilesetImages, getTilesetImage, setTilesetImage } from "../state/tilesetImages";
 import { useEditorStore } from "../state/editorStore";
 import { useProjectLibrary } from "../io/projectLibrary";
-import { acceptSmartStamp, disableSmartStamp, prepareSmartStamp } from "./smartStampCommands";
-import { replaceStampContent } from "./stampActions";
+import { acceptSmartStamp, disableSmartStamp, prepareSmartStamp, installSmartStamps, waitForSmartStampRegeneration } from "./smartStampCommands";
+import { pickStamp, replaceStampContent } from "./stampActions";
 import { bakeSmartStamp } from "../ui/stamps/smartStampBake";
 import { MemoryFileSystem } from "../io/memoryFs";
 import { loadProject, saveProject } from "../io/projectIo";
@@ -28,7 +28,11 @@ function setup(multi = false) {
   useProjectLibrary.getState().load({ stamps: [stamp], levels: [{ id: "main", name: "Main", path: "levels/main.json", world: { x: 0, y: 0 } }] });
   return { stamp, store, layerId };
 }
-beforeEach(() => { clearTilesetImages(); vi.mocked(bakeSmartStamp).mockClear(); });
+beforeEach(async () => {
+  await waitForSmartStampRegeneration();
+  clearTilesetImages(); vi.mocked(bakeSmartStamp).mockClear();
+  installSmartStamps();
+});
 describe("smart stamp authoring", () => {
   it("a later-layer bake failure leaves no tileset, image or metadata behind", async () => {
     const { store, stamp } = setup(true), before = serializeLevel(store.document);
@@ -101,4 +105,122 @@ describe("smart stamp authoring", () => {
     const list = layerDrawList(store.document, { layers: [layerId] });
     expect(compositeOps(list, 1).some(op => "tilesetId" in op && op.tilesetId === asset.id)).toBe(true);
   });
+});
+
+
+function replaceSource(byte: number): void {
+  setTilesetImage({ tilesetId: source.id, bytes: Uint8Array.of(byte), bitmap: { width: 15, height: 15, close: vi.fn() } as unknown as ImageBitmap });
+}
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+it("regeneration waits for a gesture begun during baking, then leaves its undo/redo and new image coherent", async () => {
+  const { store, stamp, layerId } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+  await waitForSmartStampRegeneration();
+  const bank = store.document.tilesets.find(t => t.generated)!;
+  const old = getTilesetImage(bank.id)!;
+  const entered = deferred(), release = deferred();
+  vi.mocked(bakeSmartStamp).mockImplementationOnce(async (_s, _l, target) => {
+    entered.resolve(); await release.promise;
+    return { tilesetId: target.id, bytes: Uint8Array.of(20), bitmap: { close: vi.fn() } as unknown as ImageBitmap };
+  });
+  const history = store.undoDepth;
+  useProjectLibrary.setState({ generatedRecipes: [] }); // Early v3 library fallback.
+  replaceSource(20); await entered.promise;
+  store.beginTransaction();
+  store.dispatch({ type: "paintCells", layerId, cells: [{ x: 1, y: 1, cell: store.getOrAddPaletteIndex(bank.id, 0) }] });
+  release.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(getTilesetImage(bank.id)).toBe(old);
+  expect(store.document.getTileset(bank.id)?.generated).toEqual(bank.generated);
+  store.commit(); await waitForSmartStampRegeneration();
+  const current = store.document.getTileset(bank.id)!.generated;
+  expect(current).not.toEqual(bank.generated);
+  expect(getTilesetImage(bank.id)?.bytes).toEqual(Uint8Array.of(20));
+  expect(store.undoDepth).toBe(history + 1);
+  expect(useProjectLibrary.getState().generatedRecipes.map(r => r.tilesetId)).toEqual([bank.id]);
+  store.undo();
+  expect(store.document.getLayer(layerId)?.getCell(1, 1)).toBe(0);
+  expect(store.document.getTileset(bank.id)?.generated).toEqual(current);
+  expect(getTilesetImage(bank.id)?.bytes).toEqual(Uint8Array.of(20));
+  store.redo(); expect(store.document.getLayer(layerId)?.getCell(1, 1)).not.toBe(0);
+  expect(store.document.getTileset(bank.id)?.generated).toEqual(current);
+});
+
+it("discards stale decoded output, retries latest source after the gesture, and saves only current provenance", async () => {
+  const { store, stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+  await waitForSmartStampRegeneration();
+  const bank = store.document.tilesets.find(t => t.generated)!;
+  const entered = deferred(), release = deferred(), close = vi.fn();
+  vi.mocked(bakeSmartStamp).mockImplementationOnce(async (_s, _l, target) => {
+    entered.resolve(); await release.promise;
+    return { tilesetId: target.id, bytes: Uint8Array.of(10), bitmap: { close } as unknown as ImageBitmap };
+  });
+  replaceSource(10); await entered.promise;
+  store.beginTransaction(); release.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  replaceSource(30);
+  store.rollback(); await waitForSmartStampRegeneration();
+  expect(close).toHaveBeenCalledExactlyOnceWith();
+  const { pngHash } = await import("../ui/stamps/smartStampBake");
+  expect(store.document.getTileset(bank.id)?.generated?.sources[0]?.imageHash).toBe(await pngHash(Uint8Array.of(30)));
+  expect(getTilesetImage(bank.id)?.bitmap.close).not.toHaveBeenCalled();
+  const fs = new MemoryFileSystem();
+  await saveProject(fs, { name: "Test", document: store.document, levelPath: "levels/main.json", tilesetBytes: id => getTilesetImage(id)?.bytes });
+  expect(await fs.readBytes(bank.imagePath)).toEqual(getTilesetImage(bank.id)?.bytes);
+});
+
+it("releases output when a project closes during the post-bake transaction wait", async () => {
+  const { store, stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+  await waitForSmartStampRegeneration();
+  const entered = deferred(), release = deferred(), close = vi.fn();
+  vi.mocked(bakeSmartStamp).mockImplementationOnce(async (_s, _l, target) => {
+    entered.resolve(); await release.promise;
+    return { tilesetId: target.id, bytes: Uint8Array.of(10), bitmap: { close } as unknown as ImageBitmap };
+  });
+  replaceSource(10); await entered.promise;
+  store.beginTransaction(); release.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  useEditorStore.getState().setProject(null);
+  await waitForSmartStampRegeneration();
+  expect(close).toHaveBeenCalledExactlyOnceWith();
+  store.rollback();
+});
+
+it("generated removal, undo, redo and rollback preserve canonical nineSlice metadata and restore the suspended brush", async () => {
+  const { store, stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+  await waitForSmartStampRegeneration();
+  const smart = useProjectLibrary.getState().stamps[0]!;
+  useEditorStore.getState().setStamp(smart);
+  const bank = smart.nineSlice!.tileLayers[0]!.tilesetId;
+  store.dispatch({ type: "removeTileset", tilesetId: bank });
+  expect(useProjectLibrary.getState().stamps[0]).toBe(smart);
+  expect(useEditorStore.getState().stamp).toBeNull();
+  pickStamp(stamp.id); expect(useEditorStore.getState().stamp).toBeNull();
+  store.undo(); expect(useEditorStore.getState().stamp).toBe(smart);
+  store.redo(); expect(useEditorStore.getState().stamp).toBeNull();
+  store.undo(); expect(useEditorStore.getState().stamp).toBe(smart);
+  store.beginTransaction(); store.dispatch({ type: "removeTileset", tilesetId: bank }); store.rollback();
+  expect(useProjectLibrary.getState().stamps[0]).toBe(smart);
+  expect(useEditorStore.getState().stamp).toBe(smart);
+});
+
+
+it("stops an incompatible legacy fallback instead of retrying forever, and releases its output", async () => {
+  const { store, stamp } = setup(); acceptSmartStamp(await prepareSmartStamp(stamp));
+  await waitForSmartStampRegeneration();
+  const bank = store.document.tilesets.find(t => t.generated)!, image = getTilesetImage(bank.id);
+  const changed: Stamp = { ...stamp, width: 4, layers: stamp.layers.map(l => ({ ...l, cells: new Uint32Array(12).fill(makeCell(1)) })) };
+  useProjectLibrary.setState({ stamps: [changed], generatedRecipes: [] });
+  vi.mocked(bakeSmartStamp).mockClear();
+  replaceSource(40); await waitForSmartStampRegeneration();
+  expect(vi.mocked(bakeSmartStamp)).toHaveBeenCalledTimes(1);
+  const output = await vi.mocked(bakeSmartStamp).mock.results[0]!.value;
+  expect(output.bitmap.close).toHaveBeenCalledExactlyOnceWith();
+  expect(store.document.tilesets).toHaveLength(2);
+  expect(store.document.getTileset(bank.id)?.generated).toEqual(bank.generated);
+  expect(getTilesetImage(bank.id)).toBe(image);
 });

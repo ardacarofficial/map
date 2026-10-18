@@ -26,7 +26,7 @@ export interface PrepareNineSliceTilesetOptions {
  * Existing identity, PNG path, source dimensions, pixel grid and allocated capacity cannot shrink or move. A differently
  * sized source recipe needs a fresh id; future extra slots may only append, growing rows while retaining columns.
  *
- * Stage the PNG only at result.imagePath. After successful regeneration use setTilesetMeta.generated to acknowledge
+ * Stage the PNG only at result.imagePath. After successful regeneration use setTilesetMeta.generated with undoable: false to acknowledge
  * its source hashes (and name if renamed); the store records undo/redo without changing any palette entries/map cells.
  * A source PNG change therefore replaces the generated PNG at the SAME id/path/slots, never the user's PNG.
  * @throws Error on source/reference/hash errors, a user-owned target, path collision or incompatible regeneration.

@@ -17,6 +17,9 @@ import { registerCommands } from "./registry";
 import { activeStampId, pickStamp } from "./stampActions";
 
 export const useSmartStampDialog = create<{ stampId: string | null; roadChoiceId: string | null; open(id: string | null): void; chooseRoad(id: string | null): void }>()(set => ({ stampId: null, roadChoiceId: null, open: stampId => { if (stampId) { const toasts = useToastStore.getState(); for (const item of toasts.toasts) if (item.kind !== "error") toasts.dismiss(item.id); } set({ stampId }); }, chooseRoad: roadChoiceId => set({ roadChoiceId }) }));
+class SmartStampChangedError extends Error {
+  constructor() { super(t("smartStamp.changed")); }
+}
 export interface PreparedSmartStamp { readonly store: MapStore; readonly source: Stamp; readonly stamp: Stamp; readonly assets: readonly { tileset: Tileset; image: TilesetImage }[]; readonly sources: ReadonlyMap<string, TilesetImage> }
 
 export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInnerCorner | null, targets?: ReadonlyMap<string, string>): Promise<PreparedSmartStamp> {
@@ -51,7 +54,7 @@ export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInn
       const image = await bakeSmartStamp(stamp, layer.layerId, tileset, doc.tilesets);
       assets.push({ tileset, image }); tileLayers.push({ layerId: layer.layerId, tilesetId: id });
     }
-    for (const [id, snapshot] of snapshots) if (getTilesetImage(id) !== snapshot) throw new Error(t("smartStamp.changed"));
+    for (const [id, snapshot] of snapshots) if (getTilesetImage(id) !== snapshot) throw new SmartStampChangedError();
     return { store, sources: snapshots, source: stamp, stamp: Object.freeze({ ...stamp, nineSlice: { border: 1 as const, tileLayers, ...(road ? { road } : {}) } }), assets };
   } catch (error) { for (const a of assets) a.image.bitmap.close(); throw error; }
 }
@@ -61,23 +64,35 @@ export function discardSmartStamp(prepared: PreparedSmartStamp): void { for (con
 export function acceptSmartStamp(prepared: PreparedSmartStamp, regeneration = false): void {
   const store = useEditorStore.getState().project?.store;
   const current = useProjectLibrary.getState().stamps.find(s => s.id === prepared.source.id);
-  if (!store || store !== prepared.store || (!regeneration && current !== prepared.source) || store.inTransaction) throw new Error(t("smartStamp.changed"));
-  for (const [id, snapshot] of prepared.sources) if (getTilesetImage(id) !== snapshot) throw new Error(t("smartStamp.changed"));
-  for (const a of prepared.assets) if (a.tileset.tileWidth !== store.document.map.tileWidth || a.tileset.tileHeight !== store.document.map.tileHeight) throw new Error(t("smartStamp.changed"));
+  if (!store || store !== prepared.store || (!regeneration && current !== prepared.source) || store.inTransaction) throw new SmartStampChangedError();
+  for (const [id, snapshot] of prepared.sources) if (getTilesetImage(id) !== snapshot) throw new SmartStampChangedError();
+  for (const a of prepared.assets) if (a.tileset.tileWidth !== store.document.map.tileWidth || a.tileset.tileHeight !== store.document.map.tileHeight) throw new SmartStampChangedError();
+  if (regeneration) {
+    // Automatic image caches never enter map history. Core carries the latest
+    // provenance across historical tileset snapshots, including remove/restore.
+    for (const a of prepared.assets) if (!store.document.getTileset(a.tileset.id)) throw new SmartStampChangedError();
+    for (const a of prepared.assets) {
+      store.dispatch({ type: "setTilesetMeta", tilesetId: a.tileset.id, generated: a.tileset.generated!, undoable: false });
+      setTilesetImage(a.image);
+    }
+    // Early v3 projects may have only the library fallback. Archive it before
+    // a later library deletion can make this generated asset unrepairable.
+    const missingRecipes = prepared.assets.filter(a => !useProjectLibrary.getState().generatedRecipes.some(r => r.tilesetId === a.tileset.id));
+    if (missingRecipes.length) useProjectLibrary.getState().rememberGeneratedRecipes(missingRecipes.map(a => ({ tilesetId: a.tileset.id, stamp: prepared.source })));
+    return;
+  }
   const added: string[] = [];
   store.beginTransaction();
   try {
     for (const a of prepared.assets) {
       const old = store.document.getTileset(a.tileset.id);
       if (old) {
-        store.dispatch({ type: "setTilesetMeta", tilesetId: old.id, generated: a.tileset.generated!, name: a.tileset.name });
+        store.dispatch({ type: "setTilesetMeta", tilesetId: old.id, name: a.tileset.name });
         // Rebuilding can change the chosen inner art and conservative solidity; all tags keep fixed slots.
         for (const set of a.tileset.terrainSets ?? []) if (!old.terrainSets?.some(s => s.id === set.id)) store.dispatch({ type: "setTerrainSet", tilesetId: old.id, set });
-        if (!regeneration) {
-          const solids = a.tileset.solidTiles ?? [], previous = old.solidTiles ?? [];
-          store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: previous.filter(id => !solids.includes(id)), solid: false });
-          store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: solids.filter(id => !previous.includes(id)), solid: true });
-        }
+        const solids = a.tileset.solidTiles ?? [], previous = old.solidTiles ?? [];
+        store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: previous.filter(id => !solids.includes(id)), solid: false });
+        store.dispatch({ type: "setTileSolid", tilesetId: old.id, tileIds: solids.filter(id => !previous.includes(id)), solid: true });
       } else {
         added.push(a.tileset.id); setTilesetImage(a.image);
         store.dispatch({ type: "addTileset", tileset: a.tileset });
@@ -85,9 +100,11 @@ export function acceptSmartStamp(prepared: PreparedSmartStamp, regeneration = fa
     }
     store.commit();
   } catch (error) { store.rollback(); for (const id of added) removeTilesetImage(id); throw error; }
-  for (const a of prepared.assets) if (!added.includes(a.tileset.id)) setTilesetImage(a.image);
+  for (const a of prepared.assets) {
+    if (!added.includes(a.tileset.id)) setTilesetImage(a.image);
+    store.dispatch({ type: "setTilesetMeta", tilesetId: a.tileset.id, generated: a.tileset.generated!, undoable: false });
+  }
   useProjectLibrary.getState().rememberGeneratedRecipes(prepared.assets.map(a => ({ tilesetId: a.tileset.id, stamp: prepared.source })));
-  if (regeneration) return;
   useProjectLibrary.getState().addStamp(prepared.stamp);
   const editor = useEditorStore.getState();
   if (activeStampId(editor.stamp) === prepared.stamp.id) editor.setStamp(prepared.stamp);
@@ -147,33 +164,71 @@ export function installSmartStamps(): void {
     if (state.project?.store !== prev.project?.store) {
       stopWatching?.();
       const store = state.project?.store;
+      let suspended: Stamp | null = null;
       stopWatching = store?.subscribe(event => {
         if (!event.structure.includes("tilesets")) return;
-        for (const stamp of useProjectLibrary.getState().stamps) if (stamp.nineSlice?.tileLayers.some(l => !store.document.getTileset(l.tilesetId))) disableSmartStamp(stamp.id);
+        const editor = useEditorStore.getState(), selected = editor.stamp as Stamp | null;
+        const missing = (stamp: Stamp) => stamp.nineSlice?.tileLayers.some(l => !store.document.getTileset(l.tilesetId));
+        // Missing banks suspend the brush, never destroy the canonical recipe.
+        // Undo/rollback restores availability from the same library metadata.
+        if (selected?.nineSlice && missing(selected)) { suspended = selected; editor.setStamp(null); }
+        else if (suspended && !missing(suspended)) {
+          const canonical = useProjectLibrary.getState().stamps.find(s => s.id === suspended!.id);
+          if (!editor.stamp && canonical === suspended) editor.setStamp(canonical);
+          suspended = null;
+        }
       });
     }
     if (state.project?.store !== prev.project?.store && state.project) {
-      for (const ts of state.project.store.document.tilesets) if (!ts.generated && getTilesetImage(ts.id)) notifyTilesetImage(ts.id);
+      for (const ts of state.project.store.document.tilesets) if (getTilesetImage(ts.id)) notifyTilesetImage(ts.id);
     }
   });
   onTilesetImage(id => {
     const store = useEditorStore.getState().project?.store;
     if (!store) return;
     queueSmartStampRegeneration(async () => {
-      if (useEditorStore.getState().project?.store !== store) return;
-      if (store.inTransaction) await new Promise<void>(resolve => { const off = store.subscribe(() => { if (!store.inTransaction) { off(); resolve(); } }); });
-      if (useEditorStore.getState().project?.store !== store) return;
-      const sourceImage = getTilesetImage(id); if (!sourceImage) return;
-      const hash = await pngHash(sourceImage.bytes);
-      const library = useProjectLibrary.getState();
-      const assets = store.document.tilesets.filter(t => t.generated?.sources.some(src => src.tilesetId === id && src.imageHash !== hash));
-      for (const asset of assets) {
+      while (useEditorStore.getState().project?.store === store) {
+        await waitForIdleStore(store);
+        if (useEditorStore.getState().project?.store !== store) return;
+        const sourceImage = getTilesetImage(id); if (!sourceImage) return;
+        const hash = await pngHash(sourceImage.bytes);
+        if (useEditorStore.getState().project?.store !== store) return;
+        if (getTilesetImage(id) !== sourceImage) continue;
+        const asset = store.document.tilesets.find(t => t.generated?.sources.some(src => src.tilesetId === id && src.imageHash !== hash));
+        if (!asset) return;
+        const library = useProjectLibrary.getState();
         const recipe = library.generatedRecipes.find(r => r.tilesetId === asset.id)?.stamp ?? library.stamps.find(s => s.id === asset.generated!.stampId);
         if (!recipe) throw new Error(t("smartStamp.recipeMissing", { name: asset.name }));
-        const prepared = await prepareSmartStamp(recipe, asset.generated!.innerCorner ?? null, new Map([[asset.generated!.layerId, asset.id]]));
-        if (useEditorStore.getState().project?.store !== store) { discardSmartStamp(prepared); return; }
-        acceptSmartStamp(prepared, true);
+        let prepared: PreparedSmartStamp | undefined, published = false;
+        try {
+          prepared = await prepareSmartStamp(recipe, asset.generated!.innerCorner ?? null, new Map([[asset.generated!.layerId, asset.id]]));
+          // A gesture may have begun during PNG encoding/decoding. Publication
+          // waits again, then revalidates project, target and all source images.
+          await waitForIdleStore(store);
+          if (useEditorStore.getState().project?.store !== store) return;
+          if (store.document.getTileset(asset.id) !== asset) continue;
+          if (prepared.assets.length !== 1 || prepared.assets[0]!.tileset.id !== asset.id) throw new Error(t("smartStamp.recipeMissing", { name: asset.name }));
+          acceptSmartStamp(prepared, true);
+          published = true;
+        } catch (error) {
+          if (!(error instanceof SmartStampChangedError)) throw error;
+          // Retry stale source snapshots against the newest images in this job.
+        } finally {
+          if (prepared && !published) discardSmartStamp(prepared);
+        }
       }
     }, (error: unknown) => { toast.error(t("smartStamp.failed", { detail: error instanceof Error ? error.message : String(error) })); });
+  });
+}
+
+/** Also releases a pending job when its project/level is closed mid-gesture. */
+async function waitForIdleStore(store: MapStore): Promise<void> {
+  if (!store.inTransaction || useEditorStore.getState().project?.store !== store) return;
+  await new Promise<void>(resolve => {
+    const done = () => {
+      if (store.inTransaction && useEditorStore.getState().project?.store === store) return;
+      offStore(); offEditor(); resolve();
+    };
+    const offStore = store.subscribe(done), offEditor = useEditorStore.subscribe(done);
   });
 }

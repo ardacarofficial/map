@@ -73,7 +73,7 @@ import type {
 import { cellChangesOf, patchCellCount, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
 import type { PaletteEntry } from "./palette";
 import { normalizeTerrain, pickVariant, terrainCandidates, terrainProblem, terrainSlotTileId, terrainTemplateInfo, type Terrain } from "./terrain";
-import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset } from "./tileset";
+import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset, type GeneratedTilesetMetadata } from "./tileset";
 import { terrainErase, terrainFill, terrainPaint, type TerrainTileWrite } from "./terrainBrush";
 import { getTerrainSet, normalizeTerrainSet, remapTerrainSet, terrainSetProblem, withoutTerrainSet, withTerrainSet } from "./terrainSet";
 import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithGrid } from "./tilesetGrid";
@@ -534,6 +534,8 @@ export class MapStore {
   readonly #undo: HistoryEntry[] = [];
   readonly #redo: HistoryEntry[] = [];
   readonly #historyLimit: number;
+  /** Latest image provenance overlays historical tileset snapshots, including removed assets. */
+  readonly #generatedProvenance = new Map<string, GeneratedTilesetMetadata>();
   #revision = 0;
   #depth = 0;
   #pending: ChangeRecorder | null = null;
@@ -762,7 +764,7 @@ export class MapStore {
   /**
    * Reverts every undoable change of the open transaction (all nesting levels)
    * and closes it without creating an undo step. Non-undoable ops
-   * (palette entries, `addTileset` with `undoable: false`) stay.
+   * (palette entries, appended tilesets and cache-only generated provenance) stay.
    *
    * @throws Error when no transaction is open.
    */
@@ -916,6 +918,9 @@ export class MapStore {
     if (op.group !== undefined && op.group !== null && typeof op.group !== "string") {
       throw new TypeError("setTilesetMeta: group must be a string or null");
     }
+    if (op.undoable === false && (!op.generated || op.name !== undefined || op.group !== undefined)) {
+      throw new Error("setTilesetMeta: cache refresh requires only generated provenance");
+    }
     const name = op.name ?? tileset.name;
     const group = op.group === undefined ? tileset.group : op.group === null || op.group === "" ? undefined : op.group;
     if (op.generated !== undefined) {
@@ -926,6 +931,13 @@ export class MapStore {
       if ((["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion"] as const).some(k => old[k] !== op.generated![k])) throw new Error("setTilesetMeta: generated origin and slot layout cannot change");
     }
     const generated = op.generated === undefined ? tileset.generated : normalizeTileset({ ...tileset, generated: op.generated }).generated;
+    if (op.undoable === false) {
+      this.#generatedProvenance.set(tileset.id, generated!);
+      if (JSON.stringify(generated) === JSON.stringify(tileset.generated)) return;
+      this.#doc._replaceTileset({ ...tileset, generated: generated! });
+      this.#emit({ cause: "dispatch", cells: [], structure: ["tilesets"], historyChanged: false });
+      return;
+    }
     if (name === tileset.name && group === tileset.group && JSON.stringify(generated) === JSON.stringify(tileset.generated)) return;
     const { group: _old, ...rest } = tileset;
     const ctx = this.#openOp();
@@ -1922,6 +1934,14 @@ export class MapStore {
     return result;
   }
 
+  #withGeneratedProvenance(tileset: Tileset): Tileset {
+    const generated = this.#generatedProvenance.get(tileset.id);
+    const old = tileset.generated;
+    if (!old || !generated) return tileset;
+    const sameOrigin = (["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion"] as const).every(k => old[k] === generated[k]);
+    return sameOrigin ? { ...tileset, generated } : tileset;
+  }
+
   #applyChange(change: HistoryChange, side: "before" | "after", result: ApplyResult): void {
     const doc = this.#doc;
     switch (change.kind) {
@@ -1959,7 +1979,7 @@ export class MapStore {
         return;
       }
       case "tileset": {
-        doc._replaceTileset(change[side]);
+        doc._replaceTileset(this.#withGeneratedProvenance(change[side]));
         result.structure.add("tilesets");
         const a = change.before;
         const b = change.after;
@@ -1969,7 +1989,7 @@ export class MapStore {
         return;
       }
       case "tilesetList": {
-        doc._setTilesets(change[side]);
+        doc._setTilesets(change[side].map(ts => this.#withGeneratedProvenance(ts)));
         result.structure.add("tilesets");
         return;
       }

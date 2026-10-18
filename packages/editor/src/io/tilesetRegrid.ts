@@ -670,10 +670,20 @@ export function syncLevelLists(ws: LevelWorkspace): ListSync {
   for (const id of ws.cachedIds()) {
     if (id === ws.activeId) continue;
     const entry = ws.entry(id)!;
-    if (tilesetListKey(entry.store.document.tilesets) === wantKey) continue;
-    followList(entry.store, want);
-    ws.markDirty(id);
-    out.levels.push(id);
+    const listChanged = tilesetListKey(entry.store.document.tilesets) !== wantKey;
+    if (listChanged) followList(entry.store, want);
+    let provenanceChanged = false;
+    for (const ts of want) {
+      const have = entry.store.document.getTileset(ts.id);
+      if (ts.generated && have?.generated && JSON.stringify(ts.generated) !== JSON.stringify(have.generated)) {
+        entry.store.dispatch({ type: "setTilesetMeta", tilesetId: ts.id, generated: ts.generated, undoable: false });
+        provenanceChanged = true;
+      }
+    }
+    if (listChanged || provenanceChanged) {
+      ws.markDirty(id);
+      out.levels.push(id);
+    }
   }
   return out;
 }

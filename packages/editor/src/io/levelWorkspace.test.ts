@@ -10,7 +10,7 @@ import {
 } from "@smap/core";
 import { describe, expect, it } from "vitest";
 
-import { LevelWorkspace, levelFileStem, paletteProblems } from "./levelWorkspace";
+import { LevelWorkspace, levelFileStem, paletteProblems, withProjectData } from "./levelWorkspace";
 import { MemoryFileSystem } from "./memoryFs";
 import { defaultLevels, loadProject } from "./projectIo";
 
@@ -256,4 +256,28 @@ describe("LevelWorkspace", () => {
     paint(store, 0, 0, 3);
     expect(paletteProblems(store.document)).toEqual({ missingTilesets: [], outOfRange: 0 });
   });
+});
+
+
+it("retains cached level identity and undo/redo when only generated provenance changes", async () => {
+  const store = firstStore();
+  const generated = { kind: "nineSlice" as const, stampId: "road", layerId: "s", sourceWidth: 3, sourceHeight: 3, layoutVersion: 1 as const, sources: [{ tilesetId: "grass", imageHash: "old" }] };
+  store.dispatch({ type: "addTileset", tileset: { ...water, generated } });
+  const ws = workspace(store), main = ws.activeId;
+  const other = ws.add({ ...NEW, name: "Other" });
+  await ws.activate(other.id, null);
+  const cached = ws.active.store;
+  paint(cached, 1, 1); paint(cached, 2, 1); cached.undo();
+  const history = cached.historyEntries();
+  await ws.activate(main, null);
+  const next = { ...generated, sources: [{ tilesetId: "grass", imageHash: "new" }] };
+  store.dispatch({ type: "setTilesetMeta", tilesetId: water.id, generated: next, undoable: false });
+  // Opening without the normal event synchronizer must also preserve history.
+  expect(withProjectData(cached, store.document)).toBe(cached);
+  const reopened = await ws.activate(other.id, null);
+  expect(reopened.store).toBe(cached);
+  expect(cached.historyEntries()).toEqual(history);
+  expect(cached.document.getTileset(water.id)?.generated).toEqual(next);
+  cached.redo(); expect(cell(cached, 2, 1)).not.toBe(0);
+  cached.undo(); cached.undo(); expect(cell(cached, 1, 1)).toBe(0);
 });
