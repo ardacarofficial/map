@@ -1,3 +1,4 @@
+import { createDocument, MapStore } from "@smap/core";
 import type { ComponentType } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -70,6 +71,25 @@ describe("builtin transform options", () => {
         const entries = toolOptionsFor({ ...ctx(tool), brush });
         const paints = tool === "brush" || tool === "fill" || tool === "rect";
         expect(entries.some((entry) => entry.id === "builtin.transforms")).toBe(paints && brush !== "none");
+      }
+    }
+  });
+});
+
+describe("builtin random option", () => {
+  it("appears between size and terrain for brush, fill and rectangle on tile layers only", () => {
+    registerBuiltinToolOptions();
+    const store = new MapStore(createDocument({ width: 8, height: 8 }));
+    const tileId = store.dispatch({ type: "addLayer", layer: { name: "Tiles" } });
+    const gridId = store.dispatch({ type: "addLayer", layer: { name: "Collision", type: "grid", role: "collision" } });
+    const entityId = store.dispatch({ type: "addLayer", layer: { name: "Entities", type: "entity" } });
+    for (const tool of ["brush", "fill", "rect", "eraser", "select", "hand", "eyedropper", "entity"] as const) {
+      for (const layerId of [tileId, gridId, entityId, undefined]) {
+        const layer = layerId ? store.document.getLayer(layerId) : undefined;
+        const entry = toolOptionsFor(ctx(tool, layer)).find((e) => e.id === "builtin.random");
+        const expected = layerId === tileId && (tool === "brush" || tool === "fill" || tool === "rect");
+        expect(!!entry).toBe(expected);
+        if (entry) expect(entry.order).toBe(20);
       }
     }
   });

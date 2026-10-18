@@ -19,16 +19,14 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 import { chooseEntityType } from "../../commands/entityActions";
 import {
-  candidatesFromClip,
   clearRandomSet,
-  makeRandomFromStamp,
   MAX_WEIGHT,
   MIN_WEIGHT,
   randomChances,
-  randomSetOf,
   removeRandomTile,
   setRandomWeight,
   useRandomBrush,
+  useIsRandomBrush,
 } from "../../commands/randomBrush";
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { activeStampId, defaultStampName } from "../../commands/stampActions";
@@ -230,13 +228,6 @@ function ClipName({ clip }: { clip: TileClip }) {
   return <>{saved?.name ?? t("inspector.clip")}</>;
 }
 
-/** True when the editor's random brush (tiles + `useRandomBrush` options) is a random brush. */
-function useIsRandomBrush(): boolean {
-  const tiles = useEditorStore((s) => s.randomSet);
-  const options = useRandomBrush();
-  return randomSetOf(tiles, options) !== null;
-}
-
 /** Up to 4 candidates of the random brush (tiles, then stamps) in a 2 × 2 grid. */
 function RandomPreview({ doc }: { doc: MapDocument }) {
   const set = useEditorStore((s) => s.randomSet);
@@ -282,12 +273,11 @@ function TileDetails({ tileset, tileId }: { tileset: Tileset; tileId: number }) 
   );
 }
 
-/** A clip / stamp on the brush: size, layers, save as stamp, make random. */
+/** A clip / stamp on the brush: size, layers and save as stamp. */
 function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
   const stampId = activeStampId(clip);
   const [naming, setNaming] = useState<TileClip | null>(null);
   const gridLayers = clip.layers.filter((l) => l.grid).length;
-  const canRandom = !stampId && gridLayers === 0 && candidatesFromClip(clip).length >= 2;
   return (
     <>
       <PropGrid>
@@ -311,9 +301,6 @@ function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
           <StampNameForm doc={doc} clip={clip} onDone={() => setNaming(null)} />
         ) : (
           <ActionButton icon="stamp" label={t("inspector.saveStamp")} dataAction="saveClipStamp" onClick={() => setNaming(clip)} />
-        )}
-        {canRandom && (
-          <ActionButton icon="dice" label={t("inspector.makeRandom")} dataAction="makeRandom" onClick={() => void makeRandomFromStamp()} />
         )}
       </div>
     </>

@@ -216,6 +216,10 @@ export const tr = {
   },
   toolOptions: {
     bar: "Araç seçenekleri",
+    random: "Rastgele",
+    randomHint: "Seçili tile'lar arasından rastgele boya",
+    randomDisabled: "Önce birden çok tile seç",
+    randomRestore: "Önceki fırçaya dön",
     size: "Boyut",
     sizeUnusedStamp: "Çok tile'lı seçim olduğu gibi yerleşir; boyut kullanılmaz",
     sizeValue: "{size} × {size}",
@@ -279,7 +283,6 @@ export const tr = {
     saveStamp: "Stamp olarak kaydet…",
     stampName: "Stamp adı",
     savedStamp: "Kayıtlı stamp",
-    makeRandom: "Rastgele yap",
     noBrush: "Önce bir tile seç",
     tile: "Tile",
     mapSettings: "Harita ayarları…",
