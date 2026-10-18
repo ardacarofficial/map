@@ -1,3 +1,4 @@
+import { brushCandidate } from "../../commands/smartBrushActions";
 import { activeSmartStamp, useSmartStampSession } from "../stamps/smartStampSession";
 import { SmartStampOptions } from "./SmartStampOptions";
 
@@ -52,9 +53,9 @@ let registered = false;
 export function registerBuiltinToolOptions(): void {
   if (registered) return;
   registered = true;
-  registerToolOptions(["brush", "eraser", "rect", "fill"], SmartStampOptions, { id: "smartStamp.usage", order: 15, when: () => !!activeSmartStamp() });
+  registerToolOptions(["brush", "eraser", "rect", "fill"], SmartStampOptions, { id: "smartStamp.usage", order: 15, when: () => brushCandidate() });
   registerToolOptions("select", SelectionScopeOptions, { id: "selection.scope", order: 10 });
-  registerToolOptions(["rect"], RectangleOptions, { id: "builtin.rectangle", order: 5, when: (c) => !isEntityLayer(c.layer) && (!activeSmartStamp() || useSmartStampSession.getState().usage === "road") });
+  registerToolOptions(["rect"], RectangleOptions, { id: "builtin.rectangle", order: 5, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) && !activeSmartStamp() });
   registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });

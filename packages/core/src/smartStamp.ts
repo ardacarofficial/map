@@ -7,9 +7,10 @@ import { assertOrientation, nineSliceLayout, sampleNineSlice } from "./nineSlice
 import type { LayerPatch } from "./ops";
 import { stampLayerMapping, stampNineSliceProblem, type Stamp, type StampLayerTarget } from "./stamp";
 import type { MapStore } from "./store";
+import { rectangleBandContains } from "./rectangleBand";
 import { roadProfileProblem } from "./smartStamp/roadProfile";
 import { solveRoadFromReader, roadTileInfo, type RoadMembership, type RoadTileReader, type RoadTileWrite } from "./smartStamp/roadSolver";
-import { isValidTileId } from "./tileset";
+import { isValidTileId, type Tileset } from "./tileset";
 
 /** Tile references rather than palette indices keep preview planning mutation-free. Grid writes use raw values. */
 export type SmartStampWrite = RoadTileWrite | (CellPoint & { readonly value: number });
@@ -34,6 +35,10 @@ export interface SmartStampPlanOptions {
   readonly orientation?: number;
   readonly mapping?: readonly StampLayerTarget[];
   readonly window?: CellRect;
+  /** Preview-only staged assets; never bypasses apply-time document validation. */
+  readonly previewTilesets?: readonly Tileset[];
+  /** Alan rectangle band; zero (default) fills the rectangle. */
+  readonly thickness?: number;
 }
 /** Session-only mode and D4 orientation; the canonical saved stamp is never transformed. */
 export interface SmartBrushSession {
@@ -52,7 +57,7 @@ const provenance = new WeakMap<SmartStampPlan, MapDocument>();
 const contains = (r: CellRect, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height;
 const halo = (r: CellRect): CellRect => ({ x: r.x - 1, y: r.y - 1, width: r.width + 2, height: r.height + 2 });
 
-function validate(doc: MapDocument, stamp: Stamp, orientation: number): void {
+function validate(doc: MapDocument, stamp: Stamp, orientation: number, options: SmartStampPlanOptions): void {
   assertOrientation(orientation);
   if (orientation & FLIP_D && doc.map.tileWidth !== doc.map.tileHeight) throw new Error("quarter-turn orientation requires square map tiles");
   if (!stamp.nineSlice) throw new Error("smart stamp requires nineSlice metadata");
@@ -60,7 +65,7 @@ function validate(doc: MapDocument, stamp: Stamp, orientation: number): void {
   if (problem) throw new Error(problem);
   const slots = nineSliceLayout(stamp).slots;
   for (const entry of stamp.nineSlice.tileLayers) {
-    const ts = doc.getTileset(entry.tilesetId);
+    const ts = doc.getTileset(entry.tilesetId) ?? (options.window ? options.previewTilesets?.find(t => t.id === entry.tilesetId) : undefined);
     if (!ts || ts.columns * ts.rows < slots || ts.tileWidth !== doc.map.tileWidth || ts.tileHeight !== doc.map.tileHeight) throw new Error(`missing or incompatible baked tileset ${entry.tilesetId}`);
   }
 }
@@ -87,19 +92,21 @@ function finish(doc: MapDocument, options: SmartStampPlanOptions, layers: readon
   return plan;
 }
 
-function roadProfile(doc: MapDocument, stamp: Stamp) {
+function roadProfile(doc: MapDocument, stamp: Stamp, options: SmartStampPlanOptions) {
   const road = stamp.nineSlice?.road;
   if (!road) throw new Error("stamp has no road profile");
   const problem = roadProfileProblem(road.profile);
   if (problem) throw new Error(problem);
-  const tileset = doc.getTileset(road.tilesetId);
+  const tileset = doc.getTileset(road.tilesetId) ?? (options.window ? options.previewTilesets?.find(t => t.id === road.tilesetId) : undefined);
   if (!tileset || road.profile.tiles.some(t => !isValidTileId(tileset, t.tileId))) throw new Error("road profile references an invalid generated slot");
   return { road, profile: road.profile };
 }
 
 export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRect, options: SmartStampPlanOptions): SmartStampPlan {
   const orientation = options.orientation ?? 0;
-  validate(doc, stamp, orientation);
+  validate(doc, stamp, orientation, options);
+  const thickness = options.thickness ?? 0;
+  if (!Number.isInteger(thickness) || thickness < 0) throw new Error("outline thickness must be a nonnegative integer");
   // Validate rectangle even if it is completely clipped or all targets are skipped.
   sampleNineSlice(rect, { x: rect.x, y: rect.y }, stamp, orientation);
   if (options.window) sampleNineSlice(options.window, { x: options.window.x, y: options.window.y }, stamp);
@@ -115,6 +122,7 @@ export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRec
     if (target?.locked || target?.visible === false) { layers.push({ ...descriptor, writes: [] }); continue; }
     const asset = stamp.nineSlice!.tileLayers.find(l => l.layerId === source.layerId);
     const at = (x: number, y: number): SmartStampWrite | null => {
+      if (!rectangleBandContains(rect, thickness, x, y)) return null;
       const sample = sampleNineSlice(rect, { x, y }, stamp, orientation);
       if (!sample) return null;
       const values = sample.sourceIndices.map(index => source.cells[index]!);
@@ -139,7 +147,7 @@ export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRec
     const x1 = Math.min(doc.map.width, rect.x + rect.width, window ? window.x + window.width : Infinity), y1 = Math.min(doc.map.height, rect.y + rect.height, window ? window.y + window.height : Infinity);
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const w = at(x, y); if (w) writes.set(y * doc.map.width + x, w); }
     if (!source.grid && stamp.nineSlice!.road?.tilesetId === asset!.tilesetId) {
-      const { road, profile } = roadProfile(doc, stamp);
+      const { road, profile } = roadProfile(doc, stamp, options);
       const membership: RoadMembership = { bounds: rect, contains: (x, y) => doc.inBounds(x, y) && contains(rect, x, y) && at(x, y) !== null };
       const repairs = solveRoadFromReader(virtual, profile, road.tilesetId, membership, {
         orientation, ...(options.window ? { window: options.window } : {}),
@@ -172,8 +180,8 @@ export interface SmartStampRoadOptions extends SmartStampPlanOptions { readonly 
  */
 export function planSmartStampRoad(doc: MapDocument, stamp: Stamp, layerId: string, membership: RoadMembership, options: SmartStampRoadOptions): SmartStampPlan {
   const orientation = options.orientation ?? 0;
-  validate(doc, stamp, orientation);
-  const { road, profile } = roadProfile(doc, stamp), layer = doc.getLayer(layerId);
+  validate(doc, stamp, orientation, options);
+  const { road, profile } = roadProfile(doc, stamp, options), layer = doc.getLayer(layerId);
   if (!isTileLayer(layer)) throw new Error("road requires an existing tile layer");
   const writes = layer.locked || !layer.visible ? [] : solveRoadFromReader(reader(doc, layerId), profile, road.tilesetId, membership, { orientation, erase: !!options.erase, ...(options.window ? { window: options.window } : {}) });
   return finish(doc, options, [{ sourceLayerId: stamp.nineSlice!.tileLayers.find(l => l.tilesetId === road.tilesetId)!.layerId, layerId, name: layer.name, grid: false, writes }]);

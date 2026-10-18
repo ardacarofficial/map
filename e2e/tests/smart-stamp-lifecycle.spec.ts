@@ -10,7 +10,7 @@ async function changeSource(page: Page, pauseBake = false) {
     const bank = store.document.tilesets.find((t: { generated?: unknown }) => t.generated);
     const source = images.getTilesetImage("road-source");
     const canvas = new OffscreenCanvas(source.bitmap.width, source.bitmap.height), ctx = canvas.getContext("2d")!;
-    ctx.drawImage(source.bitmap, 0, 0); ctx.fillStyle = "#695336"; ctx.fillRect(32, 32, 32, 32);
+    ctx.drawImage(source.bitmap, 0, 0); ctx.fillStyle = "#695336"; ctx.fillRect(96, 64, 32, 32);
     const blob = await canvas.convertToBlob({ type: "image/png" });
     if (pauseBake) {
       const gate = { entered: false, release: () => {} };
@@ -47,7 +47,7 @@ async function waitForBake(page: Page) {
 }
 
 test("generated removal confirms stamp-only usage; undo/redo retains nineSlice and restores smart painting", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page); await acceptRoadStamp(page);
+  await makeRoadStamp(page); await acceptRoadStamp(page);
   const remove = async () => page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     const { removeTileset } = await import(/* @vite-ignore */ String("/src/commands/tilesetActions.ts"));
@@ -84,7 +84,7 @@ test("generated removal confirms stamp-only usage; undo/redo retains nineSlice a
 
 test("automatic bake waits for a real pointer gesture and stays outside undo with coherent PNG provenance", async ({ page }) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-  await page.goto("/"); await makeRoadStamp(page); await acceptRoadStamp(page); await waitForBake(page);
+  await makeRoadStamp(page); await acceptRoadStamp(page); await waitForBake(page);
   const before = await changeSource(page, true);
   await expect.poll(() => page.evaluate(() => (window as unknown as { lifecycleGate: { entered: boolean } }).lifecycleGate.entered)).toBe(true);
   const at = await cellPoint(page, 4, 4); await page.mouse.move(at.x, at.y); await page.mouse.down();
@@ -105,7 +105,7 @@ test("automatic bake waits for a real pointer gesture and stays outside undo wit
 });
 
 test("source PNG refresh preserves the store and undo/redo history of another open level", async ({ page }) => {
-  await page.goto("/"); await makeRoadStamp(page); await acceptRoadStamp(page); await waitForBake(page);
+  await makeRoadStamp(page); await acceptRoadStamp(page); await waitForBake(page);
   const ids = await page.evaluate(async () => {
     const session = await import(/* @vite-ignore */ String("/src/io/session.ts"));
     const ws = session.getLevelWorkspace(), main = ws.activeId;

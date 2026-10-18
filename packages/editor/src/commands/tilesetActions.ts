@@ -558,7 +558,7 @@ export async function removeTileset(tilesetId: string | null = currentTilesetId(
   const perLevel: LevelUsage[] = ws.cachedIds().map((id) => tilesetUsage(ws.entry(id)!.store.document, tileset.id));
   const library = useProjectLibrary.getState();
   const affected = affectedTilesetStamps(tileset.id, library.stamps, library.generatedRecipes, store.document.tilesets);
-  const usage = summarizeUsage(perLevel, affected.length);
+  const usage = summarizeUsage(perLevel, affected.filter(id => library.stamps.some(s => s.id === id)).length);
   if (usage.used && !(await askRemoveTileset({ name: tileset.name, usage }))) return false;
   if (activeStore() !== store || !store.document.getTileset(tileset.id) || store.inTransaction) return false;
   const index = store.document.tilesets.findIndex((ts) => ts.id === tileset.id);

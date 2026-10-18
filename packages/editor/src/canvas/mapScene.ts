@@ -1,4 +1,4 @@
-import { chunkKey, type SmartStampPlan } from "@smap/core";
+import { chunkKey, type SmartStampPlan, type Tileset } from "@smap/core";
 import { TilePreview } from "./preview";
 /**
  * Tile layers of one MapStore as Pixi display objects.
@@ -76,6 +76,7 @@ export class MapScene {
   #smartPlan: SmartStampPlan | null = null;
   get smartPreviewPlan(): SmartStampPlan | null { return this.#smartPlan; }
   readonly #views = new Map<string, LayerView>();
+  readonly #stagedTilesets = new Map<string, Tileset>();
   readonly #atlases = new Map<string, { atlas: TilesetAtlas; groupBase: number }>();
   /** Texture per quad group (global atlas page id). */
   readonly #groupTextures = new Map<number, Texture>();
@@ -104,9 +105,16 @@ export class MapScene {
 
   /** Builds (or rebuilds) the atlas of `tilesetId` from its image and marks dependent chunks dirty. */
   imageChanged(tilesetId: string): void {
-    if (!this.store.document.getTileset(tilesetId)) return;
-    this.#buildAtlas(tilesetId);
+    const staged = this.#stagedTilesets.get(tilesetId);
+    if (!this.store.document.getTileset(tilesetId) && !staged) return;
+    this.#buildAtlas(tilesetId, staged);
     this.#onChange();
+  }
+
+  /** Build staged preview textures without publishing document metadata. */
+  preparePreviewTileset(tileset: Tileset): void {
+    this.#stagedTilesets.set(tileset.id, tileset);
+    if (!this.#atlases.has(tileset.id)) this.#buildAtlas(tileset.id, tileset);
   }
 
   /** Atlas of a tileset, if its image is loaded. */
@@ -272,7 +280,7 @@ export class MapScene {
     for (const view of this.#views.values()) for (const c of view.chunks.values()) destroyChunkView(c);
     this.root.destroy({ children: true });
     for (const { atlas } of this.#atlases.values()) atlas.destroy();
-    this.#atlases.clear();
+    this.#atlases.clear(); this.#stagedTilesets.clear();
     this.#groupTextures.clear();
     this.#views.clear();
     this.#dirty.clear();
@@ -342,8 +350,8 @@ export class MapScene {
     if (!this.#atlases.has(tilesetId) && this.#images(tilesetId)) this.#buildAtlas(tilesetId);
   }
 
-  #buildAtlas(tilesetId: string): void {
-    const tileset = this.store.document.getTileset(tilesetId);
+  #buildAtlas(tilesetId: string, staged?: Tileset): void {
+    const tileset = this.store.document.getTileset(tilesetId) ?? staged;
     const image = this.#images(tilesetId);
     if (!tileset || !image) return;
     let atlas: TilesetAtlas;

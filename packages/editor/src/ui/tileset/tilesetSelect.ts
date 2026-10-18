@@ -4,6 +4,7 @@
  * (right click / right drag on the map highlights and reveals the source
  * tiles in the panel).
  */
+import { prepareSelectionBrush } from "../../commands/smartBrushActions";
 import type { MapDocument, TileClip, Tileset } from "@smap/core";
 
 import { consumeReplacementPick } from "../../commands/replaceTiles";
@@ -40,6 +41,7 @@ export function commitTilesetSelection(
   } else {
     // The single selection stays the top-left tile, so dropping the stamp (Esc) leaves a sensible brush.
     s.setSelection({ tilesetId: tileset.id, tileId: brush.ids[0]! });
+    prepareSelectionBrush(tileset, ids, empty, brush.clip);
     s.setStamp(brush.clip);
     view.setSelection({ tilesetId: tileset.id, ids: brush.ids, anchor: corners.anchor, focus: corners.focus, clip: brush.clip });
   }

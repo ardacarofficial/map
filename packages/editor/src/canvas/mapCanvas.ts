@@ -912,6 +912,7 @@ export class MapCanvas {
       this.#loadProject(s.project);
       return;
     }
+    if (this.#tools.gesture?.kind === "smart" && (s.tool !== prev.tool || s.stamp !== prev.stamp || s.activeLayerId !== prev.activeLayerId)) this.#tools.cancel();
     if (s.tool !== prev.tool) this.#toolMemory = nextToolMemory(this.#toolMemory, prev.tool, s.tool);
     if (s.activeLayerId !== prev.activeLayerId) this.#matchToolToLayer(s);
     if (

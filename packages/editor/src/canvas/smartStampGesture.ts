@@ -1,4 +1,5 @@
 /** Gesture geometry only; connectivity and tile selection stay in core's planners. */
+import { brushPreviewTilesets } from "../commands/smartBrushActions";
 import { stampLayerMapping, normalizeRect, orthogonalBridge, planSmartStampArea, planSmartStampRoad, rectangleBandContains, roadMembership, type CellPoint, type CellRect, type MapStore, type Stamp, type StampLayerTarget, type SmartStampPlan, type RoadMembership } from "@smap/core";
 import { brushFootprint, constrainRect, footprintCells } from "./footprint";
 
@@ -32,10 +33,10 @@ export function smartMembership(g: SmartGesture): RoadMembership {
   }));
 }
 export function smartGesturePlan(g: SmartGesture, window?: CellRect): SmartStampPlan {
-  const options = { revision: g.store.revision, orientation: g.orientation, mapping: g.mapping, ...(window ? { window } : {}) };
-  return g.usage === "area" ? planSmartStampArea(g.store.document, g.stamp, smartRect(g), options) : planSmartStampRoad(g.store.document, g.stamp, g.layerId, smartMembership(g), { ...options, erase: g.erase });
+  const options = { revision: g.store.revision, orientation: g.orientation, mapping: g.mapping, ...(window ? { window, previewTilesets: brushPreviewTilesets(g.stamp) } : {}) };
+  return g.usage === "area" ? planSmartStampArea(g.store.document, g.stamp, smartRect(g), { ...options, thickness: g.thickness }) : planSmartStampRoad(g.store.document, g.stamp, g.layerId, smartMembership(g), { ...options, erase: g.erase });
 }
 export function smartHoverGesture(store: MapStore, stamp: Stamp, layerId: string, cell: CellPoint, usage: "area" | "road", orientation: number, size: number, shape: "square" | "circle", erase = false, anchor: CellPoint | null = null): SmartGesture {
-  const g: SmartGesture = { kind: "smart", pointerId: -1, store, stamp, layerId, mapping: stampLayerMapping(store.document, stamp), orientation, usage, rectangle: usage === "area", erase, thickness: 0, offsets: brushFootprint(size, shape), start: cell, end: cell, square: false, fromCenter: false, members: new Set(), last: anchor ?? cell, version: 0 };
+  const g: SmartGesture = { kind: "smart", pointerId: -1, store, stamp, layerId, mapping: stamp.layers.length === 1 ? [{ clipLayerId: stamp.layers[0]!.layerId, targetLayerId: layerId, name: stamp.layers[0]!.name }] : stampLayerMapping(store.document, stamp), orientation, usage, rectangle: usage === "area", erase, thickness: 0, offsets: brushFootprint(size, shape), start: cell, end: cell, square: false, fromCenter: false, members: new Set(), last: anchor ?? cell, version: 0 };
   addRoadSamples(g, [cell]); return g;
 }

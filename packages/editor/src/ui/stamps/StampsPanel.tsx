@@ -1,4 +1,3 @@
-import { focusNineSlice } from "../../commands/smartStampCommands";
 import type { Stamp } from "@smap/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -100,10 +99,6 @@ export function stampMenuItems(stamp: Stamp, onRename: () => void): ContextEntry
           run: () => void assignNewCategory(stamp.id),
         },
       ],
-    },
-    {
-      type: "item",
-      id: "nineSlice", label: t("smartStamp.command"), run: () => focusNineSlice(stamp.id),
     },
     {
       type: "item", id: "tags",

@@ -1,5 +1,6 @@
 import { FLIP_H, FLIP_V } from "@smap/core";
-import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
+import { brushCandidate } from "./smartBrushActions";
+import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * Turning and mirroring the brush (round 4): Z / Shift+Z turn it 90°, X / Y
  * mirror it. What turns is what the canvas would paint:
@@ -112,7 +113,7 @@ export function rotateBrush(dir: RotateDir): boolean {
     const handle = getCanvasHandle();
     return handle?.rotateSelection(dir) ?? false;
   }
-  if (activeSmartStamp()) {
+  if (brushCandidate()) {
     if (!canRotateTiles(state.project!.store.document.map.tileWidth, state.project!.store.document.map.tileHeight)) return apply({ kind: "nonSquare" });
     useSmartStampSession.getState().transform(rotateFlags(0, dir)); return true;
   }
@@ -121,7 +122,7 @@ export function rotateBrush(dir: RotateDir): boolean {
 
 /** X / Y: mirrors the brush (random sets mirror their candidates; the rest as before). */
 export function flipBrush(axis: "x" | "y"): boolean {
-  if (activeSmartStamp()) { useSmartStampSession.getState().transform(axis === "x" ? FLIP_H : FLIP_V); return true; }
+  if (brushCandidate()) { useSmartStampSession.getState().transform(axis === "x" ? FLIP_H : FLIP_V); return true; }
   const random = flippedRandomBrush(useEditorStore.getState(), axis);
   return random ? apply(random) : flipStampOrTile(axis);
 }

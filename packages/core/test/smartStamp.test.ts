@@ -28,6 +28,31 @@ const opts = (store: MapStore) => ({ revision: store.revision });
 const cells = (store: MapStore) => serializeLevel(store.document);
 
 describe("smart stamp plans", () => {
+  it("previews staged assets without publishing them and publishes atlas plus cells in one undo", () => {
+    const { store, stamp } = fixture();
+    const asset = store.document.getTileset("baked")!;
+    const fresh = fixture().store;
+    fresh.dispatch({type:"removeTileset",tilesetId:"baked"});fresh.clearHistory();
+    const before=serializeLevel(fresh.document);
+    const preview=planSmartStampRoad(fresh.document,stamp,"l",roadMembership([{x:4,y:4}]),{revision:fresh.revision,window:{x:0,y:0,width:24,height:24},previewTilesets:[asset]});
+    expect(preview.layers[0]!.writes).toHaveLength(1);expect(serializeLevel(fresh.document)).toBe(before);
+    expect(()=>applySmartStampPlan(fresh,preview)).toThrow();
+    fresh.beginTransaction();fresh.dispatch({type:"addTileset",tileset:asset});applySmartStampRoad(fresh,stamp,"l",roadMembership([{x:4,y:4}]));fresh.commit();
+    const after=serializeLevel(fresh.document);expect(fresh.undoDepth).toBe(1);fresh.undo();expect(serializeLevel(fresh.document)).toBe(before);fresh.redo();expect(serializeLevel(fresh.document)).toBe(after);
+  });
+
+  it("samples an Alan outline from the full rectangle, preserving its empty interior and one undo", () => {
+    const {store,stamp}=fixture(),rect={x:2,y:2,width:6,height:5},before=cells(store);
+    const plan=planSmartStampArea(store.document,stamp,rect,{revision:store.revision,thickness:1});
+    expect(plan.layers[0]!.writes).toHaveLength(18);
+    expect(plan.layers[0]!.writes.some(w=>w.x===4&&w.y===4)).toBe(false);
+    applySmartStampPlan(store,plan);const after=cells(store);expect(store.undoDepth).toBe(1);store.undo();expect(cells(store)).toBe(before);store.redo();expect(cells(store)).toBe(after);
+    fc.assert(fc.property(fc.integer({min:1,max:12}),fc.integer({min:1,max:12}),fc.integer({min:1,max:8}),(width,height,thickness)=>{
+      const {store,stamp}=fixture();const p=planSmartStampArea(store.document,stamp,{x:2,y:2,width,height},{revision:store.revision,thickness});
+      expect(p.layers[0]!.writes.length).toBe(width*height-Math.max(0,width-2*thickness)*Math.max(0,height-2*thickness));
+    }),{numRuns:40});
+  });
+
   it("plans without mutation, applies once, and undoes/redoes exactly including created layers", () => {
     const { store, stamp } = fixture();
     const layered: Stamp = { ...stamp, layers: [...stamp.layers, { layerId: "g", name: "Collision", grid: true, role: "collision", cells: new Uint32Array(20).fill(2) }] };

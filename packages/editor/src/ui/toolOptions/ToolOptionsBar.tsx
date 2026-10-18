@@ -22,6 +22,7 @@ registerBrushCommands();
  */
 export function ToolOptions() {
   useSmartStampSession(s => s.usage);
+  useSmartStampSession(s => s.version);
   useEditorStore(s => s.stamp);
   const world = useWorldView((s) => s.view === "world");
   useUiStore((s) => s.activeTilesetId);

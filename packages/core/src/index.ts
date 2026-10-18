@@ -486,3 +486,4 @@ export * from "./smartStamp/topology";
 export * from "./smartStamp/roadProfile";
 export * from "./smartStamp/roadSolver";
 export type { RgbaImage } from "./tilesetPixels";
+export { detectNineSliceSelection, type NineSliceSelectionInput, type NineSliceDetection } from "./smartStamp/detect";
