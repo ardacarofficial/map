@@ -2,8 +2,8 @@ import { classifyWheel } from "../../canvas/brush";
 import { wheelDeltaPixels } from "../../canvas/camera";
 
 /**
- * Tileset panel zoom, as pure functions (unit tested): the default "fit"
- * scale fills the panel width with the tileset's columns, preferring a
+ * Tileset panel zoom, as pure functions (unit tested): the initial
+ * scale respects natural tile size and panel width, preferring a
  * whole-number scale (crisp pixels); wheel steps and cursor-anchored scroll.
  */
 
@@ -25,7 +25,7 @@ export const MIN_INTEGER_FILL = 0.7;
  * `available` px. Whole numbers when they fill enough of the width; else a
  * scale at which one tile is a whole number of CSS px (grid lines stay sharp).
  */
-export function fitScale(available: number, contentWidth: number, tileWidth: number): number {
+export function widthScale(available: number, contentWidth: number, tileWidth: number): number {
   if (!(available > 0) || !(contentWidth > 0) || !(tileWidth > 0)) return 1;
   const fit = available / contentWidth;
   if (fit >= 1) {
@@ -34,6 +34,13 @@ export function fitScale(available: number, contentWidth: number, tileWidth: num
   }
   const tilePx = Math.max(1, Math.floor(fit * tileWidth));
   return Math.min(MAX_FIT_SCALE, tilePx / tileWidth);
+}
+
+/** Largest crisp step that fits both visible dimensions; 0.25 is the floor. */
+export function fitScale(availableWidth: number, contentWidth: number, availableHeight: number, contentHeight: number): number {
+  if (!(availableWidth > 0 && availableHeight > 0 && contentWidth > 0 && contentHeight > 0)) return 1;
+  const fit = Math.min(availableWidth / contentWidth, availableHeight / contentHeight);
+  return [...ZOOM_STEPS].reverse().find(step => step <= 4 && step <= fit) ?? MIN_ZOOM;
 }
 
 /** Largest crisp step up to 2× that keeps a tile at most 32 CSS px tall. */

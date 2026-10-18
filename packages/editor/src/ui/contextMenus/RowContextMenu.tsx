@@ -50,8 +50,9 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
         key={entry.id}
         data-context-item={entry.id}
         disabled={!entry.enabled}
-        onClick={entry.run}
-        className={`${menuItemClass} ${entry.danger ? `${menuDangerItemClass} data-highlighted:bg-danger-soft!` : ""}`}
+        title={entry.id === "makeStamp" && !entry.enabled ? t("toast.emptySelection") : undefined}
+        onClick={entry.enabled ? entry.run : undefined}
+        className={`${menuItemClass} ${entry.id === "makeStamp" && !entry.enabled ? "data-disabled:pointer-events-auto!" : ""} ${entry.danger ? `${menuDangerItemClass} data-highlighted:bg-danger-soft!` : ""}`}
       >
         {anyCheck ? (
           <span aria-hidden className="grid size-4 shrink-0 place-items-center text-muted">

@@ -66,7 +66,7 @@ export function ResizeHandle({ column, edge, width }: { column: ColumnId; edge: 
       onLostPointerCapture={end}
       onDoubleClick={() => reset(column)}
       onKeyDown={onKeyDown}
-      className={`group absolute top-0 bottom-0 z-20 w-1.5 cursor-col-resize touch-none outline-none ${
+      className={`group absolute top-0 bottom-0 z-20 w-1.5 cursor-col-resize touch-none outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-accent)] ${
         edge === "right" ? "-right-0.5" : "-left-0.5"
       }`}
     >

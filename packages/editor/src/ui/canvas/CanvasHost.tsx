@@ -59,12 +59,15 @@ export function CanvasHost() {
       {...{ [CANVAS_HOST_ATTR]: "" }}
       tabIndex={0}
       // Clicking the canvas focuses it so `Tab` (hide panels) works right away.
+      onFocus={(e) => { if (e.currentTarget.matches(":focus-visible")) e.currentTarget.dataset.focusInset = ""; }}
+      onBlur={(e) => { delete e.currentTarget.dataset.focusInset; }}
       onPointerDownCapture={(e) => {
+        delete e.currentTarget.dataset.focusInset;
         if (e.button === 0) captureHistoryBrushSource();
         if (e.button === 0 && useEditorStore.getState().tool === "select") useStampLibrary.getState().select(null);
       }}
       onPointerDown={(e) => e.currentTarget.focus({ preventScroll: true })}
-      className="relative h-full w-full overflow-hidden bg-canvas outline-none focus-visible:outline-none"
+      className="relative h-full w-full overflow-hidden bg-canvas outline-none after:pointer-events-none after:absolute after:inset-0 after:z-30 data-focus-inset:after:shadow-[inset_0_0_0_1px_var(--color-accent)]"
     />
   );
 }

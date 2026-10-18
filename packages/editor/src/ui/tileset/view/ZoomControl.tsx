@@ -14,9 +14,10 @@ export interface ZoomProps {
   onResetOverride(): void;
   globalZoom: number | null;
   shownScale: number;
+  displayTileSize: number;
   onZoom(zoom: number | null): void;
 }
-export function ZoomControl({ override, onResetOverride, globalZoom, shownScale, onZoom, stack }: ZoomProps & { stack: boolean }) {
+export function ZoomControl({ override, onResetOverride, globalZoom, shownScale, displayTileSize, onZoom, stack }: ZoomProps & { stack: boolean }) {
   const fit = globalZoom === null && override === null;
   return <div className="flex shrink-0 items-center gap-1" data-tileset-zoom>
     {override !== null && <Tooltip label={t("tilesetLib.zoomOverrideReset")}>
@@ -26,7 +27,7 @@ export function ZoomControl({ override, onResetOverride, globalZoom, shownScale,
     </Tooltip>}
     {stack && <Tooltip label={t("tilesetLib.wheelHint")}><span role="img" aria-label={t("tilesetLib.wheelHint")} data-tileset-wheel-hint className="flex size-6 items-center justify-center text-faint"><Icon name="info" /></span></Tooltip>}
     <Menu.Root>
-      <Menu.Trigger data-tileset-zoom-label className="h-control-sm w-14 rounded-sm border border-line bg-field px-1 font-mono text-sm text-text hover:border-line-strong">{formattedZoom(shownScale)}</Menu.Trigger>
+      <Menu.Trigger data-tileset-zoom-label className="h-control-sm w-14 rounded-sm border border-line bg-field px-1 font-mono text-sm text-text hover:border-line-strong">{stack ? t("tilesetDock.tilePixels", { value: displayTileSize }) : formattedZoom(shownScale)}</Menu.Trigger>
       <Menu.Portal><Menu.Positioner side="top" align="end" sideOffset={4} className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
         <Menu.Item className={menuItemClass} onClick={() => onZoom(null)}>{t("tileset.zoomFit")}</Menu.Item>
         {ZOOM_STEPS.filter((step) => [0.5, 1, 2, 4].includes(step)).map((step) => <Menu.Item key={step} className={menuItemClass} onClick={() => onZoom(step)}>{formattedZoom(step)}</Menu.Item>)}

@@ -1,6 +1,7 @@
 import { Fragment, useSyncExternalStore } from "react";
 
-import { useRandomBrush } from "../../commands/randomBrush";
+import { useUiStore } from "../uiStore";
+import { useIsRandomBrush } from "../../commands/randomBrush";
 import { useWorldView } from "../../commands/worldActions";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -20,10 +21,11 @@ registerBrushCommands();
  */
 export function ToolOptions() {
   const world = useWorldView((s) => s.view === "world");
+  useUiStore((s) => s.activeTilesetId);
   const tool = useEditorStore((s) => s.tool);
   const content = useEditorStore((s) => brushContent(s));
-  const randomStamps = useRandomBrush((s) => s.stamps.length);
-  const brush = content === "none" && randomStamps > 0 ? "random" : content;
+  const random = useIsRandomBrush();
+  const brush = random && content !== "stamp" ? "random" : content;
   const store = useEditorStore((s) => s.project?.store);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
   useStructureVersion(store);
@@ -33,7 +35,7 @@ export function ToolOptions() {
   const layer = activeLayerId ? doc?.getLayer(activeLayerId) : undefined;
   const entries = toolOptionsFor({ tool, doc, layer, brush });
   return (
-    <div role="group" aria-label={t("toolOptions.bar")} data-tool-chip={tool} className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+    <div role="group" aria-label={t("toolOptions.bar")} data-tool-chip={tool} className="flex w-max shrink-0 items-center gap-2 whitespace-nowrap">
       {entries.map(({ id, Component }, i) => (
         <Fragment key={id}>
           {i > 0 && <OptionDivider />}

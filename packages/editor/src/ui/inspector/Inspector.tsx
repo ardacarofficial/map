@@ -78,9 +78,9 @@ function InspectorSections({ doc }: { doc: MapDocument }) {
   const ctx = useInspectorContext(doc);
   const sections = inspectorSectionsFor(ctx);
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-3" data-inspector data-inspector-mode={ctx.mode}>
+    <div className="flex min-h-0 flex-auto flex-col overflow-y-auto pb-3" data-inspector data-inspector-mode={ctx.mode}>
       {sections.map(({ id, Component }) => (
-        <div key={id} data-inspector-section={id}>
+        <div className="shrink-0" key={id} data-inspector-section={id}>
           <Component ctx={ctx} />
         </div>
       ))}

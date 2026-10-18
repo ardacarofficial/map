@@ -233,7 +233,8 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
             <TextField size="md"
               id={nameId}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setTouched(true); }}
+              onBlur={() => setTouched(true)}
               {...selectAll}
               autoFocus
               spellCheck={false}
@@ -241,7 +242,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
               aria-invalid={touched && !nameOk ? true : undefined}
               className={touched && !nameOk ? "[&>input]:border-danger" : ""}
             />
-            {touched && !nameOk && <span className="text-sm text-danger">{t("newProject.errName")}</span>}
+            <span className="min-h-4 text-sm text-danger" role="status">{touched && !nameOk ? t("newProject.errName") : null}</span>
           </Section>
 
           <Section label={t("newProject.location")}>
@@ -256,11 +257,11 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
           </Section>
 
           <Section label={t("newProject.tileSize")}>
-            <TileSizePicker value={tile} onChange={setTile} showErrors={touched} />
+            <TileSizePicker value={tile} onChange={setTile} showErrors={true} />
           </Section>
 
           <Section label={t("newProject.mapSize")}>
-            <MapSizePicker value={size} onChange={setSize} showErrors={touched} />
+            <MapSizePicker value={size} onChange={setSize} showErrors={true} />
           </Section>
 
           <Section label={t("newProject.layerTemplate")}>
@@ -307,7 +308,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
       </DialogBody>
       <DialogFooter>
         <Button variant="secondary" onClick={onDone}>{t("common.cancel")}</Button>
-        <Button type="submit" variant="primary" disabled={touched && !valid}>{t("common.create")}</Button>
+        <Button type="submit" variant="primary" disabled={!valid || tilesetBusy}>{t("common.create")}</Button>
       </DialogFooter>
     </form>
   );
@@ -371,15 +372,19 @@ function Preview({
   layers: readonly { name: string; kind: "tile" | "collision" | "entity" }[];
   background: string | null;
 }) {
-  const ok = tile !== null && size !== null;
-  const box = ok ? fitPreview(size.width * tile.width, size.height * tile.height, 80, 56) : { width: 80, height: 56 };
+  const [lastValid, setLastValid] = useState({ tile, size });
+  if (tile && size && (tile.width !== lastValid.tile?.width || tile.height !== lastValid.tile?.height || size.width !== lastValid.size?.width || size.height !== lastValid.size?.height)) setLastValid({ tile, size });
+  const displayTile = tile ?? lastValid.tile;
+  const displaySize = size ?? lastValid.size;
+  const ok = displayTile !== null && displaySize !== null;
+  const box = ok ? fitPreview(displaySize.width * displayTile.width, displaySize.height * displayTile.height, 80, 56) : { width: 80, height: 56 };
   return <div className="flex items-center gap-3" aria-label={t("newProject.preview")}>
     <div className="grid h-16 w-24 shrink-0 place-items-center rounded-sm bg-canvas">
       <div className="rounded-xs border border-line-strong" style={{ width: box.width, height: box.height, background: background ?? "var(--color-map-bg)" }} />
     </div>
     <div className="flex min-w-0 flex-col gap-1 tabular">
-      <span className="text-sm text-text">{ok ? t("newProject.previewSummary", { width: size.width * tile.width, height: size.height * tile.height, layers: layers.length }) : " "}</span>
-      <span className="text-xs text-muted">{ok ? t("newProject.previewCells", { width: size.width, height: size.height, tile: tile.width === tile.height ? tile.width : `${tile.width}×${tile.height}` }) : " "}</span>
+      <span className="text-sm text-text">{ok ? t("newProject.previewSummary", { width: displaySize.width * displayTile.width, height: displaySize.height * displayTile.height, layers: layers.length }) : " "}</span>
+      <span className="text-xs text-muted">{ok ? t("newProject.previewCells", { width: displaySize.width, height: displaySize.height, tile: displayTile.width === displayTile.height ? displayTile.width : `${displayTile.width}×${displayTile.height}` }) : " "}</span>
     </div>
   </div>;
 }

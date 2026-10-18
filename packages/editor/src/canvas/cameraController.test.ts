@@ -84,3 +84,15 @@ describe("opening frame and layout resize", () => {
     expect(cam.camera.y).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("opening frame density", () => {
+  it("uses 92 percent of the canvas before snapping down to device pixels", () => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(770, 450, 1);
+    cam.requestInitialView();
+    const fit = Math.min(770 * 0.92 / 2048, 450 * 0.92 / 1536);
+    expect(cam.camera.zoom).toBe(Math.floor(fit * 32) / 32);
+    expect(cam.camera.zoom).toBe(0.25);
+    expectFit(cam);
+  });
+});

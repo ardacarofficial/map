@@ -110,7 +110,7 @@ export function TileSizePicker({ value, onChange, showErrors }: { value: TileSiz
           <span className="text-sm text-muted">{t("newProject.pxUnit")}</span>
         </div>
       )}
-      {showErrors && parsed === null && <span className="text-sm text-danger">{t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX })}</span>}
+      <span className="min-h-4 text-sm text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}</span>
     </div>
   );
 }
@@ -169,7 +169,7 @@ export function MapSizePicker({ value, onChange, showErrors }: { value: MapSizeV
         />
         <span className="text-sm text-muted">{t("newProject.cellsUnit")}</span>
       </div>
-      {showErrors && parsed === null && <span className="text-sm text-danger">{t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX })}</span>}
+      <span className="min-h-4 text-sm text-danger" role="status">{showErrors && parsed === null ? t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX }) : null}</span>
     </div>
   );
 }

@@ -47,10 +47,11 @@ import { toast } from "../ui/toast/toastStore";
 import { t } from "../i18n";
 import { addCollisionLayer } from "./terrainActions";
 import { addEntityLayer, deleteEntity } from "./entityActions";
-import { stampRegion } from "./stampActions";
+import { canSaveSelectionStamp } from "./stampActions";
 import { askRemoveLevel, duplicateLevel, openAdjacentLevel, openNewLevelDialog, useLevelUi } from "./levelActions";
 import { getLevelWorkspace } from "../io/session";
 import { isWorldView, setCanvasView } from "./worldActions";
+import { focusRegion } from "../ui/layout/focusRegions";
 import { openMapSettings } from "../ui/mapSettings/mapSettingsStore";
 
 const hasProject = () => useEditorStore.getState().project !== null;
@@ -94,6 +95,11 @@ function togglePanels(): void {
     minimapBeforeHide = null;
   }
 }
+
+const cycleRegion = (direction: 1 | -1) => {
+  if (ui().panelsHidden) togglePanels();
+  requestAnimationFrame(() => focusRegion(direction));
+};
 
 const layout = () => useLayoutStore.getState();
 const activeDoc = () => editor().project?.store.document;
@@ -346,7 +352,7 @@ const COMMANDS: Command[] = [
     id: "stamp.saveSelection",
     title: "commands.stamp.saveSelection",
     category: "edit",
-    enabled: () => hasProject() && !isWorldView() && stampRegion() !== null,
+    enabled: () => hasProject() && !isWorldView() && canSaveSelectionStamp(),
     run: () => ui().setSaveStampOpen(true),
   },
   {
@@ -475,6 +481,8 @@ const COMMANDS: Command[] = [
       minimapBeforeHide = null;
     },
   },
+  { id: "view.focusNextRegion", title: "commands.view.focusNextRegion", category: "view", enabled: hasProject, run: () => cycleRegion(1) },
+  { id: "view.focusPrevRegion", title: "commands.view.focusPrevRegion", category: "view", enabled: hasProject, run: () => cycleRegion(-1) },
   { id: "view.togglePanels", title: "commands.view.togglePanels", category: "view", enabled: hasProject, run: togglePanels },
   {
     id: "view.toggleMinimap",

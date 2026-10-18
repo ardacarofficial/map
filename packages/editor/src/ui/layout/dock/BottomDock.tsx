@@ -142,7 +142,7 @@ function DockResizeHandle() {
       onLostPointerCapture={end}
       onDoubleClick={() => setHeight(null, true)}
       onKeyDown={onKeyDown}
-      className="group absolute -top-[3px] right-0 left-0 z-20 h-1.5 cursor-row-resize touch-none outline-none"
+      className="group absolute -top-[3px] right-0 left-0 z-20 h-1.5 cursor-row-resize touch-none outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-accent)]"
     >
       <div className="my-auto mt-[2px] h-px w-full bg-transparent transition-colors duration-100 group-hover:bg-accent-line group-focus-visible:bg-accent group-active:bg-accent" />
     </div>

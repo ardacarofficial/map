@@ -133,6 +133,7 @@ export function TilesetStack({
                   >
                     <Icon name="grid" size={16} className="shrink-0 text-faint" />
                     <span className="min-w-0 flex-1 truncate text-sm text-muted">{p.name}</span>
+                    {own == null && <span className="shrink-0 font-mono text-xs text-faint">{formattedZoom(scaleOfPalette(p))}</span>}
                     {own != null && (
                       <button
                         type="button"
@@ -222,6 +223,7 @@ export function TilesetStack({
                         <Icon name="grip" size={12} className="shrink-0 text-faint opacity-0 group-hover:opacity-100" />
                         <TilesetThumb tileset={ts} size={16} />
                         <span className={`min-w-0 flex-1 truncate text-sm ${ts.id === activeId ? "text-title" : "text-text"}`}>{ts.name}</span>
+                        {own == null && <span className="shrink-0 font-mono text-xs text-faint">{formattedZoom(scaleOf(ts))}</span>}
                         {own != null && (
                           <button
                             type="button"

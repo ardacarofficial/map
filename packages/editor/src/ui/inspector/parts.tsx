@@ -17,8 +17,8 @@ export function CardTitle({ leading, title, subtitle, extra }: { leading?: React
     <div className="flex min-h-9 items-center gap-2 px-3 py-2">
       {leading && <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden text-muted [&>*]:size-4 [&>*]:border-0 [&>*]:bg-transparent [&_svg]:size-4">{leading}</span>}
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="truncate text-md font-semibold text-title" data-inspector-title>{title}</span>
-        {subtitle && <span className="truncate text-sm text-faint">{subtitle}</span>}
+        <span className="max-w-full shrink-0 truncate text-md font-semibold text-title" data-inspector-title>{title}</span>
+        {subtitle && <span className="min-w-0 truncate text-sm text-faint">{subtitle}</span>}
       </div>
       {extra}
     </div>

@@ -165,3 +165,21 @@ describe("tileset edit descriptions", () => {
     verbs.bind(undefined);
   });
 });
+
+describe("specific tileset metadata history", () => {
+  it("distinguishes renaming, grouping, grid and list edits", async () => {
+    const { tilesetHistoryVerb } = await import("./historyLabels");
+    const { store } = harness();
+    const before = store.document.getTileset("t")!;
+    for (const [patch, label] of [
+      [{ name: "Renamed" }, "history.tilesetRename"],
+      [{ group: "World" }, "history.tilesetGroup"],
+      [{ spacing: 1 }, "history.tilesetGrid"],
+      [{ imagePath: "other.png" }, "history.tilesetImage"],
+    ] as const) {
+      expect(tilesetHistoryVerb([{ kind: "tileset", tilesetId: "t", before, after: { ...before, ...patch } }])).toBe(label);
+    }
+    expect(tilesetHistoryVerb([{ kind: "tilesetList", before: [], after: [before] }])).toBe("history.tilesetAdd");
+    expect(tilesetHistoryVerb([{ kind: "tilesetList", before: [before], after: [] }])).toBe("history.tilesetRemove");
+  });
+});

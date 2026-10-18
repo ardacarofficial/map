@@ -97,6 +97,10 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
     row?.scrollIntoView({ block: "nearest" });
   }, [flash.layerId, flash.token]);
 
+  useEffect(() => {
+    if (activeId) listRef.current?.querySelector(`[data-layer-id="${CSS.escape(activeId)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
+
   const rows = units.map((u, unit) => ({ layer: u.head, unit }));
   const to = drag?.active ? dropIndex(drag.from, drag.dy, ROW, count) : null;
   const active = activeId ? doc?.getLayer(activeId) : undefined;
@@ -176,10 +180,24 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
       <ul
         ref={listRef}
         role="listbox"
+        tabIndex={0}
+        aria-activedescendant={activeId ? `layer-option-${activeId}` : undefined}
+        onKeyDown={(event) => {
+          if ((event.target as HTMLElement).closest("input, button")) return;
+          const index = rows.findIndex(row => row.layer.id === activeId);
+          const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : event.key === "ArrowUp" ? Math.max(0, index - 1) : event.key === "ArrowDown" ? Math.min(rows.length - 1, index + 1) : null;
+          if (next !== null) {
+            event.preventDefault();
+            if (rows[next]) setActive(rows[next].layer.id);
+          } else if (event.key === "Enter" && activeId) {
+            event.preventDefault();
+            startLayerRename(activeId);
+          }
+        }}
         aria-label={t("layers.title")}
         onContextMenu={onListContextMenu}
         data-layers-list=""
-        className="relative flex min-h-0 flex-auto flex-col overflow-y-auto px-1 pb-1"
+        className="relative flex min-h-0 flex-auto flex-col overflow-y-auto outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] px-1 pb-1"
       >
         {rows.map((row) => {
           const { layer } = row;
@@ -194,6 +212,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
             <li
               key={layer.id}
               role="option"
+              id={`layer-option-${layer.id}`}
               aria-selected={isActive}
               data-layer-id={layer.id}
               data-layer-row="layer"

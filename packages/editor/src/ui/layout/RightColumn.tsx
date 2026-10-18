@@ -36,7 +36,7 @@ function RightTabs({ collapsed, onToggleCollapsed }: SectionPanelProps) {
   const tab = useLayoutStore((s) => s.rightTab);
   const setTab = useLayoutStore((s) => s.setRightTab);
   return (
-    <section aria-label={t(tab === "history" ? "history.title" : "inspector.title")} className="flex min-h-0 flex-1 flex-col">
+    <section aria-label={t(tab === "history" ? "history.title" : "inspector.title")} className="flex min-h-0 flex-auto flex-col">
       <Tabs
         value={tab}
         label={t("inspector.title")}
@@ -45,7 +45,7 @@ function RightTabs({ collapsed, onToggleCollapsed }: SectionPanelProps) {
         trailing={<HideInspectorButton />}
       />
       {!collapsed && (
-        <div className="flex min-h-0 flex-1 flex-col" data-right-tab-body={tab}>
+        <div className="flex min-h-0 flex-auto flex-col" data-right-tab-body={tab}>
           {tab === "history" ? <HistoryPanel /> : <InspectorBody />}
         </div>
       )}
@@ -70,7 +70,7 @@ export function HideInspectorButton() {
 }
 
 /**
- * The right column: tabs "Denetçi | Geçmiş" (fills), then Katmanlar fixed
+ * The right column: tabs "Denetçi | Geçmiş" (content height), then Katmanlar filling
  * at the bottom. Katmanlar's header folds it; the splitter between them
  * resizes Katmanlar (height remembered, double-click: back to content
  * height). The column itself is resizable and can be hidden (Ctrl+Alt+B).

@@ -249,7 +249,7 @@ function ExportForm({
   };
 
   const mapName = levels.find((l) => l.id === source.levelId)?.name ?? sourceLevelName(source);
-  const [before, after] = t("export.prepare", { map: "\u0001" }).split("\u0001");
+  const [before, after] = t("export.prepare", { map: "\u0001", target: t(TARGETS.find(target => target.id === chosen)!.title) }).split("\u0001");
   const showMap = chosen !== "zip" && levels.length > 1;
   const subfolder = subfolderDraft ?? current.unitySubfolder;
 
@@ -373,7 +373,7 @@ function ExportForm({
                   ? t("export.toastPngTooLarge")
                   : t("export.notReady")
                 : derived.checks.some((c) => c.state === "warn")
-                  ? t("export.readyWarnings")
+                  ? null
                   : t("export.ready")}
             </span>
           </Section>

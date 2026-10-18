@@ -2,30 +2,39 @@ import { describe, expect, it } from "vitest";
 
 import { classifyWheel } from "../../canvas/brush";
 
-import { accumulateWheelZoom, anchoredScroll, fitScale, naturalScale, MIN_ZOOM, MAX_FIT_SCALE, stackWheel, stepZoom, tilesetWheel, zoomLabel } from "./zoomModel";
+import { accumulateWheelZoom, anchoredScroll, fitScale, widthScale, naturalScale, MIN_ZOOM, MAX_FIT_SCALE, stackWheel, stepZoom, tilesetWheel, zoomLabel } from "./zoomModel";
 
 describe("tileset zoom", () => {
   it("fit prefers a whole-number scale", () => {
     // 8 × 32 px = 256 px in a 268 px panel → 1×; 16 px tiles → 2×.
-    expect(fitScale(268, 256, 32)).toBe(1);
-    expect(fitScale(268, 128, 16)).toBe(2);
-    expect(fitScale(520, 256, 32)).toBe(2);
+    expect(widthScale(268, 256, 32)).toBe(1);
+    expect(widthScale(268, 128, 16)).toBe(2);
+    expect(widthScale(520, 256, 32)).toBe(2);
   });
 
   it("fit fills the width with a tile-aligned scale when a whole number would waste space", () => {
     // 460 / 256 = 1.8: 1× fills only 56 %, so one tile becomes 57 px.
-    expect(fitScale(460, 256, 32)).toBe(57 / 32);
+    expect(widthScale(460, 256, 32)).toBe(57 / 32);
     // Wider than the panel: shrink, tiles stay whole pixels.
-    const s = fitScale(268, 1024, 32);
+    const s = widthScale(268, 1024, 32);
     expect(s).toBeLessThan(1);
     expect(Number.isInteger(32 * s)).toBe(true);
     expect(1024 * s).toBeLessThanOrEqual(268);
   });
 
   it("fit is capped and safe with no size", () => {
-    expect(fitScale(1000, 32, 16)).toBe(MAX_FIT_SCALE);
-    expect(fitScale(0, 256, 32)).toBe(1);
-    expect(fitScale(300, 0, 32)).toBe(1);
+    expect(widthScale(1000, 32, 16)).toBe(MAX_FIT_SCALE);
+    expect(widthScale(0, 256, 32)).toBe(1);
+    expect(widthScale(300, 0, 32)).toBe(1);
+  });
+
+  it("fits width and height, snapping down with a 0.25 floor", () => {
+    expect(fitScale(700, 256, 150, 256)).toBe(0.5);
+    expect(fitScale(700, 256, 200, 256)).toBe(0.75);
+    expect(fitScale(180, 256, 500, 256)).toBe(0.5);
+    expect(fitScale(100, 256, 100, 256)).toBe(0.25);
+    expect(fitScale(10, 256, 10, 256)).toBe(0.25);
+    expect(fitScale(2000, 256, 2000, 256)).toBe(4);
   });
 
   it("steps through the zoom levels from any scale", () => {

@@ -32,11 +32,19 @@ export function OptionsBar() {
   useEffect(() => {
     const element = bar.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setCompact(entry.contentRect.width < 640);
-    });
+    const measure = () => {
+      const options = element.querySelector<HTMLElement>("[data-tool-chip]");
+      const leading = options ? options.getBoundingClientRect().left - element.getBoundingClientRect().left : 0;
+      setCompact(element.clientWidth < leading + (options?.scrollWidth ?? 0) + 112);
+    };
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    const options = element.querySelector<HTMLElement>("[data-tool-chip]");
+    if (options) observer.observe(options);
+    const mutations = new MutationObserver(measure);
+    mutations.observe(element, { childList: true, subtree: true });
+    measure();
+    return () => { observer.disconnect(); mutations.disconnect(); };
   }, []);
   const toggles: { command: CommandId; icon: IconName; label: string; on: boolean }[] = [
     { command: "view.toggleGrid", icon: "grid-3x3", label: t("toolOptions.grid"), on: grid },

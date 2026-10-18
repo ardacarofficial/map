@@ -89,9 +89,10 @@ function onKeyDown(event: KeyboardEvent): void {
 
   const withCtrl = eventModifiers(event).ctrl;
   const typing = isTypingTarget(event.target);
-  if (typing && (!withCtrl || TEXT_COMMANDS.has(id))) return;
+  const regionFocus = id === "view.focusNextRegion" || id === "view.focusPrevRegion";
+  if (typing && !regionFocus && (!withCtrl || TEXT_COMMANDS.has(id))) return;
   if (id === "view.togglePanels" && !isCanvasFocused()) return;
-  const modal = modalOpen() || modalAtKeyDown;
+  const modal = modalOpen() || modalAtKeyDown || (regionFocus && (document.querySelector('[role="dialog"][aria-modal="true"]') !== null || document.activeElement?.closest('[role="dialog"], [role="alertdialog"]') != null));
   if (id === "edit.paste" && !modal) {
     pasteKeyAt = performance.now();
     return; // → onPaste

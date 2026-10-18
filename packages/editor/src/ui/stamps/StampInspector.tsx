@@ -83,6 +83,7 @@ function StampSection() {
 }
 
 function StampCard({ stamp }: { stamp: Stamp }) {
+  const armed = useEditorStore((s) => s.tool === "brush" && activeStampId(s.stamp) === stamp.id);
   const place = () => {
     pickStamp(stamp.id);
     if (activeStampId(useEditorStore.getState().stamp) === stamp.id) useStampLibrary.getState().select(null);
@@ -146,8 +147,8 @@ function StampCard({ stamp }: { stamp: Stamp }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" data-action="placeStamp" onClick={place}>
-            {t("stampLib.placeAsStamp")}
+          <Button size="sm" variant="secondary" data-action="placeStamp" disabled={armed} onClick={place}>
+            {t(armed ? "stampLib.armed" : "stampLib.placeAsStamp")}
           </Button>
           <Button size="sm" variant="secondary" data-action="editStamp" onClick={() => void openStampEditor(stamp.id)}>
             {t("stampLib.edit")}

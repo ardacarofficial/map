@@ -30,7 +30,7 @@ export function Toaster({ canvas = false }: { canvas?: boolean }) {
     <div
       aria-live="polite"
       data-toaster
-      className={`pointer-events-none flex-col items-center gap-2 ${toasts.length === 0 ? "hidden" : "flex"} ${canvas ? "max-w-full" : "fixed bottom-3 left-1/2 z-20 w-dialog-m max-w-[calc(100vw-24px)] -translate-x-1/2"}`}
+      className={`pointer-events-none flex-col items-center gap-2 ${toasts.length === 0 ? "hidden" : "flex"} ${canvas ? "max-w-full" : "fixed bottom-3 left-1/2 z-60 w-dialog-m max-w-[calc(100vw-24px)] -translate-x-1/2"}`}
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />

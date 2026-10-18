@@ -64,6 +64,8 @@ export type CommandId =
   | "layer.addEntity"
   | "entity.editTypes"
   | "view.toggleGrid"
+  | "view.focusNextRegion"
+  | "view.focusPrevRegion"
   | "view.togglePanels"
   | "view.toggleMinimap"
   | "view.zoomIn"
@@ -116,6 +118,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "edit.flipY", keys: ["Y"] },
   { command: "view.toggleGrid", keys: ["Ctrl+G"] },
   { command: "view.togglePanels", keys: ["Tab"] },
+  { command: "view.focusNextRegion", keys: ["F6"] },
+  { command: "view.focusPrevRegion", keys: ["Shift+F6"] },
   /** By character: Ctrl+"+" (Shift+= on US, Shift+4 or numpad on Turkish-Q); Ctrl+= also works. */
   { command: "view.zoomIn", keys: ["Ctrl+Plus", "Ctrl+Equal"] },
   { command: "view.zoomOut", keys: ["Ctrl+Minus"] },

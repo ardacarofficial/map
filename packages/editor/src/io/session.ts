@@ -395,7 +395,7 @@ export async function decodeTilesetFile(file: File): Promise<DecodedPng | null> 
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (!hasPngSignature(bytes)) {
-    toast.error(t("toast.notPng", { name: file.name }));
+    toast.error(t("toast.imageDecodeFailed", { name: file.name }));
     return null;
   }
   try {

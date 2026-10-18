@@ -117,9 +117,9 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
                 <button type="button" data-tileset-option={ts.id} onClick={() => choose(ts.id)} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-sm">
                   <TilesetThumb tileset={ts} size={16} /><span className="min-w-0 flex-1 truncate">{ts.name}</span>
                   <span className="shrink-0 font-mono text-xs text-muted">{t("tilesetPanel.tilesetMeta", { columns: ts.columns, rows: ts.rows, size: ts.tileWidth === ts.tileHeight ? ts.tileWidth : `${ts.tileWidth}×${ts.tileHeight}` })}</span>
-                  {current && <Icon name="tick" size={12} />}
+                  <Icon name="tick" size={12} className={`shrink-0 ${current ? "" : "invisible"}`} />
                 </button>
-                <SourceMenuButton tileset={ts} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
+                <SourceMenuButton tileset={ts} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"} />
               </div>;
             })}
           </Fragment>)}
@@ -128,8 +128,8 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
             const index = keys.indexOf(`palette:${p.id}`);
             const current = p.id === palette?.id;
             return <div key={p.id} data-switcher-index={index} onMouseEnter={() => setHighlight(index)} className={`group flex h-row items-center gap-1 rounded-sm ${current ? "bg-active" : highlight === index ? "bg-hover-popup" : "hover:bg-hover-popup"}`}>
-              <button type="button" data-palette-option={p.id} onClick={() => choose(`palette:${p.id}`)} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-sm"><Icon name="grid" /><span className="min-w-0 flex-1 truncate">{p.name}</span><span className="text-xs text-faint">{t("palettes.tileCount", { count: p.cells.length })}</span>{current && <Icon name="tick" size={12} />}</button>
-              <SourceMenuButton palette={p} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
+              <button type="button" data-palette-option={p.id} onClick={() => choose(`palette:${p.id}`)} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-sm"><Icon name="grid" /><span className="min-w-0 flex-1 truncate">{p.name}</span><span className="text-xs text-faint">{t("palettes.tileCount", { count: p.cells.length })}</span><Icon name="tick" size={12} className={`shrink-0 ${current ? "" : "invisible"}`} /></button>
+              <SourceMenuButton palette={p} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"} />
             </div>;
           })}
           {keys.length === 0 && <div className="px-2 text-sm text-muted">{t("tilesetLib.noMatch")}</div>}

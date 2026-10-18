@@ -7,7 +7,7 @@
  * DOM; `layoutStore` wires them to React and localStorage.
  *
  * One expanded section is the "filler": it takes whatever height is left
- * (Özellik when it is open). The others are as tall as their content (no
+ * (Katmanlar by default). The others are as tall as their content (no
  * height stored) or as tall as the user dragged them, and give way when
  * the column gets short (CSS `flex-shrink`, never below their minimum).
  */
@@ -19,7 +19,7 @@ export type SectionId = "levels" | "properties" | "layers";
 export const SECTION_ORDER: readonly SectionId[] = ["properties", "layers"];
 
 /** Which expanded section takes the remaining height, in order of preference. */
-const FILLER_PREFERENCE: readonly SectionId[] = ["properties", "layers"];
+const FILLER_PREFERENCE: readonly SectionId[] = ["layers", "properties"];
 
 /** Height of the right-column tab strip and section headers. */
 export const SECTION_HEADER = 28;
@@ -27,7 +27,7 @@ export const SECTION_HEADER = 28;
 /** Smallest useful height of an expanded section (header included). */
 export const SECTION_MIN: Record<SectionId, number> = {
   levels: SECTION_HEADER + 32 + 6,
-  properties: 120,
+  properties: 56,
   layers: SECTION_HEADER + 28 + 5 * 28,
 };
 
@@ -36,7 +36,7 @@ export interface SectionState {
   hidden: boolean;
   /** Folded to its header. `null` (levels only) = automatic (open). */
   collapsed: boolean | null;
-  /** Height the user dragged it to (CSS px, header included); `null` = default (layers: 40% of the column). */
+  /** Height the user dragged it to (CSS px, header included); `null` = automatic content/filler sizing. */
   height: number | null;
 }
 
@@ -79,6 +79,7 @@ export function openSections(sections: SectionsState, ctx: SectionContext): Sect
 /** The open section that takes the remaining height, or null when all are folded / hidden. */
 export function fillerSection(sections: SectionsState, ctx: SectionContext): SectionId | null {
   const open = openSections(sections, ctx);
+  if (sections.layers.height !== null && open.includes("properties") && open.includes("layers")) return "properties";
   return FILLER_PREFERENCE.find((id) => open.includes(id)) ?? null;
 }
 
@@ -126,12 +127,12 @@ export function clampSectionHeight(id: SectionId, value: number, columnHeight: n
 }
 
 /** CSS flex sizing of a section: header only, filler, dragged height, or content height. */
-export function sectionFlex(id: SectionId, sections: SectionsState, ctx: SectionContext): { flex: string; minHeight: number; maxHeight?: number } {
+export function sectionFlex(id: SectionId, sections: SectionsState, ctx: SectionContext): { flex: string; minHeight: number; maxHeight?: number | string } {
   const state = sections[id];
   if (isCollapsed(id, state, ctx)) return { flex: "0 0 auto", minHeight: SECTION_HEADER };
   if (fillerSection(sections, ctx) === id) return { flex: "1 1 0px", minHeight: SECTION_MIN[id] };
   if (state.height !== null) return { flex: `0 1 ${state.height}px`, minHeight: SECTION_MIN[id] };
-  return { flex: id === "layers" ? "0 1 40%" : "0 1 auto", minHeight: SECTION_MIN[id] };
+  return { flex: "0 1 auto", minHeight: SECTION_MIN[id], maxHeight: "60%" };
 }
 
 function isBool(v: unknown): v is boolean {

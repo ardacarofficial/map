@@ -172,7 +172,7 @@ export class CameraController {
     this.#framed = true;
     const mw = map.width * map.tileWidth;
     const mh = map.height * map.tileHeight;
-    const fit = Math.min(Math.max(1, this.viewW - FRAME_PADDING * 2) / mw, Math.max(1, this.viewH - FRAME_PADDING * 2) / mh, this.maxZoom);
+    const fit = Math.min(Math.max(1, this.viewW * 0.92) / mw, Math.max(1, this.viewH * 0.92) / mh, this.maxZoom);
     const z = initialZoom(fit, map.tileWidth, this.resolution);
     this.minZoom = Math.min(this.minZoom, z);
     this.zoomLevel = z;

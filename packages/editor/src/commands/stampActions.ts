@@ -17,6 +17,13 @@ export function stampRegion() {
   return mapRegion(contextOf(useEditorStore.getState()));
 }
 
+/** Whether the selected region contains any tiles or collision cells. */
+export function canSaveSelectionStamp(): boolean {
+  const doc = useEditorStore.getState().project?.store.document;
+  const region = stampRegion();
+  return !!doc && !!region && usedStampLayerIds(doc, region).length > 0;
+}
+
 /** Layers a stamp saves: every tile and grid layer (collision included), bottom to top. */
 export function stampLayerIds(doc: MapDocument): string[] {
   return doc.layers.filter((l) => !isEntityLayer(l)).map((l) => l.id);
@@ -68,7 +75,11 @@ export function saveSelectionAsStamp(name: string): Stamp | null {
   }
   library.addStamp(stamp);
   useUiStore.getState().setLibraryTab("stamps");
-  toast.withAction(t("toast.stampSaved", { name: stamp.name }), { label: t("stamps.use"), run: () => pickStamp(stamp.id) });
+  toast.withAction(t("toast.stampSaved", { name: stamp.name }), {
+    label: t("stamps.use"), run: () => pickStamp(stamp.id),
+    spent: () => useEditorStore.getState().tool === "brush" && activeStampId(useEditorStore.getState().stamp) === stamp.id,
+    watch: (onChange) => useEditorStore.subscribe(onChange),
+  });
   return stamp;
 }
 

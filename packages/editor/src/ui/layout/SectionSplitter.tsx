@@ -72,7 +72,7 @@ export function SectionSplitter({
         onLostPointerCapture={end}
         onDoubleClick={() => setHeight(section, null, true)}
         onKeyDown={onKeyDown}
-        className="group absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 items-center cursor-row-resize touch-none outline-none"
+        className="group absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 items-center cursor-row-resize touch-none outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-accent)]"
       >
         <div className="h-px w-full bg-line transition-colors duration-100 group-hover:bg-accent-line group-focus-visible:bg-accent-line group-active:bg-accent-line" />
       </div>

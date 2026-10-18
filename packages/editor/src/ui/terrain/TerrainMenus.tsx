@@ -25,22 +25,26 @@ export function TerrainPickerMenu({
   label,
   placeholder,
   dataAttr,
+  tilesetId,
+  inactiveLabel,
 }: {
   doc: MapDocument;
+  tilesetId?: string | undefined;
+  inactiveLabel?: string | undefined;
   value: TerrainRef | null;
   triggerClass: string;
   label: string;
   placeholder: string;
   dataAttr?: string;
 }) {
-  const entries = terrainSetEntries(doc);
+  const entries = terrainSetEntries(doc).filter(entry => !tilesetId || entry.tileset.id === tilesetId);
   const current = resolveTerrain(doc, value);
   const several = new Set(entries.map((e) => e.tileset.id)).size > 1;
   return (
     <Menu.Root>
       <Menu.Trigger aria-label={label} className={triggerClass} {...(dataAttr ? { [dataAttr]: current?.terrain.name ?? "" } : {})}>
-        {current ? <TerrainDot color={current.terrain.color} /> : <span className="size-2 shrink-0 rounded-full bg-line" />}
-        <span className="min-w-0 flex-1 truncate text-left">{current?.terrain.name ?? placeholder}</span>
+        {current && !inactiveLabel ? <TerrainDot color={current.terrain.color} /> : <span className="size-2 shrink-0 rounded-full bg-line" />}
+        <span className="min-w-0 flex-1 truncate text-left">{inactiveLabel ?? current?.terrain.name ?? placeholder}</span>
         <Icon name="chevronDown" size={12} className="shrink-0 text-faint" />
       </Menu.Trigger>
       <Menu.Portal>

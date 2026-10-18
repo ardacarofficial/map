@@ -10,6 +10,9 @@ import { isEntityLayer, isTileLayer } from "@smap/core";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import type { CommandId } from "../../shortcuts/shortcuts";
+import { Toggle } from "../primitives/Toggle";
+import { useIsRandomBrush } from "../../commands/randomBrush";
+import { useUiStore } from "../uiStore";
 import { IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
@@ -21,47 +24,43 @@ import { BrushSizeChip } from "../inspector/BrushSizeChip";
 import { TerrainPickerMenu } from "../terrain/TerrainMenus";
 import { resolveTerrain, terrainSetEntries } from "../terrain/terrainModel";
 import { registerToolOptions, type ToolOptionsContext } from "./registry";
-import { OptionLabel, triggerClass } from "./parts";
+import { OptionLabel } from "./parts";
 import { RandomToggle } from "./RandomToggle";
 
 /** The terrain picker shows on tile layers once the project has a terrain. */
-const showsTerrainPicker = (c: ToolOptionsContext) => isTileLayer(c.layer) && terrainSetEntries(c.doc).length > 0;
+const showsTerrainPicker = (c: ToolOptionsContext) => {
+  const active = useUiStore.getState().activeTilesetId ?? c.doc?.tilesets[0]?.id;
+  return isTileLayer(c.layer) && c.brush !== "random" && terrainSetEntries(c.doc).some(entry => entry.tileset.id === active);
+};
 
 // ---- Tile layer: the terrain brush (Arazi ▾ + Autotile)
 
 function TerrainPicker() {
   const store = useEditorStore((s) => s.project?.store);
+  const tilesetId = useUiStore((s) => s.activeTilesetId) ?? store?.document.tilesets[0]?.id;
+  const random = useIsRandomBrush();
   const terrain = useEditorStore((s) => s.terrain);
   const active = useEditorStore((s) => s.terrainActive);
   useStructureVersion(store);
   const doc = store?.document;
-  if (!doc) return null;
-  const valid = resolveTerrain(doc, terrain) !== null;
+  if (!doc || random) return null;
+  const valid = terrain?.tilesetId === tilesetId && resolveTerrain(doc, terrain) !== null;
   return (
-    <div className="flex items-center gap-2" data-tool-option="terrain">
+    <div className="flex h-control-sm shrink-0 items-center gap-1.5 rounded-sm border border-line bg-field px-1.5 focus-within:border-accent" data-tool-option="terrain">
       <OptionLabel>{t("toolOptions.terrain")}</OptionLabel>
       <TerrainPickerMenu
         doc={doc}
+        tilesetId={tilesetId}
         value={valid ? terrain : null}
-        triggerClass={`${triggerClass} max-w-50 ${active && valid ? "" : "opacity-70"}`}
+        triggerClass="flex h-full max-w-32 items-center gap-1.5 rounded-sm px-1 text-sm text-text outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+        inactiveLabel={active && valid ? undefined : t("toolOptions.terrainOff")}
         label={t("terrain.brush")}
         placeholder={t("toolOptions.pickTerrain")}
         dataAttr="data-terrain-current"
       />
-      <Tooltip label={t("terrain.autotileHint")}><label className={`flex h-control-sm items-center gap-1.5 text-sm ${valid ? "cursor-pointer text-muted" : "cursor-default text-faint"}`}>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label={t("terrain.autotile")}
-          data-tool-autotile=""
-          data-terrain-autotile=""
-          checked={active && valid}
-          disabled={!valid}
-          onChange={(e) => setAutotile(e.target.checked)}
-          className="h-4 w-7 appearance-none rounded-full border border-line-strong bg-field before:block p-0.5 before:size-2.5 before:rounded-full before:bg-muted before:transition-transform checked:bg-active checked:before:translate-x-3 checked:before:bg-accent disabled:opacity-40"
-        />
-        {t("terrain.autotile")}
-      </label></Tooltip>
+      <Tooltip label={t("terrain.autotileHint")}><span className="flex items-center">
+        <Toggle label={t("terrain.autotile")} data-tool-autotile="" data-terrain-autotile="" checked={active && valid} disabled={!valid} onChange={setAutotile} />
+      </span></Tooltip>
     </div>
   );
 }

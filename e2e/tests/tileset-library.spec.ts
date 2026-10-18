@@ -119,7 +119,10 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, no confi
   await page.keyboard.up("Control");
   await expect.poll(scales).not.toEqual(scales0);
   await page.locator("[data-tileset-zoom] button[aria-pressed]").click();
-  await expect.poll(scales).toEqual(scales0);
+  // Fit now respects each section's visible width and height.
+  await expect.poll(scales).not.toEqual(scales0);
+  const fitted = await page.locator("[data-tileset-grid]").evaluateAll(els => els.map(el => Number(el.getAttribute("data-tileset-scale"))));
+  expect(fitted.every(scale => [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4].includes(scale))).toBe(true);
 
   await page.locator("[data-library-view='single']").click();
   expect(errors).toEqual([]);
@@ -230,11 +233,11 @@ test("dock: compact header, searchable switcher, content default and remembered 
   await page.locator("[data-tileset-zoom-label]").click();
   await page.getByRole("menuitem", { name: "%200", exact: true }).click();
   await expect(fit).toHaveAttribute("aria-pressed", "false");
-  expect(await fit.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }))).not.toEqual(fitColors);
+  await expect.poll(() => fit.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }))).not.toEqual(fitColors);
   await expect(page.locator("[data-tileset-zoom-label]")).toHaveText("%200");
   await expect(page.locator("[data-tileset-zoom] button[aria-pressed]")).toHaveCount(1);
   await page.locator("[data-tileset-zoom-fit]").click();
-  await expect(page.locator("[data-tileset-zoom-label]")).toHaveText("%100");
+  await expect(page.locator("[data-tileset-zoom-label]")).toHaveText("%75");
   await page.setViewportSize({ width: 1366, height: 600 });
   await resize.focus();
   for (let i = 0; i < 8; i++) await resize.press("Shift+ArrowUp");

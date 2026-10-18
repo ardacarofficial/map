@@ -84,8 +84,9 @@ describe("sections layout", () => {
     expect(shownSections(with_({ properties: { hidden: true } }), ctx)).toEqual(["layers"]);
   });
 
-  it("gives the remaining height to the tabs, else Katmanlar", () => {
-    expect(fillerSection(DEFAULT_SECTIONS, ctx)).toBe("properties");
+  it("gives the remaining height to layers, preserving legacy manual heights", () => {
+    expect(fillerSection(DEFAULT_SECTIONS, ctx)).toBe("layers");
+    expect(fillerSection(with_({ layers: { height: 300 } }), ctx)).toBe("properties");
     expect(fillerSection(with_({ properties: { collapsed: true } }), ctx)).toBe("layers");
     expect(fillerSection(with_({ properties: { collapsed: true }, layers: { collapsed: true } }), ctx)).toBeNull();
   });
@@ -129,8 +130,8 @@ describe("sections layout", () => {
   });
 
   it("sizes sections: header only, filler, dragged height or content", () => {
-    expect(sectionFlex("properties", DEFAULT_SECTIONS, ctx).flex).toBe("1 1 0px");
-    expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).flex).toBe("0 1 40%");
+    expect(sectionFlex("properties", DEFAULT_SECTIONS, ctx)).toEqual({ flex: "0 1 auto", minHeight: 56, maxHeight: "60%" });
+    expect(sectionFlex("layers", DEFAULT_SECTIONS, ctx).flex).toBe("1 1 0px");
     expect(sectionFlex("layers", with_({ layers: { height: 240 } }), ctx).flex).toBe("0 1 240px");
     expect(sectionFlex("layers", with_({ layers: { collapsed: true } }), ctx)).toEqual({ flex: "0 0 auto", minHeight: SECTION_HEADER });
   });

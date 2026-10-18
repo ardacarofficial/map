@@ -1,7 +1,7 @@
 import { dropFile, expect, pixelDiffRatio, readOpfsText, sampleBytes, test, confirmTilesetCard, WELCOME_DROP, expectWelcome } from "../support/fixtures";
 
-/** Toasts float over the canvas ("Kaydedildi" vs "Açıldı"): keep them out of the comparison shots. */
-const QUIET = "[data-toaster] { display: none !important; }";
+/** Compare map pixels independently of toast and keyboard-focus DOM decorations. */
+const QUIET = "[data-toaster] { display: none !important; } [data-canvas-host]::after { box-shadow: none !important; }";
 
 // CLAUDE.md v0.1 "Bitti": tileset dropped, map drawn, saved, program closed and
 // reopened -> the same map comes back.

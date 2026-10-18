@@ -96,8 +96,18 @@ export function renderHistoryVerb(verb: HistoryVerb): string {
 /** Meaning of a tileset metadata edit from its reversible UI-visible diff. */
 export function tilesetHistoryVerb(changes: readonly HistoryChange[]): HistoryVerb | null {
   for (const change of changes) {
+    if (change.kind === "tilesetList") {
+      if (change.after.length > change.before.length) return "history.tilesetAdd";
+      if (change.after.length < change.before.length) return "history.tilesetRemove";
+      return "history.tilesetReorder";
+    }
+    if (change.kind === "palette") continue;
     if (change.kind !== "tileset") continue;
     const { before, after } = change;
+    if (before.name !== after.name) return "history.tilesetRename";
+    if (before.group !== after.group) return "history.tilesetGroup";
+    if (before.imagePath !== after.imagePath) return "history.tilesetImage";
+    if (before.tileWidth !== after.tileWidth || before.tileHeight !== after.tileHeight || before.columns !== after.columns || before.rows !== after.rows || before.margin !== after.margin || before.spacing !== after.spacing) return "history.tilesetGrid";
     const oldSolid = new Set(before.solidTiles ?? []);
     const newSolid = new Set(after.solidTiles ?? []);
     const addedSolid = [...newSolid].some(id => !oldSolid.has(id));

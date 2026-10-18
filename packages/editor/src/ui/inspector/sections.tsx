@@ -17,6 +17,7 @@ import {
 } from "@smap/core";
 import { useState, type FormEvent, type ReactNode } from "react";
 
+import { openTilesetImport } from "../../commands/tilesetActions";
 import { chooseEntityType } from "../../commands/entityActions";
 import {
   clearRandomSet,
@@ -44,6 +45,7 @@ import { TextField } from "../primitives/TextField";
 import { Tooltip } from "../primitives/Tooltip";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Toggle } from "../primitives/Toggle";
+import { useCanSaveSelectionStamp } from "../stamps/useCanSaveSelectionStamp";
 import { useUiStore } from "../uiStore";
 import { TerrainCard } from "../terrain/TerrainCard";
 import { resolveTerrain } from "../terrain/terrainModel";
@@ -83,6 +85,7 @@ function RegionCommand({ command, icon, label }: { command: CommandId; icon: "co
 }
 
 function RegionSection({ ctx }: { ctx: InspectorContext }) {
+  useCanSaveSelectionStamp();
   const region = ctx.region!;
   const setRegion = useEditorStore((s) => s.setRegion);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
@@ -120,7 +123,7 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
           <IconButton size="sm" aria-label={t("selectionBar.fill")} data-action="fill" aria-disabled={!!blocker || undefined} className={blocker ? "opacity-40" : ""} onClick={() => { if (!blocker) getCanvasHandle()?.fillRegion(region); }}><Icon name="paint-bucket" size={16} /></IconButton>
         </Tooltip>
         <RegionCommand command="edit.delete" icon="trash-2" label={t("selectionBar.erase")} />
-        <CommandAction command="stamp.saveSelection" icon="stamp" label={t("selectionBar.saveStamp")} />
+        <CommandAction command="stamp.saveSelection" icon="stamp" label={t("selectionBar.saveStamp")} disabledReason={t("toast.emptySelection")} />
       </div>
     </div>
   );
@@ -157,7 +160,8 @@ function BrushSection({ ctx }: { ctx: InspectorContext }) {
     return (
       <div data-inspector-brush>
         <SectionHeader>{t("inspector.brushContent")}</SectionHeader>
-        <p className="px-3 text-sm text-muted" data-inspector-title>{t("inspector.noBrush")}</p>
+        <p className="px-3 text-sm text-muted" data-inspector-title>{t(doc.tilesets.length === 0 ? "tilesetDock.empty" : "inspector.noBrush")}</p>
+        {doc.tilesets.length === 0 && <div className="px-3 pt-2"><Button size="sm" onClick={() => void openTilesetImport()}><Icon name="image-up" />{t("tilesetPanel.add")}</Button></div>}
         {doc.randomSets.length > 0 && <PropGrid><PropRow label={t("inspector.random")}><RandomSetPicker /></PropRow></PropGrid>}
       </div>
     );
@@ -472,10 +476,8 @@ function MapSection({ ctx }: { ctx: InspectorContext }) {
       <CardTitle
         leading={<Icon name="map" size={16} />}
         title={levelName ?? project?.name ?? ""}
-        subtitle={t("inspector.map")}
       />
       {isEntityLayer(ctx.layer) && <p className="truncate px-3 pt-1 text-sm text-muted" title={t("inspector.entityHint")}>{t("inspector.entityHint")}</p>}
-      <SectionHeader>{t("inspector.map")}</SectionHeader>
       <PropGrid>
         <PropRow label={t("properties.mapSize")}>
           <ReadField>{t("common.cells", { width: map.width, height: map.height })}</ReadField>

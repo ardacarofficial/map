@@ -281,7 +281,7 @@ function AnchorPicker({ anchor, onChange }: { anchor: Anchor; onChange(a: Anchor
                 <span className="size-3 rounded-xs bg-muted" />
               ) : rotation !== null ? (
                 <span style={{ transform: `rotate(${rotation}deg)` }} className="grid place-items-center">
-                  <Icon name="arrowUp" size={16} />
+                  <Icon name="arrowUp" size={20} />
                 </span>
               ) : (
                 <span className="size-1.5 rounded-full bg-line-strong" />

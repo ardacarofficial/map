@@ -17,7 +17,7 @@ import { GridHostContext, type GridHost } from "./gridHost";
 import { installTilesetPickSync } from "../tilesetSelect";
 import { useTilesetView } from "../tilesetViewStore";
 import { usePanDrag } from "../usePanDrag";
-import { accumulateWheelZoom, fitScale, naturalScale, PAN_GESTURE_MS, stackWheel, stepZoom, tilesetWheel } from "../zoomModel";
+import { accumulateWheelZoom, fitScale, widthScale, naturalScale, PAN_GESTURE_MS, stackWheel, stepZoom, tilesetWheel } from "../zoomModel";
 import { useUiStore } from "../../uiStore";
 import { DockHeader } from "./DockHeader";
 import { TileDragGhost } from "./TileDragGhost";
@@ -95,6 +95,7 @@ function TilesetLibrary({
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [fitRequested, setFitRequested] = useState(false);
   const availWidth = Math.max(0, size.width - 2 * PADDING);
   const keyHandlers = useRef(new Map<string, (e: KeyboardEvent) => boolean>());
   const pan = usePanDrag(viewportRef);
@@ -105,7 +106,7 @@ function TilesetLibrary({
     const el = viewportRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry && entry.contentRect.width > 0) setSize({ width: el.clientWidth, height: Math.floor(entry.contentRect.height) });
+      if (entry && entry.contentRect.width > 0) setSize({ width: el.clientWidth, height: el.clientHeight });
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -123,8 +124,10 @@ function TilesetLibrary({
   }, [tilesets, palettes, mapTileW, mapTileH]);
 
   const fitOf = useCallback(
-    (src: Source) => Math.min(naturalScale(src.tileH), fitScale(availWidth, src.width, src.tileW)),
-    [availWidth],
+    (src: Source) => fitRequested
+      ? fitScale(availWidth, src.width, Math.max(1, size.height - 2 * PADDING - (stack ? HEADER_H * 2 : 0)), src.height)
+      : Math.min(naturalScale(src.tileH), widthScale(availWidth, src.width, src.tileW)),
+    [availWidth, fitRequested, size.height, stack],
   );
   const scaleOfSource = useCallback((src: Source) => effectiveZoom(zoomMap[src.key], globalZoom, fitOf(src)), [zoomMap, globalZoom, fitOf]);
   const scaleOf = useCallback((ts: Tileset) => scaleOfSource(tilesetSource(ts)), [scaleOfSource]);
@@ -209,6 +212,15 @@ function TilesetLibrary({
 
   /** The global zoom; in "Tek" it also drops the shown source's own zoom (the zoom field always moves what you see). */
   const zoomGlobal = (next: number | null) => {
+    setFitRequested(next === null);
+    if (next === null) {
+      anchorRef.current = null;
+      if (viewportRef.current) { viewportRef.current.scrollTop = 0; viewportRef.current.scrollLeft = 0; }
+      if (stack) { for (const key of sources.keys()) setZoom(key, null); }
+      else setZoom(shown.key, null);
+      setGlobalZoom(null);
+      return;
+    }
     const vp = viewportRef.current;
     let key: string | null = shown.key;
     if (stack && vp) {
@@ -352,7 +364,7 @@ function TilesetLibrary({
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" onKeyDown={onKeyDown} data-tileset-library="dock" data-tileset-dock>
         <DockHeader tilesets={tilesets} palettes={palettes} active={active} palette={showingPalette ? palette : null}
           mode={mode} fixing={fixing} onMode={setMode} onSelect={setActive}
-          override={override} onResetOverride={() => zoomSource(shown.key, null)} globalZoom={globalZoom} shownScale={shownScale} onZoom={zoomGlobal} />
+          override={override} onResetOverride={() => zoomSource(shown.key, null)} globalZoom={globalZoom} shownScale={shownScale} displayTileSize={Math.round(shown.tileH * scaleOfSource(shown))} onZoom={zoomGlobal} />
         {viewport}
       </div>
     </GridHostContext.Provider>

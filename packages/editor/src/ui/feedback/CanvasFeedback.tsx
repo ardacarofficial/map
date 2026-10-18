@@ -48,7 +48,7 @@ export function CanvasFeedback() {
   }, []);
 
   return (
-    <div ref={ref} className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex w-max max-w-dialog-m -translate-x-1/2 flex-col items-center gap-2">
+    <div ref={ref} className="pointer-events-none absolute bottom-3 left-1/2 z-60 flex w-max max-w-dialog-m -translate-x-1/2 flex-col items-center gap-2">
       <UndoHud />
       <Toaster canvas />
     </div>

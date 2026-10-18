@@ -123,7 +123,7 @@ export function exportChecks(input: CheckInput): ExportCheck[] {
     checks.push(
       input.hasFolder
         ? { id: "target", state: "ok", label: "export.checkTarget" }
-        : { id: "target", state: "warn", label: "export.checkTargetMissing", detail: { key: "export.checkTargetDetail" } },
+        : { id: "target", state: "warn", label: "export.checkTargetMissing" },
     );
   }
   return checks;

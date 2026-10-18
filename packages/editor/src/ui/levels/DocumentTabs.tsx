@@ -156,7 +156,7 @@ export function DocumentTabs() {
                     if (!e.currentTarget.contains(e.target as Node) || (e.target as HTMLElement).closest("button")) return;
                     if (!picking) setEditingId(id);
                   }}
-                  className={`group relative flex max-w-45 min-w-0 shrink-0 cursor-default items-center gap-1.5 pr-1 pl-2 text-sm transition-colors duration-(--duration-fast) outline-none focus-visible:bg-hover ${
+                  className={`group relative flex max-w-45 min-w-0 shrink-0 cursor-default items-center gap-1.5 pr-1 pl-2 text-sm transition-colors duration-(--duration-fast) outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent focus-visible:bg-hover ${
                     active ? "text-title" : "text-muted hover:text-text"
                   }`}
                 />
