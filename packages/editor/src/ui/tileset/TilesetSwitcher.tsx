@@ -57,9 +57,11 @@ export function TilesetContextMenu({ tileset, children }: { tileset: Tileset; ch
 }
 
 /** Shared trailing actions for switcher rows and stacked source headers. */
-export function SourceMenuButton({ tileset, palette, className = "" }: { tileset?: Tileset; palette?: Collection; className?: string }) {
+export function SourceMenuButton({ tileset, palette, className = "", onAction }: { tileset?: Tileset; palette?: Collection; className?: string; onAction?(): void }) {
   const label = t(palette ? "palettes.menu" : "tilesetPanel.menu");
-  return <Menu.Root>
+  // Dismiss the switcher with a leaf action, before its rows can change size
+  // under the nested menu's floating-position observers.
+  return <Menu.Root onOpenChange={(open, details) => { if (!open && details.reason === "item-press") onAction?.(); }}>
     <Menu.Trigger render={<IconButton size="sm" aria-label={label} data-tileset-menu={tileset?.id} data-palette-menu={palette?.id} className={className} onClick={(e) => e.stopPropagation()}><Icon name="more" /></IconButton>} />
     <Menu.Portal><Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
       {tileset ? <TilesetMenuItems tileset={tileset} /> : palette ? <PaletteMenuItems palette={palette} /> : null}
@@ -117,7 +119,7 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
                   <span className="shrink-0 font-mono text-xs text-faint">{t("tilesetPanel.tilesetMeta", { columns: ts.columns, rows: ts.rows, size: ts.tileWidth === ts.tileHeight ? ts.tileWidth : `${ts.tileWidth}×${ts.tileHeight}` })}</span>
                   {current && <Icon name="tick" size={12} />}
                 </button>
-                <SourceMenuButton tileset={ts} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
+                <SourceMenuButton tileset={ts} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
               </div>;
             })}
           </Fragment>)}
@@ -127,7 +129,7 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
             const current = p.id === palette?.id;
             return <div key={p.id} data-switcher-index={index} onMouseEnter={() => setHighlight(index)} className={`group flex h-row items-center gap-1 rounded-sm ${current ? "bg-active" : highlight === index ? "bg-hover-popup" : "hover:bg-hover-popup"}`}>
               <button type="button" data-palette-option={p.id} onClick={() => choose(`palette:${p.id}`)} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-sm"><Icon name="grid" /><span className="min-w-0 flex-1 truncate">{p.name}</span><span className="text-xs text-faint">{t("palettes.tileCount", { count: p.cells.length })}</span>{current && <Icon name="tick" size={12} />}</button>
-              <SourceMenuButton palette={p} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
+              <SourceMenuButton palette={p} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />
             </div>;
           })}
           {keys.length === 0 && <div className="px-2 text-sm text-muted">{t("tilesetLib.noMatch")}</div>}
