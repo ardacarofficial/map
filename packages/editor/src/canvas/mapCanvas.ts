@@ -886,6 +886,7 @@ export class MapCanvas {
       );
       this.#gridOverlays = new GridOverlays(project.store, gridOverlayColors(this.#colors), () => this.#requestRender());
       this.#thumb = new MapThumbnail(project.store, (id) => getTilesetImage(id)?.bitmap, () => this.#scheduleThumbnail());
+      this.#thumb.publishSnapshot(project, project.levelId ?? project.levelPath);
       this.#world.addChild(this.#scene.root, this.#lodSprite, this.#gridOverlays.root);
     }
     this.#entities.setStore(project?.store ?? null);

@@ -21,6 +21,13 @@ export interface RecentProject {
 const DB_NAME = "smap";
 const STORE = "recentProjects";
 const MAX_RECENTS = 8;
+// Metadata and the later PNG update must not read/replace the same stale list.
+let recentWrites: Promise<void> = Promise.resolve();
+function enqueueRecent(work: () => Promise<void>): Promise<void> {
+  const next = recentWrites.then(work, work);
+  recentWrites = next.catch(() => undefined);
+  return next;
+}
 
 function openDb(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
@@ -58,6 +65,7 @@ export function supportsRecents(): boolean {
 /** Most recent first. */
 export async function listRecents(): Promise<RecentProject[]> {
   if (!supportsRecents()) return [];
+  await recentWrites;
   try {
     const db = await openDb();
     if (!db) return [];
@@ -73,7 +81,11 @@ export async function listRecents(): Promise<RecentProject[]> {
  * Adds or refreshes `handle` (same folder entries are replaced). Keeps the
  * newest few. Without a `thumbnail` the replaced entry's picture is kept.
  */
-export async function rememberRecent(name: string, handle: FileSystemDirectoryHandle, thumbnail?: string): Promise<void> {
+export function rememberRecent(name: string, handle: FileSystemDirectoryHandle, thumbnail?: string): Promise<void> {
+  return enqueueRecent(() => writeRecent(name, handle, thumbnail));
+}
+
+async function writeRecent(name: string, handle: FileSystemDirectoryHandle, thumbnail?: string): Promise<void> {
   if (!supportsRecents()) return;
   try {
     const db = await openDb();
@@ -94,7 +106,7 @@ export async function rememberRecent(name: string, handle: FileSystemDirectoryHa
     const store = tx.objectStore(STORE);
     for (const key of drop) store.delete(key);
     const picture = mergeThumbnail(previous, thumbnail);
-    const record: RecentProject = { name, folder: handle.name, handle, openedAt: Date.now(), ...(picture ? { thumbnail: picture } : {}) };
+    const record: RecentProject = { name, folder: handle.name, handle, openedAt: Math.max(Date.now(), (all[0]?.openedAt ?? 0) + 1), ...(picture ? { thumbnail: picture } : {}) };
     store.put(record);
     await done(tx);
     db.close();
@@ -103,7 +115,11 @@ export async function rememberRecent(name: string, handle: FileSystemDirectoryHa
   }
 }
 
-export async function forgetRecent(openedAt: number): Promise<void> {
+export function forgetRecent(openedAt: number): Promise<void> {
+  return enqueueRecent(() => removeRecent(openedAt));
+}
+
+async function removeRecent(openedAt: number): Promise<void> {
   try {
     const db = await openDb();
     if (!db) return;
