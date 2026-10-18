@@ -1289,4 +1289,22 @@ export const tr = {
     hint: "Tile cinsinden; başlangıç haritanın sol üst köşesine göredir.",
     visible: "Izgara",
   },
+  // Connected selection and layer-aware pick
+
+  connectedSelection: {
+    mode: "Seçim biçimi",
+    rectangle: "Dikdörtgen",
+    connected: "Bağlı alan",
+    hint: "Etkin katmanda aynı tile ve çevirme bitlerine sahip, kenardan bağlı hücreler. Shift: ekle. Ctrl/Alt: çıkar. Seçimin içinden sürükleyerek taşı.",
+    toggle: "Seçim biçimini değiştir",
+  },
+
+  layerPick: {
+    layer: "Katman",
+    active: "Etkin",
+    all: "Tümü",
+    hint: "Etkin: yalnız etkin katman; Collision katmanında hücre değeri alınır. Tümü: en üstteki görünür tile alınır ve kaynak katman etkinleşir. Kilitli katmandan da tile alınabilir. Alan alma etkin katmanı kullanır.",
+    toggle: "Damlalığın katman kapsamını değiştir",
+  },
+
 } as const;

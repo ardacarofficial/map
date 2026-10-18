@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import { t } from "../i18n";
 import { useEditorStore, type ToolId } from "../state/editorStore";
+import { captureSelectionScope } from "./selectionScope";
 import { registerCommands } from "./registry";
 
 export type ReplacementScope = "selection" | "active" | "visible";
@@ -90,7 +91,7 @@ export function replacementPlan(draft: ReplacementDraft): TileReplacementWrites[
   if (s.project?.store !== draft.store || !draft.from || !draft.to) return [];
   if (draft.scope === "selection" && !s.region) return [];
   const doc = draft.store.document;
-  const layerIds = draft.scope === "visible" ? doc.layers.filter(isTileLayer).map(l => l.id) : s.activeLayerId ? [s.activeLayerId] : [];
+  const layerIds = draft.scope === "selection" ? captureSelectionScope(doc, () => undefined) : draft.scope === "visible" ? doc.layers.filter(isTileLayer).map(l => l.id) : s.activeLayerId ? [s.activeLayerId] : [];
   return planTileReplacement(doc, { from: draft.from, to: draft.to, layerIds,
     ...(draft.scope === "selection" && s.region ? { region: s.region } : {}),
   });

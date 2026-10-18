@@ -5,6 +5,7 @@
  */
 import { cellPaletteIndex, EMPTY_CELL } from "./cell";
 import { CHUNK_MASK, CHUNK_SHIFT } from "./chunk";
+import { selectionContains, type SelectionRect } from "./selectionMask";
 import type { MapDocument } from "./document";
 import { entityCell } from "./entity";
 import type { CellRect } from "./geometry";
@@ -112,15 +113,15 @@ export function selectAllContent(doc: MapDocument, layerId: string): CellRect | 
 /** Result of {@link moveRegion}. */
 export interface MoveRegionResult {
   /** `rect` moved by (`dx`, `dy`); not clipped to the map (content that left the map is gone). */
-  readonly rect: CellRect;
+  readonly rect: SelectionRect;
 }
 
-export function moveRegion(store: MapStore, layerIds: readonly string[], rect: CellRect, dx: number, dy: number): MoveRegionResult {
+export function moveRegion(store: MapStore, layerIds: readonly string[], rect: SelectionRect, dx: number, dy: number): MoveRegionResult {
   const ok =
     [rect.x, rect.y, rect.width, rect.height, dx, dy].every(Number.isInteger) && rect.width >= 1 && rect.height >= 1;
   if (!ok) throw new RangeError("moveRegion: rect must have integer position and positive integer size; offsets must be integers");
   const doc = store.document;
-  const moved: CellRect = { x: rect.x + dx, y: rect.y + dy, width: rect.width, height: rect.height };
+  const moved: SelectionRect = { ...rect, x: rect.x + dx, y: rect.y + dy, width: rect.width, height: rect.height };
   const ids: string[] = [];
   const add = (id: string): void => {
     if (!ids.includes(id)) ids.push(id);
@@ -133,7 +134,7 @@ export function moveRegion(store: MapStore, layerIds: readonly string[], rect: C
   if (dx === 0 && dy === 0) return { rect: moved };
 
   const { width, height, tileWidth, tileHeight } = doc.map;
-  const inside = (x: number, y: number) => x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
+  const inside = (x: number, y: number) => selectionContains(rect, x, y);
   const nested = store.inTransaction;
   store.beginTransaction();
   try {
@@ -158,6 +159,7 @@ export function moveRegion(store: MapStore, layerIds: readonly string[], rect: C
       const clears: { x: number; y: number }[] = [];
       for (let y = Math.max(0, rect.y); y < Math.min(height, rect.y + rect.height); y++) {
         for (let x = Math.max(0, rect.x); x < Math.min(width, rect.x + rect.width); x++) {
+          if (!selectionContains(rect, x, y)) continue;
           const v = layer.getCell(x, y);
           if (v === EMPTY_CELL) continue;
           clears.push({ x, y });

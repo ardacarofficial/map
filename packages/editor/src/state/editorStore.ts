@@ -11,12 +11,14 @@ import { pushRecent, type RecentItem } from "./recentItems";
 
 export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity" | "hand";
 
-/** Rectangular region in cell coordinates (inclusive x/y, width/height ≥ 1). */
+/** Selection bounds in cells (width/height ≥ 1), optionally with a membership mask. */
 export interface CellRegion {
   x: number;
   y: number;
   width: number;
   height: number;
+  /** Row-major membership; omitted for a rectangular marquee. */
+  readonly mask?: Uint8Array;
 }
 
 export interface TileSelection {
@@ -53,6 +55,10 @@ export interface EditorState {
   /** Active marquee selection on the map (select tool), or null. */
   region: CellRegion | null;
   selectionScope: SelectionScope;
+  selectionMode: "rectangle" | "connected";
+  pickScope: "active" | "all";
+  setSelectionMode(mode: "rectangle" | "connected"): void;
+  setPickScope(scope: "active" | "all"): void;
   setSelectionScope(scope: SelectionScope): void;
   /**
    * Clip being placed (after paste, or a multi-tile pick from the tileset /
@@ -129,6 +135,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
   dirty: false,
   region: null,
   selectionScope: "active",
+  selectionMode: "rectangle",
+  pickScope: "all",
+  setSelectionMode: (selectionMode) => set({ selectionMode }),
+  setPickScope: (pickScope) => set({ pickScope }),
   setSelectionScope: (selectionScope) => set({ selectionScope }),
   stamp: null,
   gridValue: 1,

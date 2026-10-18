@@ -90,6 +90,7 @@ function matchMask(layer: CellSource, target: Cell, width: number, height: numbe
   const empty = target === EMPTY_CELL;
   if (empty) mask.fill(1);
   let uniform = empty;
+  let matches = 0;
   for (const chunk of layer.chunks()) {
     const x0 = chunk.cx << CHUNK_SHIFT;
     const y0 = chunk.cy << CHUNK_SHIFT;
@@ -109,9 +110,10 @@ function matchMask(layer: CellSource, target: Cell, width: number, height: numbe
           }
         } else if (match) {
           mask[dst + x] = 1;
+          matches++;
         }
       }
     }
   }
-  return uniform ? null : mask;
+  return uniform || matches === width * height ? null : mask;
 }

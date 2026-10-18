@@ -15,6 +15,7 @@ import { createRoot } from "react-dom/client";
 
 import { registerTileReplacementCommand } from "./commands/replaceTiles";
 import { registerAppCommands } from "./commands/appCommands";
+import { registerSelectionPickCommands } from "./commands/selectionPick";
 import { registerSelectionScopeCommands } from "./commands/selectionScope";
 import { registerRotateCommands } from "./commands/rotateCommands";
 import { registerHandToolCommand } from "./commands/handTool";
@@ -105,6 +106,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   registerAppCommands();
   installSmartStamps();
   registerSelectionScopeCommands();
+  registerSelectionPickCommands();
   registerTileReplacementCommand();
   registerMapBorderCommand();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version

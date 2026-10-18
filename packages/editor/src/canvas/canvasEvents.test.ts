@@ -13,7 +13,7 @@ const clip: TileClip = {
 
 describe("pick events", () => {
   it("a single tile pick reports the tile and goes to recent tiles", () => {
-    const e = pickEvent({ kind: "tile", entry: { tilesetId: "ts", tileId: 7 } }, null, region);
+    const e = pickEvent({ kind: "tile", layerId: "source", entry: { tilesetId: "ts", tileId: 7 } }, null, region);
     expect(e).toEqual({ kind: "tile", tilesetId: "ts", tileId: 7, region });
     expect(recentTileOf(e!)).toEqual({ tilesetId: "ts", tileId: 7 });
   });
@@ -39,7 +39,7 @@ describe("pick events", () => {
 
   it("copies the region (later edits of the source do not leak)", () => {
     const r = { ...region };
-    const e = pickEvent({ kind: "tile", entry: { tilesetId: "ts", tileId: 1 } }, null, r)!;
+    const e = pickEvent({ kind: "tile", layerId: "source", entry: { tilesetId: "ts", tileId: 1 } }, null, r)!;
     r.x = 99;
     expect(e.region.x).toBe(3);
   });

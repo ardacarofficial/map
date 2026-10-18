@@ -1,6 +1,6 @@
 import { cellPaletteIndex, withPaletteIndex } from "./cell";
 import type { MapDocument } from "./document";
-import type { CellRect } from "./geometry";
+import { selectionContains, type SelectionRect } from "./selectionMask";
 import { isTileLayer } from "./layer";
 import type { CellWrite } from "./ops";
 import type { PaletteEntry } from "./palette";
@@ -11,7 +11,7 @@ export interface TileReplacementOptions {
   readonly to: PaletteEntry;
   readonly layerIds: readonly string[];
   /** Omit for the whole layer. */
-  readonly region?: CellRect;
+  readonly region?: SelectionRect;
 }
 
 export interface TileReplacementWrites {
@@ -48,6 +48,7 @@ export function planTileReplacement(doc: MapDocument, options: TileReplacementOp
       if (left >= x1 || top >= y1 || left + 32 <= x0 || top + 32 <= y0) continue;
       for (let y = Math.max(y0, top); y < Math.min(y1, top + 32); y++) {
         for (let x = Math.max(x0, left); x < Math.min(x1, left + 32); x++) {
+          if (region && !selectionContains(region, x, y)) continue;
           const cell = chunk.data[((y & 31) << 5) | (x & 31)]!;
           if (cellPaletteIndex(cell) === sourceIndex) cells.push({ x, y, cell: withPaletteIndex(cell, targetIndex) });
         }

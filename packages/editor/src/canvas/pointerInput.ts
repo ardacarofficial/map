@@ -49,6 +49,8 @@ export interface InputHost {
   /** The world view's input while it is shown, else null (level view: tools). */
   world(): WorldInput | null;
   readonly camera: CameraController;
+  /** Bring a pending layout resize into the camera before converting coordinates. */
+  syncRect?(): DOMRect;
   readonly tools: ToolController;
   map(): MapInfo | undefined;
   /** The active layer can be painted (cursor shows "not-allowed" otherwise). */
@@ -126,7 +128,7 @@ export class PointerInput {
 
   /** Canvas bounding rect (cached until resize / scroll / pointer down). */
   rect(): DOMRect {
-    return (this.#canvasRect ??= this.#canvas.getBoundingClientRect());
+    return (this.#canvasRect ??= this.#host.syncRect?.() ?? this.#canvas.getBoundingClientRect());
   }
 
   invalidateRect(): void {
@@ -290,6 +292,7 @@ export class PointerInput {
       return;
     }
     if (!hot || !this.pointer || !this.#host.map()) return;
+    if (useEditorStore.getState().tool === "select" && useEditorStore.getState().selectionMode === "connected") return;
     if (activeSmartStamp() && (useEditorStore.getState().tool === "rect" || useSmartStampSession.getState().usage === "area")) return;
     if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now(), busy: this.#host.tools.gesture !== null || this.#pan !== null });
   }
@@ -407,7 +410,7 @@ export class PointerInput {
     if (!cell) return;
     this.#syncModifiers(e);
     // Alt + click picks right away (no need to wait for the hold).
-    if (e.button === 0 && e.altKey && !(activeSmartStamp() && (useEditorStore.getState().tool === "rect" || useSmartStampSession.getState().usage === "area"))) {
+    if (e.button === 0 && e.altKey && !(useEditorStore.getState().tool === "select" && useEditorStore.getState().selectionMode === "connected") && !(activeSmartStamp() && (useEditorStore.getState().tool === "rect" || useSmartStampSession.getState().usage === "area"))) {
       if (this.#spring.phase === "idle") this.#feedSpring({ type: "down", time: performance.now() });
       this.#feedSpring({ type: "click" });
     }

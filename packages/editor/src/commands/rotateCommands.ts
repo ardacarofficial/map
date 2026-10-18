@@ -1,4 +1,4 @@
-import { FLIP_H, FLIP_V } from "@smap/core";
+import { FLIP_H, FLIP_V, flipRegion } from "@smap/core";
 import { brushCandidate } from "./smartBrushActions";
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
@@ -23,6 +23,7 @@ import { isRandomBrush, randomTileFlags } from "../canvas/randomPaint";
 import { t } from "../i18n";
 import { useEditorStore, type EditorState } from "../state/editorStore";
 import { getCanvasHandle } from "../ui/canvas/canvasHandle";
+import { captureSelectionScope } from "./selectionScope";
 import { flipStampOrTile } from "./clipboard";
 import { activeLayer, canFlip, contextOf } from "./enablement";
 import { registerCommands } from "./registry";
@@ -122,6 +123,17 @@ export function rotateBrush(dir: RotateDir): boolean {
 
 /** X / Y: mirrors the brush (random sets mirror their candidates; the rest as before). */
 export function flipBrush(axis: "x" | "y"): boolean {
+  const state = useEditorStore.getState();
+  if (rotatesSelection(state)) {
+    const store = state.project!.store;
+    if (store.inTransaction) return false;
+    const ids = captureSelectionScope(store.document);
+    if (!ids.length) return true;
+    const revision = store.revision;
+    state.setRegion(flipRegion(store, ids, state.region!, axis));
+    if (store.revision !== revision) state.setDirty(true);
+    return true;
+  }
   if (brushCandidate()) { useSmartStampSession.getState().transform(axis === "x" ? FLIP_H : FLIP_V); return true; }
   const random = flippedRandomBrush(useEditorStore.getState(), axis);
   return random ? apply(random) : flipStampOrTile(axis);
@@ -139,7 +151,7 @@ export function registerRotateCommands(): void {
   };
   const flipEnabled = () => {
     const s = useEditorStore.getState();
-    return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet));
+    return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
   };
   registerCommands([
     { id: "edit.rotateCW", title: "inspector.rotateCW", category: "edit", enabled, run: () => void rotateBrush("cw") },

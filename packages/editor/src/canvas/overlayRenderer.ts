@@ -1,6 +1,7 @@
 import { majorGridLayout } from "./majorGrid";
 import { useMajorGrid } from "../state/majorGridSettings";
 import { drawMapBorderPreview } from "./mapBorderPreview";
+import { selectionOutline } from "./selectionOutline";
 import { rectangleThickness } from "../state/rectangleOptions";
 import { brushPreviewTilesets, brushPending } from "../commands/smartBrushActions";
 import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
@@ -236,6 +237,7 @@ export class OverlayRenderer {
     const host = this.#host;
     const g = this.overlay;
     g.clear();
+    g.context.batchMode = "auto";
     this.grid.clear();
     this.grid.visible = false;
     const map = host.scene?.store.document.map;
@@ -719,6 +721,7 @@ export class OverlayRenderer {
    * is drawn the ants step at ~8 fps; nothing animates without one.
    */
   #drawRegion(r: CellRegion): void {
+    if (r.mask) { this.#drawMaskRegion(r); return; }
     const g = this.overlay;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
@@ -743,6 +746,39 @@ export class OverlayRenderer {
       this.#antsTimer = null;
       this.#host.requestRender();
     }, ANTS_STEP_MS);
+  }
+
+  /** Merged mask boundary, using the same fill, dark keyline and marching ants. */
+  #drawMaskRegion(r: CellRegion): void {
+    // Clipped masks share the existing batch shader even above Pixi’s auto-batch threshold.
+    this.overlay.context.batchMode = "batch";
+    const g = this.overlay, cam = this.#host.camera;
+    const px = 1 / cam.resolution, k = cam.lineWidth();
+    const b = cam.cellBox(r), tw = (b.x1 - b.x0) / r.width, th = (b.y1 - b.y0) / r.height;
+    const outline = selectionOutline(r);
+    const maxX = cam.viewW * cam.resolution, maxY = cam.viewH * cam.resolution;
+    for (const run of outline.runs) {
+      const x0 = Math.max(0, b.x0 + run.x * tw), y0 = Math.max(0, b.y0 + run.y * th);
+      const x1 = Math.min(maxX, b.x0 + (run.x + run.width) * tw), y1 = Math.min(maxY, b.y0 + (run.y + 1) * th);
+      if (x1 > x0 && y1 > y0) g.rect(x0 * px, y0 * px, (x1 - x0) * px, (y1 - y0) * px);
+    }
+    g.fill({ color: this.#host.colors.accent, alpha: CANVAS_COLORS.regionFillAlpha });
+    const phase = Math.floor(performance.now() / ANTS_STEP_MS) * k;
+    for (const e of outline.edges) {
+      const ex = b.x0 + e.x0 * tw, ey = b.y0 + e.y0 * th;
+      const horizontal = e.y0 === e.y1;
+      if (horizontal ? ey < -k || ey > maxY + k : ex < -k || ex > maxX + k) continue;
+      const x0 = horizontal ? Math.max(-k, ex) : ex, y0 = horizontal ? ey : Math.max(-k, ey);
+      const w = horizontal ? Math.min(maxX + k, b.x0 + e.x1 * tw) - x0 : 0;
+      const h = horizontal ? 0 : Math.min(maxY + k, b.y0 + e.y1 * th) - y0;
+      if (w + h <= 0) continue;
+      g.rect((x0 - k) * px, (y0 - k) * px, (w + 2 * k) * px, (h + 2 * k) * px).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.9 });
+      for (const [a, z] of dashSpans(w + h, 4 * k, 4 * k, phase - (x0 - ex + y0 - ey))) {
+        g.rect((x0 + (w ? a : 0)) * px, (y0 + (h ? a : 0)) * px, (w ? z - a : k) * px, (h ? z - a : k) * px);
+      }
+      g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.95 });
+    }
+    this.#antsTimer ??= setTimeout(() => { this.#antsTimer = null; this.#host.requestRender(); }, ANTS_STEP_MS);
   }
 
   /** Eraser right drag: the area that will be cleared, danger-coloured fill and outline. */

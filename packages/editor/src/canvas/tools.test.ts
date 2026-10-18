@@ -94,13 +94,13 @@ describe("layers and picking", () => {
     expect(isEditable(undefined)).toBe(false);
   });
 
-  it("pickLayer prefers the active layer, then the top-most visible tile layer", () => {
+  it("pickLayer defaults to the topmost visible tile layer", () => {
     const bottom = layer("bottom", { "1,1": 5 });
     const top = layer("top", { "1,1": 6 });
     const hidden = layer("hidden", { "1,1": 7 }, { visible: false });
     const grid = layer("grid", { "1,1": 1 }, { grid: true });
     const layers = [bottom, top, hidden, grid];
-    expect(pickLayer(layers, "bottom", 1, 1)?.id).toBe("bottom");
+    expect(pickLayer(layers, "bottom", 1, 1)?.id).toBe("top");
     expect(pickLayer(layers, "empty", 1, 1)?.id).toBe("top");
     expect(pickLayer(layers, "hidden", 1, 1)?.id).toBe("top");
     expect(pickLayer(layers, "bottom", 0, 0)).toBeNull();
@@ -112,6 +112,7 @@ describe("layers and picking", () => {
     const l = layer("a", { "2,3": makeCell(5) });
     expect(decidePick([l], "a", { x: 2, y: 3, width: 1, height: 1 }, palette)).toEqual({
       kind: "tile",
+      layerId: "a",
       entry: { tilesetId: "t", tileId: 50 },
     });
   });

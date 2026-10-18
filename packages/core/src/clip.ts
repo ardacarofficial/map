@@ -15,6 +15,7 @@ import {
   type Cell,
   type RotateDirection,
 } from "./cell";
+import { selectionContains, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
 import type { MapDocument } from "./document";
 import type { CellRect, CellPoint } from "./geometry";
 import { isEntityLayer, isGridLayer, type GridRole } from "./layer";
@@ -74,7 +75,7 @@ export interface PasteOptions {
  *
  * @throws Error on an unknown layer id or an invalid rectangle.
  */
-export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: CellRect): TileClip {
+export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: SelectionRect): TileClip {
   assertRect(rect, "copyRegion");
   const remap = new Map<number, number>();
   const palette: PaletteEntry[] = [];
@@ -87,12 +88,13 @@ export function copyRegion(doc: MapDocument, layerIds: readonly string[], rect: 
     const cells = new Uint32Array(rect.width * rect.height);
     if (isGridLayer(layer)) {
       for (let y = 0; y < rect.height; y++) {
-        for (let x = 0; x < rect.width; x++) cells[y * rect.width + x] = layer.getCell(rect.x + x, rect.y + y);
+        for (let x = 0; x < rect.width; x++) if (selectionContains(rect, rect.x + x, rect.y + y)) cells[y * rect.width + x] = layer.getCell(rect.x + x, rect.y + y);
       }
       return Object.freeze({ layerId: layer.id, name: layer.name, grid: true, role: layer.role, cells });
     }
     for (let y = 0; y < rect.height; y++) {
       for (let x = 0; x < rect.width; x++) {
+        if (!selectionContains(rect, rect.x + x, rect.y + y)) continue;
         const cell = layer.getCell(rect.x + x, rect.y + y);
         if (cell === EMPTY_CELL) continue;
         const index = cellPaletteIndex(cell);
@@ -214,11 +216,11 @@ export function pasteClip(
   return patches;
 }
 
-export function cutRegion(store: MapStore, layerIds: readonly string[], rect: CellRect): TileClip {
+export function cutRegion(store: MapStore, layerIds: readonly string[], rect: SelectionRect): TileClip {
   const clip = copyRegion(store.document, layerIds, rect);
   const cells: CellWrite[] = [];
   for (let y = rect.y; y < rect.y + rect.height; y++) {
-    for (let x = rect.x; x < rect.x + rect.width; x++) cells.push({ x, y, cell: EMPTY_CELL });
+    for (let x = rect.x; x < rect.x + rect.width; x++) if (selectionContains(rect, x, y)) cells.push({ x, y, cell: EMPTY_CELL });
   }
   const values: GridWrite[] = cells.map((c) => ({ x: c.x, y: c.y, value: 0 }));
   store.beginTransaction();
@@ -314,9 +316,9 @@ export function rotatedRect(rect: CellRect): CellRect {
  *
  * @returns the turned rectangle clipped to the map, or null when nothing of it is inside.
  */
-export function rotateRegion(store: MapStore, layerIds: readonly string[], rect: CellRect, dir: RotateDirection): CellRect | null {
+export function rotateRegion(store: MapStore, layerIds: readonly string[], rect: SelectionRect, dir: RotateDirection): SelectionRect | null {
   assertRect(rect, "rotateRegion");
-  const target = rotatedRect(rect);
+  const target = transformSelection(rect, dir);
   const nested = store.inTransaction;
   store.beginTransaction();
   try {
@@ -329,12 +331,23 @@ export function rotateRegion(store: MapStore, layerIds: readonly string[], rect:
     throw error;
   }
   store.commit();
-  const { width, height } = store.document.map;
-  const x0 = Math.max(0, target.x);
-  const y0 = Math.max(0, target.y);
-  const x1 = Math.min(width, target.x + target.width);
-  const y1 = Math.min(height, target.y + target.height);
-  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+  return clipSelection(target, store.document.map);
+}
+
+/** Mirrors selected cells in place as one undo step; holes remain untouched. */
+export function flipRegion(store: MapStore, layerIds: readonly string[], rect: SelectionRect, axis: "x" | "y"): SelectionRect | null {
+  assertRect(rect, "flipRegion");
+  const nested = store.inTransaction;
+  store.beginTransaction();
+  try {
+    const clip = cutRegion(store, layerIds, rect);
+    pasteClip(store, flipClip(clip, axis), null, rect.x, rect.y);
+  } catch (error) {
+    if (nested) store.commit(); else store.rollback();
+    throw error;
+  }
+  store.commit();
+  return clipSelection(transformSelection(rect, axis), store.document.map);
 }
 
 /** `layer` with new cells (frozen; grid layers keep their role). */

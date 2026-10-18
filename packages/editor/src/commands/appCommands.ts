@@ -383,7 +383,7 @@ const COMMANDS: Command[] = [
       if (!hasProject() || isWorldView()) return false;
       const map = activeDoc()?.map;
       const r = editor().region;
-      return !!map && (r === null || (r.x <= 0 && r.y <= 0 && r.x + r.width >= map.width && r.y + r.height >= map.height));
+      return !!map && (r === null || (!r.mask && r.x <= 0 && r.y <= 0 && r.x + r.width >= map.width && r.y + r.height >= map.height));
     },
     run: invertSelection,
   },
