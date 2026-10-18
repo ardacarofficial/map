@@ -24,13 +24,13 @@ const ICON_COLOR: Record<ToastKind, string> = {
  * a stroke that runs under a toast keeps drawing (the toast pauses while a
  * button is hovered).
  */
-export function Toaster() {
+export function Toaster({ canvas = false }: { canvas?: boolean }) {
   const toasts = useToastStore((s) => s.toasts);
   return (
     <div
       aria-live="polite"
       data-toaster
-      className="pointer-events-none fixed bottom-[calc(var(--spacing-statusbar)+12px)] left-1/2 z-50 flex w-dialog-m max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2"
+      className={`pointer-events-none flex-col items-center gap-2 ${toasts.length === 0 ? "hidden" : "flex"} ${canvas ? "max-w-full" : "fixed bottom-3 left-1/2 z-20 w-dialog-m max-w-[calc(100vw-24px)] -translate-x-1/2"}`}
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />

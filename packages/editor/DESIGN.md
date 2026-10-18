@@ -176,8 +176,8 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Selection: existing marching ants (keep), hover outline inside a selection uses the footprint style, not white.
 - Rulers 20 px, `bg`, text-2xs `faint`, labels every 10 tiles, ticks every tile; horizontal labels for the vertical ruler (not rotated) when they fit.
 - Minimap 176×120 max, `popup` fill, 1 px `line-strong`, radius 6, 8 px inset bottom-right, viewport rect 1 px accent + dark keyline; hidden when the map fits, hidden by Tab.
-- Toasts: bottom-centre, 12 px above the status bar, `popup`, radius 6, one line, text-sm; 4 s, action toasts 8 s, errors stay until dismissed; never for saves.
-- Undo HUD / blocked feedback: same toast style (radius 6, not pills), bottom-centre.
+- Toasts: bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px, `popup`, radius 6, one line, text-sm; 4 s, action toasts 8 s, errors stay until dismissed; never for saves.
+- Undo HUD / blocked feedback: same toast style (radius 6, not pills), bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px; undo HUD stacks above toasts.
 - Brush size HUD near cursor on `[`/`]`: "3 × 3", 120 ms fade, hides 600 ms after last change (only if not already present; do not add if risky).
 
 ### 4.9 Menus, tooltips, context menus, command palette

@@ -43,7 +43,7 @@ export function installStampInspector(): void {
     registerInspectorSection({
       id: "stamps.selected",
       order: 5,
-      when: (ctx) => ctx.mode !== "entity" && selectedStamp() !== undefined,
+      when: (ctx) => ctx.mode !== "entity" && ctx.mode !== "solid" && selectedStamp() !== undefined,
       Component: StampSection,
     });
   register();

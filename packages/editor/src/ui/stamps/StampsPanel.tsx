@@ -152,7 +152,7 @@ export function StampsPanel() {
 
 function EmptyStamps() {
   return (
-    <div className="flex flex-col gap-2 p-2 pt-4">
+    <div className="flex flex-1 flex-col gap-2 p-2 pt-4">
       <p className="text-sm text-muted">{t("stamps.empty")}</p>
       <p className="text-xs text-faint">{t("stamps.emptyHint")}</p>
     </div>
@@ -176,43 +176,14 @@ function StampLibrary({ stamps }: { stamps: readonly Stamp[] }) {
   }, [stamps]);
 
   const shown = useMemo(() => filterStamps(stamps, filter), [stamps, filter]);
-  const filtered = filter.query !== "" || filter.category !== null || filter.tag !== null || filter.favoritesOnly;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-stamp-library="">
-      {stamps.length > 0 && <FilterBar stamps={stamps} filter={filter} />}
-      {stamps.length > 0 && (
-        <div className="mb-2 flex h-6 shrink-0 items-center gap-2 px-2">
-          {filtered && (
-            <span className="text-xs text-faint tabular">
-              {t("stampLib.count", {
-                shown: shown.length,
-                total: stamps.length,
-              })}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            {view === "grid" && (
-              <input
-                type="range"
-                min={CARD_MIN}
-                max={CARD_MAX}
-                step={4}
-                value={cardSize}
-                aria-label={t("stampLib.cardSize")}
-                data-stamp-card-size=""
-                onChange={(e) => useStampLibrary.getState().setCardSize(Number(e.target.value))}
-                className="h-1 w-16 cursor-pointer accent-accent"
-              />
-            )}
-            <ViewToggle view={view} />
-          </div>
-        </div>
-      )}
+      {stamps.length > 0 && <FilterBar stamps={stamps} filter={filter} view={view} />}
       {stamps.length === 0 ? (
         <EmptyStamps />
       ) : shown.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 p-2" data-stamp-nomatch="">
+        <div className="flex flex-1 flex-col items-start gap-2 p-2" data-stamp-nomatch="">
           <span className="text-sm text-muted">{t("stampLib.noMatch")}</span>
           <Button variant="ghost" size="sm" onClick={() => useStampLibrary.getState().setFilter(NO_FILTER)}>
             {t("stampLib.resetFilters")}
@@ -252,29 +223,42 @@ function StampLibrary({ stamps }: { stamps: readonly Stamp[] }) {
           ))}
         </ul>
       )}
+      {stamps.length > 0 && (
+      <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-t border-line-subtle px-2">
+        <span className="text-xs text-faint tabular">{t("stampLib.count", { count: shown.length })}</span>
+        {view === "grid" && (
+          <input
+            type="range"
+            min={CARD_MIN}
+            max={CARD_MAX}
+            step={4}
+            value={cardSize}
+            aria-label={t("stampLib.cardSize")}
+            data-stamp-card-size=""
+            onChange={(e) => useStampLibrary.getState().setCardSize(Number(e.target.value))}
+            className="h-1 w-22 cursor-pointer accent-accent"
+          />
+        )}
+      </div>
+      )}
     </div>
   );
 }
 
 function ViewToggle({ view }: { view: "grid" | "list" }) {
-  const set = useStampLibrary.getState().setView;
-  const item = (id: "grid" | "list", label: string, glyph: ReactNode) => (
+  const next = view === "grid" ? "list" : "grid";
+  const label = t(next === "grid" ? "stampLib.gridView" : "stampLib.listView");
+  return (
     <Tooltip label={label}>
-      <IconButton size="sm" active={view === id} aria-label={label} aria-pressed={view === id} data-stamp-view-button={id} onClick={() => set(id)}>
-        {glyph}
+      <IconButton size="sm" aria-label={label} data-stamp-view-button={next} onClick={() => useStampLibrary.getState().setView(next)}>
+        {next === "grid" ? <Icon name="grid-3x3" size={16} /> : <ListGlyph size={16} />}
       </IconButton>
     </Tooltip>
-  );
-  return (
-    <div className="flex shrink-0 items-center gap-0.5">
-      {item("grid", t("stampLib.gridView"), <Icon name="grid-3x3" size={16} />)}
-      {item("list", t("stampLib.listView"), <ListGlyph size={16} />)}
-    </div>
   );
 }
 
 /** Search field, ★ toggle, category chips (Tümü + counts) and tag chips. */
-function FilterBar({ stamps, filter }: { stamps: readonly Stamp[]; filter: StampFilter }) {
+function FilterBar({ stamps, filter, view }: { stamps: readonly Stamp[]; filter: StampFilter; view: "grid" | "list" }) {
   const setFilter = useStampLibrary.getState().setFilter;
   const categories = useMemo(() => stampCategories(stamps), [stamps]);
   const tags = useMemo(() => stampTags(stamps), [stamps]);
@@ -321,6 +305,7 @@ function FilterBar({ stamps, filter }: { stamps: readonly Stamp[]; filter: Stamp
             <StarGlyph on={filter.favoritesOnly} size={16} />
           </IconButton>
         </Tooltip>
+        <ViewToggle view={view} />
       </div>
       {categories.length > 0 && (
         <div role="group" aria-label={t("stampLib.categories")} className="flex flex-wrap gap-1">

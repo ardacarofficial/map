@@ -42,11 +42,10 @@ export function TerrainSwatch({ tileset, set, terrainId, size }: { tileset: Tile
  * (undoable); "+": ⚙ Düzenle → Arazi in the tileset, ready for a rough
  * rectangle over a block (concept "Terrain sets").
  */
-export function TerrainSets() {
+export function TerrainSets({ separated = false }: { separated?: boolean }) {
   const store = useEditorStore((s) => s.project?.store);
   useStructureVersion(store);
   const active = useActiveTerrain();
-  const defining = useUiStore((s) => s.tilesetMode === "terrain");
   const activeTilesetId = useUiStore((s) => s.activeTilesetId);
   const [editing, setEditing] = useState<string | null>(null);
   const doc = store?.document;
@@ -61,14 +60,14 @@ export function TerrainSets() {
       aria-label={t("terrain.list")}
       data-terrain-sets=""
       data-empty={terrainCount === 0 || undefined}
-      className="flex shrink-0 flex-col border-t border-line-subtle"
+      className={`flex shrink-0 flex-col ${separated ? "border-t border-line-subtle" : ""}`}
     >
       <SectionHeader padding={12} title={<>{t("terrain.list")} <span className="ml-1 font-mono text-faint">{terrainCount}</span></>} actions={
-        <Tooltip label={terrainCount === 0 ? t("terrain.setsEmpty") : t("terrain.defineNew")}>
-          <IconButton size="sm" aria-label={t("terrain.defineNew")} active={defining} data-terrain-add onClick={() => startDefine(activeTilesetId ?? undefined)}><Icon name="plus" /></IconButton>
+        <Tooltip label={t("terrain.defineNew")}>
+          <IconButton size="sm" aria-label={t("terrain.defineNew")} data-terrain-add onClick={() => startDefine(activeTilesetId ?? undefined)}><Icon name="plus" /></IconButton>
         </Tooltip>
       } />
-      {terrainCount > 0 && (
+      {terrainCount === 0 ? <p className="px-3 py-1 text-sm text-muted">{t("terrain.none")}</p> : (
         <ul role="listbox" aria-label={t("terrain.list")} className="flex max-h-56 flex-col overflow-y-auto px-2 pb-1">
           {entries.map(({ tileset, set }) => (
             <li key={`${tileset.id}/${set.id}`} role="presentation" data-terrain-set={set.id} className="flex flex-col">

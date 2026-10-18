@@ -5,7 +5,7 @@ import { t } from "../../i18n";
 import { CanvasHost } from "../canvas/CanvasHost";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
 import { StampCloseDialog, StampEditorBanner } from "../stampEditor/StampEditorChrome";
-import { UndoHud } from "../feedback/UndoHud";
+import { CanvasFeedback } from "../feedback/CanvasFeedback";
 import { BlockedActionFeedback } from "../feedback/BlockedActionFeedback";
 import { CanvasContextMenu } from "../contextMenus/CanvasContextMenu";
 import { LibraryPanel } from "../panels/LibraryPanel";
@@ -65,7 +65,7 @@ export function EditorLayout() {
           <StampEditorBanner />
           <main aria-label={t("layout.canvas")} className="relative min-h-0 min-w-0 flex-1 bg-canvas">
             <CanvasHost />
-            <UndoHud />
+            <CanvasFeedback />
             <PointPickOverlay />
             <CanvasContextMenu />
             <BlockedActionFeedback />

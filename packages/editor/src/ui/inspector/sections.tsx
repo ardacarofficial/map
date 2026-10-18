@@ -46,6 +46,7 @@ import { TextField } from "../primitives/TextField";
 import { Tooltip } from "../primitives/Tooltip";
 import { TileSwatch } from "../primitives/TileSwatch";
 import { Toggle } from "../primitives/Toggle";
+import { useUiStore } from "../uiStore";
 import { TerrainCard } from "../terrain/TerrainCard";
 import { resolveTerrain } from "../terrain/terrainModel";
 import { RandomSetControls, RandomSetPicker } from "../tileset/RandomSetControls";
@@ -488,6 +489,22 @@ function CollisionSection() {
   );
 }
 
+// ------------------------------------------------------------------ dock solid flags
+
+function SolidSection({ ctx }: { ctx: InspectorContext }) {
+  const activeId = useUiStore((s) => s.activeTilesetId);
+  const tileset = ctx.doc.tilesets.find((tileset) => tileset.id === activeId) ?? ctx.doc.tilesets[0];
+  const count = tileset?.solidTiles?.length ?? 0;
+  return (
+    <div data-inspector-solid="">
+      <SectionHeader>{t("inspector.solidTiles")}</SectionHeader>
+      <PropGrid><PropRow label={t("inspector.thisTileset")}>
+        <span className="text-sm text-text tabular" data-solid-count={count}>{t("inspector.solidCount", { count: formatNumber(count) })}</span>
+      </PropRow></PropGrid>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ map (nothing selected)
 
 function MapSection({ ctx }: { ctx: InspectorContext }) {
@@ -546,6 +563,7 @@ export function registerBuiltinInspectorSections(): void {
   registerInspectorSection({ id: "builtin.region", order: 10, when: (c) => c.mode === "region" && c.region !== null, Component: RegionSection });
   registerInspectorSection({ id: "builtin.brush", order: 20, when: (c) => c.mode === "brush", Component: BrushSection });
   registerInspectorSection({ id: "builtin.terrain", order: 20, when: (c) => c.mode === "terrain", Component: TerrainCard });
+  registerInspectorSection({ id: "builtin.solid", order: 20, when: (c) => c.mode === "solid", Component: SolidSection });
   registerInspectorSection({ id: "builtin.collision", order: 20, when: (c) => c.mode === "collision", Component: CollisionSection });
   registerInspectorSection({ id: "builtin.map", order: 90, when: (c) => c.mode === "map", Component: MapSection });
 }

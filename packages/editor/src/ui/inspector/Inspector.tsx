@@ -42,6 +42,7 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
     region: region !== null,
     // Stamps alone make a random brush too (tileset agent's random sets).
     brush: brush === "tile" && randomStamps > 0 ? "random" : brush,
+    solidEdit: tilesetMode === "solid",
     terrainBrush,
     terrainEdit: terrainEditActive(tilesetMode, terrainEdit),
   });

@@ -27,6 +27,13 @@ describe("inspector mode (first match wins)", () => {
     expect(mode({ terrainEdit: true, layer: "collision", tool: "select", region: true })).toBe("terrain");
     expect(mode({ terrainEdit: true, entitySelected: true })).toBe("entity");
   });
+  it("solid dock editing beats region, collision and brush contexts, while entity and terrain editing retain priority", () => {
+    expect(mode({ solidEdit: true, tool: "select", region: true })).toBe("solid");
+    expect(mode({ solidEdit: true, layer: "collision" })).toBe("solid");
+    expect(mode({ solidEdit: true, terrainBrush: true })).toBe("solid");
+    expect(mode({ solidEdit: true, entitySelected: true })).toBe("entity");
+    expect(mode({ solidEdit: true, terrainEdit: true })).toBe("terrain");
+  });
   it("brush card for paint tools on tile layers, also empty", () => {
     for (const tool of ["brush", "eraser", "fill", "rect"] as const) expect(mode({ tool })).toBe("brush");
     expect(mode({ brush: "none" })).toBe("brush");

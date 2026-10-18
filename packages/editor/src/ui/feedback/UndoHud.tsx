@@ -1,17 +1,13 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useEditorStore } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
 import { Icon } from "../primitives/Icon";
-import { useToastStore } from "../toast/toastStore";
 import { describeEntry, historyMessage, nextBurst, type Burst, type HistoryMove } from "./historyLabels";
-import { hudBottom } from "./hudStack";
 import { bindHistoryLabels, recordStrokeLabel, sharedHistoryLabels } from "./sharedHistoryLabels";
 
 /** How long the HUD stays after the last undo / redo (ms). */
 const SHOW_MS = 1400;
-/** Distance above the canvas bottom; the status bar is outside the canvas. */
-const BASE_BOTTOM = 12;
 
 interface Shown {
   move: HistoryMove;
@@ -31,8 +27,6 @@ export function UndoHud() {
   const [shown, setShown] = useState<Shown | null>(null);
   const [visible, setVisible] = useState(false);
   const burst = useRef<Burst | null>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const pillRef = useRef<HTMLDivElement>(null);
 
   // History of the open document (a new store = a new history).
   useEffect(() => {
@@ -73,13 +67,10 @@ export function UndoHud() {
     return () => window.clearTimeout(timer);
   }, [shown]);
 
-  const bottom = useStackedBottom(rowRef, pillRef, shown !== null);
-
   return (
-    <div ref={rowRef} aria-live="polite" style={{ bottom }} className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 transition-[bottom] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none">
+    <div aria-live="polite" className={`max-w-full ${visible ? "flex" : "hidden"}`}>
       {shown && (
         <div
-          ref={pillRef}
           data-undo-hud={shown.move}
           className={`flex h-8 max-w-full items-center gap-2 rounded-md border border-line-strong bg-popup px-3 text-sm text-text shadow-popup transition-[opacity,translate] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none ${
             visible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
@@ -91,37 +82,4 @@ export function UndoHud() {
       )}
     </div>
   );
-}
-
-/**
- * The HUD's bottom offset: kept clear of the toast stack (measured, since
- * the stack is a window-level layer) while the HUD is shown.
- */
-function useStackedBottom(row: RefObject<HTMLDivElement | null>, pill: RefObject<HTMLDivElement | null>, active: boolean): number {
-  const toastCount = useToastStore((s) => s.toasts.length);
-  const [bottom, setBottom] = useState(BASE_BOTTOM);
-  useEffect(() => {
-    if (!active) return;
-    const container = row.current?.parentElement;
-    const toaster = document.querySelector("[data-toaster]");
-    const measure = () => {
-      const c = container?.getBoundingClientRect();
-      const p = pill.current?.getBoundingClientRect();
-      const t = toastCount > 0 ? toaster?.getBoundingClientRect() : undefined;
-      const next = c ? hudBottom(p ?? null, t ?? null, c.bottom, BASE_BOTTOM) : BASE_BOTTOM;
-      setBottom((b) => (b === next ? b : next));
-    };
-    measure();
-    // Toast heights settle a frame after they mount, and change as they wrap or leave.
-    const frame = requestAnimationFrame(measure);
-    const observer = new ResizeObserver(measure);
-    if (toaster) observer.observe(toaster);
-    if (container) observer.observe(container);
-    if (pill.current) observer.observe(pill.current);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [active, toastCount, row, pill]);
-  return active ? bottom : BASE_BOTTOM;
 }

@@ -84,7 +84,7 @@ export function App() {
       <NewLevelDialog />
       <RemoveLevelDialog />
       <TilesetImportDialog />
-      <Toaster />
+      {!hasProject && <Toaster />}
     </TooltipProvider>
   );
 }

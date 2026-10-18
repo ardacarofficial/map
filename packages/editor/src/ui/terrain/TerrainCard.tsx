@@ -220,11 +220,6 @@ function BrushFace({ ctx }: { ctx: InspectorContext }) {
   if (!found || !choice) {
     return (
       <div data-inspector-terrain="none">
-        <SectionHeader padding={12} title={t("terrain.cardTitle")} />
-        <div className="flex flex-col px-3 py-1">
-          <Tooltip label={t("terrain.noneHint")}><span className="text-sm text-muted">{t("terrain.none")}</span></Tooltip>
-
-        </div>
         <TerrainSets />
       </div>
     );
@@ -265,7 +260,7 @@ function BrushFace({ ctx }: { ctx: InspectorContext }) {
         </PropRow>
       </PropGrid>
       <PropGrid><PropRow label={t("terrain.color")}><ColorRow value={found.terrain.color} onChange={(color) => setTerrainColor(choice, color)} /></PropRow></PropGrid>
-      <TerrainSets />
+      <TerrainSets separated />
       <div className="flex gap-2 px-3 pt-1">
         <ActionButton label={t("terrain.fix")} icon="sliders" dataAction="terrain-fix" onClick={() => startFix(choice)} />
         <ActionButton label={t("terrain.removeSet")} icon="trash" tone="danger" dataAction="terrain-remove-set" onClick={() => removeTerrainSet(setRef)} />

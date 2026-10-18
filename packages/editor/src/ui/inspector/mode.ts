@@ -4,6 +4,7 @@
  * First match wins (round 4 design):
  * 1. an entity is selected                → "entity"
  * 2. defining / fixing a terrain (tileset ⚙ Düzenle → Arazi) → "terrain"
+ *    marking solid tiles in the dock     → "solid"
  * 3. a marquee region (select tool)       → "region"
  * 4. collision layer active               → "collision"
  * 5. terrain brush on a tile layer        → "terrain"
@@ -14,7 +15,7 @@
 import type { ToolId } from "../../state/editorStore";
 import type { TilesetMode } from "../uiStore";
 
-export type InspectorMode = "entity" | "region" | "brush" | "terrain" | "collision" | "map";
+export type InspectorMode = "entity" | "solid" | "region" | "brush" | "terrain" | "collision" | "map";
 
 /** Kind of the active layer, as far as the inspector cares. */
 export type LayerKind = "tile" | "collision" | "entity" | "none";
@@ -33,6 +34,8 @@ export interface ModeInput {
   terrainBrush?: boolean;
   /** A terrain is being defined or fixed in the tileset (⚙ Düzenle → Arazi). */
   terrainEdit?: boolean;
+  /** The dock is marking solid tiles. */
+  solidEdit?: boolean;
 }
 
 /** The dock mode opens terrain editing even before a draft or fix exists. */
@@ -46,6 +49,7 @@ export const PAINT_TOOLS: readonly ToolId[] = ["brush", "eraser", "fill", "rect"
 export function inspectorMode(input: ModeInput): InspectorMode {
   if (input.entitySelected) return "entity";
   if (input.terrainEdit === true) return "terrain";
+  if (input.solidEdit === true) return "solid";
   if (input.region && input.tool === "select" && input.layer !== "entity") return "region";
   if (input.layer === "collision") return "collision";
   if (input.terrainBrush === true && input.layer === "tile" && PAINT_TOOLS.includes(input.tool)) return "terrain";
