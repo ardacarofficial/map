@@ -204,7 +204,7 @@ export function replaceStampContent(id: string, content: Stamp): Stamp | null {
     ...(stamp.tags !== undefined ? { tags: stamp.tags } : {}),
     ...(stamp.favorite !== undefined ? { favorite: stamp.favorite } : {}),
   };
-  const { category: _c, tags: _t, favorite: _f, nineSlice: _nine, ...rawCells } = content;
+  const { category: _c, tags: _t, favorite: _f, nineSlice: _nine, smartDisabled: _smart, ...rawCells } = content;
   // The temporary stamp document has fresh layer ids. Keep canonical source ids by layer order/kind.
   const sourceIds = new Set<string>();
   const layers = rawCells.layers.map((layer, i) => {
@@ -224,7 +224,7 @@ export function replaceStampContent(id: string, content: Stamp): Stamp | null {
       return cellFlags(cell) === cellFlags(prev) && a?.tilesetId === b?.tilesetId && a?.tileId === b?.tileId;
     });
   });
-  const cells = { ...rawCells, layers, ...(unchanged && stamp.nineSlice ? { nineSlice: stamp.nineSlice } : {}) };
+  const cells = { ...rawCells, layers, ...(stamp.smartDisabled !== undefined ? { smartDisabled: stamp.smartDisabled } : {}), ...(unchanged && stamp.nineSlice ? { nineSlice: stamp.nineSlice } : {}) };
   const next = withStampMeta(Object.freeze({ ...cells, id: stamp.id, name: stamp.name }) as Stamp, meta);
   if (unchanged) attachPreparedBrush(next, stamp);
   library.addStamp(next);

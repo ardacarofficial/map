@@ -154,7 +154,11 @@ export async function publishSavedBrushAssets(): Promise<void> {
   const store = useEditorStore.getState().project?.store; if (!store) return;
   for (const stamp of useProjectLibrary.getState().stamps) {
     await waitForSelectionBrush(stamp);
-    if (!autoBrush(stamp)?.prepared?.assets.some(a => !store.document.getTileset(a.tileset.id))) continue;
+    const missing = autoBrush(stamp)?.prepared?.assets.filter(a => !store.document.getTileset(a.tileset.id));
+    // Recipes are archived only after publication commits, and survive removal/undo.
+    // A missing archived atlas was removed; Save must preserve that decision and redo.
+    const recipes = useProjectLibrary.getState().generatedRecipes;
+    if (!missing?.length || missing.some(a => recipes.some(r => r.tilesetId === a.tileset.id))) continue;
     if (store.inTransaction) throw new Error(t("smartStamp.changed"));
     store.beginTransaction();
     try { publishBrushAssets(stamp, store); store.commit(); }
