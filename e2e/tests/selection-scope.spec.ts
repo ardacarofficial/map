@@ -152,3 +152,33 @@ test("scope has one visible control, keyboard navigation, and a palette toggle",
   await page.keyboard.press("Enter");
   await expect(page.getByRole("radio", { name: "Etkin katman", exact: true })).toHaveAttribute("aria-checked", "true");
 });
+
+test("hidden active layer disables copy, cut and delete without changing cells or clipboard", async ({ page }) => {
+  await setup(page);
+  const before = await cells(page);
+  await canvas(page).focus();
+  await page.keyboard.press("Control+c");
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const s = useEditorStore.getState();
+    s.project.store.dispatch({ type: "setLayerProps", layerId: s.activeLayerId, props: { visible: false } });
+    s.project.store.clearHistory();
+  });
+  for (const key of ["Control+c", "Control+x", "Delete"]) await page.keyboard.press(key);
+  expect(await cells(page)).toEqual(before);
+  const result = await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { captureSelectionScope } = await import(/* @vite-ignore */ String("/src/commands/selectionScope.ts"));
+    const { getMemoryClip } = await import(/* @vite-ignore */ String("/src/commands/clipboard.ts"));
+    const { getCommand, isEnabled } = await import(/* @vite-ignore */ String("/src/commands/registry.ts"));
+    const s = useEditorStore.getState();
+    return {
+      undo: s.project.store.undoDepth,
+      captured: captureSelectionScope(s.project.store.document),
+      enabled: ["edit.copy", "edit.cut", "edit.delete"].map(id => isEnabled(getCommand(id))),
+      clipLayers: getMemoryClip().layers.map((l: { layerId: string }) => l.layerId),
+      active: s.activeLayerId,
+    };
+  });
+  expect(result).toEqual({ undo: 0, captured: [], enabled: [false, false, false], clipLayers: [result.active], active: result.active });
+});

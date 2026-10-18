@@ -230,3 +230,41 @@ test("multi-layer smart stamp: area skips hidden layers and road explicitly sele
   await dialog.getByRole("button", { name: "Araziyi kullan" }).click();
   await expect(page.locator("[data-smart-stamp-mode]")).toHaveCount(0);
 });
+
+test("9 dilim property has one label and toggle; rebuild appears only for edited bake content", async ({ page }) => {
+  await page.goto("/"); await makeRoadStamp(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const row = page.locator("[data-nine-slice]").locator("xpath=ancestor::div[label][1]");
+  await expect(row.getByText("9 dilim", { exact: true })).toHaveCount(1);
+  await expect(row.getByRole("switch", { name: "9 dilim", exact: true })).toHaveCount(1);
+  await expect(row.getByRole("button")).toHaveCount(0);
+  await row.getByRole("switch").focus(); await page.keyboard.press("Space");
+  await expect(page.locator("[data-smart-stamp-dialog]")).toBeVisible();
+  await page.getByRole("button", { name: "Hazırla", exact: true }).click();
+  await expect(page.locator("[data-smart-stamp-dialog]")).toBeHidden();
+  await expect(row.getByRole("switch")).toBeChecked();
+  await expect(row.getByRole("button")).toHaveCount(0);
+  // A deliberately disabled stamp still has a valid bake and needs no maintenance.
+  await row.getByRole("switch").click();
+  await expect(row.getByRole("switch")).not.toBeChecked();
+  await expect(row.getByRole("button")).toHaveCount(0);
+  // The stamp editor uses this command to invalidate an edited source's old bake.
+  await page.evaluate(async () => {
+    const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
+    const { replaceStampContent } = await import(/* @vite-ignore */ String("/src/commands/stampActions.ts"));
+    const stamp = useProjectLibrary.getState().stamps[0];
+    const layers = stamp.layers.map((l: { cells: Uint32Array }) => ({ ...l, cells: l.cells.slice() }));
+    layers[0].cells[4] = layers[0].cells[1];
+    replaceStampContent(stamp.id, { ...stamp, layers });
+  });
+  const rebuild = row.getByRole("button", { name: "Yeniden hazırla", exact: true });
+  await expect(rebuild).toBeVisible();
+  await expect(row.getByText("9 dilim", { exact: true })).toHaveCount(1);
+  await rebuild.click();
+  await page.getByRole("button", { name: "Hazırla", exact: true }).click();
+  await expect(page.locator("[data-smart-stamp-dialog]")).toBeHidden();
+  await expect(row.getByRole("switch")).toBeChecked();
+  await expect(rebuild).toHaveCount(0);
+  await row.getByRole("switch").click();
+  await expect(rebuild).toHaveCount(0);
+});

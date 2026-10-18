@@ -12,7 +12,7 @@ export interface SelectionSnapshot {
 }
 
 export function resolveSelectionScope(doc: MapDocument, activeId: string | null, scope: SelectionScope): SelectionSnapshot {
-  const layers = scope === "active" ? doc.layers.filter(l => l.id === activeId) : doc.layers.filter(l => l.visible);
+  const layers = doc.layers.filter(l => l.visible && (scope === "visible" || l.id === activeId));
   const eligible = layers.filter(l => !isEntityLayer(l) && (scope === "active" || !isGridLayer(l) || l.role === "collision"));
   return Object.freeze({
     layerIds: Object.freeze(eligible.filter(l => !l.locked).map(l => l.id)),
@@ -32,11 +32,11 @@ export function reportSelectionSkipped(names: readonly string[]): void {
   if (names.length) toast.info(t("selectionScope.skipped", { layers: names.join(", ") }));
 }
 
-export function captureSelectionScope(doc: MapDocument): readonly string[] {
+export function captureSelectionScope(doc: MapDocument, onSkipped = reportSelectionSkipped): readonly string[] {
   const s = useEditorStore.getState();
   const snapshot = resolveSelectionScope(doc, s.activeLayerId, s.selectionScope);
   const ids = survivingSelectionIds(doc, snapshot.layerIds);
-  reportSelectionSkipped([...snapshot.skipped, ...snapshot.layerIds.filter(id => !ids.includes(id)).map(id => doc.getLayer(id)?.name ?? id)]);
+  onSkipped([...snapshot.skipped, ...snapshot.layerIds.filter(id => !ids.includes(id)).map(id => doc.getLayer(id)?.name ?? id)]);
   return Object.freeze(ids);
 }
 

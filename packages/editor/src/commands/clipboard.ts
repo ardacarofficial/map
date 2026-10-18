@@ -23,7 +23,7 @@ import {
 import { t } from "../i18n";
 import { useEditorStore } from "../state/editorStore";
 import { toast } from "../ui/toast/toastStore";
-import { resolveSelectionScope, reportSelectionSkipped, canUseSelectionScope } from "./selectionScope";
+import { captureSelectionScope, canUseSelectionScope, reportSelectionSkipped } from "./selectionScope";
 import { activeLayer, contextOf, mapRegion } from "./enablement";
 
 let memoryClip: TileClip | null = null;
@@ -46,12 +46,12 @@ export function copySelection(): boolean {
   const c = contextOf(useEditorStore.getState());
   const rect = mapRegion(c);
   if (!canUseSelectionScope() || !rect || !c.store) return false;
-  const s = useEditorStore.getState();
-  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
-  memoryClip = copyRegion(c.store.document, snapshot.layerIds, rect);
+  let skipped: readonly string[] = [];
+  const layerIds = captureSelectionScope(c.store.document, names => { skipped = names; });
+  memoryClip = copyRegion(c.store.document, layerIds, rect);
   writeSystemClipboard(serializeClip(memoryClip));
   toast.info(t("toast.copied", { width: rect.width, height: rect.height }));
-  reportSelectionSkipped(snapshot.skipped);
+  reportSelectionSkipped(skipped);
   return true;
 }
 
@@ -59,12 +59,12 @@ export function cutSelection(): boolean {
   const c = contextOf(useEditorStore.getState());
   const rect = mapRegion(c);
   if (!canUseSelectionScope() || !rect || !c.store) return false;
-  const s = useEditorStore.getState();
-  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
-  memoryClip = cutRegion(c.store, snapshot.layerIds, rect);
+  let skipped: readonly string[] = [];
+  const layerIds = captureSelectionScope(c.store.document, names => { skipped = names; });
+  memoryClip = cutRegion(c.store, layerIds, rect);
   writeSystemClipboard(serializeClip(memoryClip));
   toast.info(t("toast.cut", { width: rect.width, height: rect.height }));
-  reportSelectionSkipped(snapshot.skipped);
+  reportSelectionSkipped(skipped);
   return true;
 }
 
@@ -73,10 +73,8 @@ export function deleteSelection(): boolean {
   const c = contextOf(useEditorStore.getState());
   const rect = mapRegion(c);
   if (!canUseSelectionScope() || !rect || !c.store) return false;
-  const s = useEditorStore.getState();
-  const snapshot = resolveSelectionScope(c.store.document, s.activeLayerId, s.selectionScope);
-  cutRegion(c.store, snapshot.layerIds, rect);
-  reportSelectionSkipped(snapshot.skipped);
+  const layerIds = captureSelectionScope(c.store.document);
+  cutRegion(c.store, layerIds, rect);
   return true;
 }
 
