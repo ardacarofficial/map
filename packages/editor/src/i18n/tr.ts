@@ -1254,6 +1254,7 @@ export const tr = {
   },
 
   smartStamp: {
+    usageStamps: "{count} stamp etkileniyor.",
     recipeMissing: "{name} için kaynak stamp bulunamadı.",
     layer: "Katman",
     chooseLayer: "Katman seç",

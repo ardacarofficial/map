@@ -45,9 +45,12 @@ export function usageText(usage: UsageSummary): string {
   if (usage.terrainCells > 0) parts.push(t("tilesetLib.usageTerrainCells", { count: usage.terrainCells }));
   const what = parts.join(t("tilesetLib.usageAnd"));
   const terrains = usage.terrains > 0 ? t("tilesetLib.usageTerrains", { count: usage.terrains }) : "";
-  return usage.levels > 1
+  const stamps = usage.stamps > 0 ? t("smartStamp.usageStamps", { count: usage.stamps }) : "";
+  if (usage.levels === 0) return stamps;
+  const maps = usage.levels > 1
     ? t("tilesetLib.usageLevels", { levels: usage.levels, what, terrains })
     : t("tilesetLib.usageOneLevel", { what, terrains });
+  return [maps, stamps].filter(Boolean).join(" ");
 }
 
 export function RemoveTilesetDialog() {

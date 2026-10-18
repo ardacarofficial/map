@@ -147,3 +147,21 @@ describe("dropTilesetRefs", () => {
     expect(dropTilesetRefs({ selection: null, randomSet: [], stamp: null, recentTiles: [] }, exists)).toEqual({});
   });
 });
+
+
+it("syncs generated provenance to cached levels without a history step or store replacement", async () => {
+  const { fs, ws, b } = await project();
+  await loadAllLevels(ws, fs);
+  const generated = { kind: "nineSlice" as const, stampId: "road", layerId: "s", sourceWidth: 3, sourceHeight: 3, layoutVersion: 1 as const, sources: [{ tilesetId: "grass", imageHash: "old" }] };
+  edit(ws, store => store.dispatch({ type: "addTileset", tileset: { ...tileset("bank"), columns: 8, rows: 8, generated } }));
+  const cached = ws.entry(b)!.store;
+  paint(cached, 3, 3, "grass", 1); paint(cached, 4, 3, "grass", 1); cached.undo();
+  const history = cached.historyEntries();
+  const next = { ...generated, sources: [{ tilesetId: "grass", imageHash: "new" }] };
+  ws.active.store.dispatch({ type: "setTilesetMeta", tilesetId: "bank", generated: next, undoable: false });
+  expect(syncLevelLists(ws).levels).toContain(b);
+  expect(cached.historyEntries()).toEqual(history);
+  expect(cached.document.getTileset("bank")?.generated).toEqual(next);
+  expect((await ws.activate(b, fs)).store).toBe(cached);
+  expect(cached.historyEntries()).toEqual(history);
+});

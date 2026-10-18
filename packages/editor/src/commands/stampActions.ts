@@ -91,7 +91,7 @@ export function pickStamp(id: string): void {
   if (!stamp || !editor.project) return;
   // A stamp saved with a tileset that was removed since cannot be placed.
   const doc = editor.project.store.document;
-  if (stamp.palette.some((e) => !doc.getTileset(e.tilesetId))) {
+  if (stamp.palette.some((e) => !doc.getTileset(e.tilesetId)) || stamp.nineSlice?.tileLayers.some(l => !doc.getTileset(l.tilesetId)) || (stamp.nineSlice?.road && !doc.getTileset(stamp.nineSlice.road.tilesetId))) {
     toast.error(t("tilesetLib.stampRemovedTileset", { name: stamp.name }));
     return;
   }

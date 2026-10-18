@@ -26,6 +26,7 @@ import {
 
 import { t } from "../i18n";
 import { decodeTilesetFile, addTilesetFiles, createProjectFromTilesets, describeError, getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
+import { affectedTilesetStamps } from "../io/smartStampRecipes";
 import { useProjectLibrary } from "../io/projectLibrary";
 import {
   dropTileRefs,
@@ -558,7 +559,9 @@ export async function removeTileset(tilesetId: string | null = currentTilesetId(
   }
   if (getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tileset.id)) return false;
   const perLevel: LevelUsage[] = ws.cachedIds().map((id) => tilesetUsage(ws.entry(id)!.store.document, tileset.id));
-  const usage = summarizeUsage(perLevel);
+  const library = useProjectLibrary.getState();
+  const affected = affectedTilesetStamps(tileset.id, library.stamps, library.generatedRecipes, store.document.tilesets);
+  const usage = summarizeUsage(perLevel, affected.length);
   if (usage.used && !(await askRemoveTileset({ name: tileset.name, usage }))) return false;
   if (activeStore() !== store || !store.document.getTileset(tileset.id) || store.inTransaction) return false;
   const index = store.document.tilesets.findIndex((ts) => ts.id === tileset.id);

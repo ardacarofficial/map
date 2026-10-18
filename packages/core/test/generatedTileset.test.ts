@@ -166,3 +166,36 @@ it("persists inner-corner tile/flags and restores the exact recipe for PNG-only 
   expect(cleared.generated!.innerCorner).toBeUndefined();
   expect(cleared.generated!.sources).toEqual([{ tilesetId: "source", imageHash: "s-old" }]);
 });
+
+
+it("cache provenance survives every structural undo/redo and rollback without changing history", () => {
+  fc.assert(fc.property(fc.string({ minLength: 1, maxLength: 40 }), fc.boolean(), (hash, rollback) => {
+    const bank = prepareNineSliceTileset(stamp, "s", options());
+    const store = new MapStore(createDocument({ width: 3, height: 3, tilesets: [art, bank] }));
+    store.dispatch({ type: "addLayer", layer: { id: "l", name: "Ground" } });
+    store.clearHistory();
+    store.dispatch({ type: "setTilesetMeta", tilesetId: bank.id, name: "Custom name" });
+    store.dispatch({ type: "moveTileset", tilesetId: bank.id, index: 0 });
+    store.dispatch({ type: "removeTileset", tilesetId: bank.id });
+    store.undo(); // Keep a redo removal and two undo snapshots of the bank.
+    const history = store.historyEntries();
+    const generated = { ...bank.generated!, sources: [{ tilesetId: "source", imageHash: hash }] };
+    store.beginTransaction();
+    store.dispatch({ type: "setTilesetMeta", tilesetId: bank.id, group: "Custom group" });
+    store.dispatch({ type: "setTilesetMeta", tilesetId: bank.id, generated, undoable: false });
+    if (rollback) store.rollback(); else store.commit();
+    if (!rollback) store.undo();
+    expect(store.document.getTileset(bank.id)?.generated).toEqual(generated);
+    expect(store.document.getTileset(bank.id)?.group).toBeUndefined();
+    if (rollback) expect(store.historyEntries()).toEqual(history);
+    while (store.undo()) expect(store.document.getTileset(bank.id)?.generated).toEqual(generated);
+    const before = serializeProject({ name: "P", levels: [], tilesets: store.document.tilesets });
+    while (store.redo()) {
+      const live = store.document.getTileset(bank.id);
+      if (live) expect(live.generated).toEqual(generated);
+    }
+    while (store.undo()) { /* original document plus current cache provenance */ }
+    expect(serializeProject({ name: "P", levels: [], tilesets: store.document.tilesets })).toBe(before);
+    expect(() => store.dispatch({ type: "setTilesetMeta", tilesetId: bank.id, name: "Wrong", generated, undoable: false })).toThrow(/cache refresh/);
+  }), { numRuns: 35 });
+});
