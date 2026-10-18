@@ -1,12 +1,8 @@
 import { create } from "zustand";
-
 import { wantedTilesetBodyHeight } from "./contentHeight";
+import { useDockStore } from "../dockStore";
 
-const KEY = "smap.layout.dockCollapsed";
-function readCollapsed(): boolean {
-  try { return localStorage.getItem(KEY) === "true"; } catch { return false; }
-}
-
+/** Compatibility view of the bottom zone; no independent collapse authority. */
 export const useDockContent = create<{
   wanted: number;
   collapsed: boolean;
@@ -14,10 +10,8 @@ export const useDockContent = create<{
   setCollapsed(value: boolean): void;
 }>()((set) => ({
   wanted: wantedTilesetBodyHeight([]),
-  collapsed: readCollapsed(),
-  setWanted: (wanted) => set({ wanted }),
-  setCollapsed: (collapsed) => {
-    set({ collapsed });
-    try { localStorage.setItem(KEY, String(collapsed)); } catch { /* Session preference only. */ }
-  },
+  collapsed: useDockStore.getState().layout.zones.bottom.state === "collapsed",
+  setWanted: wanted => set({ wanted }),
+  setCollapsed: value => useDockStore.getState().setZoneState("bottom", value ? "collapsed" : "expanded"),
 }));
+useDockStore.subscribe(s => useDockContent.setState({ collapsed: s.layout.zones.bottom.state === "collapsed" }));

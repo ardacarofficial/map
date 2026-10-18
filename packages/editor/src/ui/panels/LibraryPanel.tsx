@@ -1,17 +1,14 @@
 import { isEntityLayer, type MapDocument, type TileLayer } from "@smap/core";
-import { useEffect, useRef, useSyncExternalStore, type ComponentType } from "react";
+import type { ComponentType } from "react";
+import { DockZone } from "../layout/DockZone";
+import { COLLAPSED_PX } from "../layout/dockModel";
+import { useDockStore } from "../layout/dockStore";
 
-import { t, type MessageKey } from "../../i18n";
+import { type MessageKey } from "../../i18n";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { useEditorStore } from "../../state/editorStore";
 import { EntityPalette } from "../entities/EntityPalette";
-import { useStructureVersion } from "../hooks";
 import { StampsPanel } from "../stamps/StampsPanel";
-import { useUiStore, type LibraryTab } from "../uiStore";
-import { useLayoutStore } from "../layout/layoutStore";
-import { useWorldView as useWorldViewStore } from "../../commands/worldActions";
-import { Tabs } from "../primitives/Tabs";
-import { ProjectTree } from "../levels/ProjectTree";
+import { type LibraryTab } from "../uiStore";
 
 /** What a tab's `visible` / `auto` sees. */
 export interface LibraryTabContext {
@@ -37,7 +34,6 @@ export interface LibraryTabDef {
 
 const tabs = new Map<LibraryTab, LibraryTabDef>();
 const listeners = new Set<() => void>();
-let version = 0;
 
 /**
  * Adds a tab to the library column (or replaces one with the same id).
@@ -45,12 +41,10 @@ let version = 0;
  */
 export function registerLibraryTab(tab: LibraryTabDef): () => void {
   tabs.set(tab.id, tab);
-  version++;
   for (const l of [...listeners]) l();
   return () => {
     if (tabs.get(tab.id) !== tab) return;
     tabs.delete(tab.id);
-    version++;
     for (const l of [...listeners]) l();
   };
 }
@@ -79,90 +73,8 @@ registerLibraryTab({
   auto: ({ layer }) => isEntityLayer(layer),
 });
 
-function useLibraryTabs(): { listed: LibraryTabDef[]; ctx: LibraryTabContext } {
-  const store = useEditorStore((s) => s.project?.store);
-  const activeLayerId = useEditorStore((s) => s.activeLayerId);
-  useStructureVersion(store);
-  useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-    () => version,
-  );
-  const doc = store?.document;
-  const ctx = { doc, layer: activeLayerId ? doc?.getLayer(activeLayerId) : undefined };
-  return { listed: libraryTabsFor(ctx), ctx };
-}
-
-/** The persisted library/project tabs and their full-height content. */
+/** Compatibility host; content and contextual visibility live in the dock registry. */
 export function LibraryPanel() {
-  const panel = useLayoutStore((s) => s.leftPanel);
-  const world = useWorldViewStore((s) => s.view === "world");
-  const { listed, ctx } = useLibraryTabs();
-  const selected = useUiStore((s) => s.libraryTab);
-  const setTab = useUiStore((s) => s.setLibraryTab);
-  const autoBefore = useRef(new Set<LibraryTab>());
-  const returnTo = useRef<LibraryTab | null>(null);
-
-  // `auto` tabs: select on the rising edge; when the condition ends, go back to where the user was.
-  const autoNow = listed.filter((tab) => tab.auto?.(ctx)).map((tab) => tab.id);
-  const autoKey = autoNow.join(",");
-  useEffect(() => {
-    const now = new Set(autoKey ? autoKey.split(",") : []);
-    const before = autoBefore.current;
-    const rising = [...now].find((id) => !before.has(id));
-    const current = useUiStore.getState().libraryTab;
-    if (rising && rising !== current) {
-      returnTo.current = current;
-      setTab(rising);
-    } else if (!now.has(current) && before.has(current) && returnTo.current) {
-      setTab(returnTo.current);
-      returnTo.current = null;
-    }
-    autoBefore.current = now;
-  }, [autoKey, setTab]);
-
-  const tab = resolveLibraryTab(selected, listed);
-  const project = world || panel === "project";
-  const Content = tab?.Component;
-  const value = project ? "project" : (tab?.id ?? "stamps");
-  return (
-    <div className="flex h-full min-h-0 flex-col" data-left-panel={project ? "project" : "library"}>
-      <Tabs
-        label={t("library.tabs")}
-        value={value}
-        onValueChange={(id) => {
-          useLayoutStore.getState().setLeftPanelTab(id === "project" ? "project" : "stamps");
-          if (id !== "project") setTab(id);
-        }}
-        items={[
-          ...listed.map(({ id, label, useBadge }) => ({
-            value: id,
-            label: (
-              <>
-                {t(label)}
-                {useBadge && <Badge useCount={useBadge} />}
-              </>
-            ),
-            disabled: world,
-            attrs: { "data-library-tab-button": id, ...(id === "stamps" ? { "data-rail": "library" } : {}) },
-          })),
-          { value: "project", label: t("project.title"), attrs: { "data-rail": "project", "data-library-tab-button": "project" } },
-        ]}
-      />
-      <div className="flex min-h-0 flex-1 flex-col" data-library-tab={project ? "project" : tab?.id}>
-        {project ? <ProjectTree fill /> : Content && <Content />}
-      </div>
-    </div>
-  );
-}
-
-function Badge({ useCount }: { useCount: () => number }) {
-  const count = useCount();
-  return count > 0 ? (
-    <span aria-hidden className="ml-1.5 text-xs text-faint tabular">
-      {count}
-    </span>
-  ) : null;
+  const zone = useDockStore(s => s.layout.zones.left);
+  return <DockZone zone="left" size={zone.state === "collapsed" ? COLLAPSED_PX : zone.expandedPx} temporaryHidden={false} />;
 }

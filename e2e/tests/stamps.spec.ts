@@ -278,6 +278,7 @@ test("stamp cards arm with click or Enter, yield to a marquee at pointer-down, a
   await stampCard.focus();
   await stampCard.press("Enter");
   await expect(page.locator("[data-stamp-inspector]")).toBeVisible();
+  await page.locator("[data-panel-tab=tileset]").click();
   const grid = page.locator("[data-tileset-grid]").first();
   await grid.click({ position: { x: 8, y: 8 } });
   await expect(page.locator("[data-stamp-inspector]")).toHaveCount(0);

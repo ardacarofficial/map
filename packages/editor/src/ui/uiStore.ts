@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { isPanelId } from "./layout/dockModel";
+import { revealPanel } from "./layout/dockStore";
 
 /**
  * What a click in the tileset panel does: pick tiles (default), toggle
@@ -85,7 +87,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setStartupOpening: (startupOpening) => set({ startupOpening }),
   toggleTilesetMode: (mode) => set((s) => ({ tilesetMode: s.tilesetMode === mode ? "pick" : mode })),
   setTilesetMode: (tilesetMode) => set({ tilesetMode }),
-  setLibraryTab: (libraryTab) => set({ libraryTab }),
+  setLibraryTab: (libraryTab) => { set({ libraryTab }); if (isPanelId(libraryTab)) revealPanel(libraryTab); },
   setSaveStampOpen: (saveStampOpen) => set({ saveStampOpen }),
   setEntityTypesOpen: (entityTypesOpen, startNew = false, selectId = null) =>
     set({ entityTypesOpen, entityTypesStartNew: entityTypesOpen && startNew, entityTypesSelect: entityTypesOpen ? selectId : null }),

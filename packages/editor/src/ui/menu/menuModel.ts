@@ -72,6 +72,12 @@ export const MENUS: readonly MenuDef[] = [
       "view.history",
       "view.toggleLayers",
       "view.toggleRecent",
+      // Docking
+      "view.toggleBottom",
+      "dock.left.show", "dock.right.show", "dock.bottom.show",
+      "panel.tileset.show", "panel.stamps.show", "panel.project.show", "panel.entities.show",
+      "panel.inspector.show", "panel.history.show", "panel.layers.show", "panel.recent.show",
+      "dock.left.hide", "dock.right.hide", "dock.bottom.hide",
       "-",
       "view.togglePanels",
       "view.resetLayout",

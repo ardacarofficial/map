@@ -1,10 +1,7 @@
-import { useLayoutStore } from "../layoutStore";
-import { useDockContent } from "./dockContentStore";
+import { isPanelId } from "../dockModel";
+import { revealPanel } from "../dockStore";
 
-/** Select a dock tab and reveal its content, including when its strip is collapsed. */
+/** Opens a panel at its current dock location. */
 export function showDockTab(id: string): void {
-  const layout = useLayoutStore.getState();
-  layout.setDockTab(id);
-  useDockContent.getState().setCollapsed(false);
-  if (layout.recentHidden) layout.setRecentHidden(false);
+  if (isPanelId(id)) revealPanel(id);
 }

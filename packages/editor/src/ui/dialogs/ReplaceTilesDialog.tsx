@@ -5,7 +5,7 @@ import { beginReplacementPick, cancelReplacementPick, closeTileReplacement, comm
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { useUiStore } from "../uiStore";
-import { useLayoutStore } from "../layout/layoutStore";
+import { revealPanel } from "../layout/dockStore";
 import { Button } from "../primitives/Button";
 import { Segmented } from "../primitives/Segmented";
 import { TileSwatch } from "../primitives/TileSwatch";
@@ -58,8 +58,7 @@ function ReplacementForm({ draft }: { draft: ReplacementDraft }) {
             const ui = useUiStore.getState();
             if (ui.panelsHidden) ui.togglePanels();
             ui.setTilesetMode("pick");
-            useLayoutStore.getState().setRecentHidden(false);
-            useLayoutStore.getState().setDockTab("tileset");
+            revealPanel("tileset");
             beginReplacementPick(target);
           }} className="flex min-w-0 items-center gap-2 rounded-sm border border-line bg-field p-2 text-sm text-text hover:border-line-strong focus-visible:outline-2 focus-visible:outline-accent">
             {tileset && tile ? <><TileSwatch tileset={tileset} tileId={tile.tileId} size={32} /><span className="truncate" title={`${tileset.name} · ${tile.tileId}`}>{tileset.name} · {tile.tileId}</span></> : <span>{t("replaceTiles.empty")}</span>}

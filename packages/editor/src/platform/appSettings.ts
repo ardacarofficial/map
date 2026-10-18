@@ -4,6 +4,9 @@
  * key change re-renders every panel without remounting the canvas.
  */
 import { create } from "zustand";
+import { onLayoutCommit, useDockStore } from "../ui/layout/dockStore";
+import type { DockLayout } from "../ui/layout/dockModel";
+import { mergeLayoutSettings, SettingsWriteQueue } from "./layoutSettings";
 
 import { getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
 import { setShortcutOverrides, SHORTCUTS } from "../shortcuts/shortcuts";
@@ -40,6 +43,7 @@ const REASON_KEYS: Record<SettingsProblem["reason"], MessageKey> = {
   fixedKey: "settings.reasonFixedKey",
   conflict: "settings.reasonConflict",
   unknownField: "settings.reasonUnknownField",
+  layout: "docking.invalidLayout",
 };
 
 /** Human-readable text for one ignored settings entry (UI language). */
@@ -59,9 +63,10 @@ function bump(): void {
  * Parses and applies settings text. Invalid entries are logged and shown in
  * one toast, then ignored. Returns the problems.
  */
-export function applySettingsText(text: string): SettingsProblem[] {
+export function applySettingsText(text: string, applyLayout = true): SettingsProblem[] {
   appliedText = text;
   const { settings, problems } = parseSettings(text, SHORTCUTS, getLocale());
+  if (applyLayout && settings.layout) useDockStore.getState().applyExternal(settings.layout);
   applyLocale(settings.locale);
   setShortcutOverrides(settings.shortcuts);
   bump();
@@ -82,7 +87,8 @@ export async function readSettingsText(): Promise<string> {
  * Startup: reads and applies the settings. On the desktop a missing file is
  * created with every command's current keys (so the user can edit values).
  */
-export async function loadAppSettings(): Promise<void> {
+async function readAppSettings(): Promise<void> {
+  const revision = useDockStore.getState().revision;
   const platform = getPlatform();
   let text: string | null;
   try {
@@ -95,7 +101,7 @@ export async function loadAppSettings(): Promise<void> {
   if (text === null) {
     appliedText = null;
     if (platform.kind === "desktop") {
-      const defaults = defaultSettingsText(SHORTCUTS, getLocale());
+      const defaults = mergeLayoutSettings(null, useDockStore.getState().layout, defaultSettingsText(SHORTCUTS, getLocale()))!;
       try {
         await platform.writeSettings(defaults);
         appliedText = defaults;
@@ -105,11 +111,12 @@ export async function loadAppSettings(): Promise<void> {
     }
     return;
   }
-  applySettingsText(text);
+  applySettingsText(text, revision === useDockStore.getState().revision);
 }
 
 /** Re-reads the settings when they changed outside (edited in a text editor). */
 export async function reloadAppSettingsIfChanged(): Promise<void> {
+  await settingsWrites.idle();
   let text: string | null;
   try {
     text = await getPlatform().readSettings();
@@ -128,12 +135,11 @@ export async function setAppLocale(locale: Locale): Promise<void> {
   bump();
   const platform = getPlatform();
   try {
-    const next = withLocale(await platform.readSettings(), locale, SHORTCUTS);
+    const next = await settingsWrites.update(raw => withLocale(raw, locale, SHORTCUTS));
     if (next === null) {
       toast.warning(t("settings.notSaved"));
       return;
     }
-    await platform.writeSettings(next);
     appliedText = next;
   } catch (error) {
     platform.log("warn", `settings: could not save language: ${String(error)}`);
@@ -143,7 +149,7 @@ export async function setAppLocale(locale: Locale): Promise<void> {
 /** Saves the text from the settings dialog and applies it. Throws `SyntaxError` for invalid JSON. */
 export async function saveSettingsText(text: string): Promise<SettingsProblem[]> {
   JSON.parse(text);
-  await getPlatform().writeSettings(text);
+  await settingsWrites.update(() => text);
   return applySettingsText(text);
 }
 
@@ -152,4 +158,47 @@ export function installSettingsReload(): () => void {
   const onFocus = () => void reloadAppSettingsIfChanged();
   window.addEventListener("focus", onFocus);
   return () => window.removeEventListener("focus", onFocus);
+}
+
+// Docking writes share the locale/dialog queue. Rapid resize/drop commits are
+// coalesced, and each merge preserves fields edited by another settings writer.
+const settingsWrites = new SettingsWriteQueue(
+  () => getPlatform().readSettings(),
+  async text => { await getPlatform().writeSettings(text); appliedText = text; },
+);
+let pendingLayout: DockLayout | null = null;
+let writingLayout = false;
+let reportedLayoutFailure = false;
+async function storeLayout(layout: DockLayout): Promise<void> {
+  if (getPlatform().kind !== "desktop") return;
+  pendingLayout = layout;
+  if (writingLayout) return;
+  writingLayout = true;
+  try {
+    while (pendingLayout) {
+      const next = await settingsWrites.update(raw => {
+        const latest = pendingLayout!;
+        pendingLayout = null;
+        return mergeLayoutSettings(raw, latest, defaultSettingsText(SHORTCUTS, getLocale()));
+      });
+      if (next === null) throw new Error("invalid settings file");
+    }
+  } catch (error) {
+    if (!reportedLayoutFailure) {
+      reportedLayoutFailure = true;
+      getPlatform().log("warn", `layout: ${String(error)}`);
+      toast.warning(t("docking.saveFailed"));
+    }
+  } finally {
+    writingLayout = false;
+    if (pendingLayout) void storeLayout(pendingLayout);
+  }
+}
+export async function loadAppSettings(): Promise<void> {
+  const revision = useDockStore.getState().revision;
+  try { await readAppSettings(); }
+  finally {
+    onLayoutCommit(layout => { void storeLayout(layout); });
+    if (useDockStore.getState().revision !== revision) void storeLayout(useDockStore.getState().layout);
+  }
 }

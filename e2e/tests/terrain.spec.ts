@@ -79,6 +79,7 @@ async function openProject(page: Page, file: string) {
 
 /** Arazi mode, then a rough drag from (c0, r0) to (c1, r1). */
 async function roughSelect(page: Page, image: Locator, c0: number, r0: number, c1: number, r1: number) {
+  await page.locator("[data-panel-tab=tileset]").click();
   await page.locator("[data-tileset-mode='terrain']").click();
   const a = await tilesetCell(image, c0, r0);
   const b = await tilesetCell(image, c1, r1);

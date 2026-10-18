@@ -1,4 +1,7 @@
 import { modalOpen } from "../../commands/modal";
+import { isPanelId, ZONE_IDS } from "./dockModel";
+import { revealPanel } from "./dockStore";
+import { PANELS } from "./panels";
 
 export const FOCUS_REGIONS = ["canvas", "dock", "inspector", "layers", "library"] as const;
 export type FocusRegion = typeof FOCUS_REGIONS[number];
@@ -13,36 +16,35 @@ export function nextFocusRegion(current: FocusRegion | null, available: readonly
   return null;
 }
 
-const targets: Record<FocusRegion, string> = {
-  canvas: "[data-canvas-host]",
-  dock: "[data-tileset-viewport]",
-  inspector: "[data-right-tab][aria-selected=true]",
-  layers: "[data-layers-list]",
-  library: "[data-left-panel] [role=tab][aria-selected=true]",
-};
-const containers: Record<FocusRegion, string> = {
-  canvas: "[data-canvas-host]",
-  dock: "[data-dock]",
-  inspector: "[data-section=properties]",
-  layers: "[data-section=layers]",
-  library: "[data-left-panel]",
-};
-
+/** Cycle the actual visible groups in physical left/right/bottom order.
+ * A collapsed rail remains reachable; revealing it keeps the panel's current home. */
 export function focusRegion(direction: 1 | -1): void {
   if (modalOpen() || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-  // Any dialog that holds focus (e.g. "Stamp olarak kaydet") keeps it: F6 never escapes behind it.
   if (document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
   const visible = (element: HTMLElement) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
-  const found = new Map<FocusRegion, HTMLElement>();
-  for (const region of FOCUS_REGIONS) {
-    const el = [...document.querySelectorAll<HTMLElement>(targets[region])].find(visible);
-    // A folded dock retains its tabs but isn't a grid region.
-    if (el && !(region === "dock" && !document.querySelector<HTMLElement>("[data-tileset-viewport]")?.getClientRects().length)) found.set(region, el);
+  const canvas = document.querySelector<HTMLElement>("[data-canvas-host]");
+  const targets: { element: HTMLElement; panel?: string | undefined }[] = canvas ? [{ element: canvas }] : [];
+  for (const zone of ZONE_IDS) {
+    for (const tab of document.querySelectorAll<HTMLElement>(`[data-dock-zone="${zone}"] [data-panel-tab][aria-selected=true]`)) {
+      if (visible(tab)) targets.push({ element: tab, panel: tab.dataset.panelTab });
+    }
   }
-  const current = FOCUS_REGIONS.find(region => document.activeElement?.closest(containers[region])) ?? null;
-  const next = nextFocusRegion(current, [...found.keys()], direction);
-  if (!next) return;
-  const target = found.get(next)!;
-  if (next === "canvas") target.dataset.focusInset = "";
-  target.focus({ preventScroll: true });
+  if (!targets.length) return;
+  const currentPanel = document.activeElement?.closest<HTMLElement>("[data-panel]")?.dataset.panel;
+  const currentGroup = document.activeElement?.closest("[data-dock-group]");
+  const current = targets.findIndex(target => target.element === document.activeElement || !!(target.panel && target.panel === currentPanel) || !!(currentGroup && currentGroup.contains(target.element)));
+  const at = current < 0 ? (direction === 1 ? 0 : targets.length - 1) : (current + direction + targets.length) % targets.length;
+  const next = targets[at]!;
+  if (next.panel && isPanelId(next.panel)) {
+    const panel = next.panel;
+    revealPanel(panel);
+    requestAnimationFrame(() => {
+      const host = document.querySelector<HTMLElement>(`[data-panel="${panel}"]`);
+      const target = host?.querySelector<HTMLElement>(PANELS[panel].focus);
+      (target && visible(target) ? target : next.element).focus({ preventScroll: true });
+    });
+  } else {
+    next.element.dataset.focusInset = "";
+    next.element.focus({ preventScroll: true });
+  }
 }

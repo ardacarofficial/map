@@ -11,15 +11,16 @@ export type TabsProps<Value extends string = string> = Omit<ComponentPropsWithRe
   items: readonly TabItem<Value>[];
   label: string;
   trailing?: ReactNode;
+  orientation?: "horizontal" | "vertical";
 };
-export function Tabs<Value extends string>({ value, onValueChange, items, label, trailing, className = "", ref, ...rest }: TabsProps<Value>) {
+export function Tabs<Value extends string>({ value, onValueChange, items, label, trailing, orientation = "horizontal", className = "", ref, ...rest }: TabsProps<Value>) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const disabled = items.map(item => !!(item.disabled || item.attrs?.disabled));
   const selected = items.findIndex((item, i) => item.value === value && !disabled[i]);
   const focusIndex = selected < 0 ? disabled.indexOf(false) : selected;
   return (
     <div ref={ref} {...rest} className={`flex h-tabrow shrink-0 items-stretch border-b border-line bg-tab-row ${className}`}>
-      <div role="tablist" aria-label={label} aria-orientation="horizontal" className="flex min-w-0 flex-1 items-stretch">
+      <div role="tablist" aria-label={label} aria-orientation={orientation} className="flex min-w-0 flex-1 items-stretch">
         {items.map((item, i) => (
           <button
             {...item.attrs}
@@ -34,7 +35,7 @@ export function Tabs<Value extends string>({ value, onValueChange, items, label,
             onClick={event => { item.attrs?.onClick?.(event); if (!event.defaultPrevented) onValueChange(item.value); }}
             onKeyDown={event => {
               item.attrs?.onKeyDown?.(event);
-              if (event.defaultPrevented || event.key === "ArrowUp" || event.key === "ArrowDown") return;
+              if (event.defaultPrevented || (orientation === "horizontal" ? event.key === "ArrowUp" || event.key === "ArrowDown" : event.key === "ArrowLeft" || event.key === "ArrowRight")) return;
               const next = rovingIndex(event.key, i, disabled, getComputedStyle(event.currentTarget).direction === "rtl");
               if (next === undefined) return;
               event.preventDefault();

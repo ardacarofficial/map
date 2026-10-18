@@ -48,8 +48,11 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const grid = page.getByRole("grid", { name: /overworld/i });
   const image = grid.locator("[data-tileset-grid]");
   await expect(image).toBeVisible();
-  // The view fills the column width: at least 1× for an 8-column, 32 px tileset.
-  expect(Number(await image.getAttribute("data-tileset-scale"))).toBeGreaterThanOrEqual(1);
+  // The default left host fits the sheet at a crisp fractional scale.
+  const initialScale = Number(await image.getAttribute("data-tileset-scale"));
+  expect(initialScale).toBeGreaterThan(0);
+  expect(initialScale * 32).toBe(Math.round(initialScale * 32));
+  expect((await image.boundingBox())!.width).toBeLessThanOrEqual((await grid.boundingBox())!.width);
   const selected = grid.locator("[data-selected-tiles]");
 
   // ---- Drag-select cells (1,1)–(3,2): ids 9,10,11 / 17,18,19.
@@ -134,11 +137,12 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   const scroll = () => grid.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
   const before = await scale();
 
-  // Mouse notches zoom at the cursor; reach 4× so the full-width dock overflows horizontally.
+  // Mouse notches zoom at the cursor; reach 4× so both host dimensions overflow.
   const box = (await grid.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 80);
   await page.mouse.wheel(0, -100);
   await expect.poll(scale).toBeGreaterThan(before);
+  await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
