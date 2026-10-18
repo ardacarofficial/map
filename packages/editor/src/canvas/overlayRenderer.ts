@@ -1,7 +1,7 @@
 import { majorGridLayout } from "./majorGrid";
 import { useMajorGrid } from "../state/majorGridSettings";
 import { drawMapBorderPreview } from "./mapBorderPreview";
-import { selectionOutline } from "./selectionOutline";
+import { SelectionMaskRenderer } from "./selectionMaskRenderer";
 import { rectangleThickness } from "../state/rectangleOptions";
 import { brushPreviewTilesets, brushPending } from "../commands/smartBrushActions";
 import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
@@ -121,7 +121,11 @@ export class OverlayRenderer {
   /** Screen-space: grid lines, drawn opaque; the filter applies the fade as one layer so crossings are not brighter. */
   readonly grid = new Graphics();
   /** Screen-space: border, region, outlines, cursors. */
-  readonly overlay = new Graphics();
+  readonly overlay = new Container();
+  readonly #beforeSelection = new Graphics();
+  readonly #afterSelection = new Graphics();
+  #graphics = this.#beforeSelection;
+  readonly #maskSelection = new SelectionMaskRenderer();
   /** World-space previews, above the layers. */
   readonly previews = new Container();
   readonly #gridFilter = new AlphaFilter({ alpha: 1, resolution: "inherit" });
@@ -161,6 +165,7 @@ export class OverlayRenderer {
 
   constructor(host: OverlayHost) {
     this.#host = host;
+    this.overlay.addChild(this.#beforeSelection, this.#maskSelection.root, this.#afterSelection);
     this.#preview.alpha = CANVAS_COLORS.previewAlpha;
     this.#preview.visible = false;
     this.grid.filters = [this.#gridFilter];
@@ -213,6 +218,7 @@ export class OverlayRenderer {
 
   /** Forgets cached previews (project changed). */
   reset(): void {
+    this.#maskSelection.reset();
     this.#fillCache = null;
     this.#fillPreview.set(null, 1, 1);
     this.#tilePreview.invalidate();
@@ -226,6 +232,7 @@ export class OverlayRenderer {
     if (this.#readoutTimer !== null) clearTimeout(this.#readoutTimer);
     if (this.#hintTimer !== null) clearTimeout(this.#hintTimer);
     if (this.#antsTimer !== null) clearTimeout(this.#antsTimer);
+    this.#maskSelection.destroy();
     this.readout.destroy({ children: true });
     this.hint.destroy({ children: true });
     this.#tilePreview.destroy();
@@ -235,8 +242,11 @@ export class OverlayRenderer {
   /** Redraws all overlays for the current state. */
   draw(): void {
     const host = this.#host;
-    const g = this.overlay;
+    this.#graphics = this.#beforeSelection;
+    const g = this.#graphics;
     g.clear();
+    this.#afterSelection.clear();
+    this.#maskSelection.root.visible = false;
     g.context.batchMode = "auto";
     this.grid.clear();
     this.grid.visible = false;
@@ -334,7 +344,7 @@ export class OverlayRenderer {
             const thickness = gesture.thickness ?? 0;
             if (thickness === 0) this.#drawGridFootprint(r);
             else {
-              const g = this.overlay;
+              const g = this.#graphics;
               const px = 1 / host.camera.resolution;
               for (const p of rectangleBand(r, thickness, host.visible)) {
                 const b = host.camera.cellBox({ ...p, width: 1, height: 1 });
@@ -498,7 +508,7 @@ export class OverlayRenderer {
       if (c.x >= x0 && c.y >= y0 && c.x < x1 && c.y < y1) member[(c.y - y0) * w + (c.x - x0)] = 1;
     }
     const inside = (x: number, y: number) => x >= x0 && y >= y0 && x < x1 && y < y1 && member[(y - y0) * w + (x - x0)] === 1;
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     if (fill !== undefined) {
@@ -523,7 +533,7 @@ export class OverlayRenderer {
   /** Edges of a cell area: dark halo outside, `color` line inside (see `solidEdges`). */
   #drawEdges(edges: readonly Edge[], color: number): void {
     if (edges.length === 0) return;
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
@@ -558,7 +568,7 @@ export class OverlayRenderer {
       return;
     }
     const alpha = 1 - t / FLASH_MS;
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
@@ -649,7 +659,7 @@ export class OverlayRenderer {
 
   /** Accent cell highlight: what a grid brush / rectangle will paint. */
   #drawGridFootprint(r: CellRegion): void {
-    const g = this.overlay;
+    const g = this.#graphics;
     const px = 1 / this.#host.camera.resolution;
     const b = this.#host.camera.cellBox(r);
     g.rect(b.x0 * px, b.y0 * px, (b.x1 - b.x0) * px, (b.y1 - b.y0) * px).fill({
@@ -680,7 +690,7 @@ export class OverlayRenderer {
   /** Area edges: a dark halo on the outer side (readable over any tile), the `color` line on the inner side. */
   #drawAreaEdges(edges: readonly Edge[], color: number, alpha: number): void {
     if (edges.length === 0) return;
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
@@ -705,7 +715,7 @@ export class OverlayRenderer {
 
   /** Accent outline with a dark halo just outside (rectangle drag, grid footprint). */
   #drawAccentOutline(r: CellRegion, color = this.#host.colors.accent): void {
-    const g = this.overlay;
+    const g = this.#graphics;
     const px = 1 / this.#host.camera.resolution;
     const box = this.#host.camera.cellBox(r);
     const k = this.#host.camera.lineWidth();
@@ -722,7 +732,7 @@ export class OverlayRenderer {
    */
   #drawRegion(r: CellRegion): void {
     if (r.mask) { this.#drawMaskRegion(r); return; }
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
@@ -750,40 +760,21 @@ export class OverlayRenderer {
 
   /** Merged mask boundary, using the same fill, dark keyline and marching ants. */
   #drawMaskRegion(r: CellRegion): void {
-    // Clipped masks share the existing batch shader even above Pixi’s auto-batch threshold.
-    this.overlay.context.batchMode = "batch";
-    const g = this.overlay, cam = this.#host.camera;
-    const px = 1 / cam.resolution, k = cam.lineWidth();
-    const b = cam.cellBox(r), tw = (b.x1 - b.x0) / r.width, th = (b.y1 - b.y0) / r.height;
-    const outline = selectionOutline(r);
-    const maxX = cam.viewW * cam.resolution, maxY = cam.viewH * cam.resolution;
-    for (const run of outline.runs) {
-      const x0 = Math.max(0, b.x0 + run.x * tw), y0 = Math.max(0, b.y0 + run.y * th);
-      const x1 = Math.min(maxX, b.x0 + (run.x + run.width) * tw), y1 = Math.min(maxY, b.y0 + (run.y + 1) * th);
-      if (x1 > x0 && y1 > y0) g.rect(x0 * px, y0 * px, (x1 - x0) * px, (y1 - y0) * px);
-    }
-    g.fill({ color: this.#host.colors.accent, alpha: CANVAS_COLORS.regionFillAlpha });
-    const phase = Math.floor(performance.now() / ANTS_STEP_MS) * k;
-    for (const e of outline.edges) {
-      const ex = b.x0 + e.x0 * tw, ey = b.y0 + e.y0 * th;
-      const horizontal = e.y0 === e.y1;
-      if (horizontal ? ey < -k || ey > maxY + k : ex < -k || ex > maxX + k) continue;
-      const x0 = horizontal ? Math.max(-k, ex) : ex, y0 = horizontal ? ey : Math.max(-k, ey);
-      const w = horizontal ? Math.min(maxX + k, b.x0 + e.x1 * tw) - x0 : 0;
-      const h = horizontal ? 0 : Math.min(maxY + k, b.y0 + e.y1 * th) - y0;
-      if (w + h <= 0) continue;
-      g.rect((x0 - k) * px, (y0 - k) * px, (w + 2 * k) * px, (h + 2 * k) * px).fill({ color: CANVAS_COLORS.cursorShadow, alpha: 0.9 });
-      for (const [a, z] of dashSpans(w + h, 4 * k, 4 * k, phase - (x0 - ex + y0 - ey))) {
-        g.rect((x0 + (w ? a : 0)) * px, (y0 + (h ? a : 0)) * px, (w ? z - a : k) * px, (h ? z - a : k) * px);
-      }
-      g.fill({ color: CANVAS_COLORS.cursor, alpha: 0.95 });
-    }
+    const cam = this.#host.camera;
+    const b = cam.cellBox(r);
+    this.#maskSelection.set(r, {
+      x: b.x0, y: b.y0, tileWidth: (b.x1 - b.x0) / r.width, tileHeight: (b.y1 - b.y0) / r.height,
+      width: cam.viewW * cam.resolution, height: cam.viewH * cam.resolution,
+      lineWidth: cam.lineWidth(), resolution: cam.resolution,
+    }, this.#host.colors.accent, Math.floor(performance.now() / ANTS_STEP_MS));
+    // Cursors and pick feedback retain their original position above the selection.
+    this.#graphics = this.#afterSelection;
     this.#antsTimer ??= setTimeout(() => { this.#antsTimer = null; this.#host.requestRender(); }, ANTS_STEP_MS);
   }
 
   /** Eraser right drag: the area that will be cleared, danger-coloured fill and outline. */
   #drawEraseRect(r: CellRegion): void {
-    const g = this.overlay;
+    const g = this.#graphics;
     const cam = this.#host.camera;
     const px = 1 / cam.resolution;
     const k = cam.lineWidth();
@@ -798,7 +789,7 @@ export class OverlayRenderer {
 
   /** Pick area: static black line with white dashes. */
   #drawDashed(r: CellRegion): void {
-    const g = this.overlay;
+    const g = this.#graphics;
     const px = 1 / this.#host.camera.resolution;
     const k = this.#host.camera.lineWidth();
     const b = this.#host.camera.cellBox(r);
@@ -943,7 +934,7 @@ export class OverlayRenderer {
     const k = cam.lineWidth();
     const size = 9 * k;
     if (box.x1 - box.x0 < 2 * size) return;
-    const g = this.overlay;
+    const g = this.#graphics;
     const px = 1 / cam.resolution;
     const x0 = box.x1 - size - 2 * k;
     const y0 = box.y0 + 2 * k;
