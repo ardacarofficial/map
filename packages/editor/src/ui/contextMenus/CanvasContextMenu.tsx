@@ -2,6 +2,7 @@ import { PORTAL_TARGET_POINT, SPAWN_TYPE_ID, isEntityPoint, portalTarget, type E
 import { useEffect, useState } from "react";
 
 import type { CanvasContextRequest } from "../../canvas";
+import { openTileReplacement } from "../../commands/replaceTiles";
 import { deleteEntity } from "../../commands/entityActions";
 import { navigateTo } from "../../commands/levelActions";
 import { runCommand } from "../../commands/registry";
@@ -105,6 +106,7 @@ export function selectionMenuItems(): ContextEntry[] {
     { type: "item", id: "paste", label: t("contextMenu.paste"), icon: "clipboard", command: "edit.paste" },
     { type: "item", id: "delete", label: t("contextMenu.delete"), icon: "trash", command: "edit.delete" },
     SEPARATOR,
+    { type: "item", id: "replaceTiles", label: t("replaceTiles.title"), command: "edit.replaceTiles" },
     { type: "item", id: "makeStamp", label: t("contextMenu.makeStamp"), icon: "stamp", command: "stamp.saveSelection" },
     { type: "item", id: "deselect", label: t("contextMenu.deselect"), icon: "x", command: "edit.deselect" },
   ];
@@ -112,8 +114,8 @@ export function selectionMenuItems(): ContextEntry[] {
 
 /**
  * The map canvas' right-click menus. Right-click on the map stays "pick a
- * tile" (CLAUDE.md); the canvas asks for a menu only on an entity, or with
- * the select tool inside the selection (`onContextRequest`).
+ * tile" (CLAUDE.md), with a replacement entry on a single tile. Entities
+ * and the select tool's selection have their own context menus.
  */
 export function CanvasContextMenu() {
   const [request, setRequest] = useState<CanvasContextRequest | null>(null);
@@ -133,6 +135,7 @@ export function CanvasContextMenu() {
 
   const items = (): readonly ContextEntry[] => {
     if (!request) return [];
+    if (request.kind === "tile") return [{ type: "item", id: "replaceTiles", label: t("replaceTiles.title"), run: () => openTileReplacement(request.tile, request.brush) }];
     return request.kind === "entity" ? entityMenuItems(request.entityId) : selectionMenuItems();
   };
 

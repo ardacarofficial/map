@@ -92,7 +92,8 @@ export type CommandId =
   | "level.duplicate"
   | "level.remove"
   | "settings.language"
-  | "settings.editShortcuts";
+  | "settings.editShortcuts"
+  | "edit.replaceTiles";
 
 export interface ShortcutDef {
   command: CommandId;
@@ -186,6 +187,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "tileset.defineTerrain", keys: [] },
   { command: "settings.language", keys: [] },
   { command: "settings.editShortcuts", keys: [] },
+  { command: "edit.replaceTiles", keys: [] },
 ];
 
 /** Per-command keys from the settings file (replace the defaults of that command). */

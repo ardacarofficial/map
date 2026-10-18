@@ -525,3 +525,6 @@ export {
   encodeRle,
   decodeRle,
 } from "./export";
+
+export { rectangleBand, rectangleBandContains } from "./rectangleBand";
+export { planTileReplacement, type TileReplacementOptions, type TileReplacementWrites } from "./replaceTiles";

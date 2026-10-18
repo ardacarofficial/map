@@ -10,6 +10,7 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { registerTileReplacementCommand } from "./commands/replaceTiles";
 import { registerAppCommands } from "./commands/appCommands";
 import { registerSelectionScopeCommands } from "./commands/selectionScope";
 import { registerRotateCommands } from "./commands/rotateCommands";
@@ -99,6 +100,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   const layoutReady = Promise.race([installKeyboardLayout().catch(() => undefined), timeout(100)]);
   registerAppCommands();
   registerSelectionScopeCommands();
+  registerTileReplacementCommand();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version
   registerHandToolCommand();
   registerExportCommands();

@@ -236,6 +236,11 @@ export const tr = {
     grid: "Izgara",
     rulers: "Cetvel",
     viewOptions: "Görünüm seçenekleri",
+    rectangleMode: "Dikdörtgen biçimi",
+    rectangleFilled: "Dolu",
+    rectangleOutline: "Çerçeve",
+    rectangleThickness: "Kalınlık",
+    rectangleThicknessHint: "Çerçevenin hücre cinsinden kalınlığı (1–8)",
   },
   layout: {
     showInspector: "Denetçiyi göster",
@@ -1231,6 +1236,21 @@ export const tr = {
     hint: "Seçim işlemlerine katılan tile ve çarpışma katmanları. Kilitli katmanlar atlanır.",
     toggle: "Seçimin katman kapsamını değiştir",
     skipped: "Atlanan katmanlar: {layers}",
+  },
+  replaceTiles: {
+    title: "Tile değiştir…",
+    history: "Tile değiştir",
+    from: "Kaynak",
+    to: "Hedef",
+    scope: "Kapsam",
+    selection: "Seçim",
+    active: "Etkin katman",
+    visible: "Görünür katmanlar",
+    count: "{count} hücre değişecek",
+    apply: "Değiştir",
+    empty: "Tile seç",
+    pickHint: "Tileset dock'undan veya tuvalde damlalıkla bir tile seç",
+    picking: "{target}: tileset'ten veya tuvalden tile seç",
   },
 
 } as const;

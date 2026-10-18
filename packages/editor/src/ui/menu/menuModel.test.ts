@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { registerTileReplacementCommand } from "../../commands/replaceTiles";
 import { registerAppCommands } from "../../commands/appCommands";
 import { registerExportCommands } from "../../commands/exportCommands";
 import { getCommand, isEnabled } from "../../commands/registry";
@@ -16,6 +17,7 @@ import { MENUS, menuCommands, resolveMenu, type CommandLookup } from "./menuMode
 /** Everything the app registers at startup (bootstrap.tsx, App, ToolOptionsBar, ToolBar, HistoryPanel). */
 function registerAll(): void {
   registerAppCommands();
+  registerTileReplacementCommand();
   registerExportCommands();
   registerSettingsCommands();
   registerBrushCommands();
