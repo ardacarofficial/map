@@ -227,6 +227,19 @@ Arda'nın Windows'ta denediği sürümlerden gelen geri bildirimle eklendi; heps
 - Ayrıntılı yeni proje dialogu ve proje ayarları; stamp kütüphanesi (kategori, etiket, favori) ve düz stamp düzenleyici
 - Sağ tık menüleri yalnızca anlamlı yerlerde; tarayıcı menüsü ve F5 kapalı; kapatırken kaydedilmemiş değişiklik sorulur
 
+### v1.4 — Akıllı stamp ve hız (Ekim 2026, Arda onayladı)
+Arda'nın isteği: 3×3 yol stamp'i kalıp gibi yan yana basılmasın; tek fırçayla yol çizilsin, uçlar ve köşeler kendiliğinden tamamlansın.
+- **9 dilim stamp:** stamp Denetçi'deki FIRÇA İÇERİĞİ bölümünde "9 dilim" olarak işaretlenir. 3×3 için önerilir ama kendiliğinden açılmaz (3×3 bir ev yine evdir); kenarı 1 hücre olan n×m stamp'ler de işaretlenebilir
+- **Alan kullanımı:** dikdörtgen (R) ve fırçayla sürükleme tek dikdörtgen çizer: köşeler korunur, kenarlar ve merkez döşenir. 1×1, 1×n, 2×2 gibi dar boyutlar tanımlı
+- **Yol kullanımı:** serbest çizim ve Shift çizgisi yol olur; uçlar, L dönüşleri, T ve dört yol ağzı kendiliğinden doğru tile'ı alır, var olan yola bağlanınca komşular düzelir. Mevcut arazi (blob47) çözücüsü kullanılır, ikinci bir çözücü yazılmaz
+- Eksik parçalar (ince yol ucu, iç köşe, kavşak) kullanıcının 9 tile'ının çeyreklerinden belirlenimli olarak birleştirilip sıradan bir tileset'e yazılır; kabul etmeden önce önizlemesi gösterilir. Harita hücreleri, tileset ve arazi formatı değişmez; yalnızca stamp'e `nineSlice` bilgisi eklenir (`documentFormatVersion` 3, eski stamp'ler düz kalır)
+- Önizleme tam olarak yerleşecek olanı gösterir; tek hareket tek geri alma; X/Y/Z çevirme ve döndürme uyulur; kilitli ve gizli katmanlara yazılmaz
+- "Stamp'ten arazi yap": hazır 16-köşe veya 47-blob düzenindeki stamp, mevcut şablon bulma ile arazi setine çevrilir
+- Çok katmanlı seçim: seçim aracında "Katmanlar" kapsamı (etkin katman veya görünür ve kilitsiz tüm tile + collision katmanları); taşı, kes, kopyala, sil, döndür aynı katman listesini kullanır. Entity'ler dahil değil
+- Tile değiştir: seçili alanda, etkin katmanda veya görünür tüm katmanlarda bir tile'ı başkasıyla değiştirir; çevirme bitleri korunur, önce kaç hücre değişeceği gösterilir, tek geri alma
+- Dikdörtgen aracında Dolu / Çerçeve seçeneği ve çerçeve kalınlığı
+- Hız: performans ölçümü onarılır (fırça gecikmesi gerçek örneklerle ölçülür); son projeler küçük resmi açma ve kaydetmeyi bekletmez; fill ve fill önizlemesi satır aralıklarıyla çalışır. Her hız işi önce/sonra ölçümüyle gelir
+
 ### Sonra
 - "Bu stamp'ten gelenleri yenile" düğmesi (elle değiştirilmiş olanları atlar veya sorar)
 - Tileset düzeni bozulunca "eski → yeni" eşleştirme ekranı
