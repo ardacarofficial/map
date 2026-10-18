@@ -15,7 +15,7 @@
 import type { ToolId } from "../../state/editorStore";
 import type { TilesetMode } from "../uiStore";
 
-export type InspectorMode = "entity" | "solid" | "region" | "brush" | "terrain" | "collision" | "map";
+export type InspectorMode = "entity" | "stamp" | "solid" | "region" | "brush" | "terrain" | "collision" | "map";
 
 /** Kind of the active layer, as far as the inspector cares. */
 export type LayerKind = "tile" | "collision" | "entity" | "none";
@@ -25,6 +25,7 @@ export type BrushContent = "stamp" | "random" | "tile" | "none";
 
 export interface ModeInput {
   entitySelected: boolean;
+  libraryStamp?: boolean;
   layer: LayerKind;
   tool: ToolId;
   /** A marquee region exists. */
@@ -53,6 +54,7 @@ export function inspectorMode(input: ModeInput): InspectorMode {
   if (input.region && input.tool === "select" && input.layer !== "entity") return "region";
   if (input.layer === "collision") return "collision";
   if (input.terrainBrush === true && input.layer === "tile" && PAINT_TOOLS.includes(input.tool)) return "terrain";
+  if (input.libraryStamp === true) return "stamp";
   if (input.layer === "tile") {
     // A clip on the brush (paste, stamp) is placed by the brush whatever tool was active before.
     if (input.brush === "stamp") return "brush";

@@ -6,6 +6,8 @@ import { useRandomBrush } from "../../commands/randomBrush";
 import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 import { useUiStore } from "../uiStore";
+import { useStampLibrary } from "../stamps/stampLibraryStore";
+import { useProjectLibrary } from "../../io/projectLibrary";
 import { useTerrainDraft } from "../terrain/terrainDraft";
 import { resolveTerrain } from "../terrain/terrainModel";
 import { brushContent, inspectorMode, terrainEditActive, type LayerKind } from "./mode";
@@ -23,6 +25,8 @@ export function layerKind(layer: TileLayer | undefined): LayerKind {
 
 /** The inspector context of the editor state right now. */
 function useInspectorContext(doc: MapDocument): InspectorContext {
+  const stampId = useStampLibrary((s) => s.selectedId);
+  const libraryStamp = useProjectLibrary((s) => s.stamps.some((stamp) => stamp.id === stampId));
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
   const selectedEntityId = useEditorStore((s) => s.selectedEntityId);
   const tool = useEditorStore((s) => s.tool);
@@ -37,6 +41,7 @@ function useInspectorContext(doc: MapDocument): InspectorContext {
   const region = clampRegion(rawRegion, doc.map.width, doc.map.height);
   const mode = inspectorMode({
     entitySelected: found !== undefined,
+    libraryStamp,
     layer: layerKind(layer),
     tool,
     region: region !== null,

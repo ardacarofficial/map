@@ -10,6 +10,7 @@ import type { CanvasPickEvent } from "../../canvas/canvasEvents";
 import { tileLayerForPick } from "../../commands/terrainActions";
 import { useEditorStore, type EditorState, type ToolId } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
+import { useStampLibrary } from "../stamps/stampLibraryStore";
 import { useUiStore } from "../uiStore";
 import { brushFor, cellOf, clipSourceIds, type Cell } from "./selectionModel";
 import { useTilesetView, type PanelSelection } from "./tilesetViewStore";
@@ -33,6 +34,7 @@ export function commitTilesetSelection(
   const s = useEditorStore.getState();
   const brush = brushFor(tileset, ids, empty, s.activeLayerId ?? "tiles");
   if (!brush) return false;
+  useStampLibrary.getState().select(null);
   s.setRandomSet([]);
   const view = useTilesetView.getState();
   if (brush.kind === "tile") {

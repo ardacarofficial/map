@@ -305,8 +305,6 @@ export const tr = {
     resizeSectionHint: "Sürükle: yükseklik · çift tık: içeriğe göre",
     sectionsHidden: "Tüm bölümler gizli",
     showSections: "Bölümleri göster",
-    widthPrefix: "G",
-    heightPrefix: "Y",
     solidTiles: "Katı tile'lar",
     thisTileset: "Bu tileset",
     solidCount: "{count} katı tile",

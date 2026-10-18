@@ -154,7 +154,7 @@ The panel switcher rail is removed. `data-rail` values move: `world` and `settin
 - Top: tabs **Denetçi | Geçmiş** (28).
 - Inspector = Figma-style property sections. Section = header row 28 (`text-xs` uppercase `muted`) + property rows 28: label column 72 px (`muted` text-sm) + value. Facts are plain text (`text`, numbers tabular, right part of the row). Editable numbers are 24 px fields with label scrubbing (drag on the label: 1 unit / 4 px, Shift ×10) if it can be done without core changes; arrows ±1, Shift ±10.
 - Inspector header: 16 px icon + title text-md 600 `title` + optional subtitle `faint`; no 40×40 icon tile.
-- Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y, G, Y fields) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); terrain → ARAZİ; collision layer → solid/passable; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
+- Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y coordinates and horizontal/vertical size glyphs) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); terrain → ARAZİ; collision layer → solid/passable; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
 - No tool selector in the inspector (tool lives on the rail only).
 - Bottom: **Katmanlar** section below a splitter (default 40%, min 5 rows). Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted`, name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
 - Geçmiş: rows 24, newest at bottom, current row `accent-soft`, future rows `faint`. Labels are verbs ("Katman ekle", "Boya 12 hücre").
@@ -162,7 +162,7 @@ The panel switcher rail is removed. `data-rail` values move: `world` and `settin
 ### 4.6 Bottom dock (spans canvas column; default height fits content: min(8 tile rows at current zoom + header, 40% of window), min 96, collapsible to its tab strip; remembered)
 - Tab strip 28: **Tileset | Son kullanılanlar**, right side: collapse chevron.
 - Tileset tab header row 32 (no side column): tileset switcher (name ▾, 24 high, max 200, tooltip with full name + size; menu lists all tilesets grouped, search field at top, "Tileset ekle…", "Tümü" view entry, per-tileset ⋯ actions: Ayarlar, Görseli değiştir, Gruba taşı, Kaldır) · 1 px divider · **mode segmented control "Boya | Katı | Arazi"** (radiogroup "Tileset modu", 24 high) · Tek/Tümü view toggle (labelled icon buttons) · spacer · "+ Palet" text button · zoom field (%).
-- In Katı/Arazi mode: the grid gets a 1 px mode-colour inset frame (collision red / terrain violet) and a 24 px mode strip above the grid with the mode name + one short instruction + "Bitti" button. The inspector switches to the mode (terrain card already exists).
+- In Katı/Arazi mode: the grid gets a 1 px mode-colour inset frame (collision red / terrain violet) and the 32 px dock header replaces the Tek/Tümü toggle and "+ Palet" with one short, truncated instruction (full text in a tooltip) + a 24 px secondary "Bitti" button. There is no separate mode strip. The inspector switches to the mode (terrain card already exists).
 - Grid uses the full dock width. Tile hover = 1 px white @20% + dark keyline; selection = 1 px accent + dark keyline + `accent-soft` 30% fill.
 - Recent tab: one row of 32 px swatches with labels in tooltips.
 
@@ -181,7 +181,7 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Brush size HUD near cursor on `[`/`]`: "3 × 3", 120 ms fade, hides 600 ms after last change (only if not already present; do not add if risky).
 
 ### 4.9 Menus, tooltips, context menus, command palette
-- Menu: `popup`, radius 6, padding 4, items 24 high, px 8, text-sm, icon 16 column optional, shortcut right in `faint` mono text-xs (no boxed keycaps in menus), highlighted item `hover-popup`, separators 1 px `line-subtle` with 4 px margin, danger items `danger` text.
+- Menu: `popup`, radius 6, padding 4, items 24 high, px 8, text-sm, icon 16 column optional, shortcut right in `muted` mono text-xs (no boxed keycaps in menus), highlighted item `hover-popup`, separators 1 px `line-subtle` with 4 px margin, danger items `danger` text.
 - Tooltip: `popup`, radius 4, px 8 py 4, text-sm `text`, shortcut in a `kbd` chip (text-xs mono `muted`, 1 px `line-strong`, radius 2).
 - Command palette: width M 560, top 12vh, input 40 high text-md, rows 32: command name `text` + category `faint` + shortcut right; empty query shows recent commands first.
 

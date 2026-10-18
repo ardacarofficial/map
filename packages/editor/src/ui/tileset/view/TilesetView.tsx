@@ -20,7 +20,6 @@ import { usePanDrag } from "../usePanDrag";
 import { accumulateWheelZoom, fitScale, naturalScale, PAN_GESTURE_MS, stackWheel, stepZoom, tilesetWheel } from "../zoomModel";
 import { useUiStore } from "../../uiStore";
 import { DockHeader } from "./DockHeader";
-import { ModeStrip } from "./ModeStrip";
 import { TileDragGhost } from "./TileDragGhost";
 import { TilesetStack } from "./TilesetStack";
 import { HEADER_H, PADDING } from "./constants";
@@ -352,9 +351,8 @@ function TilesetLibrary({
       <TileDragGhost />
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" onKeyDown={onKeyDown} data-tileset-library="dock" data-tileset-dock>
         <DockHeader tilesets={tilesets} palettes={palettes} active={active} palette={showingPalette ? palette : null}
-          mode={mode} onMode={setMode} onSelect={setActive}
+          mode={mode} fixing={fixing} onMode={setMode} onSelect={setActive}
           override={override} onResetOverride={() => zoomSource(shown.key, null)} globalZoom={globalZoom} shownScale={shownScale} onZoom={zoomGlobal} />
-        {editing && <ModeStrip mode={mode === "solid" ? "solid" : "terrain"} fixing={fixing} solidCount={active.solidTiles?.length ?? 0} onDone={() => setMode("pick")} />}
         {viewport}
       </div>
     </GridHostContext.Provider>

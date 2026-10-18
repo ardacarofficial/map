@@ -15,6 +15,7 @@ import type { TilesetMode } from "../../uiStore";
 import { bestMatch } from "../libraryModel";
 import { TilesetSwitcher } from "../TilesetSwitcher";
 import { useTilesetView } from "../tilesetViewStore";
+import { ModeStrip } from "./ModeStrip";
 import { PaletteDropChips } from "./PaletteDropChips";
 import { useHeaderLabels } from "./useHeaderLabels";
 import { ZoomControl, type ZoomProps } from "./ZoomControl";
@@ -42,10 +43,11 @@ function PaletteColumns({ palette }: { palette: Collection }) {
   </div>;
 }
 
-export function DockHeader({ tilesets, palettes, active, palette, mode, onMode, onSelect, ...zoom }: ZoomProps & {
+export function DockHeader({ tilesets, palettes, active, palette, mode, fixing, onMode, onSelect, ...zoom }: ZoomProps & {
   tilesets: readonly Tileset[]; palettes: readonly Collection[]; active: Tileset; palette: Collection | null;
-  mode: TilesetMode; onMode(mode: TilesetMode): void; onSelect(id: string): void;
+  fixing: boolean; mode: TilesetMode; onMode(mode: TilesetMode): void; onSelect(id: string): void;
 }) {
+  const editing = !palette && (mode === "solid" || mode === "terrain");
   const view = useTilesetView((s) => s.view);
   const ref = useRef<HTMLDivElement>(null);
   const { view: viewLabels, mode: modeLabels } = useHeaderLabels(ref);
@@ -58,6 +60,7 @@ export function DockHeader({ tilesets, palettes, active, palette, mode, onMode, 
       { value: "solid", icon: "brick-wall", label: label(t("tilesetPanel.modeSolid"), modeLabels), tooltip: t("tilesetPanel.modeSolidTitle"), attrs: { "data-tileset-mode": "solid", "aria-label": t("tilesetPanel.modeSolid") } },
       { value: "terrain", icon: "mountain", label: label(t("tilesetPanel.modeTerrain"), modeLabels), tooltip: t("tilesetPanel.modeTerrainTitle"), attrs: { "data-tileset-mode": "terrain", "aria-label": t("tilesetPanel.modeTerrain") } },
     ]} />}
+    {editing ? <ModeStrip mode={mode} fixing={fixing} onDone={() => onMode("pick")} /> : <>
     <Segmented size="sm" label={t("tilesetLib.view")} data-header-group="view" value={view} onValueChange={(v) => useTilesetView.getState().setView(v)} className="shrink-0" items={[
       { value: "single", icon: "image", label: label(t("tilesetLib.viewSingle"), viewLabels), tooltip: t("tilesetLib.viewSingleTitle"), attrs: { "data-library-view": "single" } },
       { value: "all", icon: "layers", label: label(t("tilesetLib.viewAll"), viewLabels), tooltip: t("tilesetLib.viewAllTitle"), attrs: { "data-library-view": "all" } },
@@ -65,6 +68,7 @@ export function DockHeader({ tilesets, palettes, active, palette, mode, onMode, 
     <div className="ml-auto" />
     <PaletteDropChips palettes={palettes} />
     <Tooltip label={t("palettes.new")}><Button variant="ghost" size="sm" className="shrink-0" data-palette-new onClick={() => void createPalette()}><Icon name="plus" />{t("palettes.newShort")}</Button></Tooltip>
+    </>}
     <ZoomControl {...zoom} stack={view === "all"} />
   </div>;
 }

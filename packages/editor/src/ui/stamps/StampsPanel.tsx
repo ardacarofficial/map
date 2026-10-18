@@ -26,7 +26,9 @@ installStampInspector();
 
 /** "Yerleştir": the stamp goes on the brush (one click places it with all its layers); the card selection makes way for the brush card. */
 export function placeLibraryStamp(id: string): void {
+  const tool = useEditorStore.getState().tool;
   pickStamp(id);
+  if (["fill", "rect"].includes(tool)) useEditorStore.getState().setTool(tool);
   if (activeStampId(useEditorStore.getState().stamp) === id) useStampLibrary.getState().select(null);
 }
 
@@ -388,6 +390,7 @@ function StampItem({
 }) {
   const counts = stampLayerCounts(stamp);
   const select = () => useStampLibrary.getState().select(stamp.id);
+  const arm = () => { placeLibraryStamp(stamp.id); select(); };
   const name = editing ? (
     <RenameInput
       initial={stamp.name}
@@ -452,17 +455,17 @@ function StampItem({
           tabIndex={0}
           onClick={(e) => {
             if ((e.target as HTMLElement).closest("input")) return;
-            select();
+            arm();
           }}
           onDoubleClick={(e) => {
             if ((e.target as HTMLElement).closest("input")) return;
-            placeLibraryStamp(stamp.id);
+            void openStampEditor(stamp.id);
           }}
           onKeyDown={(e) => {
             if (editing || e.target !== e.currentTarget) return;
             if (e.key === "Enter") {
               e.preventDefault();
-              placeLibraryStamp(stamp.id);
+              arm();
             } else if (e.key === " ") {
               e.preventDefault();
               select();

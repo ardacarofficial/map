@@ -152,6 +152,8 @@ function DefineFace({ ctx, draft }: { ctx: InspectorContext; draft: TerrainDraft
         </PropRow>
         <PropRow label={t("terrain.name")}>
           <TextField size="sm"
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             value={draft.name}
             aria-label={t("terrain.name")}
             data-terrain-name-input=""

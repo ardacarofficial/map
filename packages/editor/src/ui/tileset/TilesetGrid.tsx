@@ -2,7 +2,7 @@
  * One tileset's interactive grid: the image, its marks and overlays, and
  * what the mouse does in each mode (see `modeModel.ts`: left adds /
  * selects, right removes). In Seç, Alt + drag adds a rectangle to the
- * random brush, and a press on the selection drags its tiles into a
+ * random brush, and leaving the grid while pressing on the selection drags its tiles into a
  * palette (copy; Shift = move only applies between palettes); Ctrl+C copies
  * the selection for a paste into a palette. Shared by the single view and the "Tümü" stack;
  * the host (the scroll viewport) owns zoom, panning and keyboard routing,
@@ -338,7 +338,19 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       if (c.col !== g.cell.col || c.row !== g.cell.row) updateDrag({ ...g, cell: c });
     } else if (g?.kind === "select" && g.pointerId === e.pointerId) {
       const wasActive = g.carry?.active ?? false;
-      g.carry?.move(e.clientX, e.clientY, e.shiftKey);
+      const outside = cellAt(e.clientX, e.clientY) === null;
+      if (!g.alt && outside && !g.carry && g.gesture.kind === "rect") {
+        const ids = gestureIds(tileset, g.gesture, g.cell);
+        const items = itemsOfTiles(tileset.id, tileset.columns, ids, empty);
+        const b = boundsOf(tileset, ids);
+        if (items.length > 0 && b) g.carry = new PendingTileDrag(
+          { kind: "tileset", tilesetId: tileset.id }, items,
+          { col: g.gesture.anchor.col - b.col, row: g.gesture.anchor.row - b.row },
+          e.clientX - 4, e.clientY,
+        );
+      }
+      // Inside the grid, even a press on a highlighted tile is a marquee.
+      if (outside || wasActive) g.carry?.move(e.clientX, e.clientY, e.shiftKey);
       if (g.carry?.active) {
         // Dragging tiles out: no selection preview here.
         if (!wasActive) updateDrag({ ...g });
@@ -490,14 +502,10 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
               key={r.tileId}
               aria-hidden
               data-random-tile={r.tileId}
-              className="pointer-events-none absolute rounded-xs outline-1 outline-accent"
+              className="pointer-events-none absolute rounded-xs bg-accent-soft/30 outline-1 outline-accent"
               style={{ left: col * cellW, top: row * cellH, width: cellW, height: cellH, outlineStyle: "solid", outlineOffset: -1 }}
             >
-              {cellW >= 14 && (
-                <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-sm bg-popup text-accent">
-                  <Icon name="dice" size={16} />
-                </span>
-              )}
+
             </div>
           );
         })}

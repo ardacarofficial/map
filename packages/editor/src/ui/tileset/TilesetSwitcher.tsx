@@ -116,7 +116,7 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
               return <div key={ts.id} data-switcher-index={index} className={`group flex h-row items-center gap-1 rounded-sm ${current ? "bg-active" : index === highlight ? "bg-hover-popup" : "hover:bg-hover-popup"}`} onMouseEnter={() => setHighlight(index)}>
                 <button type="button" data-tileset-option={ts.id} onClick={() => choose(ts.id)} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-sm">
                   <TilesetThumb tileset={ts} size={16} /><span className="min-w-0 flex-1 truncate">{ts.name}</span>
-                  <span className="shrink-0 font-mono text-xs text-faint">{t("tilesetPanel.tilesetMeta", { columns: ts.columns, rows: ts.rows, size: ts.tileWidth === ts.tileHeight ? ts.tileWidth : `${ts.tileWidth}×${ts.tileHeight}` })}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">{t("tilesetPanel.tilesetMeta", { columns: ts.columns, rows: ts.rows, size: ts.tileWidth === ts.tileHeight ? ts.tileWidth : `${ts.tileWidth}×${ts.tileHeight}` })}</span>
                   {current && <Icon name="tick" size={12} />}
                 </button>
                 <SourceMenuButton tileset={ts} onAction={() => setOpen(false)} className={current || index === highlight ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"} />

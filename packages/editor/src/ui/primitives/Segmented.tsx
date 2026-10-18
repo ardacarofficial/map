@@ -21,8 +21,9 @@ export type SegmentedProps<Value extends string = string> = Omit<ComponentPropsW
   items: readonly SegmentedItem<Value>[];
   size?: "sm" | "md";
   disabled?: boolean;
+  fill?: boolean;
 };
-export function Segmented<Value extends string>({ value, onValueChange, label, items, size = "sm", disabled = false, className = "", ref, ...rest }: SegmentedProps<Value>) {
+export function Segmented<Value extends string>({ value, onValueChange, label, items, size = "sm", disabled = false, fill = false, className = "", ref, ...rest }: SegmentedProps<Value>) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const unavailable = items.map(item => !!(disabled || item.disabled || item.attrs?.disabled));
   const selected = items.findIndex((item, i) => item.value === value && !unavailable[i]);
@@ -40,7 +41,7 @@ export function Segmented<Value extends string>({ value, onValueChange, label, i
             aria-label={item.attrs?.["aria-label"] ?? (typeof item.label === "string" ? item.label : item.tooltip)}
             disabled={unavailable[i]}
             tabIndex={i === focusIndex ? 0 : -1}
-            className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm disabled:opacity-40 ${item.value === value ? "border-line-strong bg-active text-title" : "border-transparent text-muted hover:text-text"} ${item.attrs?.className ?? ""}`}
+            className={`inline-flex min-w-0 ${fill ? "flex-1" : "flex-none"} items-center justify-center gap-1.5 rounded-sm border px-2 text-sm disabled:opacity-40 ${item.value === value ? "border-line-strong bg-active text-title" : "border-transparent text-muted hover:text-text"} ${item.attrs?.className ?? ""}`}
             onClick={event => { item.attrs?.onClick?.(event); if (!event.defaultPrevented) onValueChange(item.value); }}
             onKeyDown={event => {
               item.attrs?.onKeyDown?.(event);
@@ -52,7 +53,7 @@ export function Segmented<Value extends string>({ value, onValueChange, label, i
               onValueChange(items[next]!.value);
             }}
           >
-            {item.icon && (typeof item.icon === "string" ? <Icon name={item.icon} /> : item.icon)}
+            {item.icon && (typeof item.icon === "string" ? <Icon name={item.icon} size={16} className="shrink-0" /> : item.icon)}
             {item.label}
           </button>
         );

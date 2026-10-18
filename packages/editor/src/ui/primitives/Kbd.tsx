@@ -18,7 +18,7 @@ export function Kbd({ keys, className = "", ...rest }: KbdProps) {
 }
 
 export function KbdText({ keys, className = "", ...rest }: KbdProps) {
-  return <span {...rest} className={`font-mono text-xs text-faint ${className}`}>{chordLabels(keys, isMac()).join(" ")}</span>;
+  return <span {...rest} className={`font-mono text-xs text-muted ${className}`}>{chordLabels(keys, isMac()).join(" ")}</span>;
 }
 
 /** First shortcut of a command, or nothing if it has none. */

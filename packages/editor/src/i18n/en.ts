@@ -302,8 +302,6 @@ export const en: Messages = {
     resizeSectionHint: "Drag: height · double-click: fit content",
     sectionsHidden: "All sections are hidden",
     showSections: "Show sections",
-    widthPrefix: "W",
-    heightPrefix: "H",
     solidTiles: "Solid tiles",
     thisTileset: "This tileset",
     solidCount: "{count} solid tiles",

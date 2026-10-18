@@ -50,7 +50,7 @@ export function IntField({ value, min, max, onCommit, onPreview, label, prefix }
   onCommit(v: number): void;
   onPreview?(v: number): void;
   label: string;
-  prefix?: string;
+  prefix?: ReactNode;
 }) {
   const [text, setText] = useState(String(value));
   const [shown, setShown] = useState(value);
@@ -87,6 +87,8 @@ export function IntField({ value, min, max, onCommit, onPreview, label, prefix }
     <label className={`flex h-control-sm min-w-0 flex-1 items-center rounded-sm border bg-field focus-within:border-accent ${valid ? "border-line hover:border-line-strong" : "border-danger"}`}>
       {prefix && (
         <span
+          aria-label={label}
+          title={label}
           className="flex h-full cursor-ew-resize touch-none items-center pl-2 font-mono text-xs text-muted select-none"
           onClick={(event) => event.preventDefault()}
           onPointerDown={(event) => {

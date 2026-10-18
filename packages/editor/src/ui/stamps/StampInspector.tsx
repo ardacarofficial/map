@@ -21,6 +21,8 @@ import { Tooltip } from "../primitives/Tooltip";
 import { openStampEditor } from "../stampEditor/stampEditorSession";
 import { StarGlyph, TagGlyph } from "./glyphs";
 import { parseTags, stampCategories } from "./stampFilters";
+import { useUiStore } from "../uiStore";
+import { useTerrainDraft } from "../terrain/terrainDraft";
 import { useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
 
@@ -43,10 +45,20 @@ export function installStampInspector(): void {
     registerInspectorSection({
       id: "stamps.selected",
       order: 5,
-      when: (ctx) => ctx.mode !== "entity" && ctx.mode !== "solid" && selectedStamp() !== undefined,
+      when: (ctx) => ctx.mode === "stamp" && selectedStamp() !== undefined,
       Component: StampSection,
     });
   register();
+  const clear = () => useStampLibrary.getState().select(null);
+  useEditorStore.subscribe((state, prev) => {
+    if (state.region !== null && state.region !== prev.region) clear();
+  });
+  useUiStore.subscribe((state, prev) => {
+    if (state.tilesetMode === "terrain" && state.tilesetMode !== prev.tilesetMode) clear();
+  });
+  useTerrainDraft.subscribe((state, prev) => {
+    if ((state.draft !== null && state.draft !== prev.draft) || (state.fix !== null && state.fix !== prev.fix)) clear();
+  });
   useStampLibrary.subscribe((state, prev) => {
     if (state.selectedId !== prev.selectedId) register();
   });

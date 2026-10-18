@@ -108,8 +108,8 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
           <IntField label={t("inspector.y")} prefix="Y" value={region.y} min={0} max={map.height - 1} onPreview={(y) => move({ y })} onCommit={(y) => move({ y })} />
         </PropRow>
         <PropRow label={t("inspector.size")}>
-          <IntField label={t("inspector.width")} prefix={t("inspector.widthPrefix")} value={region.width} min={1} max={map.width - region.x} onPreview={(width) => move({ width })} onCommit={(width) => move({ width })} />
-          <IntField label={t("inspector.height")} prefix={t("inspector.heightPrefix")} value={region.height} min={1} max={map.height - region.y} onPreview={(height) => move({ height })} onCommit={(height) => move({ height })} />
+          <IntField label={t("inspector.width")} prefix={<Icon name="move-horizontal" size={12} />} value={region.width} min={1} max={map.width - region.x} onPreview={(width) => move({ width })} onCommit={(width) => move({ width })} />
+          <IntField label={t("inspector.height")} prefix={<Icon name="move-vertical" size={12} />} value={region.height} min={1} max={map.height - region.y} onPreview={(height) => move({ height })} onCommit={(height) => move({ height })} />
         </PropRow>
       </PropGrid>
       <div className="flex flex-wrap items-center gap-1 px-3 py-2" onPointerDown={(e) => e.preventDefault()}>

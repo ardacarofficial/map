@@ -139,6 +139,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
               <TextField size="md"
                 id={id}
                 value={name}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus={focus === "name"}
                 maxLength={80}
