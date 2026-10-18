@@ -21,7 +21,7 @@ import { normalizeRoadProfile, roadProfileProblem, type RoadProfile } from "./sm
 import { copyRegion, flipClip, pasteClip, rotateClip, type ClipLayer, type PasteOptions, type TileClip } from "./clip";
 import type { MapDocument } from "./document";
 import { isReservedFileName } from "./fileName";
-import type { CellRect } from "./geometry";
+import type { SelectionRect } from "./selectionMask";
 import { isEntityLayer, isGridLayer, type GridRole, type TileLayer } from "./layer";
 import type { LayerPatch } from "./ops";
 import type { MapStore } from "./store";
@@ -203,7 +203,7 @@ export function makeStampId(name: string, taken: Iterable<string> = []): string 
 export function createStamp(
   doc: MapDocument,
   layerIds: readonly string[],
-  rect: CellRect,
+  rect: SelectionRect,
   meta: { readonly id: string; readonly name: string } & StampMeta,
 ): Stamp {
   const problem = stampIdProblem(meta.id) ?? stampMetaProblem(meta);

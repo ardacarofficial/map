@@ -13,6 +13,7 @@ import { useEditorStore } from "../../state/editorStore";
 import { useStructureVersion } from "../hooks";
 import { BrushSizeChip } from "../inspector/BrushSizeChip";
 import { registerToolOptions } from "./registry";
+import { SelectionModeOptions, LayerPickOptions } from "./SelectionPickOptions";
 import { SelectionScopeOptions } from "./SelectionScopeOptions";
 import { RectangleOptions } from "./RectangleOptions";
 import { RandomToggle } from "./RandomToggle";
@@ -58,4 +59,6 @@ export function registerBuiltinToolOptions(): void {
   registerToolOptions(["brush", "eraser"], OptionsBrushSize, { id: "builtin.brushSize", order: 10, when: (c) => !isEntityLayer(c.layer) });
   registerToolOptions(["brush", "fill", "rect"], RandomToggle, { id: "builtin.random", order: 20, when: (c) => isTileLayer(c.layer) && !activeSmartStamp() });
   registerToolOptions(["brush", "fill", "rect"], BrushTransforms, { id: "builtin.transforms", order: 40, when: (c) => c.brush !== "none" });
+  registerToolOptions("select", SelectionModeOptions, { id: "selection.mode", order: 5 });
+  registerToolOptions("eyedropper", LayerPickOptions, { id: "pick.scope", order: 5 });
 }

@@ -4,6 +4,9 @@ import { addRoadSamples, smartGesturePlan, smartHoverGesture, type SmartGesture 
 
 import {
   EMPTY_CELL,
+  connectedSelection,
+  combineSelections,
+  selectionContains,
   cellFlags,
   cellPaletteIndex,
   copyRegion,
@@ -28,6 +31,7 @@ import {
   type TileLayer,
 } from "@smap/core";
 
+import { selectionModifier } from "../shortcuts/shortcuts";
 import { captureSelectionScope, survivingSelectionIds, reportSelectionSkipped } from "../commands/selectionScope";
 import { t } from "../i18n";
 import { toast } from "../ui/toast/toastStore";
@@ -156,6 +160,9 @@ export type Gesture =
       /** The selection when the drag started. */
       readonly region: CellRegion;
       readonly grab: CellPoint;
+      /** A stationary connected-selection press selects this layer's component on release. */
+      readonly clickLayerId?: string;
+      moved: boolean;
       dx: number;
       dy: number;
     }
@@ -302,6 +309,18 @@ export class ToolController {
     if (s.tool === "select" && s.selectionScope === "visible" && s.selectedEntityId) s.setSelectedEntity(null);
     if ((s.tool === "entity" || (s.tool === "select" && s.selectionScope === "active")) && isEntityLayer(active)) {
       if (this.#entityDown(e, cell) || s.tool === "entity") {
+        this.#host.requestRender();
+        return;
+      }
+    }
+    if (s.tool === "select" && s.selectionMode === "connected") {
+      const modifier = selectionModifier(e);
+      if (modifier || !regionContains(s.region, cell)) {
+        const doc = this.#host.scene?.store.document;
+        if (doc && active && !isEntityLayer(active) && active.visible) {
+          const region = timedConnectedSelection(active, cell.x, cell.y, doc.map);
+          s.setRegion(modifier ? combineSelections(s.region, region, modifier) : region);
+        }
         this.#host.requestRender();
         return;
       }
@@ -456,7 +475,7 @@ export class ToolController {
       case "move":
         if (g.store.inTransaction) {
           g.store.commit();
-          this.#moveDone(g);
+          this.#moveDone(g, true);
         }
         break;
       case "rect": {
@@ -689,7 +708,31 @@ export class ToolController {
    */
   fillRegion(r: CellRegion): void {
     if (this.#gesture) return;
-    this.#commitRect(r, { x: r.x, y: r.y }, "fill");
+    if (!r.mask) this.#commitRect(r, { x: r.x, y: r.y }, "fill");
+    else {
+      const target = this.#editTarget();
+      if (!target) return;
+      const { store, layer } = target;
+      const points = function* () {
+        for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) if (selectionContains(r, x, y)) yield { x, y };
+      };
+      if (isGridLayer(layer)) {
+        const value = this.#gridValue(layer);
+        if (value !== null) this.#transact(store, "fill", () => this.#paintGrid(store, layer.id, gridWrites([...points()], value, store.document.map, (x, y) => layer.getCell(x, y))));
+      } else {
+        const random = this.#randomSet();
+        this.#transact(store, "fill", () => {
+          if (random) return this.#paintRandom(store, layer.id, random, points(), new Set());
+          const at = this.#writePattern(store, r);
+          if (!at) return 0;
+          const cells: CellWrite[] = [];
+          for (const p of points()) { const cell = at(p.x, p.y); if (cell !== EMPTY_CELL && cell !== layer.getCell(p.x, p.y)) cells.push({ ...p, cell }); }
+          return this.#paintCells(store, layer.id, cells);
+        });
+        const single = this.#singleTile();
+        if (single) this.#pushRecent(single); else this.#pushUsedStamp();
+      }
+    }
     this.#host.requestRender();
   }
 
@@ -747,7 +790,7 @@ export class ToolController {
     if (!r) return;
     const s = useEditorStore.getState();
     if (useTileReplacement.getState().draft?.picking) {
-      const layer = pickLayer(doc.layers.map(l => layerInfo(l)), s.activeLayerId, r.x, r.y);
+      const layer = pickLayer(doc.layers.map(l => layerInfo(l)), s.activeLayerId, r.x, r.y, s.pickScope);
       const tile = layer ? doc.palette.get(cellPaletteIndex(layer.getCell(r.x, r.y))) : undefined;
       if (tile) consumeReplacementPick(tile);
       return;
@@ -758,9 +801,9 @@ export class ToolController {
       const next = toolAfterPick(st.tool, this.#host.toolBeforeEyedropper?.() ?? null, spring);
       if (next && next !== st.tool) st.setTool(next);
     };
-    // On a grid layer a single-cell pick takes the painted value.
+    // Active scope on a grid layer picks a value; All always searches tile layers.
     const active = this.#activeLayer();
-    if (isGridLayer(active) && r.width === 1 && r.height === 1) {
+    if (s.pickScope === "active" && isGridLayer(active) && r.width === 1 && r.height === 1) {
       // An empty grid cell picks nothing (not the tiles under it); drag for an area.
       if (isEmptyGridPick(r, (x, y) => active.getCell(x, y))) return;
       const value = active.getCell(r.x, r.y);
@@ -769,7 +812,7 @@ export class ToolController {
       this.#picked(gridPickEvent(value, r));
       return;
     }
-    const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i));
+    const result = decidePick(doc.layers.map((l) => layerInfo(l)), s.activeLayerId, r, (i) => doc.palette.get(i), s.pickScope);
     if (result.kind === "none") return;
     let clip: TileClip | null = null;
     if (result.kind === "tile") {
@@ -785,6 +828,7 @@ export class ToolController {
       s.setSelection(null);
       s.setStamp(clip);
     }
+    s.setActiveLayer(result.layerId);
     // Fill and rectangle use the picked tile too; tools that cannot place it switch to the brush.
     switchTool();
     const event = pickEvent(result, clip, r);
@@ -1027,12 +1071,12 @@ export class ToolController {
     const client = g.client ?? { x: 0, y: 0 };
     const store = this.#host.scene?.store;
     const s = useEditorStore.getState();
-    const layer = !moved && g.button === 2 && store ? pickLayer(store.document.layers.map(l => layerInfo(l)), s.activeLayerId, g.start.x, g.start.y) : null;
+    const layer = !moved && g.button === 2 && store ? pickLayer(store.document.layers.map(l => layerInfo(l)), s.activeLayerId, g.start.x, g.start.y, s.pickScope) : null;
     const tile = layer && store ? store.document.palette.get(cellPaletteIndex(layer.getCell(g.start.x, g.start.y))) : undefined;
     if (store && tile) rememberReplacementTile(store, tile);
     if (action === "pick") {
       const pickingReplacement = !!useTileReplacement.getState().draft?.picking;
-      const pickingValues = isGridLayer(this.#activeLayer()) !== null;
+      const pickingValues = s.pickScope === "active" && isGridLayer(this.#activeLayer());
       const brush = replacementBrushTile();
       this.#finishPick(g.start, g.end, g.spring);
       if (s.tool === "select" && !moved && g.button === 2 && tile && !pickingReplacement && !pickingValues) this.#host.contextRequest?.({ kind: "tile", tile, brush, x: client.x, y: client.y });
@@ -1057,9 +1101,13 @@ export class ToolController {
     const layer = this.#activeLayer();
     if (!store || !layer) return;
     const layerIds = captureSelectionScope(store.document);
-    if (layerIds.length === 0) return;
+    const connected = useEditorStore.getState().selectionMode === "connected" && !isEntityLayer(layer) && layer.visible;
+    if (layerIds.length === 0) {
+      if (connected) useEditorStore.getState().setRegion(timedConnectedSelection(layer, cell.x, cell.y, store.document.map));
+      return;
+    }
     store.beginTransaction();
-    this.#start({ kind: "move", pointerId: e.pointerId, store, layerIds, region: { ...region }, grab: cell, dx: 0, dy: 0 });
+    this.#start({ kind: "move", pointerId: e.pointerId, store, layerIds, region: { ...region }, grab: cell, ...(connected ? { clickLayerId: layer.id } : {}), moved: false, dx: 0, dy: 0 });
   }
 
   /** Redoes the move for the cell under the pointer (the open transaction is rolled back first). */
@@ -1069,6 +1117,7 @@ export class ToolController {
     const map = g.store.document.map;
     const off = moveOffset(g.region, g.grab, cell, map);
     if (off.x === g.dx && off.y === g.dy) return;
+    g.moved = true;
     g.dx = off.x;
     g.dy = off.y;
     if (g.store.inTransaction) g.store.rollback();
@@ -1088,8 +1137,14 @@ export class ToolController {
   }
 
   /** After a move's commit: the selection follows its content. */
-  #moveDone(g: Extract<Gesture, { kind: "move" }>): void {
-    if (g.dx === 0 && g.dy === 0) return;
+  #moveDone(g: Extract<Gesture, { kind: "move" }>, released = false): void {
+    if (g.dx === 0 && g.dy === 0) {
+      if (released && !g.moved && g.clickLayerId) {
+        const layer = g.store.document.getLayer(g.clickLayerId);
+        if (layer?.visible && !isEntityLayer(layer)) useEditorStore.getState().setRegion(timedConnectedSelection(layer, g.grab.x, g.grab.y, g.store.document.map));
+      }
+      return;
+    }
     const map = g.store.document.map;
     useEditorStore.getState().setRegion(movedRegion(g.region, g.dx, g.dy, map));
   }
@@ -1216,4 +1271,12 @@ export class ToolController {
   }
 }
 
-/** The cells of `r`, row by row. */
+/** Optional query timing, alongside the canvas frame log in debug/perf builds. */
+function timedConnectedSelection(...args: Parameters<typeof connectedSelection>): ReturnType<typeof connectedSelection> {
+  const log = import.meta.env.DEV || import.meta.env.VITE_SMAP_DEBUG === "1"
+    ? (window as unknown as { __smapPerf?: { selectionQueries?: number[] } }).__smapPerf : undefined;
+  const start = log?.selectionQueries ? performance.now() : 0;
+  const region = connectedSelection(...args);
+  if (start) log!.selectionQueries!.push(performance.now() - start);
+  return region;
+}

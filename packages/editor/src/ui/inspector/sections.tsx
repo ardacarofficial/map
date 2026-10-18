@@ -106,8 +106,10 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
           <IntField label={t("inspector.y")} prefix="Y" value={region.y} min={0} max={map.height - 1} onPreview={(y) => move({ y })} onCommit={(y) => move({ y })} />
         </PropRow>
         <PropRow label={t("inspector.size")}>
+          {region.mask ? <span className="text-sm text-text tabular-nums">{region.width} × {region.height}</span> : <>
           <IntField label={t("inspector.width")} prefix={<Icon name="move-horizontal" size={12} />} value={region.width} min={1} max={map.width - region.x} onPreview={(width) => move({ width })} onCommit={(width) => move({ width })} />
           <IntField label={t("inspector.height")} prefix={<Icon name="move-vertical" size={12} />} value={region.height} min={1} max={map.height - region.y} onPreview={(height) => move({ height })} onCommit={(height) => move({ height })} />
+          </>}
         </PropRow>
       </PropGrid>
       <div className="flex flex-wrap items-center gap-1 px-3 py-2" onPointerDown={(e) => e.preventDefault()}>
@@ -125,13 +127,14 @@ function RegionSection({ ctx }: { ctx: InspectorContext }) {
 
 /** `r` clipped to the map (x / y first, then width / height to what is left). */
 export function clampRegionTo(r: CellRegion, width: number, height: number): CellRegion {
-  const x = Math.min(width - 1, Math.max(0, Math.round(r.x)));
-  const y = Math.min(height - 1, Math.max(0, Math.round(r.y)));
+  const x = Math.min(width - (r.mask ? r.width : 1), Math.max(0, Math.round(r.x)));
+  const y = Math.min(height - (r.mask ? r.height : 1), Math.max(0, Math.round(r.y)));
   return {
     x,
     y,
     width: Math.min(width - x, Math.max(1, Math.round(r.width))),
     height: Math.min(height - y, Math.max(1, Math.round(r.height))),
+    ...(r.mask ? { mask: r.mask } : {}),
   };
 }
 

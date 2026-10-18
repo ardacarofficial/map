@@ -486,3 +486,6 @@ export * from "./smartStamp/topology";
 export * from "./smartStamp/roadProfile";
 export * from "./smartStamp/roadSolver";
 export type { RgbaImage } from "./tilesetPixels";
+
+export { connectedSelection, selectionContains, selectionHasContent, combineSelections, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
+export { flipRegion } from "./clip";

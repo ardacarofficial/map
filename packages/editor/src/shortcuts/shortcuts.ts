@@ -97,7 +97,9 @@ export type CommandId =
   // Docking
   | "view.toggleBottom"
   | `dock.${"left" | "right" | "bottom"}.${"show" | "hide"}`
-  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`;
+  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`
+  | "selection.toggleMode"
+  | "pick.toggleScope";
 
 export interface ShortcutDef {
   command: CommandId;
@@ -195,6 +197,9 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "view.toggleBottom", keys: ["Ctrl+Shift+B"] },
   ...ZONE_IDS.flatMap(zone => (["show", "hide"] as const).map(action => ({ command: `dock.${zone}.${action}` as const, keys: [] }))),
   ...PANEL_IDS.flatMap(panel => ([...ZONE_IDS, "show", "hide", "forward", "backward", "split", "merge"] as const).map(action => ({ command: `panel.${panel}.${action}` as const, keys: [] }))),
+  // Connected selection and layer-aware pick
+  { command: "selection.toggleMode", keys: [] },
+  { command: "pick.toggleScope", keys: [] },
 ];
 
 /** Per-command keys from the settings file (replace the defaults of that command). */
@@ -224,4 +229,10 @@ export function effectiveShortcuts(): ShortcutDef[] {
 export function keysFor(command: CommandId): string[] {
   const keys = overrides.get(command) ?? SHORTCUTS.find((s) => s.command === command)?.keys ?? [];
   return preferReachable(keys);
+}
+
+/** Pointer selection modifiers live beside keyboard bindings. Subtract wins over add. */
+export const SELECTION_POINTER_MODIFIERS = { add: ["shiftKey"], subtract: ["ctrlKey", "metaKey", "altKey"] } as const;
+export function selectionModifier(e: { shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey?: boolean }): "add" | "subtract" | null {
+  return SELECTION_POINTER_MODIFIERS.subtract.some(key => e[key]) ? "subtract" : SELECTION_POINTER_MODIFIERS.add.some(key => e[key]) ? "add" : null;
 }

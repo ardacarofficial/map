@@ -4,6 +4,8 @@
  */
 import {
   EMPTY_CELL,
+  selectionContains,
+  clipSelection,
   cellFlags,
   cellPaletteIndex,
   normalizeRect,
@@ -28,7 +30,7 @@ export function dragRegion(a: CellPoint, b: CellPoint, bounds: CellBounds): Cell
 }
 
 export function regionContains(region: CellRegion | null, p: CellPoint): boolean {
-  return !!region && p.x >= region.x && p.y >= region.y && p.x < region.x + region.width && p.y < region.y + region.height;
+  return selectionContains(region, p.x, p.y);
 }
 
 export function regionsEqual(a: CellRegion | null, b: CellRegion | null): boolean {
@@ -68,14 +70,13 @@ export function isPaintable(layer: LayerInfo | undefined | null): layer is Layer
 }
 
 /**
- * Layer a single-cell pick reads from: the active layer when it is a visible
- * tile layer with a tile at (`x`, `y`), otherwise the top-most visible tile
- * layer with a tile there. `layers` are bottom to top.
+ * Layer a single-cell pick reads from: the topmost visible non-empty tile
+ * layer, or only the active layer when scope is active. `layers` are bottom to top.
  */
-export function pickLayer(layers: readonly LayerInfo[], activeId: string | null, x: number, y: number): LayerInfo | null {
+export function pickLayer(layers: readonly LayerInfo[], activeId: string | null, x: number, y: number, scope: "active" | "all" = "all"): LayerInfo | null {
   const usable = (l: LayerInfo) => l.visible && !l.grid && l.getCell(x, y) !== EMPTY_CELL;
   const active = layers.find((l) => l.id === activeId);
-  if (active && usable(active)) return active;
+  if (scope === "active") return active && usable(active) ? active : null;
   for (let i = layers.length - 1; i >= 0; i--) {
     const l = layers[i]!;
     if (usable(l)) return l;
@@ -85,7 +86,7 @@ export function pickLayer(layers: readonly LayerInfo[], activeId: string | null,
 
 /** What a pick produces. */
 export type PickResult =
-  | { readonly kind: "tile"; readonly entry: PaletteEntry }
+  | { readonly kind: "tile"; readonly layerId: string; readonly entry: PaletteEntry }
   | { readonly kind: "clip"; readonly layerId: string; readonly region: CellRegion }
   | { readonly kind: "none" };
 
@@ -101,14 +102,15 @@ export function decidePick(
   activeId: string | null,
   region: CellRegion,
   paletteEntry: (index: number) => PaletteEntry | undefined,
+  scope: "active" | "all" = "all",
 ): PickResult {
   if (region.width === 1 && region.height === 1) {
-    const layer = pickLayer(layers, activeId, region.x, region.y);
+    const layer = pickLayer(layers, activeId, region.x, region.y, scope);
     if (!layer) return { kind: "none" };
     const cell = layer.getCell(region.x, region.y);
     if (cellFlags(cell) !== 0) return { kind: "clip", layerId: layer.id, region };
     const entry = paletteEntry(cellPaletteIndex(cell));
-    return entry ? { kind: "tile", entry: { tilesetId: entry.tilesetId, tileId: entry.tileId } } : { kind: "none" };
+    return entry ? { kind: "tile", layerId: layer.id, entry: { tilesetId: entry.tilesetId, tileId: entry.tileId } } : { kind: "none" };
   }
   const active = layers.find((l) => l.id === activeId);
   if (!active) return { kind: "none" };
@@ -348,11 +350,7 @@ export function isEmptyGridPick(region: CellRegion, gridValueAt: (x: number, y: 
 
 /** Region moved by (`dx`, `dy`) and clipped to the map, or null when nothing of it is left on the map. */
 export function movedRegion(region: CellRegion, dx: number, dy: number, bounds: CellBounds): CellRegion | null {
-  const x0 = Math.max(0, region.x + dx);
-  const y0 = Math.max(0, region.y + dy);
-  const x1 = Math.min(bounds.width, region.x + dx + region.width);
-  const y1 = Math.min(bounds.height, region.y + dy + region.height);
-  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+  return clipSelection({ ...region, x: region.x + dx, y: region.y + dy }, bounds);
 }
 
 /**

@@ -175,7 +175,7 @@ export interface CanvasHandle {
   /** Size of the bottom-right box the minimap takes (margin included), or null when it is hidden. */
   minimapCorner(): { width: number; height: number } | null;
 
-  fillRegion(region: { x: number; y: number; width: number; height: number }): void;
+  fillRegion(region: { x: number; y: number; width: number; height: number; readonly mask?: Uint8Array }): void;
 
   // ---------------------------------------------------------------- round 3
 
@@ -408,6 +408,7 @@ export class MapCanvas {
     this.#input = new PointerInput(canvas, {
       world: () => (this.#view === "world" ? this.#worldView : null),
       camera: this.#camera,
+      syncRect: () => this.#syncRect(),
       tools: this.#tools,
       map: () => this.#map(),
       paintable: () => {
@@ -516,10 +517,10 @@ export class MapCanvas {
     this.#input.attach(this.#abort.signal);
     window.addEventListener("pointerdown", () => this.#camera.keepView(), { capture: true, signal: this.#abort.signal });
     this.#unsubs.push(useDockStore.subscribe((s, prev) => {
-      if (s.layout !== prev.layout) this.#camera.keepView();
+      if (s.layout !== prev.layout) { this.#camera.keepView(); this.#input.invalidateRect(); }
     }));
     this.#unsubs.push(useUiStore.subscribe((s, prev) => {
-      if (s.panelsHidden !== prev.panelsHidden) this.#camera.keepView();
+      if (s.panelsHidden !== prev.panelsHidden) { this.#camera.keepView(); this.#input.invalidateRect(); }
     }));
     this.#unsubs.push(useSmartStampSession.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useEditorStore.subscribe((s, prev) => this.#onEditorState(s, prev)));
@@ -554,7 +555,7 @@ export class MapCanvas {
       cellCenter: (x: number, y: number) => {
         const map = this.#map();
         if (!map) return null;
-        const r = this.#input.rect();
+        const r = this.#syncRect();
         const c = this.#camera.camera;
         return {
           x: r.left + c.x + (x + 0.5) * map.tileWidth * c.zoom,
@@ -570,6 +571,10 @@ export class MapCanvas {
       /** The map thumbnail canvas (minimap / LOD picture). */
       get thumbnail() {
         return self.#thumb?.canvas ?? null;
+      },
+      /** Fixture edits can leave throttled thumbnail or idle mesh work queued. */
+      get backgroundPending() {
+        return self.#thumbTimer !== null || (self.#thumb?.pending ?? false) || self.#prebuildPending || (self.#scene?.hasPrebuildWork ?? false);
       },
       /** Sets the camera directly (zoom = CSS px per map px). */
       setCamera: (x: number, y: number, zoom: number) => {
@@ -666,7 +671,7 @@ export class MapCanvas {
     minimapCorner: () => (this.#view === "level" && this.#minimap?.visible ? this.#minimap.footprint() : null),
     fillRegion: (region) => {
       if (this.#view !== "level" || this.#destroyed) return;
-      this.#tools.fillRegion({ x: region.x, y: region.y, width: region.width, height: region.height });
+      this.#tools.fillRegion(region);
     },
     onBlockedAction: (cb) => {
       this.#blockedListeners.add(cb);
@@ -950,6 +955,18 @@ export class MapCanvas {
   }
 
   // ------------------------------------------------------------------ sizing
+
+  /** Input can arrive after layout commits and before ResizeObserver delivers it. */
+  #syncRect(): DOMRect {
+    const rect = this.#canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const devW = Math.round(rect.width * dpr), devH = Math.round(rect.height * dpr);
+    if (this.#initialized && devW > 0 && devH > 0 &&
+      (this.#camera.viewW !== devW / dpr || this.#camera.viewH !== devH / dpr || this.#camera.resolution !== dpr)) {
+      this.#resize(devW, devH, dpr);
+    }
+    return rect;
+  }
 
   #observeSize(): void {
     const ro = new ResizeObserver((entries) => {

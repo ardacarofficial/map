@@ -4,13 +4,14 @@ import { cellPaletteIndex, cellFlags } from "@smap/core";
  * make a stamp the brush, rename, delete. Stamps are flat copies: placing
  * one keeps no link back to the library (CLAUDE.md → Yapılmayacaklar).
  */
-import { copyRegion, createStamp, isEntityLayer, makeStampId, withStampMeta, type CellRect, type MapDocument, type Stamp, type StampMeta } from "@smap/core";
+import { selectionHasContent, createStamp, isEntityLayer, makeStampId, withStampMeta, type SelectionRect, type MapDocument, type Stamp, type StampMeta } from "@smap/core";
 
 import { t } from "../i18n";
 import { takenStampIds, useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
 import { toast } from "../ui/toast/toastStore";
 import { useUiStore } from "../ui/uiStore";
+import { resolveSelectionScope } from "./selectionScope";
 import { contextOf, mapRegion } from "./enablement";
 
 /** The map region a stamp would be saved from (marquee clipped to the map), or null. */
@@ -26,7 +27,11 @@ export function canSaveSelectionStamp(): boolean {
 }
 
 /** Layers a stamp saves: every tile and grid layer (collision included), bottom to top. */
-export function stampLayerIds(doc: MapDocument): string[] {
+export function stampLayerIds(doc: MapDocument, region?: SelectionRect): string[] {
+  if (region?.mask) {
+    const s = useEditorStore.getState();
+    return [...resolveSelectionScope(doc, s.activeLayerId, s.selectionScope).layerIds];
+  }
   return doc.layers.filter((l) => !isEntityLayer(l)).map((l) => l.id);
 }
 
@@ -34,9 +39,8 @@ export function stampLayerIds(doc: MapDocument): string[] {
  * The layers a stamp of `region` keeps: those with at least one non-empty
  * cell there (empty layers would only add empty layers where it is placed).
  */
-export function usedStampLayerIds(doc: MapDocument, region: CellRect): string[] {
-  const clip = copyRegion(doc, stampLayerIds(doc), region);
-  return clip.layers.filter((l) => l.cells.some((c) => c !== 0)).map((l) => l.layerId);
+export function usedStampLayerIds(doc: MapDocument, region: SelectionRect): string[] {
+  return stampLayerIds(doc, region).filter(id => selectionHasContent(doc.getLayer(id)!, region));
 }
 
 /** True when no layer of the stamp has a non-empty cell. */
@@ -64,7 +68,7 @@ export function saveSelectionAsStamp(name: string): Stamp | null {
   let stamp: Stamp;
   try {
     const used = usedStampLayerIds(doc, region);
-    stamp = createStamp(doc, used.length > 0 ? used : stampLayerIds(doc), region, { id: makeStampId(trimmed, takenStampIds(library)), name: trimmed });
+    stamp = createStamp(doc, used.length > 0 ? used : stampLayerIds(doc, region), region, { id: makeStampId(trimmed, takenStampIds(library)), name: trimmed });
   } catch (error) {
     console.error(error);
     toast.error(t("toast.stampFailed", { detail: error instanceof Error ? error.message : String(error) }));

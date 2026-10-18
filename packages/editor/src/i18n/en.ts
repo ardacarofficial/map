@@ -1242,4 +1242,22 @@ export const en: Messages = {
     show_layers: "Show Layers",
     show_entities: "Show Entity palette",
   },
+  // Connected selection and layer-aware pick
+
+  connectedSelection: {
+    mode: "Selection shape",
+    rectangle: "Rectangle",
+    connected: "Connected area",
+    hint: "Four-connected cells with the same tile and flip bits on the active layer. Shift: add. Ctrl/Alt: subtract. Drag inside the selection to move.",
+    toggle: "Toggle selection shape",
+  },
+
+  layerPick: {
+    layer: "Layer",
+    active: "Active",
+    all: "All",
+    hint: "Active: only the active layer; on Collision it picks the cell value. All: picks the topmost visible tile and activates its source layer, including locked layers. Area picks use the active layer.",
+    toggle: "Toggle eyedropper layer scope",
+  },
+
 };
