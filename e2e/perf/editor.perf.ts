@@ -121,6 +121,14 @@ async function newPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession;
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await page.addInitScript(initScript);
+  // Optional real guide rendering for the same before/after scenarios.
+  if (process.env.PERF_MAJOR_GRID) {
+    const interval = Number(process.env.PERF_MAJOR_GRID);
+    if (!Number.isInteger(interval) || interval < 2 || interval > 64) throw new Error("PERF_MAJOR_GRID must be 2..64");
+    await page.addInitScript(interval => {
+      localStorage.setItem("smap:major-grid:browser:", JSON.stringify({ interval, x: 0, y: 0 }));
+    }, interval);
+  }
   const errors: string[] = [];
   page.on("pageerror", (e) => { errors.push(e.message); console.error(`pageerror: ${e.message}`); });
   if (process.env.PERF_DEBUG) page.on("console", (m) => console.log(`console.${m.type()}: ${m.text()}`)); // PERF_DEBUG=1: page console

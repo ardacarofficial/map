@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { registerMapBorderCommand } from "../../commands/mapBorder";
 import { registerTileReplacementCommand } from "../../commands/replaceTiles";
 import { registerAppCommands } from "../../commands/appCommands";
 import { registerExportCommands } from "../../commands/exportCommands";
@@ -18,6 +19,7 @@ import { MENUS, menuCommands, resolveMenu, type CommandLookup } from "./menuMode
 function registerAll(): void {
   registerAppCommands();
   registerTileReplacementCommand();
+  registerMapBorderCommand();
   registerExportCommands();
   registerSettingsCommands();
   registerBrushCommands();

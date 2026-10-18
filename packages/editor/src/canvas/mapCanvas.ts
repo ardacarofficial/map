@@ -1,3 +1,5 @@
+import { useMajorGrid } from "../state/majorGridSettings";
+import { useMapBorder } from "../commands/mapBorder";
 import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * The map canvas: Pixi application, scene sync and the frame loop. Input,
@@ -521,6 +523,8 @@ export class MapCanvas {
     this.#unsubs.push(useUiStore.subscribe((s, prev) => {
       if (s.panelsHidden !== prev.panelsHidden) this.#camera.keepView();
     }));
+    this.#unsubs.push(useMajorGrid.subscribe(() => this.#requestRender()));
+    this.#unsubs.push(useMapBorder.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useSmartStampSession.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useEditorStore.subscribe((s, prev) => this.#onEditorState(s, prev)));
     this.#unsubs.push(
@@ -1207,7 +1211,7 @@ export class MapCanvas {
     if (!map || !scene || !thumb) return;
     const cam = this.#camera;
     const cellDevicePx = Math.min(map.tileWidth, map.tileHeight) * cam.camera.zoom * cam.resolution;
-    const lod = !activeSmartStamp() && nextLod(this.#lod, cellDevicePx);
+    const lod = !activeSmartStamp() && useMapBorder.getState().draft?.store !== scene.store && nextLod(this.#lod, cellDevicePx);
     if (lod) {
       // Keep the picture current while it is on screen (edits show on the next frame).
       if (thumb.pending) {

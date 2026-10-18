@@ -12,6 +12,8 @@ export const CANVAS_COLORS = {
   mapBorder: 0x323b45,
   /** Grid lines (drawn with `gridAlpha`). */
   grid: 0xffffff,
+  /** Major guides — token `--color-grid-major`. */
+  majorGrid: 0x64707c,
   /** Brush preview opacity. */
   previewAlpha: 0.5,
   /** White for marching ants and pick dashes (footprints use accent / danger). */
@@ -67,6 +69,7 @@ export function readThemeColors(el: Element): CanvasColors {
     lineStrong: token("--color-line-strong", CANVAS_COLORS.lineStrong),
     text: token("--color-text", CANVAS_COLORS.text),
     muted: token("--color-muted", CANVAS_COLORS.muted),
+    majorGrid: token("--color-grid-major", CANVAS_COLORS.majorGrid),
     mapBorder: token("--color-line", CANVAS_COLORS.mapBorder),
     accent: token("--color-accent", CANVAS_COLORS.accent),
     collisionSolid: token("--color-collision-solid", CANVAS_COLORS.collisionSolid),

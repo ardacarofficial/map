@@ -12,6 +12,7 @@ import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "map.border"
   | "stamp.nineSlice"
   | "selection.toggleScope"
   | "tool.brush"
@@ -105,6 +106,7 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  { command: "map.border", keys: [] },
   { command: "stamp.nineSlice", keys: [] },
   // Selection scope
   { command: "selection.toggleScope", keys: [] },

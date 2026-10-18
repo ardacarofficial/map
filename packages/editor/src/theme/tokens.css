@@ -36,6 +36,7 @@
   /* ---- Lines */
   --color-line-subtle: #262d34;
   --color-line: #323b45;
+  --color-grid-major: #64707c;
   --color-line-strong: #414b56;
 
   --color-control-border: #64707c;

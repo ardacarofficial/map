@@ -108,7 +108,7 @@ export const MENUS: readonly MenuDef[] = [
   {
     id: "map",
     label: "menu.map",
-    entries: ["map.settings", "-", "level.new", "level.duplicate", "level.next", "level.previous", "level.remove"],
+    entries: ["map.settings", "map.border", "-", "level.new", "level.duplicate", "level.next", "level.previous", "level.remove"],
   },
   {
     id: "help",

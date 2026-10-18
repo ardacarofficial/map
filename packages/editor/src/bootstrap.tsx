@@ -1,3 +1,5 @@
+import { registerMapBorderCommand } from "./commands/mapBorder";
+import { MapBorderDialog } from "./ui/dialogs/MapBorderDialog";
 import { installSmartStamps } from "./commands/smartStampCommands";
 /**
  * Editor entry point shared by the browser build (`main.tsx`) and the
@@ -46,6 +48,7 @@ function Root() {
     <>
       <App />
       <SettingsDialog />
+      <MapBorderDialog />
     </>
   );
 }
@@ -103,6 +106,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   installSmartStamps();
   registerSelectionScopeCommands();
   registerTileReplacementCommand();
+  registerMapBorderCommand();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version
   registerHandToolCommand();
   registerExportCommands();
