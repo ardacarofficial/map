@@ -8,7 +8,7 @@ import { SECTION_MIN, splitterTarget, type SectionId } from "./sections";
  * Horizontal drag handle between two open sections of the right column.
  * It resizes the section that is not the filler (see `splitterTarget`):
  * drag to resize (clamped, stored on release), double-click back to the
- * content height, arrow keys nudge it when focused.
+ * pre-resize height, arrow keys nudge it when focused.
  */
 export function SectionSplitter({
   above,
@@ -40,7 +40,7 @@ export function SectionSplitter({
     if (!d) return;
     if (!d.moved && Math.abs(event.clientY - d.startY) < 2) return;
     d.moved = true;
-    setHeight(section, clamp(section, d.startHeight + sign * (event.clientY - d.startY)));
+    setHeight(section, clamp(section, d.startHeight + sign * (event.clientY - d.startY)), false, d.startHeight);
   };
   const end = () => {
     const d = drag.current;
@@ -52,7 +52,8 @@ export function SectionSplitter({
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
     const step = (event.shiftKey ? 48 : 16) * (event.key === "ArrowDown" ? 1 : -1) * sign;
-    setHeight(section, clamp(section, measure(section) + step), true);
+    const height = measure(section);
+    setHeight(section, clamp(section, height + step), true, height);
   };
 
   return (
@@ -70,7 +71,7 @@ export function SectionSplitter({
         onPointerUp={end}
         onPointerCancel={end}
         onLostPointerCapture={end}
-        onDoubleClick={() => setHeight(section, null, true)}
+        onDoubleClick={() => useLayoutStore.getState().resetSectionHeight(section)}
         onKeyDown={onKeyDown}
         className="group absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 items-center cursor-row-resize touch-none outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-accent)]"
       >

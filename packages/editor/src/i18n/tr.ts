@@ -307,7 +307,7 @@ export const tr = {
     title: "Denetçi",
     hide: "Denetçiyi gizle",
     resizeSection: "Bölüm yüksekliği",
-    resizeSectionHint: "Sürükle: yükseklik · çift tık: içeriğe göre",
+    resizeSectionHint: "Sürükle: yükseklik · çift tık: ilk yükseklik",
     sectionsHidden: "Tüm bölümler gizli",
     showSections: "Bölümleri göster",
     solidTiles: "Katı tile'lar",

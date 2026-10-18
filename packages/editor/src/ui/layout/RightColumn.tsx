@@ -72,7 +72,7 @@ export function HideInspectorButton() {
 /**
  * The right column: tabs "Denetçi | Geçmiş" (content height), then Katmanlar filling
  * at the bottom. Katmanlar's header folds it; the splitter between them
- * resizes Katmanlar (height remembered, double-click: back to content
+ * resizes Katmanlar (height remembered, double-click: back to the pre-resize
  * height). The column itself is resizable and can be hidden (Ctrl+Alt+B).
  * On the world map it only shows the world hint.
  */

@@ -92,6 +92,11 @@ export class CameraController {
     this.#requestRender = requestRender;
   }
 
+  /** Zoom shown in the editable field while the camera animates (the requested, pixel-aligned target). */
+  get displayZoom(): number {
+    return this.#anim ? this.effectiveZoom(this.#anim.target) : this.camera.zoom;
+  }
+
   /** Target of the running zoom animation, else the current zoom (base for relative zoom steps). */
   get zoomTarget(): number {
     return this.#anim?.target ?? this.zoomLevel;

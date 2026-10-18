@@ -160,6 +160,24 @@ describe("rectangle outline gestures", () => {
     expect(store.undoDepth).toBe(1);
   });
 
+  it("brush right-click picks without opening a menu, then select right-click opens selection actions", () => {
+    const { store, layerId, controller, contextRequest, setPoint } = setup();
+    const index = store.getOrAddPaletteIndex("t", 3);
+    store.dispatch({ type: "paintCells", layerId, cells: [{ x: 2, y: 2, cell: index }] });
+    const s = useEditorStore.getState();
+    s.setTool("brush");
+    setPoint({ x: 2, y: 2 });
+    controller.pointerDown({ ...e(2), button: 2 }, { x: 2, y: 2 });
+    controller.pointerUp({ ...e(0), button: 2 });
+    expect(useEditorStore.getState().selection).toEqual({ tilesetId: "t", tileId: 3 });
+    expect(contextRequest).not.toHaveBeenCalled();
+    s.setTool("select");
+    s.setRegion(r);
+    controller.pointerDown({ ...e(2), button: 2 }, { x: 2, y: 2 });
+    controller.pointerUp({ ...e(0), button: 2 });
+    expect(contextRequest).toHaveBeenCalledWith(expect.objectContaining({ kind: "selection" }));
+  });
+
   it("selection context replacement defaults to the tile under that right-click", () => {
     const { store, layerId, controller, contextRequest } = setup();
     const index = store.getOrAddPaletteIndex("t", 3);

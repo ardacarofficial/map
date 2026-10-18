@@ -1318,7 +1318,7 @@ export class MapCanvas {
   }
 
   #reportZoom(): void {
-    const zoom = this.#camera.camera.zoom;
+    const zoom = this.#camera.displayZoom;
     if (zoom === this.#reportedZoom) return;
     this.#reportedZoom = zoom;
     useEditorStore.getState().setZoom(zoom);

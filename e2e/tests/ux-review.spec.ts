@@ -280,3 +280,50 @@ test("empty marquee cannot save a stamp; arming a saved stamp removes its stale 
   await expect(page.locator("[data-action=placeStamp]")).toBeDisabled();
   await expect(page.locator("[data-action=placeStamp]")).toHaveText("Fırçada etkin");
 });
+
+test("splitter reset restores the pre-drag height across reload even when brush content clears", async ({ page }) => {
+  await openMap(page);
+  await page.evaluate(() => {
+    const h = (window as unknown as { __smap: Hook }).__smap;
+    h.editor.getState().setSelection({ tilesetId: h.store.document.tilesets[0]!.id, tileId: 4 });
+  });
+  await expect(page.locator("[data-inspector-title]")).toContainText("Tile #4");
+  const layers = page.locator("[data-section='layers']");
+  const initial = (await layers.boundingBox())!.height;
+  const splitter = page.locator("[data-section-splitter]");
+  const box = (await splitter.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y - 150, { steps: 8 });
+  await page.mouse.up();
+  const dragged = (await layers.boundingBox())!.height;
+  expect(dragged).toBeGreaterThan(initial + 100);
+  await page.locator("canvas[aria-label='map canvas']").first().focus();
+  await page.keyboard.press("Control+s");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.editor.getState().dirty)).toBe(false);
+  await page.reload();
+  await page.getByRole("button", { name: /^Aç…/ }).first().click();
+  await expect(page.locator("[data-inspector-title]")).toContainText("Önce bir tile seç");
+  await expect.poll(async () => (await layers.boundingBox())!.height).toBe(dragged);
+  await splitter.dblclick();
+  await expect.poll(async () => (await layers.boundingBox())!.height).toBe(initial);
+});
+
+test("zoom field reports the requested preset while a slow camera frame is still interpolating", async ({ page }) => {
+  await openMap(page);
+  await page.clock.install({ time: new Date("2026-10-18T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-10-18T12:00:01Z"));
+  await page.evaluate(async () => {
+    const { getCanvasHandle } = await import(/* @vite-ignore */ String("/src/ui/canvas/canvasHandle.ts"));
+    getCanvasHandle().setZoom(1);
+  });
+  await page.clock.runFor(32);
+  expect((await view(page)).zoom).toBe(1);
+  const actualTileWidth = () => page.evaluate(() => {
+    const h = (window as unknown as { __smap: Hook }).__smap;
+    return h.cellCenter(1, 0).x - h.cellCenter(0, 0).x;
+  });
+  expect(await actualTileWidth()).toBeLessThan(32);
+  await page.clock.runFor(500);
+  expect(await actualTileWidth()).toBe(32);
+});

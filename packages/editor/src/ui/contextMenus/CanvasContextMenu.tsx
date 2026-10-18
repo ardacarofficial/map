@@ -114,8 +114,8 @@ export function selectionMenuItems(): ContextEntry[] {
 
 /**
  * The map canvas' right-click menus. Right-click on the map stays "pick a
- * tile" (CLAUDE.md), with a replacement entry on a single tile. Entities
- * and the select tool's selection have their own context menus.
+ * tile" (CLAUDE.md). Entities and the select tool have their own menus,
+ * including tile replacement for a selection or a picked tile.
  */
 export function CanvasContextMenu() {
   const [request, setRequest] = useState<CanvasContextRequest | null>(null);

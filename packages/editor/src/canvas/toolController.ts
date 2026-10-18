@@ -1121,7 +1121,7 @@ export class ToolController {
       const pickingValues = isGridLayer(this.#activeLayer()) || this.#terrain() !== null;
       const brush = replacementBrushTile();
       this.#finishPick(g.start, g.end, g.spring);
-      if (!moved && g.button === 2 && tile && !pickingReplacement && !pickingValues) this.#host.contextRequest?.({ kind: "tile", tile, brush, x: client.x, y: client.y });
+      if (s.tool === "select" && !moved && g.button === 2 && tile && !pickingReplacement && !pickingValues) this.#host.contextRequest?.({ kind: "tile", tile, brush, x: client.x, y: client.y });
     } else if (action === "eraseRect") {
       const map = this.#host.scene?.store.document.map;
       const r = map ? dragRegion(g.start, g.end, map) : null;

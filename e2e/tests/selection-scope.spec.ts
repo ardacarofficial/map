@@ -182,3 +182,25 @@ test("hidden active layer disables copy, cut and delete without changing cells o
   });
   expect(result).toEqual({ undo: 0, captured: [], enabled: [false, false, false], clipLayers: [result.active], active: result.active });
 });
+
+test("brush right-click picks without a menu; S then opens copy in the selection menu", async ({ page }) => {
+  await setup(page);
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const s = useEditorStore.getState();
+    s.setRegion(null);
+    s.setTool("brush");
+  });
+  const at = await center(page, 3, 3);
+  await page.mouse.click(at.x, at.y, { button: "right" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.keyboard.press("s");
+  const a = await center(page, 2, 2), b = await center(page, 5, 4);
+  await page.mouse.move(a.x, a.y); await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 4 }); await page.mouse.up();
+  await page.mouse.click(at.x, at.y, { button: "right" });
+  const copy = page.getByRole("menuitem", { name: /^Kopyala/ });
+  await expect(copy).toBeEnabled();
+  await copy.click();
+  await expect(page.getByText(/4 × 3 hücre kopyalandı/)).toBeVisible();
+});

@@ -304,7 +304,7 @@ export const en: Messages = {
     title: "Inspector",
     hide: "Hide inspector",
     resizeSection: "Section height",
-    resizeSectionHint: "Drag: height · double-click: fit content",
+    resizeSectionHint: "Drag: height · double-click: original height",
     sectionsHidden: "All sections are hidden",
     showSections: "Show sections",
     solidTiles: "Solid tiles",

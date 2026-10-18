@@ -372,6 +372,29 @@ describe("terrainErase / terrainFill", () => {
 });
 
 describe("paintTerrainBrush undo", () => {
+  it("records all eleven blob strokes and restores each intermediate state", () => {
+    const set = tagBlockWithTemplate(normalizeTileset({ ...TERRAIN_TILESET, terrainSets: [{ id: "b", name: "B", kind: "blob", terrains: [{ id: 1, name: "Grass", color: "#00ff00" }], tiles: [] }] }), "b", 1, "blob47-godot", { col: 0, row: 0 });
+    const store = new MapStore(createDocument({ width: 40, height: 40, tilesets: [set] }));
+    const layerId = store.dispatch({ type: "addLayer", layer: { name: "Ground" } });
+    for (const tag of set.terrainSets![0]!.tiles) store.getOrAddPaletteIndex(set.id, tag.tileId);
+    store.clearHistory();
+    const states = [serializeLevel(store.document)];
+    const stroke = (cells: { x: number; y: number }[], erase = false) => {
+      store.beginTransaction();
+      for (const cell of cells) store.dispatch({ type: "paintTerrainBrush", layerId, tilesetId: set.id, setId: "b", terrainId: 1, cells: [cell], erase });
+      store.commit();
+      states.push(serializeLevel(store.document));
+      expect(store.undoDepth).toBe(states.length - 1);
+    };
+    for (let y = 10; y <= 16; y++) stroke(Array.from({ length: 10 }, (_, i) => ({ x: 9 + i, y })));
+    stroke(Array.from({ length: 4 }, (_, i) => ({ x: 19 + i, y: 13 })));
+    stroke([{ x: 23, y: 9 }]);
+    stroke([{ x: 13, y: 13 }], true);
+    stroke([{ x: 16, y: 15 }, { x: 17, y: 16 }], true);
+    for (let i = states.length - 2; i >= 0; i--) { store.undo(); expect(serializeLevel(store.document)).toBe(states[i]); }
+    for (let i = 1; i < states.length; i++) { store.redo(); expect(serializeLevel(store.document)).toBe(states[i]); }
+  });
+
   it("random brush / erase / fill sequences undo to the initial bytes and redo to the final ones", () => {
     const op = fc.record({
       kind: fc.constantFrom("paint", "erase", "fill"),

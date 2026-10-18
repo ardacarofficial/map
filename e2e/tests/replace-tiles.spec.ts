@@ -86,8 +86,9 @@ test("replace tile: Edit menu, dock picks, zero-count disabling and Escape prese
   expect(await page.evaluate(() => (window as unknown as { __smap: ToolsHook }).__smap.store.undoDepth)).toBe(0);
 });
 
-test("replace tile: tile context opens the same dialog with clicked source and previous brush target", async ({ page }) => {
+test("replace tile: selection context opens the same dialog with clicked source and previous brush target", async ({ page }) => {
   await seed(page);
+  await page.keyboard.press("s");
   const p = await cellPoint(page, 2, 2);
   await page.mouse.click(p.x, p.y, { button: "right" });
   await page.getByRole("menuitem", { name: "Tile değiştir…" }).click();

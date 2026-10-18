@@ -38,6 +38,8 @@ export interface SectionState {
   collapsed: boolean | null;
   /** Height the user dragged it to (CSS px, header included); `null` = automatic content/filler sizing. */
   height: number | null;
+  /** Natural height captured before the first resize; double-click restores it even after reload/context changes. */
+  resetHeight?: number;
 }
 
 export type SectionsState = Record<SectionId, SectionState>;
@@ -144,7 +146,8 @@ function readSection(raw: unknown, fallback: SectionState, id: SectionId): Secti
   const r = raw as Record<string, unknown>;
   const height = typeof r.height === "number" && Number.isFinite(r.height) ? Math.max(SECTION_MIN[id], Math.round(r.height)) : null;
   const collapsed = isBool(r.collapsed) ? r.collapsed : id === "levels" ? null : fallback.collapsed;
-  return { hidden: isBool(r.hidden) ? r.hidden : fallback.hidden, collapsed, height };
+  const resetHeight = typeof r.resetHeight === "number" && Number.isFinite(r.resetHeight) ? Math.max(SECTION_MIN[id], Math.round(r.resetHeight)) : undefined;
+  return { hidden: isBool(r.hidden) ? r.hidden : fallback.hidden, collapsed, height, ...(resetHeight !== undefined ? { resetHeight } : {}) };
 }
 
 /** The stored sections state (defaults for anything missing or broken; storage errors → defaults). */

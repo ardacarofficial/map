@@ -293,3 +293,57 @@ test("wang16 corner set with two terrains: transitions, rectangle, right-click p
 
   expect(errors).toEqual([]);
 });
+
+test("eleven terrain gestures undo and redo every intermediate state, including an isolated click", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const image = await openProject(page, "blob47-godot-32.png");
+  await roughSelect(page, image, 1, 0, 10, 3);
+  const card = page.locator("[data-inspector-terrain='define']");
+  await card.locator("[data-terrain-name-input]").fill("Çimen");
+  await card.locator("[data-action='terrain-define']").click();
+  await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { getCanvasHandle } = await import(/* @vite-ignore */ String("/src/ui/canvas/canvasHandle.ts"));
+    const s = useEditorStore.getState();
+    s.setTool("brush"); s.setBrushSize(1);
+    s.project.store.clearHistory();
+    getCanvasHandle().setZoom(1);
+  });
+  await expect.poll(async () => (await cellPoint(page, 17, 15)).x - (await cellPoint(page, 16, 15)).x).toBe(32);
+  await page.evaluate(async () => {
+    const { getCanvasHandle } = await import(/* @vite-ignore */ String("/src/ui/canvas/canvasHandle.ts"));
+    getCanvasHandle().centerOn(16, 15);
+  });
+  const canvas = page.locator("canvas[aria-label='map canvas']").first();
+  await canvas.focus();
+  const cells = () => page.evaluate(() => {
+    const h = (window as unknown as { __smap: Hook }).__smap;
+    const layer = h.store.document.layers.find(l => l.id === h.editor.getState().activeLayerId)!;
+    return Array.from({ length: 40 * 32 }, (_, i) => layer.getCell(i % 40, Math.floor(i / 40)));
+  });
+  const states = [await cells()];
+  const stroke = async (x: number, y: number, endX = x, endY = y) => {
+    const a = await cellPoint(page, x, y), b = await cellPoint(page, endX, endY);
+    const box = (await canvas.boundingBox())!;
+    for (const p of [a, b]) expect(p.y).toBeGreaterThan(box.y);
+    await page.mouse.move(a.x, a.y); await page.mouse.down();
+    await page.mouse.move(b.x, b.y, { steps: 10 }); await page.mouse.up();
+    const next = await cells();
+    expect(next).not.toEqual(states.at(-1));
+    states.push(next);
+  };
+  for (let y = 10; y <= 16; y++) await stroke(9, y, 18, y);
+  await stroke(19, 13, 22, 13);
+  await stroke(23, 9);
+  await page.keyboard.press("e");
+  await stroke(13, 13);
+  await stroke(16, 15, 17, 16);
+  for (let i = states.length - 2; i >= 0; i--) {
+    await page.keyboard.press("Control+z");
+    expect(await cells()).toEqual(states[i]);
+  }
+  for (let i = 1; i < states.length; i++) {
+    await page.keyboard.press("Control+y");
+    expect(await cells()).toEqual(states[i]);
+  }
+});

@@ -63,6 +63,11 @@ describe("sections persistence", () => {
     expect(readSections(s).layers.height).toBe(SECTION_MIN.layers);
   });
 
+  it("keeps the pre-drag height across reload for a context-independent reset", () => {
+    const storage = memory({ [SECTIONS_KEY]: JSON.stringify({ properties: { height: 91, resetHeight: 245 } }) });
+    expect(readSections(storage).properties).toMatchObject({ height: 91, resetHeight: 245 });
+  });
+
   it("takes over the old level-list folded flag once", () => {
     expect(readSections(memory({ [LEGACY_LEVELS_COLLAPSED_KEY]: "1" })).levels.collapsed).toBe(true);
     expect(readSections(memory({ [LEGACY_LEVELS_COLLAPSED_KEY]: "0" })).levels.collapsed).toBe(false);

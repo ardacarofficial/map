@@ -134,7 +134,9 @@ export interface LayoutState {
   setSectionHidden(id: SectionId, hidden: boolean): void;
   setSectionCollapsed(id: SectionId, collapsed: boolean): void;
   /** Sets a section height (already clamped by the caller); `null` = content height. `commit` stores it. */
-  setSectionHeight(id: SectionId, height: number | null, commit?: boolean): void;
+  setSectionHeight(id: SectionId, height: number | null, commit?: boolean, startHeight?: number): void;
+  /** Restores the pre-resize split (legacy stored layouts fall back to automatic sizing). */
+  resetSectionHeight(id: SectionId): void;
   /** Stores the sections state (end of a splitter drag). */
   commitSections(): void;
   /** Everything back to the defaults ("Düzeni sıfırla"). */
@@ -236,11 +238,15 @@ export const useLayoutStore = create<LayoutState>()((set, get) => ({
     set({ sections });
     writeSections(storage(), sections);
   },
-  setSectionHeight: (id, height, commit = false) => {
+  setSectionHeight: (id, height, commit = false, startHeight) => {
     const current = get().sections[id];
-    if (current.height !== height) set({ sections: { ...get().sections, [id]: { ...current, height } } });
+    if (current.height !== height) {
+      const resetHeight = current.resetHeight ?? (current.height === null && startHeight !== undefined ? Math.round(startHeight) : undefined);
+      set({ sections: { ...get().sections, [id]: { ...current, height, ...(resetHeight !== undefined ? { resetHeight } : {}) } } });
+    }
     if (commit) writeSections(storage(), get().sections);
   },
+  resetSectionHeight: (id) => get().setSectionHeight(id, get().sections[id].resetHeight ?? null, true),
   commitSections: () => writeSections(storage(), get().sections),
   resetLayout: () => {
     set({

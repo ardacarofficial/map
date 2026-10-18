@@ -93,3 +93,28 @@ describe("dock default height", () => {
     expect(clampDockHeight(900)).toBe(DOCK.max);
   });
 });
+
+describe("section resize reset", () => {
+  it("restores the original split across reload and subsequent drags", async () => {
+    const { store, storage } = await loadPanel(null);
+    store.getState().setSectionHeight("properties", 91, true, 245);
+    expect(store.getState().sections.properties).toMatchObject({ height: 91, resetHeight: 245 });
+    vi.resetModules();
+    const { useLayoutStore: reloaded } = await import("./layoutStore");
+    reloaded.getState().resetSectionHeight("properties");
+    expect(reloaded.getState().sections.properties.height).toBe(245);
+    expect(JSON.parse(storage.data["smap.layout.sections"]!).properties.height).toBe(245);
+    reloaded.getState().setSectionHeight("properties", 110, true, 180);
+    reloaded.getState().resetSectionHeight("properties");
+    expect(reloaded.getState().sections.properties.height).toBe(245);
+    reloaded.getState().resetLayout();
+    expect(reloaded.getState().sections.properties).toEqual({ height: null, collapsed: false, hidden: false });
+  });
+
+  it("uses content sizing for older stored splits without a captured height", async () => {
+    const { store } = await loadPanel(null);
+    store.getState().setSectionHeight("layers", 300, true);
+    store.getState().resetSectionHeight("layers");
+    expect(store.getState().sections.layers.height).toBeNull();
+  });
+});

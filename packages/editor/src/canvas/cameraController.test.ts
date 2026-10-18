@@ -96,3 +96,23 @@ describe("opening frame density", () => {
     expectFit(cam);
   });
 });
+
+describe("zoom readout during animation", () => {
+  it("reports the requested preset immediately, so a slow frame does not invite an extra wheel notch", () => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(824, 544, 1);
+    cam.setZoom(0.75, cam.viewCenter());
+    cam.zoomStep(1);
+    expect(cam.displayZoom).toBe(1);
+    cam.step(64);
+    expect(cam.camera.zoom).toBeLessThan(1);
+    expect(cam.displayZoom).toBe(1);
+    cam.step(1000);
+    expect(cam.camera.zoom).toBe(1);
+    expect(cam.displayZoom).toBe(1);
+    cam.zoomStep(-1);
+    expect(cam.displayZoom).toBe(cam.effectiveZoom(2 / 3));
+    cam.stopAnimation();
+    expect(cam.displayZoom).toBe(cam.camera.zoom);
+  });
+});
