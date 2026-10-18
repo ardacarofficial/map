@@ -1,3 +1,4 @@
+import { GridControl, GridSettings } from "../toolOptions/GridControl";
 import type { Ref } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { useEffect, useRef, useState } from "react";
@@ -35,7 +36,7 @@ export function OptionsBar() {
     const measure = () => {
       const options = element.querySelector<HTMLElement>("[data-tool-chip]");
       const leading = options ? options.getBoundingClientRect().left - element.getBoundingClientRect().left : 0;
-      setCompact(element.clientWidth < leading + (options?.scrollWidth ?? 0) + 112);
+      setCompact(element.clientWidth < leading + (options?.scrollWidth ?? 0) + 140);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
@@ -88,11 +89,12 @@ export function OptionsBar() {
               </Menu.Positioner>
             </Menu.Portal>
           </Menu.Root>
-        ) : toggles.map(({ command, icon, label, on }) => (
+        ) : toggles.map(({ command, icon, label, on }) => command === "view.toggleGrid" ? <GridControl key={command} disabled={world} /> : (
           <Tooltip key={command} label={label} command={command}>
             <IconButton size="md" aria-label={label} active={on} aria-pressed={on} disabled={world} data-view-toggle={command} onClick={() => runCommand(command)}><Icon name={icon} size={16} /></IconButton>
           </Tooltip>
         ))}
+        {compact && <GridSettings disabled={world} />}
       </div>
     </div>
   );

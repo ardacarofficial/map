@@ -1,3 +1,6 @@
+import { majorGridLayout } from "./majorGrid";
+import { useMajorGrid } from "../state/majorGridSettings";
+import { drawMapBorderPreview } from "./mapBorderPreview";
 import { rectangleThickness } from "../state/rectangleOptions";
 import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { smartGesturePlan, smartHoverGesture, smartRect } from "./smartStampGesture";
@@ -261,12 +264,22 @@ export class OverlayRenderer {
       }
     }
 
+    const guides = useMajorGrid.getState().settings;
+    if (state.gridVisible && guides.interval > 0) {
+      const major = majorGridLayout(cam.camera, res, cam.viewW, cam.viewH, map.tileWidth, map.tileHeight, map.width, map.height, guides);
+      for (const x of major.xs) g.rect(x * px, major.top * px, px, (major.bottom - major.top) * px);
+      for (const y of major.ys) g.rect(major.left * px, y * px, (major.right - major.left) * px, px);
+      g.fill(host.colors.majorGrid);
+    }
+
     // Map border: 1 device px just outside the map.
     const b = cam.cellBox({ x: 0, y: 0, width: map.width, height: map.height });
     rectOutline(g, b.x0 - 1, b.y0 - 1, b.x1 + 1, b.y1 + 1, 1, px);
     g.fill(host.colors.mapBorder);
 
     if (host.showCollision) this.#drawCollisionOutline();
+
+    if (drawMapBorderPreview(host)) return;
 
     const gesture = host.gesture;
     const smart = activeSmartStamp(), session = useSmartStampSession.getState();

@@ -486,3 +486,5 @@ export * from "./smartStamp/topology";
 export * from "./smartStamp/roadProfile";
 export * from "./smartStamp/roadSolver";
 export type { RgbaImage } from "./tilesetPixels";
+
+export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorderOptions, type MapBorder } from "./mapBorder";

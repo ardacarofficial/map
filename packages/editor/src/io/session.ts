@@ -1,3 +1,4 @@
+import { selectMajorGridProject } from "../state/majorGridSettings";
 import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
 import type { GeneratedRecipe } from "./smartStampRecipes";
 /**
@@ -175,6 +176,7 @@ function activate(
   clearTilesetImages();
   for (const image of images) setTilesetImage(image);
   setFolder(target);
+  selectMajorGridProject(target ? (typeof target.ref === "string" ? target.ref : `browser:${target.label}`) : null);
   useUiStore.getState().setActiveTileset(project.store.document.tilesets[0]?.id ?? null);
   useEditorStore.getState().setProject(project);
   useEditorStore.getState().setTool("brush");
@@ -338,6 +340,7 @@ function addRecent(target: ProjectFolder, project: OpenProject): void {
 export function closeProject(): void {
   recentThumbnails.cancel();
   setFolder(null);
+  selectMajorGridProject(null);
   workspace = null;
   activeLayerMemory.clear();
   clearLevelViews();
@@ -698,7 +701,10 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
         settings: lib.settings,
       });
       if (workspace !== ws) return;
-      if (folder !== target) setFolder(target);
+      if (folder !== target) {
+        setFolder(target);
+        selectMajorGridProject(typeof target.ref === "string" ? target.ref : `browser:${target.label}`, true);
+      }
       useSaveStatus.setState({ lastSavedAt: Date.now(), failed: false });
       publishLevelState();
       for (const listener of savedListeners) {

@@ -8,6 +8,7 @@
  *
  * Env:
  * - `PERF_LABEL`     result file name under `perf/results/` (default "latest")
+ * - `PERF_MAJOR_GRID` enable guides (2..64 tiles) during the same scenarios
  * - `PERF_RUNS`      repetitions of every editor scenario (default 5)
  * - `PERF_NO_BUILD`  reuse the build (skip it)
  * - `PERF_DIST`      build folder relative to packages/editor (default ../../e2e/perf/dist)
