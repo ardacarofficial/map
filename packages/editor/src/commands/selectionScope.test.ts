@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copyRegion, createDocument, MapStore, moveRegion, pasteClip, serializeLevel, type TileClip } from "@smap/core";
 import { useEditorStore } from "../state/editorStore";
+import { useToastStore } from "../ui/toast/toastStore";
+import { t } from "../i18n";
 import { copySelection, cutSelection, deleteSelection, getMemoryClip } from "./clipboard";
-import { resolveSelectionScope, survivingSelectionIds } from "./selectionScope";
+import { canUseSelectionScope, captureSelectionScope, resolveSelectionScope, survivingSelectionIds } from "./selectionScope";
 import { rotateBrush } from "./rotateCommands";
 import { prepareSelectionPaste, survivingPasteMapping } from "./selectionPaste";
 
@@ -44,6 +46,47 @@ describe("selection layer snapshots", () => {
     store.dispatch({ type: "setLayerProps", layerId: roof, props: { locked: true } });
     store.dispatch({ type: "setLayerProps", layerId: collision, props: { visible: false, locked: true } });
     expect(snapshot()).toEqual({ layerIds: [ground], skipped: ["Roof"] });
+  });
+
+  it.each([{ visible: false }, { locked: true }])("disables every active-layer selection action for %j", props => {
+    // Keep a prior clipboard so a rejected copy/cut cannot replace it with an empty clip.
+    expect(copySelection()).toBe(true);
+    const clip = getMemoryClip();
+    store.dispatch({ type: "setLayerProps", layerId: ground, props });
+    store.clearHistory();
+    const before = bytes();
+    expect(captureSelectionScope(store.document)).toEqual([]);
+    expect(resolveSelectionScope(store.document, ground, "active").layerIds).toEqual([]);
+    expect(canUseSelectionScope()).toBe(false);
+    for (const action of [copySelection, cutSelection, deleteSelection]) {
+      expect(action()).toBe(false);
+      expect(bytes()).toBe(before);
+      expect(store.undoDepth).toBe(0);
+      expect(getMemoryClip()).toBe(clip);
+    }
+  });
+
+  it("clipboard actions and move/rotate capture identical visible unlocked layers", () => {
+    useEditorStore.getState().setSelectionScope("visible");
+    store.dispatch({ type: "setLayerProps", layerId: ground, props: { visible: false } });
+    store.dispatch({ type: "setLayerProps", layerId: roof, props: { locked: true } });
+    store.clearHistory();
+    const ids = captureSelectionScope(store.document);
+    expect(ids).toEqual([collision]);
+    expect(canUseSelectionScope()).toBe(true);
+    expect(copySelection()).toBe(true);
+    expect(getMemoryClip()!.layers.map(l => l.layerId)).toEqual(ids);
+    expect(useToastStore.getState().toasts[0]?.message).toBe(t("selectionScope.skipped", { layers: "Roof" }));
+    const before = bytes();
+    for (const action of [cutSelection, deleteSelection]) {
+      expect(action()).toBe(true);
+      expect(useToastStore.getState().toasts[0]?.message).toBe(t("selectionScope.skipped", { layers: "Roof" }));
+      expect(store.document.getLayer(ground)!.getCell(1, 1)).not.toBe(0);
+      expect(store.document.getLayer(roof)!.getCell(1, 1)).not.toBe(0);
+      expect(store.document.getLayer(collision)!.getCell(1, 1)).toBe(0);
+      expect(store.undoDepth).toBe(1);
+      store.undo(); expect(bytes()).toBe(before);
+    }
   });
 
   it("never adds targets after capture, including after a layer is removed", () => {

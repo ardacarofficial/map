@@ -1,5 +1,5 @@
 /** Gesture geometry only; connectivity and tile selection stay in core's planners. */
-import { stampLayerMapping, normalizeRect, orthogonalBridge, planSmartStampArea, planSmartStampRoad, rectangleBandContains, type CellPoint, type CellRect, type MapStore, type Stamp, type StampLayerTarget, type SmartStampPlan, type TerrainMembership } from "@smap/core";
+import { stampLayerMapping, normalizeRect, orthogonalBridge, planSmartStampArea, planSmartStampRoad, rectangleBandContains, terrainMembership, type CellPoint, type CellRect, type MapStore, type Stamp, type StampLayerTarget, type SmartStampPlan, type TerrainMembership } from "@smap/core";
 import { brushFootprint, constrainRect, footprintCells } from "./footprint";
 
 export interface SmartGesture {
@@ -26,9 +26,10 @@ export function smartMembership(g: SmartGesture): TerrainMembership {
     const r = smartRect(g);
     return { bounds: r, contains: (x, y) => rectangleBandContains(r, g.thickness, x, y) };
   }
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const key of g.members) { const [x, y] = key.split(",").map(Number) as [number, number]; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  return { bounds: { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 }, contains: (x, y) => g.members.has(`${x},${y}`) };
+  return terrainMembership([...g.members].map(key => {
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    return { x, y };
+  }));
 }
 export function smartGesturePlan(g: SmartGesture, window?: CellRect): SmartStampPlan {
   const options = { revision: g.store.revision, orientation: g.orientation, mapping: g.mapping, ...(window ? { window } : {}) };
