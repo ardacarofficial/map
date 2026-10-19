@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import type { FileData } from "../io/fileData";
+import { describe, expect, it, vi } from "vitest";
 
 import { MemoryFileSystem } from "../io/memoryFs";
 import { tmjExportFiles, unityExportFiles, writeExportFiles } from "./exportFiles";
 import { BYTES, sampleStore } from "./testDoc";
 
 const bytes = (id: string) => BYTES[id];
-const decode = (data: string | Uint8Array) => (typeof data === "string" ? data : new TextDecoder().decode(data));
+const decode = (data: FileData) => { if (typeof data === "function") throw new Error("expected materialized bytes"); return typeof data === "string" ? data : new TextDecoder().decode(data); };
 
 describe("unityExportFiles", () => {
   it("writes the used tileset PNGs (unique names) and then <level>.smapmap", () => {
@@ -49,6 +50,17 @@ describe("tmjExportFiles", () => {
 });
 
 describe("writeExportFiles", () => {
+  it.each([unityExportFiles, tmjExportFiles])("defers PNG encoding until writing an export", async build => {
+    const { store } = sampleStore(), fs = new MemoryFileSystem();
+    const encode = vi.fn(async () => BYTES.grass!);
+    const set = build(store.document, "main", id => id === "grass" ? encode : BYTES[id]);
+    expect(set.missingImages).toEqual([]);
+    expect(encode).not.toHaveBeenCalled();
+    await writeExportFiles(fs, set.files);
+    expect(encode).toHaveBeenCalledOnce();
+    expect(fs.files.get("grass.png")).toEqual(BYTES.grass);
+  });
+
   it("writes every file, then skips files whose bytes did not change", async () => {
     const fs = new MemoryFileSystem("Maps");
     const { store, ground } = sampleStore();

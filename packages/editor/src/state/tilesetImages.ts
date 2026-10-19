@@ -1,3 +1,5 @@
+import { pngHash } from "./pngHash";
+import type { PngBytes } from "../io/fileData";
 /**
  * Registry of decoded tileset images, keyed by tileset id. Filled by the UI
  * when a PNG is dropped or a project is opened; read by the canvas to build
@@ -8,8 +10,29 @@
 export interface TilesetImage {
   tilesetId: string;
   bitmap: ImageBitmap;
-  /** Original PNG bytes, needed to write `tilesets/<file>.png` on save. */
-  bytes: Uint8Array;
+  /** Original PNG bytes, or undefined until a generated image is saved/exported. */
+  bytes: Uint8Array | undefined;
+}
+
+const encoders = new WeakMap<TilesetImage, () => Promise<Uint8Array>>();
+const encoding = new WeakMap<TilesetImage, Promise<Uint8Array>>();
+export function deferredTilesetImage(tilesetId: string, bitmap: ImageBitmap, encode: () => Promise<Uint8Array>): TilesetImage {
+  const image: TilesetImage = { tilesetId, bitmap, bytes: undefined };
+  encoders.set(image, encode); return image;
+}
+export function tilesetImageBytes(image: TilesetImage): Promise<Uint8Array> {
+  if (image.bytes) return Promise.resolve(image.bytes);
+  const hit = encoding.get(image); if (hit) return hit;
+  const encode = encoders.get(image);
+  if (!encode) return Promise.reject(new Error(`Missing PNG encoder: ${image.tilesetId}`));
+  const pending = Promise.resolve().then(encode).then(bytes => { image.bytes = bytes; encoders.delete(image); return bytes; });
+  encoding.set(image, pending);
+  void pending.finally(() => { if (encoding.get(image) === pending) encoding.delete(image); }).catch(() => {});
+  return pending;
+}
+/** The deferred supplier captures this revision, even if a newer image replaces the registry entry. */
+export function tilesetPngSource(id: string): PngBytes | undefined {
+  const image = getTilesetImage(id); return image ? image.bytes ?? (() => tilesetImageBytes(image)) : undefined;
 }
 
 type Listener = (tilesetId: string) => void;
@@ -28,6 +51,8 @@ export function allTilesetImages(): IterableIterator<TilesetImage> {
 export function setTilesetImage(image: TilesetImage): void {
   images.get(image.tilesetId)?.bitmap.close();
   images.set(image.tilesetId, image);
+  // Start provenance hashing alongside image publication, before a user picks a smart source.
+  if (image.bytes) void pngHash(image.bytes).catch(() => {});
   for (const l of listeners) l(image.tilesetId);
 }
 

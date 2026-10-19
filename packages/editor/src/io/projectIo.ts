@@ -26,6 +26,7 @@ import {
 } from "@smap/core";
 
 import type { TilesetImage } from "../state/tilesetImages";
+import { resolveFileData, type FileData, type PngBytes } from "./fileData";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 import { loadStamps, removeStaleStamps } from "./stampsIo";
 
@@ -39,7 +40,7 @@ export interface SaveProjectInput {
   document: MapDocument;
   levelPath: string;
   /** Original PNG bytes of a tileset; `undefined` keeps whatever file is on disk. */
-  tilesetBytes(tilesetId: string): Uint8Array | undefined;
+  tilesetBytes(tilesetId: string): PngBytes | undefined;
   /**
    * The project's level list as loaded (keeps level ids and world positions).
    * The level being saved is added when missing. Defaults to just that level.
@@ -81,7 +82,7 @@ export function defaultLevels(levelPath: string, name?: string): ProjectLevel[] 
 /** One file of a project folder, relative to it. Text is UTF-8. */
 export interface ProjectFile {
   readonly path: string;
-  readonly data: string | Uint8Array;
+  readonly data: FileData;
 }
 
 /**
@@ -140,13 +141,14 @@ export async function saveProjectLevels(fs: ProjectFileSystem, input: SaveProjec
   const levelPaths = new Set([input.levelPath, ...(input.otherLevels ?? []).map((l) => l.path)]);
   const stampFiles = new Set((input.stamps ?? []).map((s) => stampPath(s.id)));
   for (const file of projectFiles(input)) {
-    if (typeof file.data === "string") {
+    const data = await resolveFileData(file.data);
+    if (typeof data === "string") {
       // Unchanged stamp files are not rewritten (a library can hold many).
-      if (stampFiles.has(file.path) && (await sameText(fs, file.path, file.data))) continue;
-      await fs.writeText(file.path, file.data);
-      if (levelPaths.has(file.path)) levelTexts.set(file.path, file.data);
-    } else if (!(await sameFile(fs, file.path, file.data))) {
-      await fs.writeBytes(file.path, file.data);
+      if (stampFiles.has(file.path) && (await sameText(fs, file.path, data))) continue;
+      await fs.writeText(file.path, data);
+      if (levelPaths.has(file.path)) levelTexts.set(file.path, data);
+    } else if (!(await sameFile(fs, file.path, data))) {
+      await fs.writeBytes(file.path, data);
     }
   }
   // Removed levels lose their file only now: project.smap no longer lists them.

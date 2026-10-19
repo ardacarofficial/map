@@ -3,6 +3,7 @@ import { detectNineSliceSelection, type MapStore, type Stamp, type TileClip, typ
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage, setTilesetImage, type TilesetImage } from "../state/tilesetImages";
 import { tilesetPixels } from "../state/tilesetPixels";
+import { brushProfile, profileSpan, type BrushProfile } from "../state/smartBrushProfile";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { refreshSmartStampSession } from "../ui/stamps/smartStampSession";
@@ -34,9 +35,12 @@ export const smartBrushPreparationDebug = import.meta.env.DEV || import.meta.env
   gate: null as Promise<boolean> | null,
   finish: null as ((fail: boolean) => void) | null,
   durations: [] as number[],
+  profiles: [] as BrushProfile[],
   pending: 0,
+  entered: 0,
   hold() {
     this.release();
+    this.entered = 0;
     this.gate = new Promise(resolve => { this.finish = resolve; });
   },
   release(fail = false) { this.finish?.(fail); this.finish = null; this.gate = null; },
@@ -60,6 +64,7 @@ function signal(record: BrushRecord): void {
 /** Inspect the original selection before the panel's empty-cell filtering can shrink its bounds. */
 export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], emptyIds: ReadonlySet<number>, clip: TileClip): void {
   const started = performance.now();
+  const profile = brushProfile();
   const store = useEditorStore.getState().project?.store, image = getTilesetImage(tileset.id);
   if (!store || !image || ids.length === 0) return;
   let col = Infinity, row = Infinity, right = 0, bottom = 0;
@@ -75,12 +80,18 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
     width: rect.width * tileset.tileWidth + (rect.width - 1) * tileset.spacing,
     height: rect.height * tileset.tileHeight + (rect.height - 1) * tileset.spacing,
   };
-  const detected = detectNineSliceSelection({ tileset, rect, ids, emptyIds, pixels: tilesetPixels(image.bitmap, pixelRect) });
+  if (profile) profile.spans.geometry = performance.now() - started;
+  const pixels = profileSpan(profile, "selection.pixels", () => tilesetPixels(image.bitmap, pixelRect));
+  const detected = profileSpan(profile, "detector", () => detectNineSliceSelection({ tileset, rect, ids, emptyIds, pixels }));
   if (!detected) return;
   if (cacheStore !== store) { cache.clear(); preferences.clear(); cacheStore = store; }
-  const key = JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, detected.version]);
+  const key = profileSpan(profile, "cache.key", () => JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, detected.version]));
   const hit = cache.get(key);
-  if (hit && hit.image === image && !hit.failed) { records.set(clip, hit); return; }
+  if (hit && hit.image === image && !hit.failed) {
+    records.set(clip, hit);
+    if (hit.prepared && profile) { profile.spans.total = performance.now() - started; smartBrushPreparationDebug?.profiles.push(profile); smartBrushPreparationDebug?.durations.push(profile.spans.total); }
+    return;
+  }
   // Image bytes invalidate the cache, but never the recipe or atlas identity.
   let hash = 2166136261;
   for (const ch of key) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
@@ -92,17 +103,14 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   const targets = hit?.targets;
   const record: BrushRecord = { key, store, tileset, ids: [...ids], emptyIds, image, source, ...(targets ? { targets } : {}), pending: Promise.resolve(), failed: false, published: false };
   records.set(clip, record); cache.set(key, record);
-  record.pending = runPreparation(record, source, targets, started);
+  record.pending = runPreparation(record, source, targets, started, profile);
 }
-function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMap<string, string>, started = performance.now()): Promise<void> {
+function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMap<string, string>, started = performance.now(), profile = brushProfile()): Promise<void> {
   const { store, image, tileset } = record;
   const gate = smartBrushPreparationDebug?.gate;
   if (smartBrushPreparationDebug) smartBrushPreparationDebug.pending++;
-  const prepare = async () => {
-    if (gate && await gate) throw new Error("PNG encoding failed (debug)");
-    return prepareSmartStamp(source, undefined, targets);
-  };
-  return prepare().then(prepared => {
+  let measured = false;
+  return prepareSmartStamp(source, undefined, targets, profile, prepared => {
     if (getTilesetImage(tileset.id) !== image || useEditorStore.getState().project?.store !== store) {
       for (const asset of prepared.assets) asset.image.bitmap.close();
       record.failed = true;
@@ -110,16 +118,23 @@ function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMa
     }
     record.prepared = prepared; record.targets = new Map(prepared.assets.map(a => [a.tileset.generated!.layerId, a.tileset.id])); records.set(prepared.stamp, record);
     // Cached PNG bytes and preview textures are not document edits. Redo can reuse them.
-    for (const asset of prepared.assets) if (getTilesetImage(asset.tileset.id) !== asset.image) setTilesetImage(asset.image);
-    signal(record);
-  }).catch(error => {
+    profileSpan(profile, "images.publish", () => { for (const asset of prepared.assets) if (getTilesetImage(asset.tileset.id) !== asset.image) setTilesetImage(asset.image); });
+    profileSpan(profile, "signals", () => signal(record));
+    if (!gate) {
+      const total = performance.now() - started;
+      smartBrushPreparationDebug?.durations.push(total);
+      if (profile) { profile.spans.total = total; smartBrushPreparationDebug?.profiles.push(profile); }
+      measured = true;
+    }
+  }).then(() => {}).catch(error => {
     record.failed = true;
     if (getTilesetImage(tileset.id) !== image || useEditorStore.getState().project?.store !== store) return;
     signal(record);
     toast.error(t("smartStamp.failed", { detail: String(error) }));
   }).finally(() => {
     if (smartBrushPreparationDebug) smartBrushPreparationDebug.pending--;
-    if (!gate) smartBrushPreparationDebug?.durations.push(performance.now() - started);
+    if (!gate && !measured) smartBrushPreparationDebug?.durations.push(performance.now() - started);
+    if (!gate && !measured && profile) { profile.spans.total = performance.now() - started; smartBrushPreparationDebug?.profiles.push(profile); }
   });
 }
 export async function waitForSelectionBrush(clip: TileClip): Promise<PreparedSmartStamp | undefined> {

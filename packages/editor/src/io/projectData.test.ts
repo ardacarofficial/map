@@ -31,7 +31,8 @@ describe("round 4 project data (random sets, collections)", () => {
     const store = storeWithData();
     const files = projectFiles({ name: "P", document: store.document, levelPath: DEFAULT_LEVEL_PATH, tilesetBytes: () => undefined });
     const project = files.find((f) => f.path === PROJECT_FILE_NAME)!;
-    const parsed = parseProject(typeof project.data === "string" ? project.data : new TextDecoder().decode(project.data));
+    if (typeof project.data !== "string") throw new Error("project metadata must be text");
+    const parsed = parseProject(project.data);
     expect(parsed.randomSets.map((s) => s.id)).toEqual(["flowers"]);
     expect(parsed.collections.map((c) => c.id)).toEqual(["fav"]);
   });

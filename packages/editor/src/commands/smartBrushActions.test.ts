@@ -127,3 +127,12 @@ it("a rolled-back first gesture still allows first publication on library save",
  await publishSavedBrushAssets();
  expect(serializeLevel(store.document)).toBe(before); expect(store.undoDepth).toBe(depth);
 });
+
+it("publishes an in-memory bake synchronously when source provenance is cached", async () => {
+ const { clip } = setup(); await waitForSelectionBrush(clip);
+ vi.mocked(bakeSmartStamp).mockImplementationOnce((_s, _l, target) => ({ tilesetId: target.id, bytes: undefined, bitmap: { close: vi.fn() } as unknown as ImageBitmap }));
+ const next = clipFromTileset(source, { x: 3, y: 1, w: 3, h: 3 })!;
+ prepareSelectionBrush(source, [15,16,17,27,28,29,39,40,41], new Set(), next);
+ expect(preparedBrush(next)?.nineSlice?.road).toBeDefined();
+ await waitForSelectionBrush(next);
+});

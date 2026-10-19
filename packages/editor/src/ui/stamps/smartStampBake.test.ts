@@ -11,6 +11,24 @@ const source = (size: number): PixelImage => {
 };
 const pixel = (p: PixelImage, x: number, y: number) => [...p.data.subarray((y * p.width + x) * 4, (y * p.width + x) * 4 + 4)];
 describe("smart stamp bake", () => {
+  it.each([0, FLIP_H, FLIP_V, FLIP_D, (FLIP_H | FLIP_V | FLIP_D) >>> 0])("a cropped, offset source gives identical assembly pixels with flags %s", flags => {
+    const ts = { ...sheet(3), columns: 8, rows: 8, margin: 0, spacing: 0 }, width = 24;
+    const data = Uint8ClampedArray.from({ length: width * width * 4 }, (_, i) => (i * 37) % 256);
+    const original = { width, height: width, data }, cropped = new Uint8ClampedArray(9 * 9 * 4);
+    for (let y = 0; y < 9; y++) cropped.set(data.subarray(((y + 9) * width + 6) * 4, ((y + 9) * width + 15) * 4), y * 9 * 4);
+    const s = { ...stamp(flags), palette: stamp().palette.map((e, i) => ({ ...e, tileId: 2 + i % 3 + (3 + Math.floor(i / 3)) * 8 })) };
+    const target = { ...ts, id: "generated", columns: 8, rows: 8 };
+    const full = rasterizeSmartStamp(s, "ground", target, new Map([[ts.id, { tileset: ts, pixels: original }]]));
+    expect(rasterizeSmartStamp(s, "ground", target, new Map([[ts.id, { tileset: ts, pixels: { width: 9, height: 9, data: cropped, originX: 6, originY: 9 } }]]))).toEqual(full);
+  });
+  it.each([0, FLIP_H, FLIP_V, FLIP_H | FLIP_V, FLIP_D, (FLIP_D | FLIP_H) >>> 0, (FLIP_D | FLIP_V) >>> 0, (FLIP_H | FLIP_V | FLIP_D) >>> 0])("word copies match the legacy byte path in every slot with flags %s", flags => {
+    for (const size of [1, 3, 4, 5]) {
+      const ts = sheet(size), pixels = source(size), s = stamp(flags), target = { ...ts, columns: 8, rows: 8 };
+      const unaligned = new Uint8Array(new ArrayBuffer(pixels.data.length + 1), 1); unaligned.set(pixels.data);
+      const legacy = rasterizeSmartStamp(s, "ground", target, new Map([[ts.id, { tileset: ts, pixels: { ...pixels, data: unaligned } }]]));
+      expect(rasterizeSmartStamp(s, "ground", target, new Map([[ts.id, { tileset: ts, pixels }]]))).toEqual(legacy);
+    }
+  });
   for (const size of [1, 3, 4, 5]) for (const flags of [0, FLIP_H, FLIP_V, FLIP_D, (FLIP_H | FLIP_V | FLIP_D) >>> 0]) {
     it(`copies all source slots exactly with alpha, size ${size}, flags ${flags}`, () => {
       const ts = sheet(size), pixels = source(size), s = stamp(flags), target = { ...ts, id: "generated", columns: 8, rows: 8 };

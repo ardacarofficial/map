@@ -29,8 +29,8 @@ import { clearLevelViews } from "../state/levelViewMemory";
 import {
   allTilesetImages,
   clearTilesetImages,
-  getTilesetImage,
   setTilesetImage,
+  tilesetPngSource,
   type TilesetImage,
 } from "../state/tilesetImages";
 import { preloadCanvas } from "../ui/canvas/loadCanvas";
@@ -699,7 +699,7 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
         stamps: lib.stamps,
         generatedRecipes: lib.generatedRecipes,
         keepStampFiles: lib.brokenStampFiles,
-        tilesetBytes: (id) => getTilesetImage(id)?.bytes,
+        tilesetBytes: tilesetPngSource,
         settings: lib.settings,
       });
       if (workspace !== ws) return;

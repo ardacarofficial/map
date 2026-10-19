@@ -185,7 +185,7 @@ export async function replaceTilesetImage(tilesetId: string | null = currentTile
   const outcome = await runProjectRegrid(tilesetId, (store) => {
     const result = store.dispatch({ type: "replaceTilesetImage", tilesetId, imageWidth: width, imageHeight: height });
     // The new pixels go in right away (same grid, other image), before the levels follow.
-    if (old) rememberImage(tilesetId, old.bytes, old.bitmap.width, old.bitmap.height);
+    if (old?.bytes) rememberImage(tilesetId, old.bytes, old.bitmap.width, old.bitmap.height);
     setTilesetImage({ tilesetId, bitmap: png.bitmap, bytes: png.bytes });
     swapped = true;
     return result;
@@ -213,7 +213,7 @@ function followImage(doc: MapDocument, tilesetId: string): void {
   const tileset = doc.getTileset(tilesetId);
   const current = getTilesetImage(tilesetId);
   const list = imageVersions.get(tilesetId);
-  if (!tileset || !current || !list) return;
+  if (!tileset || !current?.bytes || !list) return;
   const fits = (w: number, h: number) =>
     gridCount(w, tileset.tileWidth, tileset.margin, tileset.spacing) === tileset.columns &&
     gridCount(h, tileset.tileHeight, tileset.margin, tileset.spacing) === tileset.rows;

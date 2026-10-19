@@ -165,11 +165,11 @@ for (const saved of [false, true]) test(`map border: fresh ${saved ? "saved stam
 
 test("map border: pending preparation disables Apply then updates the open dialog and ghost", async ({ page }) => {
   await openRoadSheet(page); await resize(page, 12, 10);
-  // Hold real PNG encoding to expose the preparation state deterministically.
+  // Hold preparation directly; generated PNG encoding is deferred until save/export.
   await page.evaluate(() => {
-    const original = HTMLCanvasElement.prototype.toBlob;
-    const hold = new Promise<void>(resolve => { (window as unknown as { releaseBorderBake(): void }).releaseBorderBake = resolve; });
-    HTMLCanvasElement.prototype.toBlob = function (...args) { void hold.then(() => original.apply(this, args)); };
+    const hook = (window as unknown as { __smap: { smartBrushPreparation: { hold(): void; release(): void } } }).__smap.smartBrushPreparation;
+    hook.hold();
+    (window as unknown as { releaseBorderBake(): void }).releaseBorderBake = () => hook.release();
   });
   await selectRoad(page);
   const dialog = await openBorder(page);

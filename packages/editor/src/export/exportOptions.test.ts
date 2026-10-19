@@ -1,3 +1,4 @@
+import type { FileData } from "../io/fileData";
 import { exportLayerSummaries, type ExportWarning } from "@smap/core";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +18,7 @@ import { defaultExportSettings } from "./exportSettings";
 import { BYTES, sampleStore } from "./testDoc";
 
 const bytes = (id: string) => BYTES[id];
-const decode = (data: string | Uint8Array) => (typeof data === "string" ? data : new TextDecoder().decode(data));
+const decode = (data: FileData) => { if (typeof data === "function") throw new Error("expected materialized bytes"); return typeof data === "string" ? data : new TextDecoder().decode(data); };
 
 describe("layer selection", () => {
   it("exports every layer not excluded; a new layer is in by default", () => {

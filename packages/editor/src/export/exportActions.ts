@@ -13,7 +13,8 @@ import { levelName, projectFiles } from "../io/projectIo";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError, getLevelWorkspace, getProjectFolder, onProjectSaved } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
-import { getTilesetImage } from "../state/tilesetImages";
+import { getTilesetImage, tilesetPngSource } from "../state/tilesetImages";
+import { resolveFileData } from "../io/fileData";
 import { toast } from "../ui/toast/toastStore";
 import { AutoExporter, type SavedProject } from "./autoExport";
 import { tmjExportFiles, unityExportFiles, writeExportFiles, type ExportFileSet } from "./exportFiles";
@@ -26,7 +27,7 @@ import { projectZipEntries, zipCompressed } from "./zip";
 
 export type FolderKind = "unity" | "tmj";
 
-const tilesetBytes = (id: string) => getTilesetImage(id)?.bytes;
+const tilesetBytes = tilesetPngSource;
 
 /** "12:04" in the UI language. */
 export function formatClock(date: Date): string {
@@ -311,7 +312,7 @@ async function zipFiles(project: OpenProject) {
   const levelPaths = new Set(useProjectLibrary.getState().levels.map((l) => l.path));
   return Promise.all(
     files.map(async (f) =>
-      fs && f.data === "" && levelPaths.has(f.path) && !cached.has(f.path) ? { path: f.path, data: await fs.readText(f.path) } : f,
+      fs && f.data === "" && levelPaths.has(f.path) && !cached.has(f.path) ? { path: f.path, data: await fs.readText(f.path) } : { ...f, data: await resolveFileData(f.data) },
     ),
   );
 }
