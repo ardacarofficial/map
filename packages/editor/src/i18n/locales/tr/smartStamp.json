@@ -11,7 +11,7 @@
   "road": "Yol",
   "singleLayer": "Yol için dolu, tek tile katmanlı bir stamp gerekir.",
   "command": "9 dilim…",
-  "changed": "Stamp veya proje değişti. Yeniden hazırlayın.",
+  "changed": "Stamp veya dünya değişti. Yeniden hazırlayın.",
   "failed": "Hazırlanamadı: {detail}",
   "generated": "Üretilen",
   "dialogTitle": "9 dilim stamp",

@@ -3,7 +3,7 @@
   "description": "The last 10 backups; opening one replaces the map.",
   "empty": "No backups yet",
   "chooseFolder": "Choose…",
-  "noFolder": "Save the project to a folder first to get backups.",
+  "noFolder": "Save the world to a folder first to get backups.",
   "loading": "Loading…",
   "open": "Open",
   "latest": "Latest"

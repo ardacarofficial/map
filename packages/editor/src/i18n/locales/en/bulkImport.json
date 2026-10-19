@@ -1,6 +1,6 @@
 {
   "title": "Add {count, plural, one {# tileset} other {# tilesets}}",
-  "titleNew": "New project: {count, plural, one {# tileset} other {# tilesets}}",
+  "titleNew": "New world: {count, plural, one {# tileset} other {# tilesets}}",
   "description": "The guesses are below. Fix a size in its row; click a row for details.",
   "files": "Files",
   "sizeLabel": "{name} tile size",
@@ -8,7 +8,7 @@
   "group": "Group",
   "autoAdd": "Add without asking when the guess is safe",
   "addAll": "Add all ({count, number})",
-  "create": "Create project ({count, number})",
+  "create": "Create world ({count, number})",
   "detailApply": "Apply",
   "badSize": "Invalid size",
   "noTile": "Not even one tile fits",

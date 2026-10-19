@@ -33,14 +33,14 @@
   "imageTooSmall": "{name} bir tile''dan ({tile} px) küçük.",
   "saveFailed": "Kaydedilemedi: {detail}",
   "openFailed": "Açılamadı: {detail}",
-  "formatError": "Proje dosyası bozuk ya da tanınmıyor ({detail})",
+  "formatError": "Dünya dosyası bozuk ya da tanınmıyor ({detail})",
   "noProjectFile": "Bu klasörde project.smap yok.",
-  "noLevel": "Projede harita yok.",
+  "noLevel": "Dünyada harita yok.",
   "missingTilesetImage": "Tileset görseli bulunamadı: {path}",
   "permissionDenied": "Klasöre erişim izni verilmedi.",
   "fsUnsupported": "Bu tarayıcı klasöre kaydetmeyi desteklemiyor. Chrome ya da Edge kullan.",
-  "folderTaken": "“{name}” klasörü zaten bir proje içeriyor; başka bir yer seç.",
+  "folderTaken": "“{name}” klasörü zaten bir dünya içeriyor; başka bir yer seç.",
   "canvasFailed": "Tuval başlatılamadı: {detail}",
-  "recentGone": "Proje klasörü artık yok: {name}",
+  "recentGone": "Dünya klasörü artık yok: {name}",
   "dismiss": "Kapat"
 }

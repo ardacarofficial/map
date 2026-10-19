@@ -50,6 +50,7 @@ test("v1.2: world view shows both levels; a dragged level keeps its position aft
   await expect(levelRow(page, "Zindan")).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Control+s");
   await expect.poll(() => readOpfsText(page, "levels/zindan.json")).not.toBeNull();
+  await expect(page.locator("[data-save-state]")).toHaveAttribute("data-save-state", "saved");
   const ids = await levelIds(page);
   const zindanId = ids["Zindan"]!;
   const start = (await worldOf(page, zindanId))!;

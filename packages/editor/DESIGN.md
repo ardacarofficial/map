@@ -138,8 +138,10 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 
 ### 4.1 App bar (36, `bg`)
 - Left: 16 px logo glyph, menubar (text-sm, items 28 high, px 8).
-- Then a 1 px divider, the **project name** button (`title`, 500, ▾ opens project menu: Yeniden adlandır, Proje ayarları…, Son projeler) followed by `/` in `faint` and the **document tabs** inline (28 high, max 180 px each, close `×` only on hover/active, dirty dot `warning` 6 px, `+` icon button). Document tabs no longer take their own row.
+- Then a 1 px divider, the **world name** button (`title`, 500, ▾ opens project menu: Yeniden adlandır, Dünya ayarları…, Son dünyalar) followed by `/` in `faint` and the **document tabs** inline (28 high, max 180 px each, close `×` only on hover/active, dirty dot `warning` 6 px, `+` icon button). Document tabs no longer take their own row.
 - Right: save state (`muted`, check icon or warning dot; `role=status`, `data-save-state`), then the single primary button "Dışa aktar" (28 px, accent, upload icon 16, keeps `data-export-unity` and `data-export-open`; opens the export dialog on the last successful target).
+
+The project is one **Dünya / World**, containing **Harita / Map** documents. The breadcrumb is `<world name> / <map tabs>`; both names retain inline rename (world menu / map context menu also available). Renaming preserves ids, portal targets and source paths. File actions create/open/save/close worlds; the Map menu and tab `+` add a map to the current world. Welcome says “Yeni dünya”, with separate world and first-map name fields (default “Ana harita”). The `project` panel is titled “Dünya” and lists this world’s maps. Dünya view is this world’s map overview, with the world name in its hint and status. World settings explicitly describe defaults for future maps; map settings apply to the active map. Map exports use the map display name; the whole-world Zip archive retains the world name. Internal project identifiers and `project.smap` stay unchanged.
 
 ### 4.2 Tool rail (left, 40, `bg`, right border `line`)
 Order (groups separated by 8 px gap + 1 px `line-subtle` 16 px wide):

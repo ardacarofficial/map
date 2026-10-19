@@ -127,6 +127,8 @@ export interface NewProjectOptions {
 
 /** Round 4: what the new project dialog adds on top of {@link NewProjectOptions}. */
 export interface NewProjectSetup extends NewProjectOptions {
+  /** Display name of the first map; its stable id and levels/main.json path stay fixed. */
+  firstMapName?: string;
   /** Project settings saved in `project.smap` (new-level defaults, Unity options). */
   settings?: ProjectSettings;
   /** Folder chosen up front ("Klasör seç…"): the project is written there at once, so autosave works from the start. */
@@ -275,7 +277,7 @@ export async function confirmDiscard(): Promise<boolean> {
 export async function newProject(options: NewProjectSetup): Promise<void> {
   const project = createProjectDocument(options);
   const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
-  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, t("levels.firstMapName")), settings });
+  activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, options.firstMapName?.trim() || t("levels.firstMapName")), settings });
   if (options.tilesets && options.tilesets.length > 0) {
     addDecodedTilesets(project.store, options.tilesets);
   }
@@ -314,6 +316,7 @@ export function updateProjectSettings(settings: ProjectSettings): void {
 
 /** When the recents thumbnail was last refreshed by an autosave (`Date.now()`). */
 let lastThumbnailAt = 0;
+let lastRecentName = "";
 /** An autosave refreshes the recents thumbnail at most this often. */
 const AUTOSAVE_THUMBNAIL_MS = 60_000;
 
@@ -322,6 +325,7 @@ const recentThumbnails = new RecentThumbnailScheduler();
 /** Metadata first; copy and PNG encoding wait for the live overview and idle. */
 function addRecent(target: ProjectFolder, project: OpenProject): void {
   lastThumbnailAt = Date.now();
+  lastRecentName = project.name;
   const platform = getPlatform();
   // Capture the destination and host now. Never consult a later project's folder.
   const added = platform.recents.add(target, project.name);
@@ -819,7 +823,7 @@ export async function autosaveNow(): Promise<void> {
   if (workspace !== ws) return;
   settleDirty(libRevision);
   // Keep the welcome screen's picture roughly current without redrawing it on every autosave.
-  if (Date.now() - lastThumbnailAt >= AUTOSAVE_THUMBNAIL_MS) addRecent(target, saved);
+  if (saved.name !== lastRecentName || Date.now() - lastThumbnailAt >= AUTOSAVE_THUMBNAIL_MS) addRecent(target, saved);
 }
 
 let autosave: AutosaveScheduler | null = null;

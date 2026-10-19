@@ -93,8 +93,10 @@ export async function createLevel(input: NewLevelInput): Promise<boolean> {
   if (!ws) return false;
   try {
     // The project's layer template (project settings), if any.
-    const layers = useProjectLibrary.getState().settings.layerTemplate.map(newLayerFor);
-    const level = ws.add({ ...input, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
+    const defaults = useProjectLibrary.getState().settings;
+    const layers = defaults.layerTemplate.map(newLayerFor);
+    const tileHeight = input.tileSize === defaults.tileWidth ? defaults.tileHeight : input.tileSize;
+    const level = ws.add({ ...input, tileHeight, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
     publishLevelState({ listChanged: true });
     return await openLevel(level.id);
   } catch (error) {

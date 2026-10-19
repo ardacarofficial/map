@@ -3,10 +3,10 @@ import { expect, test, expectWelcome } from "../support/fixtures";
 test("welcome screen renders", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Yeni proje/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Yeni dünya/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Aç/ })).toBeVisible();
   await expectWelcome(page);
-  await expect(page.getByText("Henüz kayıtlı proje yok")).toBeVisible();
+  await expect(page.getByText("Henüz kayıtlı dünya yok")).toBeVisible();
   // Templates: Top-down, Zindan, Boş.
   await expect(page.locator("[data-template]")).toHaveCount(3);
 });
@@ -19,9 +19,9 @@ test("template → new project dialog → Oluştur: layers, size and first map n
   await page.locator("[data-template='topdown']").click();
   const dialog = page.locator("[data-dialog='new-project']");
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("Proje adı")).toHaveValue("Top-down");
+  await expect(dialog.getByLabel("Dünya adı")).toHaveValue("Top-down");
   await expect(dialog.getByText("2048 × 1536 px · 5 katman")).toBeVisible();
-  await dialog.getByLabel("Proje adı").fill("Köy");
+  await dialog.getByLabel("Dünya adı").fill("Köy");
   // "Sonra seç": no folder up front (the first save asks).
   await dialog.getByRole("button", { name: "Sonra seç" }).click();
   await dialog.getByRole("button", { name: "Oluştur" }).click();

@@ -41,8 +41,8 @@ test("manual Collision paints Engel/Geçilebilir, undoes, exports game JSON and 
   await canvas(page).focus(); await page.keyboard.press("Control+e");
   await dialog.getByRole("radio",{name:"Tiled",exact:true}).click();
   await dialog.getByTestId("export-submit").click();
-  await expect.poll(()=>readOpfsText(page,"main.tmj")).not.toBeNull();
-  const tmj=JSON.parse((await readOpfsText(page,"main.tmj"))!);
+  await expect.poll(()=>readOpfsText(page,"Ana harita.tmj")).not.toBeNull();
+  const tmj=JSON.parse((await readOpfsText(page,"Ana harita.tmj"))!);
   const collision=tmj.layers.find((l:{properties?:{name:string;value:string}[]})=>l.properties?.some(p=>p.name==="smapRole"&&p.value==="collision"));
   expect(collision).toMatchObject({type:"objectgroup",name:"Collision",visible:false});
   expect(collision.objects).toHaveLength(1);expect(collision.objects[0]).toMatchObject({x:28*32,y:24*32,width:32,height:32,visible:false});

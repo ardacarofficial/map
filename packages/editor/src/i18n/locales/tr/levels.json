@@ -11,17 +11,17 @@
   "openFailed": "Harita açılamadı ({name}): {detail}",
   "actionFailed": "Harita işlemi yapılamadı: {detail}",
   "newTitle": "Yeni harita",
-  "newDescription": "Tileset’ler ve entity türleri projede ortaktır.",
+  "newDescription": "Yeni harita bu dünyaya eklenir. Tileset’ler ve stamp’ler ortaktır.",
   "newName": "Ad",
   "tileSizeDiffers": "Tileset boyutu: {size} px",
   "removeTitle": "“{name}” silinsin mi?",
-  "removeDescription": "Harita projeden silinir. Bu işlem geri alınamaz.",
+  "removeDescription": "Harita dünyadan silinir. Bu işlem geri alınamaz.",
   "removeScanning": "Bu haritaya bağlı portallar aranıyor…",
   "removeNoPortals": "Bu haritaya bağlı portal yok.",
   "removePortals": "{count, plural, one {#} other {#}} bağlı portal: {levels}",
   "removeUnreadable": "{count, plural, one {#} other {#}} harita okunamadı; içlerindeki portallar sayılmadı.",
   "removeConfirm": "Haritayı sil",
-  "removeLast": "Projede en az bir harita kalmalı.",
+  "removeLast": "Dünyada en az bir harita kalmalı.",
   "removed": "“{name}” silindi",
   "goTo": "Haritaya git",
   "pickButton": "Haritada seç",
@@ -34,5 +34,5 @@
   "pickOutside": "Haritanın içinde bir hücreye tıkla.",
   "targetMissing": "Hedef harita silinmiş",
   "paletteOutOfRange": "{level}: {count, plural, one {#} other {#}} tile, tileset''in dışında kalıyor (resim küçülmüş olabilir). Boş görünür, dışa aktarılmaz.",
-  "paletteMissingTileset": "{level}: projede olmayan tileset kullanılıyor ({ids}). Bu tile''lar boş görünür."
+  "paletteMissingTileset": "{level}: dünyada olmayan tileset kullanılıyor ({ids}). Bu tile''lar boş görünür."
 }

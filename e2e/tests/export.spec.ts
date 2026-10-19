@@ -72,13 +72,13 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("radio", { name: /Unity/ })).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByText(/main\.smapmap/)).toBeVisible();
+  await expect(dialog.getByText(/Ana harita\.smapmap/)).toBeVisible();
   await expect(dialog.getByTestId("export-checks").locator("li")).toHaveCount(3);
   await dialog.getByTestId("export-submit").click();
   await expect(page.getByText(/Unity'ye aktarıldı · \d\d:\d\d/)).toBeVisible();
   await expect(dialog).toBeHidden();
 
-  const mapText = await readOpfsText(page, `${UNITY_DIR}/main.smapmap`);
+  const mapText = await readOpfsText(page, `${UNITY_DIR}/Ana harita.smapmap`);
   expect(mapText).not.toBeNull();
   const map = JSON.parse(mapText!) as { smapExport: number; width: number; tilesets: { image: string }[]; layers: { cells: number[] }[] };
   expect(map.smapExport).toBe(1);
@@ -99,7 +99,7 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
   await canvas.focus();
   await stroke(page, 0, 60);
   await page.keyboard.press("Control+s");
-  await expect.poll(() => readOpfsText(page, `${UNITY_DIR}/main.smapmap`)).not.toBe(mapText);
+  await expect.poll(() => readOpfsText(page, `${UNITY_DIR}/Ana harita.smapmap`)).not.toBe(mapText);
 
   // ---- PNG export at 2× (download)
   await page.keyboard.press("Control+e");
@@ -110,7 +110,7 @@ test("v0.4: export to a Unity folder, export on save, download a PNG", async ({ 
   const downloadPromise = page.waitForEvent("download");
   await dialog.getByTestId("export-submit").click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("main.png");
+  expect(download.suggestedFilename()).toBe("Ana harita.png");
   const bytes = new Uint8Array(readFileSync((await download.path())!));
   expect([...bytes.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]); // "PNG"
   expect(pngDimensions(bytes)).toEqual({ width: 4096, height: 3072 });

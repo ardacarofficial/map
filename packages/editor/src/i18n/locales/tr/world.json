@@ -2,8 +2,10 @@
   "world": "Dünya",
   "status": "Dünya",
   "levelCount": "{count, plural, one {#} other {#}} harita",
-  "hintTitle": "Dünya haritası",
+  "hintTitle": "Dünya görünümü",
   "hint": "Haritaları sürükleyerek yerleştir (Alt: serbest).",
   "back": "Haritaya dön",
-  "toolsDisabled": "Dünya haritasında yalnızca kaydırma var"
+  "toolsDisabled": "Dünya görünümünde yalnızca kaydırma var",
+  "firstMapName": "İlk harita adı",
+  "overviewName": "Dünya: {name}"
 }

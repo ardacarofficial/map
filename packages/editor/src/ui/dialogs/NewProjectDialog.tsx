@@ -85,6 +85,7 @@ function supportsFolders(): boolean {
 function NewProjectForm({ onDone }: { onDone(): void }) {
   const preset = projectTemplate(useNewProjectPreset.getState().template ?? "empty");
   const [name, setName] = useState(() => (preset.id === "empty" ? t("newProject.defaultName") : t(`templates.${preset.id}`)));
+  const [firstMapName, setFirstMapName] = useState(() => t("levels.firstMapName"));
   const [folder, setFolder] = useState<FolderState>(() => (supportsFolders() ? { kind: "unset" } : { kind: "later" }));
   const [folderError, setFolderError] = useState<string | null>(null);
   const [tile, setTile] = useState<TileSizeValue>(() => tileSizeFrom(preset.tileWidth, preset.tileHeight));
@@ -121,7 +122,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
   const layersOk = layers.id !== "custom" || layers.custom.some((l) => l.name.trim() !== "");
   const nameOk = name.trim().length > 0;
   // No folder chosen = "Sonra seç" (asked on the first save).
-  const valid = nameOk && tileSize !== null && mapSize !== null && layersOk;
+  const valid = nameOk && firstMapName.trim().length > 0 && tileSize !== null && mapSize !== null && layersOk;
 
   const pickFolder = async () => {
     setFolderError(null);
@@ -187,6 +188,7 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
     }
     void newProject({
       name: name.trim(),
+      firstMapName: firstMapName.trim(),
       width: mapSize.width,
       height: mapSize.height,
       tileSize: tileSize.width,
@@ -246,6 +248,9 @@ function NewProjectForm({ onDone }: { onDone(): void }) {
               <span className="pointer-events-none absolute right-0 bottom-full mb-1.5 max-w-[70%] truncate text-sm leading-4 text-danger" role="status">{touched && !nameOk ? t("newProject.errName") : null}</span>
             </div>
           </Section>
+
+          <Field label={t("world.firstMapName")} value={firstMapName} onChange={setFirstMapName}
+            error={touched && !firstMapName.trim() ? t("newProject.errName") : null} />
 
           <Section label={t("newProject.location")}>
             <FolderRow

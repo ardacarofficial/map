@@ -1,7 +1,7 @@
 {
-  "projectName": "Project name",
-  "renameHint": "Double-click: rename project",
-  "recentProjects": "Open recent",
+  "projectName": "World name",
+  "renameHint": "Double-click: rename world",
+  "recentProjects": "Recent worlds",
   "recentEmpty": "Nothing yet",
   "rename": "Rename",
   "savedShort": "Saved",
