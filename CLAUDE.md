@@ -74,7 +74,7 @@ Bağımlılık yönü: `desktop → editor → core`.
 - Arayüz `core`'a yalnızca komut yollar ("şu hücreleri boya", "geri al") ve değişiklikleri dinler. Tile verisi React state'inde durmaz.
 - Haritayı değiştiren her şey bir işlemdir; doğrudan `map.tiles[x][y] = ...` yazılmaz. Undo, otomatik kayıt ve dışa aktarma aynı işlem akışından beslenir.
 - Renk, boşluk ve yazı ölçüleri tek dosyadaki tasarım değişkenlerindedir. Arayüz baştan tasarlansa bile `core`, dosya formatı ve Unity tarafı değişmez.
-- Arayüzdeki her metin çeviri dosyasından, her kısayol tek listeden gelir. İkisi de v0.1'de kurulur; sonradan eklemek tüm kodu elden geçirmek demek.
+- Arayüzdeki her metin dil kaynak dosyalarından (v1.6: dil başına JSON, ICU), her kısayol tek listeden gelir. İkisi de v0.1'de kurulur; sonradan eklemek tüm kodu elden geçirmek demek.
 
 ## Veri kararları
 
@@ -130,7 +130,7 @@ benim-dunyam/
 - Mavi-gri koyu tema (zemin `#11171c`, panel `#1b212a`, vurgu `#69c9ae`; konsept görsellerinden alındı), tek vurgu rengi, Inter + JetBrains Mono, 12–13 piksel yazı. Arda değiştirebilir.
 - Üç dock bölgesi vardır: Sol, Sağ, Alt. Tileset solda; alt bölgede varsayılan yalnız Son kullanılanlar bulunur. Stamp'ler, Proje, Denetçi, Geçmiş, Katmanlar ve gerektiğinde görünen Entity paleti bu bölgeler arasında sekmeleri sürükleyerek veya Taşı menüsüyle taşınır; sekmeler sıralanır ve bölümler halinde bölünebilir. Yüzen pencere yoktur.
 - Her bölge kenarından boyutlandırılır; başlık chevron'u, ayırıcıya çift tıklama ve kendi kısayolu ile açılır/daralır; Görünüm menüsünden tamamen gizlenebilir. Boyut ve yerleşim hatırlanır; Düzeni sıfırla varsayılanları getirir. Ctrl+B Sol, Ctrl+Alt+B Sağ, Ctrl+Shift+B Alt. Tab yalnız tuval odaktayken tüm bölgeleri, araç rayını ve minimap'i geçici gizler; tekrar basınca önceki düzeni getirir.
-- Dolu 3×3 ve yapısı doğrulanan b hücre kenar bantlı n×m tileset seçimi otomatik akıllı fırçadır; kaynak, Yol/Alan ve Akıllı anahtarı sözleşmesi v1.5 bölümündedir.
+- Kenar/merkez tekrarı piksellerden doğrulanan 3×3 veya b hücre kenar bantlı n×m tileset seçimi otomatik akıllı fırçadır; çalı gibi tek nesneler düz kalır. Kaynak, Yol/Alan ve Akıllı anahtarı sözleşmesi v1.5 ve v1.6 bölümlerindedir.
 - Boş ekran gösterilmez; program karşılama ekranıyla açılır.
 - Kısayollar Tiled alışkanlığına uyar:
 
@@ -194,7 +194,7 @@ benim-dunyam/
 - Türkçe ve İngilizce arayüz
 - PNG tileset kaydedilince kendiliğinden yenilenir. Aseprite'tan PNG olarak kaydetmek yeter
 - Zip olarak dışa aktarma
-- Kısayollar ayar dosyasından değiştirilebilir; ayrı ekran yok
+- Kısayollar ayar dosyasından değiştirilebilir (v1.6 ile Ayarlar'a kısayol düzenleme eklendi)
 - Log dosyası
 
 **Bitti:** kurulan `.exe` bir saniyenin altında açılır ve `.smap` dosyasına çift tıklayınca proje gelir.
@@ -251,7 +251,7 @@ Arda'nın isteği: 3×3 yol stamp'i kalıp gibi yan yana basılmasın; tek fır�
 
 ### v1.5 — Yerleşim, akıllı stamp düzeltmesi, sadeleşme (Ekim 2026, Arda onayladı)
 
-- Dolu 3×3 tileset seçimi her zaman akıllı fırça olur; daha büyük n×m bloklar b hücre kalınlığındaki kenar bantları, kenar/merkez tekrarları ve birleşimleri doğrulanırsa akıllıdır. En küçük doğrulanan b seçilir; merkez en az bir tile’dır, boyutların b’ye bölünmesi gerekmez (2×2 köşeli 5×5, 6×6, 7×6 dahil). Karşılıklı bant profilleri ve köşe geçişleri tutarlı olmalıdır; dış sınırı olmayan periyodik veya rastgele tonlu dokular düz kalır. Yol dünya başlangıcına hizalı b×b kaba ızgarada çizilir, genişliği b tile; Boyut bu birimleri sayar. Alan dar boyutlarda iki dış bandı ortada birleştirir. Doğrudan seçim ve kaydedilen stamp aynı akıllı kaynağı kullanır. Ek 9 dilim/Hazırla/Yol tıklaması gerekmez. B serbest çizim ve Shift çizgisi Yol, R Alan; Alan | Yol araç başına değiştirilir, yeni fırçada sıfırlanır. Tek Akıllı anahtarı davranışı kapatır; kayıtlı stamp bu tercihi korur. F mevcut desen doldurmadır
+- ~~Dolu 3×3 tileset seçimi her zaman akıllı fırça olur~~ (v1.6 ile değiştirildi: 3×3 de piksel kanıtı ister); daha büyük n×m bloklar b hücre kalınlığındaki kenar bantları, kenar/merkez tekrarları ve birleşimleri doğrulanırsa akıllıdır. En küçük doğrulanan b seçilir; merkez en az bir tile’dır, boyutların b’ye bölünmesi gerekmez (2×2 köşeli 5×5, 6×6, 7×6 dahil). Karşılıklı bant profilleri ve köşe geçişleri tutarlı olmalıdır; dış sınırı olmayan periyodik veya rastgele tonlu dokular düz kalır. Yol dünya başlangıcına hizalı b×b kaba ızgarada çizilir, genişliği b tile; Boyut bu birimleri sayar. Alan dar boyutlarda iki dış bandı ortada birleştirir. Doğrudan seçim ve kaydedilen stamp aynı akıllı kaynağı kullanır. Ek 9 dilim/Hazırla/Yol tıklaması gerekmez. B serbest çizim ve Shift çizgisi Yol, R Alan; Alan | Yol araç başına değiştirilir, yeni fırçada sıfırlanır. Tek Akıllı anahtarı davranışı kapatır; kayıtlı stamp bu tercihi korur. F mevcut desen doldurmadır
 - `documentFormatVersion` 5: kalın bant kaynağı ve `layoutVersion: 2` atlası saklanır. v4 dosyaları yalnız sürüm başlığı değiştirilerek açılır; sürüm-1 atlas slotları korunur. Harita kenarı kalın kaynakta Alan köşelerini/kenarlarını kullanır; kalınlık ve boşluklar tile cinsindedir
 - Denetçi, kayıtlı akıllı stamp için "Kaynak" bilgisini düz metin gösterir; ikinci anahtar yoktur. Doğrudan seçimde üretilen tileset adı kaynak ve sıfır tabanlı konumunu taşır: örneğin `<tileset> 3×3 @ col,row (yol)`
 - Sol/Sağ/Alt bölgeler boyutlandırılır, daraltılır, tamamen gizlenir. Tüm paneller üç bölgeye taşınır; sekme sıralama, bölünmüş bölümler, drop göstergesi ve erişilebilir Taşı menüsü vardır. Yerleşim ayarlarda saklanır; Düzeni sıfırla varsayılanı getirir. Yüzen pencere yoktur. Dünya görünümü Proje'yi bulunduğu yerde açar; Denetçi dünya bağlamını gösterir, Katmanlar hangi bölgede olursa olsun gizlenir; Tileset ve Son kullanılanlar kullanılabilir
@@ -264,6 +264,29 @@ Arda'nın isteği: 3×3 yol stamp'i kalıp gibi yan yana basılmasın; tek fır�
 - **Kılavuz ızgara:** Izgara düğmesinin popover'ında Kapalı veya 2–64 tile aralığı ve X/Y başlangıcı seçilir. Çizgiler `grid-major` token'ıyla bir fiziksel pikseldir; aralık 6 CSS px altındaysa görünmez. Ctrl+G temel ızgarayla birlikte gizler. Proje başına localStorage'da saklanır; harita formatına girmez
 
 **Bitti:** Arda'nın tileset→çiz ve tileset→stamp kaydet→çiz akışları 16/32 px, sheet ofseti ve flip'lerle e2e'de geçer; 1366×768'de paneller daraltıldığında tuval pencerenin çoğunu kullanır; eski dosyalarda görsel kimlik ve dışa aktarma korunur, Unity manuel Collision testleri geçer. Dört yeni çizim özelliği tüm işlemleriyle tamamlanır.
+
+### v1.6 — Arda'nın Windows denemesi (Ekim 2026, Arda onayladı)
+
+Terim: proje kullanıcı dilinde **Dünya**'dır; haritalar bu dünyanın içindedir. Dosya `project.smap` kalır; teknik alan adları değişmez.
+
+- **Akıllı fırça kök nedeni:** kaynak tile ölçüsü harita hücresinden farklıyken (ör. 16 px tileset, 32 px harita) hazırlık core'da reddediliyor, gerçek neden yutulup "Stamp veya proje değişti" gösteriliyordu; Denetçi önizlemesi de aynı nedenle aralıklıydı. Uyumsuzluk artık önceden açıklanır ve güvenli tek tık çözüm sunulur (boş haritayı kaynak ölçüsüne getir veya o ölçüde yeni harita); boş haritaya farklı ölçüde tileset eklenince bir kez sorulur. Pikseller ölçeklenmez, PNG'ye dokunulmaz
+- Hazırlık nesne kimliğine veya ilgisiz belge değişikliklerine göre bozulmaz: kaynak pikseli, ızgara ve tarif sürümü karşılaştırılır; gerçek kaynak değişiminde kendiliğinden yeniden hazırlanır. Otomatik kayıt, stamp adı ve küçük resim çizimi bozmaz. Kullanıcıya ham `Error:` gösterilmez
+- Dolu 3×3 her zaman yol değildir: yuvarlak çalı gibi tek nesneler düz kalır; yalnız tekrarlanabilir kenar/merkez ve tutarlı sınır kanıtı olan kaynaklar Akıllı olur, belirsiz seçim düz kalır. Akıllı denetimi açık / kapalı / Tek nesne / hazırlanıyor / kullanılamaz (nedeniyle) durumlarını gösterir. Çizilmiş yollar ve eski stamp'ler değişmez
+- Tileset'ten seçilen parçanın Denetçi önizlemesi kaynak ölçüsünde birleşik ve keskindir. Tam etiketli düğmede aynı etiketi yineleyen tooltip yoktur
+- Tek PNG görünümü: imlece göre sürekli zoom, boşluk/orta tuşla kaydırma, kaydırma çubukları, zoom değeri ve Sığdır. Seçim paletlere referans olarak kopyalanır / kesilir / yapıştırılır; PNG değişmez
+- Tileset görünen adı dosya adından bağımsız değiştirilir. Paletlerde Sütun ve Satır vardır; küçültme dolu referansları sessizce silmez
+- Ayarlar kenar çubuklu kategorilerdir: Genel, Görünüm, Paneller, Kısayollar, Dil, Dışa aktarma, Gelişmiş. Paneller'de Sol/Sağ/Alt bölgelere +/− ile panel eklenir, kaldırılır, sıralanır, sıfırlanır; sürükleme ve Taşı menüsü kalır
+- Kısayollar Ayarlar'da aranır, yeni tuş kaydedilir, çakışma gösterilip çözülür, tek tek veya toplu sıfırlanır. Tek kısayol listesi kaynak kalır; kullanıcı farkları ayar dosyasına yazılır
+- Metinler dil başına kaynak dosyalarından gelir (ICU çoğul ve yer tutucular); Türkçe ve İngilizce anahtar/parametreleri testte birebir eşleşir. Dil Ayarlar'dan seçilir; yeni dil bir dosya eklenerek gelir; ağdan çeviri çekilmez
+- Üst çubuk "Dünya adı / Harita" gösterir. Yeni harita geçerli dünyaya ekler; Yeni dünya ayrı proje açar. Proje ağacı Dünya ağacıdır; dünya görünümü bu dünyanın haritalarıdır
+- **Piksel modu:** Tile ve Piksel modları açıkça ayrılır. Piksel'de kalem (boyutlu), silgi, renge göre bitişik/genel doldurma, damlalık, çizgi, dikdörtgen ve ayna eksenleri; Renk panelinde HSV kare, hue/alpha, RGB/HSL/HEX, ön/arka renk ve değiştirme, son renkler, kaydedilip açılan renk paletleri
+- Piksel çizimi kullanıcı PNG'sine yazmaz: tile "Düzenlenen" üretilmiş tileset'ine kopyalanır (yalnız sona ekleme, belirlenimli) ve hücre işlemle yeniden bağlanır. Kapsam: Bu hücre / Bu tile'ın tüm kullanımları (bu dünyada). Bir hareket tek geri almadır; harita işlemleri dünya boyunca tek kronolojik geri alma sırasındadır. "PNG'ye uygula" ayrı, onaylı dosya işlemidir: önce yedek alınır, PNG izleyici kendi yazımını yok sayar
+- **Dışa aktar** üstteki ana eylemdir. Hedefler: Unity, Tiled TMJ, PNG, JSON, Zip, Godot 4 (TileSet + TileMapLayer) ve Defold; son hedef hatırlanır. Motorlar yalnız dışa aktarma hedefidir. Collision yalnız manuel Collision katmanlarından gelir
+- Menü, popover, tooltip, toast ve dialog ortak katman/çarpışma kurallarına uyar; dar panelde, kısa pencerede ve %125/%150 ölçekte hedefler örtülmez
+- Ek özellikler: Kullanımları bul (bir tile'ın dünyadaki kullanımları, tıklayınca gider), harita başına adlı kamera yer imleri, Piksel ayna eksenleri
+- `documentFormatVersion` 6: palet satırı, Düzenlenen piksel varlıkları ve renk paletleri saklanır; v1–v5 dosyaları görünüş ve hücreler korunarak açılır. Hücre bit düzeni ve oyun/Unity formatı değişmez
+
+**Bitti:** gerçek proje klasörü ve otomatik kayıt açıkken tileset→çiz ve tileset→stamp kaydet→çiz yol çizer (16 px kaynak/32 px harita durumu dahil anlaşılır); çalı düz kalır. Piksel kopyalama, kapsam, undo, kaydet-aç, PNG yedeği ve tüm dışa aktarma hedefleri testlerden geçer. Türkçe/İngilizce tam; panel ve kısayol ayarları yeniden açılışta korunur.
 
 ### Sonra
 
@@ -318,10 +341,9 @@ Kaynaklardan doğrulanmış; ilgili sürüme gelince uygulanır.
 | Altı aşamalı tile kimlik eşleme | Nadir durum için haftalarca iş |
 | Aseprite'ı komut satırından çalıştırma | Çıktısı güvenilmez; PNG izleme yetiyor |
 | WebGPU, chunk'lar arası birleşik GPU buffer | Gereksiz karmaşıklık |
-| Kısayol düzenleme ekranı | Ayar dosyası yetiyor |
 | Layer mask, efektler, blend mode, parallax | Harita çizmek için şart değil |
 | İzometrik ve hex ızgara | Tuvalin tamamını etkiler |
-| Godot ve LDtk desteği, web sürümü, plugin API | Kapsam dışı; Tiled dışa aktarma Godot'ta da açılır |
+| Motorlardan içe aktarma veya canlı bağlantı (Godot, Defold, LDtk), web sürümü, plugin API | Kapsam dışı; motorlar yalnız dışa aktarma hedefidir (v1.6, Arda) |
 | Lisans, ödeme, updater, kod imzalama, telemetri | Satış ve dağıtım yok |
 
 ## Açık sorular
