@@ -13,17 +13,12 @@ async function changeSource(page: Page, pauseBake = false) {
     ctx.drawImage(source.bitmap, 0, 0); ctx.fillStyle = "#695336"; ctx.fillRect(96, 64, 32, 32);
     const blob = await canvas.convertToBlob({ type: "image/png" });
     if (pauseBake) {
-      const gate = { entered: false, release: () => {} };
+      const hook = (window as unknown as { __smap: { smartBrushPreparation: { hold(): void; release(): void; entered: number } } }).__smap.smartBrushPreparation;
+      hook.hold();
+      const gate = { get entered() { return hook.entered > 0; }, release: () => hook.release() };
       (window as unknown as { lifecycleGate: typeof gate }).lifecycleGate = gate;
-      const encode = HTMLCanvasElement.prototype.toBlob;
-      HTMLCanvasElement.prototype.toBlob = function(callback, ...args) {
-        if (this.width === bank.columns * bank.tileWidth && this.height === bank.rows * bank.tileHeight) {
-          HTMLCanvasElement.prototype.toBlob = encode;
-          encode.call(this, blob => { gate.release = () => callback(blob); gate.entered = true; }, ...args);
-        } else encode.call(this, callback, ...args);
-      };
     }
-    const before = { generated: bank.generated, bytes: [...images.getTilesetImage(bank.id).bytes], depth: store.undoDepth, id: bank.id };
+    const before = { generated: bank.generated, bytes: [...await images.tilesetImageBytes(images.getTilesetImage(bank.id))], depth: store.undoDepth, id: bank.id };
     images.setTilesetImage({ tilesetId: "road-source", bytes: new Uint8Array(await blob.arrayBuffer()), bitmap: await createImageBitmap(blob) });
     return before;
   }, pauseBake);
@@ -32,10 +27,10 @@ async function changeSource(page: Page, pauseBake = false) {
 async function bankState(page: Page) {
   return page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
-    const { getTilesetImage } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
+    const { getTilesetImage, tilesetImageBytes } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
     const store = useEditorStore.getState().project.store;
     const bank = store.document.tilesets.find((t: { generated?: unknown }) => t.generated);
-    return { generated: bank.generated, bytes: [...getTilesetImage(bank.id).bytes], depth: store.undoDepth, id: bank.id };
+    return { generated: bank.generated, bytes: [...await tilesetImageBytes(getTilesetImage(bank.id))], depth: store.undoDepth, id: bank.id };
   });
 }
 
@@ -89,7 +84,7 @@ test("automatic bake waits for a real pointer gesture and stays outside undo wit
   await expect.poll(() => page.evaluate(() => (window as unknown as { lifecycleGate: { entered: boolean } }).lifecycleGate.entered)).toBe(true);
   const at = await cellPoint(page, 4, 4); await page.mouse.move(at.x, at.y); await page.mouse.down();
   await page.evaluate(() => (window as unknown as { lifecycleGate: { release(): void } }).lifecycleGate.release());
-  // Let PNG decode finish while the pointer transaction remains open.
+  // Let preparation finish while the pointer transaction remains open.
   await page.evaluate(() => new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
   expect(await bankState(page)).toEqual(before);
   await page.mouse.up(); await waitForBake(page);

@@ -48,7 +48,7 @@ test("readiness while pressed shows the buffered preview and continues the same 
 
 test("failed preparation gives the existing failure feedback and permits the plain-brush fallback", async ({ page }) => {
   await openRoadSheet(page); await hold(page); await selectRoad(page); await dragRoad(page, [[4, 4], [7, 4]]); await release(page, true);
-  await expect(page.locator("[data-toaster]")).toContainText("PNG encoding failed");
+  await expect(page.locator("[data-toaster]")).toContainText("Brush preparation failed");
   expect(await roadCells(page)).toEqual({ cells: [], generated: [] });
   await page.locator("[data-smart-brush]").click(); await dragRoad(page, [[4, 4]]);
   expect((await roadCells(page)).cells).toHaveLength(9);

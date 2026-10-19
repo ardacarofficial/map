@@ -8,10 +8,10 @@ import {
   type MapDocument,
   type Tileset,
 } from "@smap/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { MemoryFileSystem } from "./memoryFs";
-import { DEFAULT_LEVEL_PATH, levelName, loadProject, ProjectOpenError, saveProject } from "./projectIo";
+import { DEFAULT_LEVEL_PATH, levelName, loadProject, projectFiles, ProjectOpenError, saveProject } from "./projectIo";
 
 const grass: Tileset = {
   id: "grass",
@@ -57,6 +57,26 @@ async function save(fs: MemoryFileSystem, doc: MapDocument, name = "Benim Dünya
 }
 
 describe("saveProject / loadProject", () => {
+  it("lists deferred PNGs without encoding and materializes them before project metadata", async () => {
+    const fs = new MemoryFileSystem(), store = sampleStore();
+    const encode = vi.fn(async () => PNG_GRASS);
+    const input = { name: "x", document: store.document, levelPath: DEFAULT_LEVEL_PATH, tilesetBytes: (id: string) => id === "grass" ? encode : PNG_WATER };
+    expect(projectFiles(input).map(file => file.path)).toContain("tilesets/grass.png");
+    expect(encode).not.toHaveBeenCalled();
+    await saveProject(fs, input);
+    expect(encode).toHaveBeenCalledOnce();
+    expect(fs.files.get("tilesets/grass.png")).toEqual(PNG_GRASS);
+    expect([...fs.files.keys()].at(-1)).toBe(PROJECT_FILE_NAME);
+  });
+
+  it("does not publish project metadata if deferred PNG encoding fails", async () => {
+    const fs = new MemoryFileSystem(), store = sampleStore();
+    await expect(saveProject(fs, { name: "x", document: store.document, levelPath: DEFAULT_LEVEL_PATH,
+      tilesetBytes: () => async () => { throw new Error("encode failed"); },
+    })).rejects.toThrow("encode failed");
+    expect(fs.files.has(PROJECT_FILE_NAME)).toBe(false);
+  });
+
   it("round-trips a project through an in-memory folder", async () => {
     const fs = new MemoryFileSystem("benim-dunyam");
     const store = sampleStore();
@@ -70,7 +90,7 @@ describe("saveProject / loadProject", () => {
     expect(loaded.document.tilesets).toEqual([grass, water]);
     expect(loaded.document.layers[0]?.getCell(33, 1)).toBe(store.document.layers[0]?.getCell(33, 1));
     expect(loaded.images.map((i) => i.tilesetId)).toEqual(["grass", "water"]);
-    expect([...loaded.images[0]!.bytes]).toEqual([...PNG_GRASS]);
+    expect([...loaded.images[0]!.bytes!]).toEqual([...PNG_GRASS]);
     expect(loaded.images[1]!.bitmap.width).toBe(PNG_WATER.length);
   });
 

@@ -129,13 +129,13 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     const { useProjectLibrary } = await import(/* @vite-ignore */ String("/src/io/projectLibrary.ts"));
     const commands = await import(/* @vite-ignore */ String("/src/commands/smartStampCommands.ts"));
-    const { getTilesetImage } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
+    const { getTilesetImage, tilesetImageBytes } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
     const { reloadTilesetImage } = await import(/* @vite-ignore */ String("/src/platform/fileChanges.ts"));
     const { getProjectFolder, saveCurrentProject } = await import(/* @vite-ignore */ String("/src/io/session.ts"));
     const store = useEditorStore.getState().project.store, lib = useProjectLibrary.getState(), stamp = lib.stamps[0];
     const original = store.document.tilesets.find((t: { generated?: unknown }) => t.generated), oldBytes = [...getTilesetImage(original.id).bytes];
     const unchanged = await commands.prepareSmartStamp(stamp);
-    const samePng = JSON.stringify([...unchanged.assets[0].image.bytes]) === JSON.stringify(oldBytes);
+    const samePng = JSON.stringify([...await tilesetImageBytes(unchanged.assets[0].image)]) === JSON.stringify(oldBytes);
     commands.discardSmartStamp(unchanged);
     const source = store.document.getTileset("road-source"), image = getTilesetImage(source.id);
     const canvas = new OffscreenCanvas(image.bitmap.width, image.bitmap.height), ctx = canvas.getContext("2d")!;
@@ -143,7 +143,7 @@ test("generated bank: deterministic PNG reload, stable slots, Save As and unmark
     const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer());
     await getProjectFolder().fs.writeBytes(source.imagePath, bytes);
     await reloadTilesetImage(source.imagePath); await commands.waitForSmartStampRegeneration();
-    const updated = store.document.getTileset(original.id), changedBytes = getTilesetImage(original.id).bytes;
+    const updated = store.document.getTileset(original.id), changedBytes = await tilesetImageBytes(getTilesetImage(original.id));
     const changed = JSON.stringify([...changedBytes]) !== JSON.stringify(oldBytes);
     const sourceKept = JSON.stringify([...getTilesetImage(source.id).bytes]) === JSON.stringify([...bytes]);
     const cells = [...store.document.layers.find((l: { type: string }) => l.type === "tile").chunks()].map(c => [...c.data]);

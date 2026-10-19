@@ -186,11 +186,10 @@ test("first road gesture cancellation, pointercancel and lost capture roll back 
 test("finishing async preparation keeps the inline stamp name and save button stable",async({page})=>{
  await openRoadSheet(page);
  await page.evaluate(()=>{
-  const gate={entered:false,release:()=>{}};(window as unknown as{pendingRoad:typeof gate}).pendingRoad=gate;
-  const encode=HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob=function(callback,...args){
-   if(this.width===256&&this.height===256){HTMLCanvasElement.prototype.toBlob=encode;encode.call(this,blob=>{gate.release=()=>callback(blob);gate.entered=true;},...args);}else encode.call(this,callback,...args);
-  };
+  const hook=(window as unknown as{__smap:{smartBrushPreparation:{hold():void;release():void;pending:number}}}).__smap.smartBrushPreparation;
+  hook.hold();
+  const gate={get entered(){return hook.pending>0;},release:()=>hook.release()};
+  (window as unknown as{pendingRoad:typeof gate}).pendingRoad=gate;
  });
  await selectRoad(page);await expect.poll(()=>page.evaluate(()=>(window as unknown as{pendingRoad:{entered:boolean}}).pendingRoad.entered)).toBe(true);
  await page.locator("[data-action='saveClipStamp']").click();const name=page.getByRole("textbox",{name:"Stamp adı",exact:true});await name.fill("Köy yolu");
@@ -210,11 +209,10 @@ test("R Alan outlines keep authored corners and leave their interior untouched",
 test("saving during preparation then selecting another brush cancels the stale save",async({page})=>{
  await openRoadSheet(page);
  await page.evaluate(()=>{
-  const gate={entered:false,release:()=>{}};(window as unknown as{pendingRoad:typeof gate}).pendingRoad=gate;
-  const encode=HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob=function(callback,...args){
-   if(this.width===256&&this.height===256){HTMLCanvasElement.prototype.toBlob=encode;encode.call(this,blob=>{gate.release=()=>callback(blob);gate.entered=true;},...args);}else encode.call(this,callback,...args);
-  };
+  const hook=(window as unknown as{__smap:{smartBrushPreparation:{hold():void;release():void;pending:number}}}).__smap.smartBrushPreparation;
+  hook.hold();
+  const gate={get entered(){return hook.pending>0;},release:()=>hook.release()};
+  (window as unknown as{pendingRoad:typeof gate}).pendingRoad=gate;
  });
  await selectRoad(page);await expect.poll(()=>page.evaluate(()=>(window as unknown as{pendingRoad:{entered:boolean}}).pendingRoad.entered)).toBe(true);
  await page.evaluate(async()=>{const{useEditorStore}=await import(/* @vite-ignore */String("/src/state/editorStore.ts"));(window as unknown as{pendingRoad:{source:unknown}}).pendingRoad.source=useEditorStore.getState().stamp;});

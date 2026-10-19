@@ -24,7 +24,7 @@ import {
 
 import { compareDisk } from "./externalChange";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
-import { saveProjectLevels } from "./projectIo";
+import { saveProjectLevels, type SaveProjectInput } from "./projectIo";
 
 /** Folder that holds level files. */
 export const LEVELS_DIR = "levels";
@@ -60,7 +60,7 @@ export interface SavedLevel {
 }
 
 export interface SaveLevelsInput {
-  tilesetBytes(tilesetId: string): Uint8Array | undefined;
+  tilesetBytes: SaveProjectInput["tilesetBytes"];
   stamps?: readonly Stamp[];
   generatedRecipes?: readonly GeneratedRecipe[];
   keepStampFiles?: Iterable<string>;

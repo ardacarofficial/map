@@ -15,11 +15,12 @@ import {
 } from "@smap/core";
 
 import { FileNotFoundError, type ProjectFileSystem } from "../io/fs";
+import { resolveFileData, type FileData, type PngBytes } from "../io/fileData";
 
 /** One file of an export, relative to the target folder. */
 export interface ExportFile {
   readonly path: string;
-  readonly data: string | Uint8Array;
+  readonly data: FileData;
 }
 
 export interface ExportFileSet {
@@ -34,7 +35,7 @@ export interface ExportFileSet {
 }
 
 /** Original PNG bytes of a tileset, `undefined` when the image is missing. */
-export type TilesetBytes = (tilesetId: string) => Uint8Array | undefined;
+export type TilesetBytes = (tilesetId: string) => PngBytes | undefined;
 
 /** Where and how the files of a folder export are laid out. */
 export interface FileSetOptions {
@@ -104,7 +105,8 @@ export async function writeExportFiles(fs: ProjectFileSystem, files: readonly Ex
   const written: string[] = [];
   const unchanged: string[] = [];
   for (const file of files) {
-    const bytes = typeof file.data === "string" ? new TextEncoder().encode(file.data) : file.data;
+    const data = await resolveFileData(file.data);
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     if (await sameBytes(fs, file.path, bytes)) {
       unchanged.push(file.path);
       continue;

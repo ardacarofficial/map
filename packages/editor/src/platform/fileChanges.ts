@@ -66,7 +66,7 @@ async function reloadOnce(path: string): Promise<void> {
   if (!hasPngSignature(bytes)) return;
   const stale = tilesets.filter((ts) => {
     const image = getTilesetImage(ts.id);
-    return !image || !sameBytes(image.bytes, bytes);
+    return !image?.bytes || !sameBytes(image.bytes, bytes);
   });
   if (stale.length === 0) return;
 

@@ -1,3 +1,4 @@
+import type { FileData } from "../io/fileData";
 /**
  * Minimal ZIP writer. Pure TypeScript, no dependencies.
  *
@@ -171,12 +172,15 @@ const PROJECT_ZIP_DIRS = ["levels/", "tilesets/", "stamps/"];
  * `stamps/` and any other parent folder of a file. Files under `backups/`
  * are dropped.
  */
-export function projectZipEntries(files: readonly { path: string; data: string | Uint8Array }[]): ZipEntry[] {
+export function projectZipEntries(files: readonly { path: string; data: FileData }[]): ZipEntry[] {
   const kept = files.filter((f) => f.path !== "backups" && !f.path.startsWith("backups/"));
   const dirs = new Set(PROJECT_ZIP_DIRS);
   for (const file of kept) {
     const parts = file.path.split("/");
     for (let i = 1; i < parts.length; i++) dirs.add(`${parts.slice(0, i).join("/")}/`);
   }
-  return [...[...dirs].map((path) => ({ path })), ...kept];
+  return [...[...dirs].map((path) => ({ path })), ...kept.map(file => {
+    if (typeof file.data === "function") throw new Error("ZIP requires materialized file data");
+    return { path: file.path, data: file.data };
+  })];
 }
