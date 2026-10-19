@@ -27,6 +27,6 @@ export interface ExportTargetPlugin {
   readonly id: string;
   readonly labelKey: MessageKey;
   readonly options: readonly ExportTargetOption[];
-  preflight(input: ExportTargetInput, options: ExportTargetOptions): Problem[];
-  planFiles(input: ExportTargetInput, options: ExportTargetOptions): Promise<ExportFile[]> | ExportFile[];
+  preflight(input: ExportTargetInput, options: ExportTargetOptions): readonly Problem[] | Promise<readonly Problem[]>;
+  planFiles(input: ExportTargetInput, options: ExportTargetOptions): Promise<readonly ExportFile[]> | readonly ExportFile[];
 }

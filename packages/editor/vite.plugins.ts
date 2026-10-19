@@ -30,6 +30,8 @@ export function editorCodeSplitting() {
       // Raster helpers have no UI/store dependencies; keep their growing pixel code independently cached.
       { name: "stamp-raster", test: /[\\/]packages[\\/]editor[\\/]src[\\/](?:state[\\/](?:tilesetImages|tilesetPixels|pngHash|smartBrushProfile)|ui[\\/]stamps[\\/](?:smartStampBake|stampThumb)|export[\\/](?:pngComposite|pngRender))\.ts$/, priority: 10 },
       { name: "stamp-recipes", test: /[\\/]packages[\\/]editor[\\/]src[\\/]io[\\/](?:smartStampRecipes|fs|fileData)\.ts$/, priority: 10 },
+      // Export targets and delivery share a cached chunk as new engines are added.
+      { name: "export", test: /[\\/]packages[\\/]editor[\\/]src[\\/]export[\\/](?:export(?:Actions|Settings|Store|Files|Options)|targetRegistry|zip|targets[\\/][^\\/]+)\.ts$/, priority: 10 },
       // Map data model (pure, changes less often than the UI) and the UI strings (both languages).
       { name: "core", test: /[\\/]packages[\\/]core[\\/]src[\\/]/, priority: 10 },
       { name: "i18n", test: /[\\/]packages[\\/]editor[\\/]src[\\/]i18n[\\/](?:tr|en)\.ts$/, priority: 10 },

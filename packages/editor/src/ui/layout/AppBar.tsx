@@ -150,10 +150,10 @@ export function AppBar() {
       <DocumentTabs />
       <div className="ml-auto flex shrink-0 items-center gap-3">
         <SaveIndicator />
-        <Tooltip label={t("export.toolbarUnity")} command="file.export">
-          <Button variant="primary" size="md" data-export-unity="" onClick={() => openExportDialog({ target: "unity" })}>
+        <Tooltip label={t("exportTargets.open")} command="file.export">
+          <Button variant="primary" size="md" data-export-unity="" data-export-open="" onClick={() => openExportDialog()}>
             <Icon name="upload" size={16} />
-            {t("export.toolbarUnity")}
+            {t("exportTargets.open")}
           </Button>
         </Tooltip>
       </div>

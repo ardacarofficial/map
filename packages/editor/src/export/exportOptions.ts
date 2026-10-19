@@ -82,7 +82,7 @@ export interface CheckInput {
 export function exportChecks(input: CheckInput): ExportCheck[] {
   const checks: ExportCheck[] = [];
   const { target } = input;
-  const needsImages = target === "png" || target === "tmj" || target === "zip" || (target === "unity" && input.copyTextures);
+  const needsImages = target === "png" || target === "tmj" || target === "zip" || target === "godot" || target === "defold" || (target === "unity" && input.copyTextures);
   if (needsImages) {
     const missingTilesets = input.warnings.filter((w) => w.code === "missingTilesets").flatMap((w) => w.tilesets);
     const missing = [...input.missingImages, ...missingTilesets];
@@ -98,7 +98,7 @@ export function exportChecks(input: CheckInput): ExportCheck[] {
     );
   }
   if (target !== "zip") {
-    const nothing = input.selectedLayers === 0 && !(target === "unity" && input.collision);
+    const nothing = input.selectedLayers === 0 && !((target === "unity" || target === "godot" || target === "defold") && input.collision);
     const outOfRange = input.warnings.filter((w) => w.code === "tileIdsOutOfRange");
     checks.push(
       nothing
@@ -119,7 +119,7 @@ export function exportChecks(input: CheckInput): ExportCheck[] {
           : { id: "layers", state: "ok", label: "export.checkLayers" },
     );
   }
-  if (target === "unity" || target === "tmj") {
+  if (target === "unity" || target === "tmj" || target === "godot" || target === "defold") {
     checks.push(
       input.hasFolder
         ? { id: "target", state: "ok", label: "export.checkTarget" }

@@ -12,7 +12,7 @@ function coreOptions(input: ExportTargetInput, options: ExportTargetOptions): De
 }
 
 /** Imported by the common target registry; no dialog/actions dependency. */
-export const defoldTarget: ExportTargetPlugin = {
+export const defoldTarget = {
   id: "defold",
   labelKey: "defoldExport.label",
   options: [
@@ -49,6 +49,6 @@ export const defoldTarget: ExportTargetPlugin = {
       throw error;
     }
   },
-};
+} satisfies ExportTargetPlugin;
 
 export default defoldTarget;

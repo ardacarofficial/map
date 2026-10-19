@@ -1,30 +1,23 @@
-/**
- * file.export (Ctrl+E) and the app bar's "Unity'ye aktar": one dialog for
- * Unity / PNG / JSON / Tiled / Zip (concept 3). Left: the form (map, folder,
- * options, per-layer checkboxes with tile counts). Right: a live preview of
- * what is exported and the "Dışa aktarma kontrolü" checklist, then one
- * primary "Dışa aktar". Target, PNG scale, folders, Unity options, the
- * per-level layer selection and "export to Unity on save" are remembered
- * per project (`exportSettings.ts`); the after-save export uses the same.
- */
+/** One export home for every target, with successful-only option persistence. */
 import { Dialog } from "@base-ui/react/dialog";
 import {
   deriveCollision,
   exportBaseName,
   exportLayerSummaries,
+  exportedTilesets,
   exportWarnings,
   layerDrawList,
   type ExportLayerSummary,
   type ExportWarning,
   type MapDocument,
 } from "@smap/core";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 
-import { formatNumber, t, type MessageKey } from "../i18n";
+import { formatNumber, t } from "../i18n";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
-import { getTilesetImage } from "../state/tilesetImages";
+import { getTilesetImage, tilesetPngSource } from "../state/tilesetImages";
 import { backdropClass, popupClass, dialogWidthL } from "../ui/dialogs/styles";
 import { DialogHeader, DialogBody, DialogFooter, dialogLayoutClass } from "../ui/dialogs/DialogFrame";
 import { Segmented } from "../ui/primitives/Segmented";
@@ -39,6 +32,9 @@ import {
   exportJson,
   exportPng,
   exportToTiled,
+  exportToEngine,
+  settingsKey,
+  exportFolderLabel,
   exportToUnity,
   exportZip,
   formatClock,
@@ -49,9 +45,11 @@ import {
   type ExportSource,
   type FolderKind,
 } from "./exportActions";
+import { ExportTargetList } from "./ExportTargetList";
 import type { ExportFileSet } from "./exportFiles";
 import { canExport, exportChecks, levelKey, outputSubfolder, selectedLayerIds, toggleExcluded, type ExportCheck } from "./exportOptions";
 import { defaultExportSettings, loadExportSettings, updateExportSettings, type ExportSettings, type ExportTarget } from "./exportSettings";
+import { EXPORT_TARGETS, prepareTarget, targetOptions, type TargetPlan } from "./targetRegistry";
 import { useExportStore } from "./exportStore";
 import { compositeOps, largestFittingScale, PNG_MAX_SIDE, PNG_SCALES, pngFits, pngSize, type PngScale } from "./pngComposite";
 import { replayOps } from "./pngRender";
@@ -76,14 +74,6 @@ export function ExportDialog() {
     </Dialog.Root>
   );
 }
-
-const TARGETS: { id: ExportTarget; title: MessageKey; hint: MessageKey; glyph: ReactElement }[] = [
-  { id: "unity", title: "export.targetUnity", hint: "export.targetUnityHint", glyph: <Icon name="box" size={16} /> },
-  { id: "png", title: "export.targetPng", hint: "export.targetPngHint", glyph: <Icon name="image" size={16} /> },
-  { id: "json", title: "export.targetJson", hint: "export.targetJsonHint", glyph: <Icon name="file-plus" size={16} /> },
-  { id: "tmj", title: "export.targetTmj", hint: "export.targetTmjHint", glyph: <Icon name="grid" size={16} /> },
-  { id: "zip", title: "export.targetZip", hint: "export.targetZipHint", glyph: <Icon name="folder" size={16} /> },
-];
 
 /** Everything the dialog shows for the chosen target and map, derived once per change. */
 interface Derived {
@@ -118,7 +108,8 @@ function derive(target: ExportTarget, source: ExportSource, settings: ExportSett
   } else {
     warnings = target === "png" ? (list.warnings ?? []) : exportWarnings(doc, layers);
     const drawn = new Set(list.layers.flatMap((l) => l.items.map((item) => item.tileset)));
-    missingImages = target === "png" ? [...drawn].filter((ts) => !getTilesetImage(ts.id)?.bitmap).map((ts) => ts.imagePath) : [];
+    missingImages = target === "png" ? [...drawn].filter((ts) => !getTilesetImage(ts.id)?.bitmap).map((ts) => ts.imagePath)
+      : target === "godot" || target === "defold" ? exportedTilesets(doc, layers).filter(({ tileset }) => !getTilesetImage(tileset.id)).map(image => image.sourcePath) : [];
   }
   const collision = deriveCollision(doc).data;
   let solidCells = 0;
@@ -126,8 +117,8 @@ function derive(target: ExportTarget, source: ExportSource, settings: ExportSett
   const checks = exportChecks({
     target,
     selectedLayers: exported.length,
-    collision: settings.unityCollision,
-    hasFolder: target === "unity" ? settings.unityDir !== null : settings.tmjDir !== null,
+    collision: target === "godot" || target === "defold" ? targetOptions(target, settings).collision !== false : settings.unityCollision,
+    hasFolder: target === "unity" || target === "tmj" || target === "godot" || target === "defold" ? exportFolderLabel(settings, target) !== null : true,
     copyTextures: settings.copyTextures,
     missingImages,
     warnings,
@@ -164,6 +155,7 @@ function ExportForm({
   const [levelId, setLevelId] = useState<string | undefined>(project.levelId);
   const [loaded, setLoaded] = useState<ExportSource | null>(null);
   const [subfolderDraft, setSubfolderDraft] = useState<string | null>(null);
+  const [enginePlan, setEnginePlan] = useState<{ target: ExportTarget; settings: ExportSettings; source: ExportSource; plan: TargetPlan } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,14 +195,26 @@ function ExportForm({
   const pngScale = scale ?? current.pngScale;
   const derived = useMemo(() => derive(chosen, source, current, project), [chosen, source, current, project]);
   const pngOk = pngFits(derived.imageSize.width, derived.imageSize.height, pngScale);
-  const ready = canExport(derived.checks) && (chosen !== "png" || pngOk);
+  const engine = chosen === "godot" || chosen === "defold";
+  const plan = enginePlan?.target === chosen && enginePlan.settings === current && enginePlan.source === source ? enginePlan.plan : null;
+  const ready = settings !== null && canExport(derived.checks) && (chosen !== "png" || pngOk) && (!engine || (plan !== null && !plan.problems.some(p => p.severity === "error")));
+  useEffect(() => {
+    if (!settings || (chosen !== "godot" && chosen !== "defold")) return;
+    let cancelled = false;
+    void prepareTarget(chosen, { doc: source.document, levelName: sourceLevelName(source), bytes: tilesetPngSource, layers: derived.layers }, current).then(plan => {
+      if (!cancelled) setEnginePlan({ target: chosen, settings: current, source, plan });
+    }, (error: unknown) => {
+      if (!cancelled) setEnginePlan({ target: chosen, settings: current, source, plan: { set: null, problems: [{ severity: "error", key: "exportTargets.preflightFailed", params: { detail: describeError(error) } }] } });
+    });
+    return () => { cancelled = true; };
+  }, [chosen, current, source, derived.layers, settings]);
   const key = levelKey(source);
   const excluded = current.excludedLayers[key] ?? [];
 
-  /** Optimistic: the form updates at once, IndexedDB follows. */
+  /** Options remain local until delivery succeeds; auto-export is an independent setting. */
   const patch = (next: Partial<ExportSettings>) => {
     setSettings((s) => ({ ...(s ?? defaultExportSettings(project.name)), ...next }));
-    void updateExportSettings(project.name, next);
+    if (next.autoUnity !== undefined) void updateExportSettings(project.name, { autoUnity: next.autoUnity });
   };
 
   const setLayer = (layerId: string, include: boolean) => {
@@ -220,7 +224,7 @@ function ExportForm({
   const pickFolder = async (kind: FolderKind) => {
     try {
       const next = await chooseExportFolder(kind);
-      if (next) setSettings(next);
+      if (next) setSettings(s => ({ ...(s ?? defaultExportSettings(project.name)), [settingsKey(kind)]: next[settingsKey(kind)], nativeFolders: next.nativeFolders }));
     } catch (error) {
       console.error(error);
       toast.error(t("export.toastFailed", { detail: describeError(error) }));
@@ -231,35 +235,31 @@ function ExportForm({
     event.preventDefault();
     if (busy || !ready) return;
     const run = async (): Promise<boolean> => {
-      if (subfolderDraft !== null) await updateExportSettings(project.name, { unitySubfolder: subfolderDraft });
-      switch (chosen) {
-        case "unity":
-          return (await exportToUnity(source)) !== null;
-        case "tmj":
-          return (await exportToTiled(source)) !== null;
-        case "png":
-          return exportPng(pngScale, source);
-        case "json":
-          return exportJson(source);
-        case "zip":
-          return exportZip();
-      }
+      const draft = { ...current, pngScale, ...(subfolderDraft !== null ? { unitySubfolder: subfolderDraft } : {}) };
+      return EXPORT_TARGETS.find(target => target.id === chosen)!.run({
+        unity: async () => (await exportToUnity(source, draft)) !== null,
+        tmj: async () => (await exportToTiled(source, draft)) !== null,
+        png: () => exportPng(pngScale, source, draft),
+        json: () => exportJson(source, draft),
+        zip: () => exportZip(draft),
+        godot: async () => plan !== null && (await exportToEngine("godot", source, draft, plan)) !== null,
+        defold: async () => plan !== null && (await exportToEngine("defold", source, draft, plan)) !== null,
+      });
     };
     void run().then((ok) => ok && onDone());
   };
 
   const mapName = levels.find((l) => l.id === source.levelId)?.name ?? sourceLevelName(source);
-  const [before, after] = t("export.prepare", { map: "\u0001", target: t(TARGETS.find(target => target.id === chosen)!.title) }).split("\u0001");
+  const [before, after] = t("export.prepare", { map: "\u0001", target: t(EXPORT_TARGETS.find(target => target.id === chosen)!.labelKey) }).split("\u0001");
   const showMap = chosen !== "zip" && levels.length > 1;
   const subfolder = subfolderDraft ?? current.unitySubfolder;
 
   return (
     <form onSubmit={submit} noValidate className="flex min-h-0 max-h-[calc(100vh-32px)] flex-col">
-      <DialogHeader title={chosen === "unity" ? t("export.titleUnity") : t("export.title")}
+      <DialogHeader title={t("exportTargets.open")}
         subtitle={chosen === "zip" ? t("export.description") : <>{before}<span className="text-text">{mapName}</span>{after}</>} onClose={onDone} />
-      <Segmented<ExportTarget> size="md" label={t("export.targets")} value={chosen} onValueChange={setTarget} className="mx-4 shrink-0"
-        items={TARGETS.map(item => ({ value: item.id, label: t(item.title), tooltip: t(item.hint), icon: item.glyph }))} />
       <DialogBody className="grid grid-cols-2 gap-4 pt-3">
+        <div className="col-span-2"><ExportTargetList value={chosen} onChange={setTarget} /></div>
         <div className="flex min-w-0 flex-col gap-4" data-testid="export-form">
           {showMap && (
             <Section label={t("export.map")}>
@@ -281,7 +281,7 @@ function ExportForm({
           {chosen === "unity" && (
             <>
               <Section label={t("export.destination")}>
-                <FolderRow handle={current.unityDir} onPick={() => void pickFolder("unity")}>
+                <FolderRow handle={exportFolderLabel(current, "unity")} onPick={() => void pickFolder("unity")}>
                   <input
                     aria-label={t("export.outputFolder")}
                     className="h-control-md min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-muted"
@@ -333,8 +333,29 @@ function ExportForm({
 
           {chosen === "tmj" && (
             <Section label={t("export.destination")}>
-              <FolderRow handle={current.tmjDir} onPick={() => void pickFolder("tmj")} />
+              <FolderRow handle={exportFolderLabel(current, "tmj")} onPick={() => void pickFolder("tmj")} />
             </Section>
+          )}
+
+          {engine && (
+            <>
+              <Section label={t("export.destination")}>
+                <FolderRow handle={exportFolderLabel(current, chosen as "godot" | "defold")} onPick={() => void pickFolder(chosen as "godot" | "defold")} />
+              </Section>
+              <Section label={t("export.options")}>
+                {EXPORT_TARGETS.find(target => target.id === chosen)!.options.map(option => {
+                  const value = targetOptions(chosen, current)[option.id];
+                  const change = (value: string | boolean) => patch({ targetOptions: { ...current.targetOptions, [chosen]: { ...targetOptions(chosen, current), [option.id]: value } } });
+                  return option.type === "boolean"
+                    ? <CheckRow key={option.id} checked={value === true} onChange={change} label={t(option.labelKey)} hint={option.hintKey ? t(option.hintKey) : undefined} />
+                    : <label key={option.id} className="flex flex-col gap-1 text-sm text-muted" title={option.hintKey ? t(option.hintKey) : undefined}>
+                        {t(option.labelKey)}
+                        <input aria-label={t(option.labelKey)} value={String(value)} onChange={event => change(event.target.value)} spellCheck={false}
+                          className="h-control-md rounded-sm border border-line bg-field px-2 text-text outline-none focus:border-accent-line" />
+                      </label>;
+                })}
+              </Section>
+            </>
           )}
 
           {chosen !== "zip" && (
@@ -366,6 +387,9 @@ function ExportForm({
                 <CheckItem key={check.id} check={check} />
               ))}
             </ul>
+            {engine && <ul className="flex flex-col gap-1 text-sm" data-testid="export-preflight">
+              {plan === null ? <li className="text-muted">{t("exportTargets.checking")}</li> : plan.problems.map((problem, index) => <li key={index} className={problem.severity === "error" ? "text-danger" : "text-warning"}>{t(problem.key, problem.params)}</li>)}
+            </ul>}
             <span className="text-sm text-muted" data-testid="export-ready">
               {!ready
                 ? chosen === "png" && !pngOk
@@ -387,9 +411,10 @@ function ExportForm({
               <FileList paths={displayOrder(derived.files.files.map((f) => f.path), derived.files.mapFile)} />
             </Section>
           )}
+          {engine && plan?.set && <Section label={t("export.files")}><FileList paths={displayOrder(plan.set.files.map(f => f.path), plan.set.mapFile)} /></Section>}
           {chosen === "zip" && <ZipFiles project={project} />}
-          {chosen === "unity" && <label className="flex items-center gap-2" title={current.unityDir !== null ? t("export.autoUnityHint") : t("export.autoUnityNeedsFolder")}>
-            <Toggle checked={current.autoUnity && current.unityDir !== null} disabled={current.unityDir === null}
+          {chosen === "unity" && <label className="flex items-center gap-2" title={exportFolderLabel(current, "unity") !== null ? t("export.autoUnityHint") : t("export.autoUnityNeedsFolder")}>
+            <Toggle checked={current.autoUnity && exportFolderLabel(current, "unity") !== null} disabled={exportFolderLabel(current, "unity") === null}
               onChange={autoUnity => patch({ autoUnity })} label={t("export.autoUnity")} />
             <span className="text-sm text-text">{t("export.autoUnity")}</span>
           </label>}
@@ -429,16 +454,18 @@ function CheckRow({
   onChange,
   label,
   meta,
+  hint,
   disabled = false,
 }: {
   checked: boolean;
   onChange(checked: boolean): void;
   label: string;
   meta?: string;
+  hint?: string | undefined;
   disabled?: boolean;
 }) {
   return (
-    <label title={label} className={`flex h-control-md items-center gap-2 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
+    <label title={hint} className={`flex h-control-md items-center gap-2 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
       <input
         type="checkbox"
         checked={checked}
@@ -583,7 +610,7 @@ function ZipFiles({ project }: { project: OpenProject }) {
   );
 }
 
-function FolderRow({ handle, onPick, children }: { handle: FileSystemDirectoryHandle | null; onPick(): void; children?: ReactNode }) {
+function FolderRow({ handle, onPick, children }: { handle: { readonly name: string } | null; onPick(): void; children?: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
       <div className={`flex h-control-md min-w-0 flex-1 items-center gap-2 ${children ? "rounded-sm border border-line bg-field px-2 focus-within:border-accent" : ""}`}>

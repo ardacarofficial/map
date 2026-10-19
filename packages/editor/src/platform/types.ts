@@ -122,6 +122,9 @@ export interface Platform {
   /** Where settings live, shown in the settings dialog ("settings.json" path or "localStorage"). */
   settingsLocation(): string;
 
+  /** Native folder destination for multi-file exports. Browser uses directory handles. */
+  pickExportFolder?(): Promise<ProjectLocation | null>;
+
   /**
    * Saves an exported file where the user chooses (desktop: native save
    * dialog). Absent → the editor downloads it. Resolves false when cancelled.

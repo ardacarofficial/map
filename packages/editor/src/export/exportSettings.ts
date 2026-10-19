@@ -8,13 +8,17 @@
  */
 import type { PngScale } from "./pngComposite";
 
-export type ExportTarget = "unity" | "png" | "json" | "tmj" | "zip";
+export type ExportTarget = "unity" | "png" | "json" | "tmj" | "zip" | "godot" | "defold";
 
 export interface ExportSettings {
   /** Project name (the key). */
   project: string;
   target: ExportTarget;
   pngScale: PngScale;
+  nativeFolders: Partial<Record<ExportTarget, string>>;
+  targetOptions: Partial<Record<ExportTarget, Readonly<Record<string, string | number | boolean>>>>;
+  godotDir: FileSystemDirectoryHandle | null;
+  defoldDir: FileSystemDirectoryHandle | null;
   /** Folder inside the Unity project's Assets (null until picked). */
   unityDir: FileSystemDirectoryHandle | null;
   /** Folder for Tiled exports (null until picked). */
@@ -43,6 +47,10 @@ export function defaultExportSettings(project: string): ExportSettings {
     project,
     target: "unity",
     pngScale: 1,
+    targetOptions: {},
+    nativeFolders: {},
+    godotDir: null,
+    defoldDir: null,
     unityDir: null,
     tmjDir: null,
     autoUnity: false,
@@ -116,4 +124,12 @@ export async function updateExportSettings(project: string, patch: Partial<Expor
     console.warn("Could not store export settings", error);
   }
   return next;
+}
+
+/** A cancelled or failed delivery leaves the last successful selection intact. */
+export async function rememberSuccessfulExport(project: string, target: ExportTarget, draft: ExportSettings, success: boolean): Promise<void> {
+  if (!success) return;
+  const latest = await loadExportSettings(project);
+  await updateExportSettings(project, { ...draft, target, autoUnity: latest.autoUnity, lastUnityAt: latest.lastUnityAt,
+    nativeFolders: latest.nativeFolders, unityDir: latest.unityDir, tmjDir: latest.tmjDir, godotDir: latest.godotDir, defoldDir: latest.defoldDir });
 }

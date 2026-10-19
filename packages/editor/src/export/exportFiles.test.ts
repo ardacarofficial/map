@@ -77,3 +77,13 @@ describe("writeExportFiles", () => {
     expect(changed.unchanged).toEqual(["grass.png", "grass-2.png"]);
   });
 });
+
+it("stages all deferred files before publishing and preserves unrelated assets", async () => {
+  const fs = new MemoryFileSystem();
+  await fs.writeText("keep.txt", "unrelated");
+  await expect(writeExportFiles(fs, [
+    { path: "first.txt", data: "ready" },
+    { path: "bad.png", data: async () => { throw new Error("encoder failed"); } },
+  ])).rejects.toThrow("encoder failed");
+  expect(await fs.list("")).toEqual(["keep.txt"]);
+});

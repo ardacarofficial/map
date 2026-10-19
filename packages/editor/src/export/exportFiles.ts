@@ -104,8 +104,11 @@ export interface WriteResult {
 export async function writeExportFiles(fs: ProjectFileSystem, files: readonly ExportFile[]): Promise<WriteResult> {
   const written: string[] = [];
   const unchanged: string[] = [];
-  for (const file of files) {
-    const data = await resolveFileData(file.data);
+  // Resolve every encoder before publishing any file to the destination.
+  const captured = files.map(file => ({ ...file, data: file.data instanceof Uint8Array ? file.data.slice() : file.data }));
+  const staged = await Promise.all(captured.map(async file => ({ ...file, data: await resolveFileData(file.data) })));
+  for (const file of staged) {
+    const data = file.data;
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     if (await sameBytes(fs, file.path, bytes)) {
       unchanged.push(file.path);

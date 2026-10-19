@@ -1,5 +1,6 @@
 /** Self-contained contribution for the common export registry. No UI, writes or global state. */
 import { exportedTilesets, exportGodot, GodotPreflightError, parseLevel, preflightGodot, serializeLevel, type GodotMapInput, type GodotOptions, type GodotProblem } from "@smap/core";
+import type { ExportTargetInput, ExportTargetOptions, ExportTargetPlugin } from "./types";
 import type { MessageKey } from "../../i18n";
 import { resolveFileData } from "../../io/fileData";
 import type { ExportFileSet, TilesetBytes } from "../exportFiles";
@@ -76,3 +77,20 @@ export const godotTarget = {
 } as const;
 
 export default godotTarget;
+
+function commonInput(input: ExportTargetInput, options: ExportTargetOptions): GodotTargetInput {
+  return { maps: [{ doc: input.doc, name: input.levelName, ...(input.layers ? { layers: input.layers } : {}) }], bytes: input.bytes,
+    options: { resourceRoot: typeof options.resourceRoot === "string" ? options.resourceRoot : "smap", collision: options.collision !== false } };
+}
+/** Shared single-map plugin contract; the multi-map API above remains available. */
+export const godotPlugin = {
+  id: godotTarget.id,
+  labelKey: godotTarget.labelKey,
+  options: godotTarget.options.map(option => ({ ...option, ...("descriptionKey" in option ? { hintKey: option.descriptionKey } : {}) })),
+  async preflight(input, options) {
+    return (await godotTarget.preflight(commonInput(input, options))).map(problem => ({ ...problem, severity: "error" as const }));
+  },
+  async planFiles(input, options) {
+    return [...(await godotTarget.planFiles(commonInput(input, options))).files];
+  },
+} satisfies ExportTargetPlugin;
