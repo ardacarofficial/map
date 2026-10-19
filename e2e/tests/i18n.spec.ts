@@ -6,20 +6,21 @@ async function settings(page: Page) {
   await expectWelcome(page);
   await page.keyboard.press("Control+k");
   await page.locator('[id="command-settings.editShortcuts"]').click();
-  await expect(page.getByRole("radio", { name: "English", exact: true })).toBeEnabled();
+  await page.locator("[data-settings-category=language]").click();
+  await expect(page.locator("#settings-locale")).toBeEnabled();
 }
 
 test("Settings language previews, cancels, saves and persists after offline restart", async ({ page, context }) => {
   await page.goto("/");
   await settings(page);
-  await page.getByRole("radio", { name: "English", exact: true }).click();
+  await page.locator("#settings-locale").selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("dialog")).toHaveAccessibleName("App settings");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.locator("html")).toHaveAttribute("lang", "tr");
   await settings(page);
-  await page.getByRole("radio", { name: "English", exact: true }).click();
+  await page.locator("#settings-locale").selectOption("en");
   await page.getByRole("button", { name: "Save and apply", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "App settings", exact: true })).toBeHidden();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("smap.settings")!).locale)).toBe("en");
@@ -29,7 +30,7 @@ test("Settings language previews, cancels, saves and persists after offline rest
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await settings(page);
-  await expect(page.getByRole("radio", { name: "English", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("#settings-locale")).toHaveValue("en");
 });
 
 test("direct locale changes refresh open menus, tooltips, canvas hints and HUD without remounting", async ({ page }) => {

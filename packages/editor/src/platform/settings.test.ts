@@ -168,3 +168,9 @@ describe("formatSettings", () => {
     expect(JSON.parse(formatSettings({ shortcuts: {} }))).toEqual({ shortcuts: {} });
   });
 });
+
+it("stores only shortcut differences from legacy full-default files without dropping future fields", async () => {
+  const { compactSettingsText } = await import("./settings");
+  const raw = { $future: { a: 1 }, locale: "en", shortcuts: Object.fromEntries(SHORTCUTS.filter(row => row.command !== "view.pan").map(row => [row.command, row.command === "tool.fill" ? [] : row.keys])) };
+  expect(JSON.parse(compactSettingsText(JSON.stringify(raw), SHORTCUTS))).toEqual({ $future: { a: 1 }, locale: "en", shortcuts: { "tool.fill": [] } });
+});
