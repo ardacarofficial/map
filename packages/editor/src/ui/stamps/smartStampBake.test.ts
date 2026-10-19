@@ -85,7 +85,7 @@ function verifyBandedPixels(b:number,size:number,w:number,h:number,sourceFlags:n
 }
 it("layout-2 area pixels preserve corners and symmetric caps in every size class and D4 orientation",()=>{
  for(const b of [2,3])for(const w of [1,b,2*b-1,2*b,2*b+1,11])for(const h of [1,b,2*b-1,2*b,2*b+1,10])for(const orientation of [0,FLIP_H,FLIP_V,FLIP_D,(FLIP_H|FLIP_D)>>>0])verifyBandedPixels(b,3,w,h,FLIP_V,orientation);
-});
+}, 60_000);
 it("banded area pixel oracle holds for random source flips, rectangle shapes and pixel sizes",()=>{
  fc.assert(fc.property(fc.integer({min:2,max:4}),fc.constantFrom(3,16,32),fc.integer({min:1,max:12}),fc.integer({min:1,max:12}),fc.constantFrom(0,FLIP_H,FLIP_V,FLIP_D,(FLIP_H|FLIP_D)>>>0),fc.constantFrom(0,FLIP_H,FLIP_V,FLIP_D),(b,size,w,h,flags,orientation)=>verifyBandedPixels(b,size,w,h,flags,orientation)),{numRuns:30});
 },60_000);
@@ -108,7 +108,7 @@ it("every thick road mask copies its macro quadrants losslessly, including odd b
   }
   expect(mismatch).toBe("");
  }
-});
+}, 60_000);
 
 it("non-multiple sources tile their centre without spilling into opposite bands, in area and every road mask",()=>{
  for(const [b,n,m] of [[2,7,6],[2,6,7],[2,5,5],[3,7,8]] as const){

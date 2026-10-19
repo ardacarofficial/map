@@ -47,11 +47,12 @@ test("Dışa aktar selects Godot, writes native resources and remembers successf
   await dialog.getByTestId("export-submit").click();
   await expect(dialog).toBeHidden();
   const output = await files(page);
-  expect(output.find(f => f.path === "game/maps/main.tscn")?.text).toContain('type="TileMapLayer"');
+  // Export names follow the map display name; its internal path remains levels/main.json.
+  expect(output.find(f => f.path === "game/maps/Ana harita.tscn")?.text).toContain('type="TileMapLayer"');
   expect(output.find(f => f.path === "game/maps/tileset.tres")?.text).toContain('type="TileSet"');
   expect(output.filter(f => f.path.endsWith(".png")).every(f => f.width! > 0 && f.height! > 0)).toBe(true);
   expect(output.filter(f => f.path.endsWith(".png"))).toHaveLength(1);
-  expect(JSON.parse(output.find(f => f.path === "game/maps/main.json")!.text!).smapExport).toBe(1);
+  expect(JSON.parse(output.find(f => f.path === "game/maps/Ana harita.json")!.text!).smapExport).toBe(1);
   await openExport(page);
   await expect(dialog.getByRole("radio", { name: "Godot 4", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("textbox")).toHaveValue("game/maps");
@@ -147,18 +148,18 @@ test("engine and legacy folder targets include painted road and edited PNGs and 
     await dialog.getByTestId("export-submit").click();
     await expect(dialog).toBeHidden();
     const output = await files(page);
-    const prefix = target === "Godot 4" ? "smap/" : target === "Defold" ? "exported/main/" : "";
+    const prefix = target === "Godot 4" ? "smap/" : target === "Defold" ? "exported/Ana harita/" : "";
     expect(output.filter(f => f.path.startsWith(prefix) && f.path.endsWith(".png") && (prefix !== "" || !f.path.includes("/")))).toHaveLength(2);
     if (target === "Unity") {
-      const map = JSON.parse((await readOpfsText(page, "main.smapmap"))!);
+      const map = JSON.parse((await readOpfsText(page, "Ana harita.smapmap"))!);
       expect(map.tilesets).toHaveLength(2);
       expect(map.tilesets.some((ts: { name: string }) => ts.name.includes("(yol)"))).toBe(true);
       expect(map.tilesets.some((ts: { name: string }) => ts.name.includes("Düzenlenen"))).toBe(true);
     }
     expect(await readOpfsText(page, "keep.txt")).toBe("unrelated");
   }
-  expect(await readOpfsText(page, "main.smapmap")).not.toBeNull();
-  expect(await readOpfsText(page, "main.tmj")).not.toBeNull();
+  expect(await readOpfsText(page, "Ana harita.smapmap")).not.toBeNull();
+  expect(await readOpfsText(page, "Ana harita.tmj")).not.toBeNull();
 });
 
 for (const target of ["Godot 4", "Defold"]) test(`${target} exports manual collision with every tile layer excluded`, async ({ page }) => {

@@ -64,3 +64,25 @@ it("detects character shortcuts that match with or without Shift, including rese
   expect(parsed.problems.some(problem => problem.reason === "conflict")).toBe(true);
   expect(parsed.settings.shortcuts.get("tool.brush")).toEqual([]);
 });
+
+it("allows the same chord across scopes, including recorded physical aliases and resets", () => {
+  expect(conflictsFor(new Map(), "tileset.rename", ["Ctrl+E"])).toEqual([]);
+  expect(assignKeys(new Map(), "tileset.rename", ["Ctrl+E"]).get("tileset.rename")).toEqual(["Ctrl+E"]);
+  const event = { key: "c", code: "KeyC", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false };
+  expect(conflictsFor(new Map(), "tileset.rename", ["Ctrl+C"], event)).toEqual(["tileset.copy"]);
+  const next = assignKeys(new Map(), "tileset.rename", ["Ctrl+C"], true, event);
+  expect(next.get("tileset.copy")).toEqual([]);
+  expect(next.has("edit.copy")).toBe(false);
+  expect(conflictsFor(new Map(), "edit.copy", ["Ctrl+C"], event)).toEqual([]);
+  const reset = resetCommand(new Map([["tileset.rename", ["Ctrl+C"]]]), "tileset.copy");
+  expect(reset.get("tileset.rename")).toEqual([]);
+  expect(reset.has("edit.copy")).toBe(false);
+  const parsed = parseSettings(JSON.stringify({ shortcuts: compactOverrides(next) }), SHORTCUTS);
+  expect(parsed.problems).toEqual([]);
+  expect(parsed.settings.shortcuts.get("tileset.rename")).toEqual(["Ctrl+C"]);
+});
+it("rejects a chord already assigned within the same scope without confirmation", () => {
+  expect(conflictsFor(new Map(), "tileset.rename", ["Ctrl+V"])).toEqual(["tileset.paste"]);
+  expect(assignKeys(new Map(), "tileset.rename", ["Ctrl+V"]).size).toBe(0);
+  expect(conflictsFor(new Map(), "edit.copy", ["Ctrl+V"])).toEqual(["edit.paste"]);
+});

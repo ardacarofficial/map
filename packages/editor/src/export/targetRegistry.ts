@@ -9,6 +9,12 @@ import { godotPlugin } from "./targets/godot";
 import { defoldTarget } from "./targets/defold";
 import type { ExportTargetInput, ExportTargetOption, ExportTargetOptions, Problem } from "./targets/types";
 
+/** Existing top-level settings retained for compatibility with saved worlds. */
+export type ExportPreference =
+  | { readonly key: "autoUnity" | "unityTiles" | "unityCollision" | "copyTextures"; readonly type: "boolean"; readonly labelKey: MessageKey; readonly settingsLabelKey: MessageKey }
+  | { readonly key: "unitySubfolder"; readonly type: "text"; readonly labelKey: MessageKey; readonly settingsLabelKey: MessageKey }
+  | { readonly key: "pngScale"; readonly type: "scale"; readonly labelKey: MessageKey; readonly settingsLabelKey: MessageKey };
+
 export interface RegisteredTarget {
   readonly id: ExportTarget;
   readonly labelKey: MessageKey;
@@ -16,18 +22,25 @@ export interface RegisteredTarget {
   readonly commandKey: MessageKey;
   readonly folder: boolean;
   readonly options: readonly ExportTargetOption[];
+  readonly preferences: readonly ExportPreference[];
   run(actions: Readonly<Record<ExportTarget, () => Promise<boolean>>>): Promise<boolean>;
   prepare(input: ExportTargetInput, settings: ExportSettings): Promise<TargetPlan>;
 }
 export const EXPORT_TARGETS: readonly RegisteredTarget[] = ([
-  { id: "unity", labelKey: "export.targetUnity", descriptionKey: "exportTargets.unityDescription", commandKey: "exportTargets.unityCommand", folder: true, options: [] },
-  { id: "tmj", labelKey: "export.targetTmj", descriptionKey: "exportTargets.tmjDescription", commandKey: "exportTargets.tmjCommand", folder: true, options: [] },
-  { id: "png", labelKey: "export.targetPng", descriptionKey: "exportTargets.pngDescription", commandKey: "exportTargets.pngCommand", folder: false, options: [] },
-  { id: "json", labelKey: "export.targetJson", descriptionKey: "exportTargets.jsonDescription", commandKey: "exportTargets.jsonCommand", folder: false, options: [] },
-  { id: "zip", labelKey: "export.targetZip", descriptionKey: "exportTargets.zipDescription", commandKey: "exportTargets.zipCommand", folder: false, options: [] },
+  { id: "unity", labelKey: "export.targetUnity", descriptionKey: "exportTargets.unityDescription", commandKey: "exportTargets.unityCommand", folder: true, options: [], preferences: [
+    { key: "unitySubfolder", type: "text", labelKey: "export.outputFolder", settingsLabelKey: "export.outputFolder" },
+    { key: "unityTiles", type: "boolean", labelKey: "export.optTiles", settingsLabelKey: "settingsUi.unityTiles" },
+    { key: "unityCollision", type: "boolean", labelKey: "export.optCollision", settingsLabelKey: "settingsUi.unityCollision" },
+    { key: "copyTextures", type: "boolean", labelKey: "export.optTextures", settingsLabelKey: "settingsUi.copyTextures" },
+    { key: "autoUnity", type: "boolean", labelKey: "export.autoUnity", settingsLabelKey: "settingsUi.autoUnity" },
+  ] },
+  { id: "tmj", labelKey: "export.targetTmj", descriptionKey: "exportTargets.tmjDescription", commandKey: "exportTargets.tmjCommand", folder: true, options: [], preferences: [] },
+  { id: "png", labelKey: "export.targetPng", descriptionKey: "exportTargets.pngDescription", commandKey: "exportTargets.pngCommand", folder: false, options: [], preferences: [{ key: "pngScale", type: "scale", labelKey: "export.scale", settingsLabelKey: "settingsUi.pngScale" }] },
+  { id: "json", labelKey: "export.targetJson", descriptionKey: "exportTargets.jsonDescription", commandKey: "exportTargets.jsonCommand", folder: false, options: [], preferences: [] },
+  { id: "zip", labelKey: "export.targetZip", descriptionKey: "exportTargets.zipDescription", commandKey: "exportTargets.zipCommand", folder: false, options: [], preferences: [] },
   { id: "godot", labelKey: godotPlugin.labelKey, descriptionKey: "exportTargets.godotDescription", commandKey: "exportTargets.godotCommand", folder: true,
-    options: godotPlugin.options },
-  { id: "defold", labelKey: defoldTarget.labelKey, descriptionKey: "exportTargets.defoldDescription", commandKey: "exportTargets.defoldCommand", folder: true, options: defoldTarget.options },
+    options: godotPlugin.options, preferences: [] },
+  { id: "defold", labelKey: defoldTarget.labelKey, descriptionKey: "exportTargets.defoldDescription", commandKey: "exportTargets.defoldCommand", folder: true, options: defoldTarget.options, preferences: [] },
 ] satisfies Omit<RegisteredTarget, "prepare" | "run">[]).map(target => ({ ...target, run: actions => actions[target.id](), prepare: (input, settings) => prepareTargetFiles(target.id, input, settings) }));
 export function targetOptions(target: ExportTarget, settings: ExportSettings): ExportTargetOptions {
   return { ...Object.fromEntries(EXPORT_TARGETS.find(t => t.id === target)!.options.map(o => [o.id, o.defaultValue])), ...settings.targetOptions[target] };

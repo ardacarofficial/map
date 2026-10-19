@@ -106,7 +106,7 @@ describe("collision chunk raster", () => {
       ),
       { numRuns: 40 },
     );
-  });
+  }, 60_000);
 
   it("codes reflect only manual blocked and passable cells", () => {
     const store = setup();

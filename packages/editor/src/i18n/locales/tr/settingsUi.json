@@ -48,5 +48,8 @@
   "unityCollision": "Unity collision",
   "copyTextures": "Tileset PNG dosyaları",
   "brushAlias": "Fırça",
+  "tilesetScope": "Tileset paneli",
+  "globalScope": "Genel",
+  "exportTarget": "Varsayılan hedef",
   "pan": "Kaydır"
 }

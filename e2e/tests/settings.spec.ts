@@ -208,3 +208,54 @@ test("ruler preview cancels; split, merge and zone controls edit the existing do
   await save(page); await openSettings(page); await category(page, "panels");
   await expect(page.getByRole("combobox", { name: "Sağ: görünürlük", exact: true })).toHaveValue("collapsed");
 });
+
+test("shortcut recorder respects scopes and displays the tileset panel scope", async ({ page }) => {
+  await openDockMap(page); await openSettings(page); await category(page, "shortcuts");
+  const search = page.getByLabel("Kısayol ara", { exact: true });
+  await search.fill("Tileset paneli");
+  const rename = page.locator('[data-shortcut-row="tileset.rename"]');
+  await expect(rename).toContainText("Tileset paneli");
+  await expect(page.locator('[data-shortcut-row="edit.copy"]')).toHaveCount(0);
+  await rename.getByRole("button", { name: "Tuş kaydet", exact: true }).click();
+  await page.keyboard.press("Control+c");
+  const conflict = page.getByRole("alert");
+  await expect(conflict.locator("p")).toHaveText("Bu tuş kullanılıyor: Referansları kopyala");
+  await conflict.getByRole("button", { name: "Değiştir", exact: true }).click();
+  await expect(page.locator('[data-shortcut-row="tileset.copy"] span.font-mono')).toHaveText("Atanmamış");
+  await search.fill("");
+  const copy = page.locator('[data-shortcut-row="edit.copy"]');
+  await copy.getByRole("button", { name: "Tuş kaydet", exact: true }).click();
+  await page.keyboard.press("Control+c");
+  await expect(conflict).toHaveCount(0);
+  await expect(copy.locator("span.font-mono")).toHaveText("Ctrl C");
+  await save(page);
+  await page.reload(); await openSettings(page); await category(page, "shortcuts");
+  await expect(rename.locator("span.font-mono")).toHaveText("Ctrl C");
+  await expect(copy.locator("span.font-mono")).toHaveText("Ctrl C");
+});
+
+test("export default target and registry options persist into the export dialog", async ({ page }) => {
+  await openDockMap(page); await openSettings(page); await category(page, "export");
+  const target = page.getByRole("combobox", { name: "Varsayılan hedef", exact: true });
+  await expect(target.locator("option")).toHaveText(["Unity", "Tiled", "PNG", "JSON", "Zip", "Godot 4", "Defold"]);
+  await target.selectOption("png");
+  await page.getByLabel("PNG ölçeği", { exact: true }).selectOption("2");
+  await target.selectOption("godot");
+  const resourceRoot = page.locator("#settings-export-resourceRoot");
+  await resourceRoot.fill("maps/custom");
+  await category(page, "general"); await category(page, "export");
+  await expect(target).toHaveValue("godot");
+  await expect(resourceRoot).toHaveValue("maps/custom");
+  await save(page);
+  await page.getByRole("button", { name: "Dışa aktar", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Godot 4", exact: true })).toBeChecked();
+  await expect(page.getByRole("dialog").getByRole("textbox").last()).toHaveValue("maps/custom");
+  await page.keyboard.press("Escape");
+  await openSettings(page); await category(page, "export");
+  await expect(target).toHaveValue("godot");
+  await target.selectOption("png");
+  await expect(page.getByLabel("PNG ölçeği", { exact: true })).toHaveValue("2");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Dışa aktar", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Godot 4", exact: true })).toBeChecked();
+});
