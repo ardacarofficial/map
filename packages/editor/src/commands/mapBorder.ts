@@ -37,13 +37,13 @@ export function borderPlan(draft: BorderDraft) {
   try { built = buildBorderPlan(draft, previewTilesets); }
   catch {
     // Missing/stale authored assets are a disabled form state, never a React render error.
-    built = { band: mapBorder(draft.store.document.map, { thickness: 1, inset: 0 }), cells: [], reason: "smartStamp.changed" };
+    built = { band: mapBorder(draft.store.document.map, { thickness: 1, inset: 0 }), cells: [], reason: "smartStamp.error_sourceMissing" };
   }
   const result = { ...built, previewTilesets, id: ++planId, layerId: s.activeLayerId };
   cached = { keys, result };
   return result;
 }
-function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[] = []) {
+function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[] = []): {band:ReturnType<typeof mapBorder>;cells:PreviewCell[];reason:MessageKey|null} {
   const s = useEditorStore.getState(), doc = draft.store.document;
   const layer = s.activeLayerId ? doc.getLayer(s.activeLayerId) : undefined;
   let reason: MessageKey | null = null;
@@ -55,7 +55,9 @@ function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[]
   const band = mapBorder(doc.map, valid ? draft : { thickness: 1, inset: 0 });
   const cells: PreviewCell[] = [];
   if (reason || !isTileLayer(layer)) return { band, cells, reason };
-  if (brushPending()) return { band, cells, reason: autoBrush(s.stamp)?.failed ? "smartStamp.changed" as const : "smartStamp.preparing" as const };
+  const preparation=autoBrush(s.stamp)?.state;
+  if(preparation?.status==="failed")return {band,cells,reason:"smartStamp.error_io" as const};
+  if (brushPending()) return { band, cells, reason: "smartStamp.preparing" as const };
   const member = new Set(band.cells.map(p => p.y * doc.map.width + p.x));
   const contains = (x: number, y: number) => doc.inBounds(x, y) && member.has(y * doc.map.width + x);
   const smart = activeSmartStamp();

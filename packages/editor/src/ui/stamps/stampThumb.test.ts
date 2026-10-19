@@ -73,3 +73,27 @@ describe("stamp thumbnails", () => {
     expect(thumbScale(320, 160, 120, 80)).toBeCloseTo(0.375);
   });
 });
+
+it("joins native source tiles with no PNG gutters while keeping map-region composition in map space",async()=>{
+ const {clipFromTileset}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumb");
+ const source={...ts,margin:1,spacing:2},clip=clipFromTileset(source,{x:0,y:0,w:3,h:3})!;
+ expect(sourcePreviewGrid(clip,()=>source)).toBeUndefined();rememberSourcePreview(clip,source);
+ const grid=sourcePreviewGrid(clip,()=>source)!;expect(grid).toEqual({tileWidth:16,tileHeight:16});
+ const list=stampDrawList(clip,grid.tileWidth,grid.tileHeight,()=>source);expect(list.width).toBe(48);expect(list.layers[0]!.items.map(i=>i.dest.x)).toEqual([0,16,32,0,16,32,0,16,32]);expect(list.layers[0]!.items[1]!.src.x).toBe(19);
+ const saved={...clip,id:"bush",name:"Bush"};copySourcePreview(saved,clip);expect(sourcePreviewGrid(saved,()=>source)).toEqual(grid);
+ const reopened={...saved};expect(sourcePreviewGrid(reopened,()=>source)).toEqual(grid);
+ expect(stampDrawList(clip,32,32,()=>source).width).toBe(96);
+});
+
+it("derives a reopened mirrored or rotated rectangular source at its native oriented resolution",async()=>{
+ const {clipFromTileset,flipClip,rotateClip}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumb");
+ const source={...ts,tileWidth:32,tileHeight:16,margin:1,spacing:2},original=clipFromTileset(source,{x:0,y:0,w:3,h:2})!;rememberSourcePreview(original,source);
+ for(const clip of [flipClip(original,"x"),flipClip(original,"y"),rotateClip(original,"cw"),rotateClip(original,"ccw")]){
+  copySourcePreview(clip,original);const saved={...clip,id:"object",name:"Object"},grid=sourcePreviewGrid(saved,()=>source)!;
+  expect(grid).toEqual(clip.width===3?{tileWidth:32,tileHeight:16}:{tileWidth:16,tileHeight:32});
+  expect(sourcePreviewGrid(clip,()=>source)).toEqual(grid);
+  const list=stampDrawList(saved,grid.tileWidth,grid.tileHeight,()=>source);
+  expect(list.layers[0]!.items.every(i=>i.dest.width===grid.tileWidth&&i.dest.height===grid.tileHeight)).toBe(true);
+  expect(list.width*list.height).toBe(96*32);
+ }
+});

@@ -1042,7 +1042,9 @@ export class MapStore {
 
   #resizeMap(op: ResizeMapOp): void {
     const before = this.#doc.map;
-    const after: MapInfo = { ...before, width: op.width, height: op.height };
+    const after: MapInfo = { ...before, width: op.width, height: op.height, tileWidth: op.tileWidth ?? before.tileWidth, tileHeight: op.tileHeight ?? before.tileHeight };
+    const gridChanged = after.tileWidth !== before.tileWidth || after.tileHeight !== before.tileHeight;
+    if (gridChanged && this.#doc.layers.some(l => l.chunkCount > 0 || (isEntityLayer(l) && l.entities.length > 0))) throw new Error("resizeMap: cell dimensions require an empty map");
     const problem = mapInfoProblem(after);
     if (problem) throw new RangeError(`resizeMap: ${problem}`);
     const dx = op.offsetX ?? 0;
@@ -1050,7 +1052,7 @@ export class MapStore {
     if (!Number.isInteger(dx) || !Number.isInteger(dy)) {
       throw new TypeError(`resizeMap: offsets must be integers, got (${dx}, ${dy})`);
     }
-    if (after.width === before.width && after.height === before.height && dx === 0 && dy === 0) return;
+    if (!gridChanged && after.width === before.width && after.height === before.height && dx === 0 && dy === 0) return;
 
     const layers: MapHistoryChange["layers"][number][] = [];
     for (const layer of this.#doc.layers) {

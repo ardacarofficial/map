@@ -26,3 +26,5 @@ Material variations cover 5×5..8×8, stone/plank/grass and D4. Framed grain
 covers road/wall/water tones, b=2/3, positive centre spans, non-square sources
 and D4. Independent fast-check properties also vary offsets, margin and spacing.
 These are finite synthetic corpus measurements, not universal classification guarantees.
+
+The `smart-object-16-bush.png` fixture is the planning lane's realistic round grass bush (48×48). `smart-object-32-bush.png` duplicates each source pixel 2×2 to preserve the same native silhouette at 32 px tiles. Both are one complete 3×3 object, with nonempty corners, and must remain plain under every D4 orientation. Detector v5 requires pixel evidence even for 3×3; white/black sheets are not road fixtures.

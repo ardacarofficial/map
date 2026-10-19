@@ -14,6 +14,7 @@ import { preferReachable } from "../commands/keymap";
 export type CommandId =
   | "map.border"
   | "stamp.nineSlice"
+  | "smartBrush.matchGrid"
   | "selection.toggleScope"
   | "tool.brush"
   | "tool.eraser"
@@ -110,6 +111,7 @@ export interface ShortcutDef {
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "map.border", keys: [] },
   { command: "stamp.nineSlice", keys: [] },
+  { command: "smartBrush.matchGrid", keys: [] },
   // Selection scope
   { command: "selection.toggleScope", keys: [] },
   { command: "tool.brush", keys: ["B"] },

@@ -41,7 +41,7 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
   const defaults = useProjectLibrary.getState().settings;
   const [width, setWidth] = useState(String(defaults.newLevel.width));
   const [height, setHeight] = useState(String(defaults.newLevel.height));
-  const [tile, setTile] = useState(String(defaults.tileWidth));
+  const [tile, setTile] = useState(String(useLevelUi.getState().newLevelTileSize ?? defaults.tileWidth));
   const [touched, setTouched] = useState(false);
 
   const w = parseIntInRange(width, MAP_MIN, MAP_MAX);
@@ -50,7 +50,7 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
   const nameOk = name.trim().length > 0;
   const valid = nameOk && w !== null && h !== null && ts !== null;
   const mapErr = t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX });
-  const tilesetSize = doc?.tilesets[0]?.tileWidth;
+  const tilesetSize = useLevelUi.getState().newLevelTileSize ?? doc?.tilesets[0]?.tileWidth;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

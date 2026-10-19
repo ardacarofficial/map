@@ -196,6 +196,9 @@ export interface SetLayerPropsOp {
  * Throws on a size outside `[1, MAX_MAP_SIZE]` or non-integer offsets.
  */
 export interface ResizeMapOp {
+  /** Native cell dimensions may change only while every layer is empty. */
+  readonly tileWidth?: number;
+  readonly tileHeight?: number;
   readonly type: "resizeMap";
   readonly width: number;
   readonly height: number;

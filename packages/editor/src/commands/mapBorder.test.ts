@@ -1,3 +1,4 @@
+import { roadPixels } from "./roadPixels.testHelper";
 import fc from "fast-check";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDocument, MapStore, serializeLevel, buildRoadProfile, nineSliceLayout, roadTileInfo, applySmartStampRoad, clipFromTileset, roadMembership, cellPaletteIndex, cellFlags, type Stamp, type Tileset, FLIP_H, FLIP_V, FLIP_D } from "@smap/core";
@@ -21,7 +22,7 @@ function fixture(width = 12, height = 9) {
   useEditorStore.getState().setSelection({ tilesetId: "tiles", tileId: 2 });
   return store;
 }
-vi.mock("../state/tilesetPixels", () => ({ tilesetPixels: () => ({ width: 96, height: 96, data: new Uint8Array(96 * 96 * 4).fill(255) }) }));
+vi.mock("../state/tilesetPixels", () => ({ tilesetPixels: (_bitmap:ImageBitmap,rect:{x:number;y:number;width:number;height:number}) => roadPixels(rect) }));
 vi.mock("../ui/stamps/smartStampBake", async importOriginal => ({ ...await importOriginal<typeof BakeModule>(), bakeSmartStamp: vi.fn(async (_s: Stamp, _l: string, t: Tileset) => ({ tilesetId: t.id, bytes: Uint8Array.of(1), bitmap: { close: vi.fn() } as unknown as ImageBitmap })) }));
 function freshBrush(width = 12, height = 9) {
   const store = fixture(width, height), tileset = store.document.tilesets[0]!;
@@ -180,7 +181,7 @@ describe("map border command", () => {
     const unavailable: Stamp = { ...preparedBrush(clip)!, id: "unavailable" };
     useEditorStore.getState().setStamp(unavailable);
     const before = serializeLevel(store.document); openMapBorder();
-    expect(borderPlan(useMapBorder.getState().draft!).reason).toBe("smartStamp.changed");
+    expect(borderPlan(useMapBorder.getState().draft!).reason).toBe("smartStamp.error_sourceMissing");
     expect(commitMapBorder()).toBe(false);
     expect(serializeLevel(store.document)).toBe(before);
   });
@@ -190,7 +191,7 @@ describe("map border command", () => {
     await expect(waitForSelectionBrush(clip)).rejects.toThrow();
     const before = serializeLevel(store.document); openMapBorder();
     const plan = borderPlan(useMapBorder.getState().draft!);
-    expect(plan.reason).toBe("smartStamp.changed");
+    expect(plan.reason).toBe("smartStamp.error_io");
     expect(plan.cells).toEqual([]);
     expect(commitMapBorder()).toBe(false);
     expect(serializeLevel(store.document)).toBe(before);

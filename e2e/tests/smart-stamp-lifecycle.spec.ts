@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { acceptRoadStamp, cellPoint, dragRoad, makeRoadStamp } from "../support/smartStamp";
+import { selectRoad } from "../support/smartStampDock";
 
 async function changeSource(page: Page, pauseBake = false) {
   return page.evaluate(async pauseBake => {
@@ -77,9 +78,12 @@ test("generated removal confirms stamp-only usage; undo/redo retains nineSlice a
   })).toBe(true);
 });
 
-test("automatic bake waits for a real pointer gesture and stays outside undo with coherent PNG provenance", async ({ page }) => {
+test("automatic bake waits for a real plain-pointer transaction and stays outside undo with coherent PNG provenance", async ({ page }) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
   await makeRoadStamp(page); await acceptRoadStamp(page); await waitForBake(page);
+  // Refreshing smart gestures buffer without opening a map transaction. Use
+  // a plain source tile to exercise the actual store-transaction publication gate.
+  await selectRoad(page, 1, 1);
   const before = await changeSource(page, true);
   await expect.poll(() => page.evaluate(() => (window as unknown as { lifecycleGate: { entered: boolean } }).lifecycleGate.entered)).toBe(true);
   const at = await cellPoint(page, 4, 4); await page.mouse.move(at.x, at.y); await page.mouse.down();

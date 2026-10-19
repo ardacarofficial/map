@@ -48,3 +48,12 @@ for(const size of [16,32])for(const material of ["stone","plank","grass"])it(`ke
  const pixels=png(`smart-road-${size}-material-${material}`);
  expect(detectNineSliceSelection({tileset:{id:"material",columns:12,rows:8,tileWidth:size,tileHeight:size,margin:0,spacing:0},rect:{col:2,row:1,width:6,height:6},ids:Array.from({length:36},(_,i)=>(1+Math.floor(i/6))*12+2+i%6),emptyIds:new Set(),pixels})).toBeNull();
 });
+
+for(const size of [16,32])it(`keeps realistic round ${size}px bush plain under D4`,()=>{
+ const pixels=png(`smart-object-${size}-bush`);
+ for(let flags=0;flags<8;flags++){
+  const n=size*3,data=pixels.data.slice();
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){let dx=x,dy=y;if(flags&1)[dx,dy]=[dy,dx];if(flags&2)dx=n-1-dx;if(flags&4)dy=n-1-dy;data.set(pixels.data.subarray((y*n+x)*4,(y*n+x+1)*4),(dy*n+dx)*4);}
+  expect(detectNineSliceSelection({tileset:{id:"bush",columns:3,rows:3,tileWidth:size,tileHeight:size,margin:0,spacing:0},rect:{col:0,row:0,width:3,height:3},ids:[0,1,2,3,4,5,6,7,8],emptyIds:new Set(),pixels:{...pixels,data}})).toBeNull();
+ }
+});

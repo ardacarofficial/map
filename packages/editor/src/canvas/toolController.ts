@@ -1,4 +1,5 @@
-import { autoBrush, brushCandidate, brushPending, publishBrushAssets, waitForSelectionBrush } from "../commands/smartBrushActions";
+import { reportSmartBrushError } from "../commands/smartBrushErrors";
+import { autoBrush, brushDisabled, brushUnavailable, brushCandidate, brushPending, publishBrushAssets, waitForSelectionBrush } from "../commands/smartBrushActions";
 import { applySmartStampPlan, isTileLayer } from "@smap/core";
 import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { addRoadSamples, smartGesturePlan, smartHoverGesture, type SmartGesture } from "./smartStampGesture";
@@ -313,6 +314,10 @@ export class ToolController {
       this.#start({ kind: "pick", pointerId: e.pointerId, button: 0, start: cell, end: cell, spring: false });
       return;
     }
+    const unavailable=brushUnavailable(s.stamp);
+    if(autoBrush(s.stamp)&&unavailable&&(unavailable.code==="sourceMissing"||unavailable.code==="invalidSource")){reportSmartBrushError(unavailable);return;}
+    const preparation=autoBrush(s.stamp)?.state;
+    if(preparation?.status==="failed" && !brushDisabled(s.stamp)){reportSmartBrushError(preparation.error);return;}
     if (brushCandidate() && s.stamp?.layers.length === 1 && this.#reportBlocked(s.tool, true)) return;
     if (brushPending() && (s.tool === "brush" || s.tool === "rect")) { this.#beginSmart(e, cell); return; }
     const active = this.#activeLayer();
@@ -908,7 +913,7 @@ export class ToolController {
           this.#finishSmart(g);
         } catch (error) {
           if (opened && g.store.inTransaction) g.store.rollback();
-          toast.error(t("smartStamp.failed", { detail: String(error) }));
+          reportSmartBrushError(error);
         }
       } else {
         this.#gesture = g;
@@ -927,19 +932,19 @@ export class ToolController {
       if (g.store.inTransaction) g.store.commit();
       if (!g.rectangle) this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last };
       if (!g.erase) this.#pushRecentClip(g.stamp);
-    } catch (error) { if (g.store.inTransaction) g.store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+    } catch (error) { if (g.store.inTransaction) g.store.rollback(); reportSmartBrushError(error); }
   }
 
   #activateSmart(g: SmartGesture, clip: TileClip | null): void {
     g.store.beginTransaction();
     try { publishBrushAssets(clip, g.store); }
-    catch (error) { this.cancel(); toast.error(t("smartStamp.failed", { detail: String(error) })); return; }
+    catch (error) { this.cancel(); reportSmartBrushError(error); return; }
     if (!g.rectangle) this.#applySmart(g);
   }
 
   #applySmart(g: SmartGesture): void {
     try { applySmartStampPlan(g.store, smartGesturePlan(g)); }
-    catch (error) { this.cancel(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+    catch (error) { this.cancel(); reportSmartBrushError(error); }
   }
 
   #moveSmart(g: SmartGesture | PendingSmartGesture, e: PointerEvent): void {

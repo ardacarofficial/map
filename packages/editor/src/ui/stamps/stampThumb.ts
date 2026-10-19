@@ -1,5 +1,5 @@
 
-import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V, tileRect, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
+import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V, tileRect, orientPoint, type DrawLayer, type DrawList, type Stamp, type TileClip, type Tileset } from "@smap/core";
 
 import { compositeOps, type CanvasOp } from "../../export/pngComposite";
 import { replayOps } from "../../export/pngRender";
@@ -42,6 +42,31 @@ export function stampDrawList(
     layers.push({ layerId: layer.layerId, opacity: 1, items });
   }
   return { width: stamp.width * tileWidth, height: stamp.height * tileHeight, layers };
+}
+
+const previewSources=new WeakMap<TileClip,{tileWidth:number;tileHeight:number}>();
+export function rememberSourcePreview(clip:TileClip,source:Pick<Tileset,"tileWidth"|"tileHeight">):void {previewSources.set(clip,{tileWidth:source.tileWidth,tileHeight:source.tileHeight});}
+function firstFlags(clip:TileClip):number {for(const layer of clip.layers)if(!layer.grid)for(const cell of layer.cells)if(cell)return cellFlags(cell);return 0;}
+export function copySourcePreview(clip:TileClip,from:TileClip):void {
+ const source=previewSources.get(from);if(!source)return;
+ const transpose=((firstFlags(clip)^firstFlags(from))&FLIP_D)!==0;
+ previewSources.set(clip,transpose?{tileWidth:source.tileHeight,tileHeight:source.tileWidth}:source);
+}
+/** Reloaded library objects qualify only when every reference proves one contiguous rectangle. */
+export function sourcePreviewGrid(clip:TileClip,tileset:(id:string)=>Tileset|undefined):{tileWidth:number;tileHeight:number}|undefined {
+ const known=previewSources.get(clip);if(known)return known;
+ if(!(clip as Stamp).id||clip.layers.length!==1||clip.layers[0]!.grid)return undefined;
+ const layer=clip.layers[0]!,first=clip.palette[cellPaletteIndex(layer.cells[0]!)-1],ts=first?tileset(first.tilesetId):undefined;
+ if(!first||!ts)return undefined;
+ const flags=cellFlags(layer.cells[0]!),sourceW=flags&FLIP_D?clip.height:clip.width,sourceH=flags&FLIP_D?clip.width:clip.height;
+ let col=Infinity,row=Infinity;
+ for(const cell of layer.cells){const ref=clip.palette[cellPaletteIndex(cell)-1];if(!ref||ref.tilesetId!==ts.id||cellFlags(cell)!==flags)return undefined;col=Math.min(col,ref.tileId%ts.columns);row=Math.min(row,Math.floor(ref.tileId/ts.columns));}
+ if(col+sourceW>ts.columns||row+sourceH>ts.rows)return undefined;
+ for(let y=0;y<sourceH;y++)for(let x=0;x<sourceW;x++){
+  const dest=orientPoint({x,y},sourceW,sourceH,flags),cell=layer.cells[dest.y*clip.width+dest.x]!,ref=clip.palette[cellPaletteIndex(cell)-1];
+  if(ref?.tileId!==(row+y)*ts.columns+col+x)return undefined;
+ }
+ return flags&FLIP_D?{tileWidth:ts.tileHeight,tileHeight:ts.tileWidth}:{tileWidth:ts.tileWidth,tileHeight:ts.tileHeight};
 }
 
 /**

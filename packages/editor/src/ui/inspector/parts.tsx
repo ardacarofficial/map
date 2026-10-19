@@ -2,7 +2,7 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
-import type { CommandId } from "../../shortcuts/shortcuts";
+import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 import { Button, IconButton } from "../primitives/Button";
 import { Icon, type IconName } from "../primitives/Icon";
 import { SectionHeader as PrimitiveSectionHeader } from "../primitives/SectionHeader";
@@ -143,7 +143,7 @@ export function ActionButton({ icon, glyph, label, onClick, disabledReason = nul
   dataAction?: string;
 }) {
   return (
-    <Tooltip label={disabledReason ?? label} {...(command ? { command } : {})}>
+    <Tooltip disabled={!(disabledReason && disabledReason !== label) && !(command && keysFor(command)[0])} label={disabledReason ?? label} {...(command ? { command } : {})}>
       <Button size="sm" variant={tone === "danger" ? "ghost" : "secondary"} aria-disabled={disabledReason !== null || undefined} data-action={dataAction ?? command} onClick={() => { if (disabledReason === null) onClick(); }} className={`self-start justify-self-start ${tone === "danger" ? "text-danger! hover:text-danger!" : ""} ${disabledReason !== null ? "opacity-40" : ""}`}>
         {icon ? <Icon name={icon} size={16} /> : glyph}<span className="truncate">{label}</span>
       </Button>

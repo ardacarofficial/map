@@ -1,5 +1,5 @@
 import { FLIP_H, FLIP_V, flipRegion } from "@smap/core";
-import { brushCandidate } from "./smartBrushActions";
+import { brushCandidate, attachPreparedBrush } from "./smartBrushActions";
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * Turning and mirroring the brush (round 4): Z / Shift+Z turn it 90°, X / Y
@@ -88,6 +88,7 @@ function apply(transform: BrushTransform): boolean {
       getCanvasHandle()?.showHint(t("canvas.rotateNonSquare"));
       return false;
     case "stamp":
+      if(state.stamp)attachPreparedBrush(transform.stamp,state.stamp);
       state.setStamp(transform.stamp);
       return true;
     case "random":

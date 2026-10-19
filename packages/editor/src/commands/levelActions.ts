@@ -25,6 +25,7 @@ import { registerPaletteProvider } from "./registry";
 interface LevelUiState {
   /** "Yeni level" dialog. */
   newLevelOpen: boolean;
+  newLevelTileSize?: number | undefined;
   /** Level whose delete confirmation is open, or `null`. */
   removeLevelId: string | null;
   /** Active target-point pick (v1.1), or `null`. */
@@ -43,7 +44,7 @@ export interface PointPick {
 export const useLevelUi = create<LevelUiState>()(() => ({ newLevelOpen: false, removeLevelId: null, pick: null }));
 
 export function openNewLevelDialog(open = true): void {
-  useLevelUi.setState({ newLevelOpen: open });
+  useLevelUi.setState({ newLevelOpen: open, newLevelTileSize: undefined });
 }
 
 export function askRemoveLevel(id: string | null): void {

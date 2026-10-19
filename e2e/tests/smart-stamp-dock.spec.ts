@@ -112,7 +112,7 @@ for(const [variant,width,height,qualifies]of [["-wide",6,6,true],["-empty",3,3,f
  test(`${width}×${height} ${variant||"small"}: conservative automatic detection`,async({page})=>{
   await openRoadSheet(page,32,variant);await selectRoad(page,width,height);
   if(qualifies){await expect(page.locator("[data-smart-brush]")).toBeChecked();await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(variant==="-banded"?8:4);}
-  else{await expect(page.locator("[data-smart-brush]")).toHaveCount(0);await dragRoad(page,[[4,4]]);expect((await roadCells(page)).generated).toHaveLength(0);expect((await roadCells(page)).cells).toHaveLength(width*height-(variant==="-empty"?1:0));}
+  else{await expect(page.locator("[data-smart-brush]")).toBeDisabled();await dragRoad(page,[[4,4]]);expect((await roadCells(page)).generated).toHaveLength(0);expect((await roadCells(page)).cells).toHaveLength(width*height-(variant==="-empty"?1:0));}
  });
 }
 
@@ -126,12 +126,18 @@ for(const key of ["z","Shift+z"]){test(`rotation ${key}: preview is precisely th
 
 for(const saved of [false,true])test(`${saved?"saved":"direct"} brush: locked and hidden targets give feedback and leave no atlas or cells`,async({page})=>{
  await openRoadSheet(page);await selectRoad(page);if(saved)await saveRoad(page);await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();
- const layer=page.locator("[data-layer-id]").first();
- await layer.getByRole("button",{name:"Kilitle",exact:true}).click();await page.keyboard.press("b");await dragRoad(page,[[4,4],[7,4]]);expect(await roadCells(page)).toEqual({cells:[],generated:[]});
- await expect(page.locator("[data-toaster]")).toContainText("katmanı kilitli");
+ const layer=page.locator("[data-layer-id]").first(),{cellPoint}=await import("../support/smartStamp");
+ const blockedDrag=async(endY:number,reason:string)=>{
+  const start=await cellPoint(page,4,4),end=await cellPoint(page,7,endY);
+  await page.mouse.move(start.x,start.y);await page.mouse.down();
+  // Feedback belongs to the press; a slow CI drag can outlast the toast.
+  await expect(page.locator("[data-toaster]")).toContainText(reason);
+  await page.mouse.move(end.x,end.y,{steps:4});await page.mouse.up();
+  expect(await roadCells(page)).toEqual({cells:[],generated:[]});
+ };
+ await layer.getByRole("button",{name:"Kilitle",exact:true}).click();await page.keyboard.press("b");await blockedDrag(4,"katmanı kilitli");
  await layer.getByRole("button",{name:"Kilidi aç",exact:true}).click();await layer.getByRole("button",{name:"Gizle",exact:true}).click();
- await page.keyboard.press("r");await dragRoad(page,[[4,4],[7,7]]);expect(await roadCells(page)).toEqual({cells:[],generated:[]});
- await expect(page.locator("[data-toaster]")).toContainText("katmanı gizli");
+ await page.keyboard.press("r");await blockedDrag(7,"katmanı gizli");
 });
 
 test("direct recipe: source pixels stay intact, generated straight pixels match authored halves, Save As and reopen need no library stamp",async({page})=>{

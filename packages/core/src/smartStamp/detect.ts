@@ -1,5 +1,5 @@
 /** Conservative, pure selection classification. Thresholds and band inference are versioned together. */
-export const NINE_SLICE_DETECTOR_VERSION = 4;
+export const NINE_SLICE_DETECTOR_VERSION = 5;
 export const NINE_SLICE_DETECTION_THRESHOLDS = Object.freeze({ repeatFraction: .99, repeatDelta: 8, repeatMean: 2, distinctFraction: .05, distinctDelta: 16, seamFraction: .95, seamDelta: 32, boundaryFraction: .95, boundaryDelta: 16 });
 import type { Tileset } from "../tileset";
 export interface NineSliceSelectionInput {
@@ -10,11 +10,11 @@ export interface NineSliceSelectionInput {
   readonly pixels?: {readonly width:number;readonly height:number;readonly originX?:number;readonly originY?:number;readonly data:Uint8Array|Uint8ClampedArray};
 }
 export interface NineSliceDetection {
-  readonly version:4; readonly border:number;
+  readonly version:5; readonly border:number;
   readonly xBands:readonly [number,number,number];readonly yBands:readonly [number,number,number];
   readonly reason:"three-by-three"|"repeating-bands";readonly sourceIds:readonly number[];
 }
-/** Thresholds are part of detector version 4; compare premultiplied RGBA, ignoring invisible RGB. */
+/** Thresholds are part of detector version 5; compare premultiplied RGBA, ignoring invisible RGB. */
 export function detectNineSliceSelection(s:NineSliceSelectionInput):NineSliceDetection|null {
   const thresholds=NINE_SLICE_DETECTION_THRESHOLDS;
   const {tileset:t,rect:r,ids,pixels:p}=s, {width:w,height:h,col,row}=r;
@@ -33,7 +33,6 @@ export function detectNineSliceSelection(s:NineSliceSelectionInput):NineSliceDet
     if(!opaque) return null;
   }
   const result=(reason:NineSliceDetection["reason"],border=1):NineSliceDetection=>Object.freeze({version:NINE_SLICE_DETECTOR_VERSION,border,xBands:Object.freeze([border,w-2*border,border] as const),yBands:Object.freeze([border,h-2*border,border] as const),reason,sourceIds:Object.freeze([...ids])});
-  if(w===3&&h===3) return result("three-by-three");
   if(!p) return null;
   const compare=(ax:number,ay:number,bx:number,by:number,distinct=false)=>{
     let good=0,diff=0,sum=0;const count=t.tileWidth*t.tileHeight;
@@ -157,13 +156,17 @@ export function detectNineSliceSelection(s:NineSliceSelectionInput):NineSliceDet
     // Segment wraps must join too, even when the source contains only one segment.
     for(let k=0;k<strips.length&&valid;k++){
       const [x0,y0,width,height,horizontal]=strips[k]!,step=periods[k]!;
-      const count=horizontal?height*t.tileHeight:width*t.tileWidth;let good=0;
-      for(let i=0;i<count;i++){
-        const a=horizontal?rgba(x0+step-1,y0+Math.floor(i/t.tileHeight),t.tileWidth-1,i%t.tileHeight):rgba(x0+Math.floor(i/t.tileWidth),y0+step-1,i%t.tileWidth,t.tileHeight-1);
-        const c=horizontal?rgba(x0,y0+Math.floor(i/t.tileHeight),0,i%t.tileHeight):rgba(x0+Math.floor(i/t.tileWidth),y0,i%t.tileWidth,0);
-        if(a.every((v,j)=>Math.abs(v-c[j]!)<=thresholds.seamDelta))good++;
+      const count=horizontal?height*t.tileHeight:width*t.tileWidth;
+      const depth=Math.min(3,horizontal?t.tileWidth:t.tileHeight);
+      for(let d=0;d<depth;d++){
+        let good=0;
+        for(let i=0;i<count;i++){
+          const a=horizontal?rgba(x0+step-1,y0+Math.floor(i/t.tileHeight),t.tileWidth-1-d,i%t.tileHeight):rgba(x0+Math.floor(i/t.tileWidth),y0+step-1,i%t.tileWidth,t.tileHeight-1-d);
+          const c=horizontal?rgba(x0,y0+Math.floor(i/t.tileHeight),d,i%t.tileHeight):rgba(x0+Math.floor(i/t.tileWidth),y0,i%t.tileWidth,d);
+          if(a.every((v,j)=>Math.abs(v-c[j]!)<=thresholds.seamDelta))good++;
+        }
+        if(good/count<thresholds.seamFraction)valid=false;
       }
-      if(good/count<thresholds.seamFraction)valid=false;
     }
     if(valid) return result("repeating-bands",b);
   }

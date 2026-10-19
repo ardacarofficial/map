@@ -1,3 +1,5 @@
+import { SmartBrushError, formatSmartBrushError } from "../commands/smartBrushErrors";
+import { suggestImportedGrid } from "../commands/smartBrushGrid";
 import { publishSavedBrushAssets } from "../commands/smartBrushActions";
 import { selectMajorGridProject } from "../state/majorGridSettings";
 import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
@@ -197,6 +199,7 @@ function announceFormatMigration(document: MapDocument, levelId: string): void {
 
 /** Human-readable (Turkish) message for an IO error. */
 export function describeError(error: unknown): string {
+  if(error instanceof SmartBrushError)return formatSmartBrushError(error);
   if (error instanceof FormatError) return t("toast.formatError", { detail: error.message });
   if (error instanceof ProjectOpenError) return t(error.problem === "noLevel" ? "toast.noLevel" : "toast.noProjectFile");
   if (error instanceof FileNotFoundError) return t("toast.missingTilesetImage", { path: error.path });
@@ -502,6 +505,7 @@ export function addDecodedTilesets(store: MapStore, items: readonly PlannedTiles
     throw error;
   }
   useUiStore.getState().setActiveTileset(added[0]!.id);
+  suggestImportedGrid(store,added[0]!);
   return added;
 }
 
@@ -681,7 +685,6 @@ export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): ()
  * backup of the level. Updates the remembered disk text and the save status.
  */
 async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
-  await publishSavedBrushAssets();
   await waitForSmartStampRegeneration();
   const ws = workspace;
   if (!ws) return;
@@ -690,6 +693,9 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
   // even inside the normal one-minute refresh throttle.
   if (recentThumbnails.cancel()) lastThumbnailAt = 0;
   const run = async () => {
+    if(workspace!==ws)return;
+    await publishSavedBrushAssets();
+    if(workspace!==ws)return;
     writesInFlight++;
     useSaveStatus.setState({ saving: true });
     try {

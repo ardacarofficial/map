@@ -1,9 +1,13 @@
 /** Immutable bake provenance, using the existing v3 stamp codec. Never a map-cell or prefab link. */
-import { parseStamp, serializeClip, stampTilesetUsage, type Stamp, type Tileset } from "@smap/core";
+import { parseStamp, stampTilesetUsage, type Stamp, type TileClip, type Tileset } from "@smap/core";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 export interface GeneratedRecipe { readonly tilesetId: string; readonly stamp: Stamp }
 export const generatedRecipePath = (tilesetId: string): string => `tilesets/${tilesetId}.recipe.json`;
-export function sameBakeRecipe(a: Stamp, b: Stamp): boolean { return (a.nineSlice?.border ?? 1) === (b.nineSlice?.border ?? 1) && serializeClip(a) === serializeClip(b); }
+/** Pixel recipe identity excludes every editable display/library fact. */
+export function bakeRecipeVersion(stamp:TileClip & {readonly nineSlice?: Stamp["nineSlice"]}):string {
+ return JSON.stringify([stamp.width,stamp.height,stamp.nineSlice?.border??1,stamp.palette.map(e=>[e.tilesetId,e.tileId]),stamp.layers.map(l=>[l.layerId,!!l.grid,l.role??null,Array.from(l.cells)])]);
+}
+export function sameBakeRecipe(a: Stamp, b: Stamp): boolean { return bakeRecipeVersion(a) === bakeRecipeVersion(b); }
 export async function loadGeneratedRecipes(fs: ProjectFileSystem, assets: readonly Tileset[], stamps: readonly Stamp[], broken: string[] = []): Promise<GeneratedRecipe[]> {
   const recipes: GeneratedRecipe[] = [];
   for (const asset of assets) {
