@@ -1,0 +1,17 @@
+{
+  "topdown": "Top-down",
+  "topdownHint": "32 px · 64 × 48 · 5 katman",
+  "dungeon": "Zindan",
+  "dungeonHint": "16 px · 40 × 30 · 4 katman",
+  "empty": "Boş",
+  "emptyHint": "32 px · 64 × 48 · tek katman",
+  "layerGround": "Zemin",
+  "layerPaths": "Yollar",
+  "layerBuildings": "Binalar",
+  "layerDetails": "Detaylar",
+  "layerWalls": "Duvarlar",
+  "layerCollision": "Collision",
+  "kindTile": "Tile",
+  "kindCollision": "Collision",
+  "kindEntity": "Entity"
+}

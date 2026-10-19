@@ -1,0 +1,19 @@
+{
+  "properties": "Properties",
+  "duplicate": "Duplicate",
+  "delete": "Delete",
+  "goToTarget": "Go to target",
+  "cut": "Cut",
+  "copy": "Copy",
+  "paste": "Paste",
+  "makeStamp": "Save as stamp…",
+  "deselect": "Deselect",
+  "recentRemove": "Remove from list",
+  "recentClear": "Clear all",
+  "typeSelect": "Select",
+  "typeEdit": "Edit type…",
+  "typeFind": "Find on map ({count, number})",
+  "typeFindNone": "Not on the map",
+  "typeDelete": "Delete type",
+  "stampCopyName": "{name} copy"
+}

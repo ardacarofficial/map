@@ -31,7 +31,7 @@ const tilesetBytes = tilesetPngSource;
 
 /** "12:04" in the UI language. */
 export function formatClock(date: Date): string {
-  return date.toLocaleTimeString(getLocale() === "tr" ? "tr-TR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Level name used for exported file names ("main"). */

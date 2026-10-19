@@ -1,0 +1,12 @@
+{
+  "hover": "id {id} · ({col}, {row})",
+  "hoverEmpty": "id {id} · ({col}, {row}) · empty",
+  "dragSize": "{width} × {height}",
+  "zoomFitTitle": "Fit to panel width",
+  "switcher": "Choose tileset",
+  "menu": "Tileset actions",
+  "settings": "Settings…",
+  "replaceImage": "Replace image…",
+  "add": "Add tileset…",
+  "tilesetMeta": "{size}px · {columns}×{rows}"
+}

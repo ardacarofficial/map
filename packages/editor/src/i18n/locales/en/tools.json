@@ -1,0 +1,10 @@
+{
+  "entity": "Entity",
+  "fill": "Fill",
+  "rect": "Rectangle",
+  "select": "Select",
+  "eyedropper": "Eyedropper",
+  "hand": "Hand",
+  "brush": "Pencil",
+  "eraser": "Eraser"
+}

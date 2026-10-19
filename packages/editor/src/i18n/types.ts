@@ -1,15 +1,10 @@
-import type { tr } from "./tr";
+import type { MessageKey } from "./messages.generated";
+export type { MessageKey } from "./messages.generated";
 
-type Widen<T> = { readonly [K in keyof T]: T[K] extends string ? string : Widen<T[K]> };
-
-/** Shape every language file must match (keys of `tr.ts`, any string values). */
-export type Messages = Widen<typeof tr>;
-
-type Section = keyof Messages & string;
-
-/** `"section.key"` — every translatable string. */
-export type MessageKey = {
-  [S in Section]: `${S}.${keyof Messages[S] & string}`;
-}[Section];
-
+/** Nested shape retained for consumers of the old type facade. */
+export type Messages = {
+  readonly [S in MessageKey extends `${infer Section}.${string}` ? Section : never]: {
+    readonly [K in MessageKey as K extends `${S}.${infer Name}` ? Name : never]: string;
+  };
+};
 export type MessageParams = Readonly<Record<string, string | number>>;

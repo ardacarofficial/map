@@ -1,0 +1,12 @@
+{
+  "fill": "Fill",
+  "erase": "Delete",
+  "copy": "Copy",
+  "cut": "Cut",
+  "saveStamp": "Save as stamp…",
+  "fillNoLayer": "Pick a layer first",
+  "fillEntity": "Entity layers cannot be filled",
+  "fillLocked": "The layer is locked",
+  "fillHidden": "The layer is hidden; show it first",
+  "fillNoBrush": "Pick a tile to fill with first"
+}

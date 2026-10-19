@@ -1,0 +1,17 @@
+{
+  "tab": "Stamp: {name}",
+  "close": "Stamp sekmesini kapat: {name}",
+  "banner": "Stamp düzenleniyor",
+  "note": "Haritadaki mevcut yerleşimler değişmez (stamp''ler düz kopyadır)",
+  "save": "Kaydet",
+  "done": "Bitti",
+  "saveHint": "Stamp''i içeriğe göre kırpıp kaydet ve sekmeyi kapat",
+  "discard": "Vazgeç",
+  "discardHint": "Değişiklikleri at ve sekmeyi kapat",
+  "closeTitle": "Stamp''teki değişiklikler kaydedilsin mi?",
+  "closeDescription": "“{name}” stamp''inde kaydedilmemiş değişiklikler var.",
+  "openFailed": "“{name}” açılamadı: {detail}",
+  "gone": "Bu stamp kütüphaneden silinmiş; kaydedilemedi",
+  "empty": "Stamp boş; kaydetmek için en az bir tile çiz",
+  "saved": "“{name}” kaydedildi"
+}

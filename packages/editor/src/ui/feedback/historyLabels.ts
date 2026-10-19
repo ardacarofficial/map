@@ -2,7 +2,7 @@
 import { patchCellCount, type ChangeCause, type HistoryChange, type HistoryEntry, type MapStore } from "@smap/core";
 
 import type { StrokeSummary } from "../../canvas/canvasEvents";
-import { formatNumber, t, type MessageKey } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 
 export type HistoryMove = "undo" | "redo";
 
@@ -133,7 +133,7 @@ export function describeEntry(entry: HistoryEntry | undefined): string | null {
   if (changes.some((c) => c.kind === "entityTypes")) return t("feedback.entityTypes");
   if (changes.some((c) => c.kind === "entities")) return t("feedback.entities");
   const cells = entry.patches.reduce((n, p) => n + patchCellCount(p), 0);
-  return cells > 0 ? t("feedback.cells", { count: formatNumber(cells) }) : null;
+  return cells > 0 ? t("feedback.cells", { count: cells }) : null;
 }
 
 /**
@@ -142,7 +142,7 @@ export function describeEntry(entry: HistoryEntry | undefined): string | null {
  */
 export function historyMessage(move: HistoryMove, summary: StrokeSummary | null, count = 1, fallback: string | null = null): string {
   const key = move === "undo" ? "feedback.undone" : "feedback.redone";
-  if (count > 1) return t(key, { what: t("feedback.steps", { count: formatNumber(count) }) });
+  if (count > 1) return t(key, { what: t("feedback.steps", { count: count }) });
   if (!summary) return fallback ? t(key, { what: fallback }) : t(move === "undo" ? "feedback.undoneBare" : "feedback.redoneBare");
-  return t(key, { what: t("feedback.stroke", { tool: strokeToolLabel(summary), count: formatNumber(summary.cells) }) });
+  return t(key, { what: t("feedback.stroke", { tool: strokeToolLabel(summary), count: summary.cells }) });
 }

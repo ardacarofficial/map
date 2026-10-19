@@ -1,0 +1,18 @@
+{
+  "saveDisabled": "Önce Seçim aracıyla (S) haritada bir alan seç",
+  "empty": "Henüz stamp yok",
+  "emptyHint": "Haritada alan seç, sağ tık → Stamp olarak kaydet",
+  "size": "{width} × {height}",
+  "layers": "{count, plural, one {#} other {#}} katman",
+  "rename": "Yeniden adlandır",
+  "delete": "Sil",
+  "use": "Fırçaya al",
+  "active": "Fırçada",
+  "dialogTitle": "Stamp olarak kaydet",
+  "dialogDescription": "{width} × {height} hücre · {count, plural, one {#} other {#}} katman",
+  "name": "Ad",
+  "defaultName": "Stamp {n}",
+  "errName": "Bir ad yaz",
+  "nameLabel": "Stamp adı",
+  "list": "Stamp listesi"
+}

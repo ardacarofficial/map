@@ -1,0 +1,6 @@
+{
+  "title": "File changed on disk",
+  "description": "“{path}” was changed outside this window.",
+  "reload": "Reload from disk",
+  "keep": "Keep mine"
+}

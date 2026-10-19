@@ -1,0 +1,9 @@
+{
+  "world": "World",
+  "status": "World",
+  "levelCount": "{count, plural, one {# map} other {# maps}}",
+  "hintTitle": "World map",
+  "hint": "Drag maps to position them (Alt: free).",
+  "back": "Back to the map",
+  "toolsDisabled": "Only panning on the world map"
+}

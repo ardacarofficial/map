@@ -12,7 +12,7 @@ import type { HistoryChange, MapStore } from "@smap/core";
 
 import { renderHistoryVerb, tilesetHistoryVerb, type HistoryVerb } from "../feedback/historyLabels";
 import type { StrokeSummary } from "../../canvas/canvasEvents";
-import { formatNumber, t, type MessageKey } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 
 /** One row of `store.historyEntries()`. */
 export type HistoryItem = ReturnType<MapStore["historyEntries"]>[number];
@@ -51,12 +51,12 @@ export function itemLabel(item: HistoryItem, summary: StrokeSummary | null, verb
   if (item.label) return item.label;
   if (summary) {
     const tools = { brush: "history.paint", eraser: "history.erase", fill: "history.fill", rect: "history.rectangle", stamp: "history.stamp" } as const;
-    return t("history.stroke", { tool: t(tools[summary.tool]), count: formatNumber(summary.cells) });
+    return t("history.stroke", { tool: t(tools[summary.tool]), count: summary.cells });
   }
   if (verb) return renderHistoryVerb(verb);
   const key = KIND_LABEL[item.kind];
   if (key) return t(key);
-  if (item.cellCount) return t("feedback.cells", { count: formatNumber(item.cellCount) });
+  if (item.cellCount) return t("feedback.cells", { count: item.cellCount });
   return t("history.change");
 }
 

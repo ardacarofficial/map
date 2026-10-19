@@ -1,7 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { getLocale, t } from "../i18n";
+import { getLocale, setLocale, t } from "../i18n";
 import { SHORTCUTS } from "../shortcuts/shortcuts";
 import { backdropClass, popupClass, dialogWidthM } from "../ui/dialogs/styles";
 import { DialogHeader, DialogBody, DialogFooter, FormField, dialogLayoutClass } from "../ui/dialogs/DialogFrame";
@@ -45,6 +45,8 @@ export function SettingsDialog() {
 
 function SettingsForm({ onDone }: { onDone(): void }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const originalLocale = useRef(getLocale());
+  useEffect(() => () => setLocale(originalLocale.current), []);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +75,7 @@ function SettingsForm({ onDone }: { onDone(): void }) {
     if (text === null) return;
     try {
       const problems = await saveSettingsText(text);
+      originalLocale.current = getLocale();
       if (problems.length === 0) toast.success(t("settings.saved"));
       onDone();
     } catch (e) {
@@ -84,7 +87,7 @@ function SettingsForm({ onDone }: { onDone(): void }) {
     <form ref={formRef} onSubmit={(e) => void submit(e)} noValidate className="flex min-h-0 flex-col">
       <DialogHeader title={t("settings.dialogTitle")} subtitle={t("settings.dialogDescription")} onClose={onDone} />
       <DialogBody className="flex flex-col gap-3">
-        <FormField label={t("settings.languageLabel")}><LanguageSwitch size="md" value={parseSettings(text ?? "", SHORTCUTS, getLocale()).settings.locale} disabled={text === null || withLocale(text, getLocale(), SHORTCUTS) === null} onValueChange={locale => setText(withLocale(text, locale, SHORTCUTS))} /></FormField>
+        <FormField label={t("settings.languageLabel")}><LanguageSwitch size="md" value={parseSettings(text ?? "", SHORTCUTS, getLocale()).settings.locale} disabled={text === null || withLocale(text, getLocale(), SHORTCUTS) === null} onValueChange={locale => { setText(withLocale(text, locale, SHORTCUTS)); setLocale(locale); }} /></FormField>
         <FormField label={t("settings.fileLabel")} title={t("settings.dialogLocation", { path: getPlatform().settingsLocation() })}>
         <textarea
           aria-label={t("settings.dialogTitle")}

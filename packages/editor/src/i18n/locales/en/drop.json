@@ -1,0 +1,6 @@
+{
+  "overlay": "Drop tileset",
+  "overlayHint": "The PNG file is added to the project",
+  "overlayMany": "Drop {count, plural, one {# tileset} other {# tilesets}}",
+  "overlayHintMany": "The PNG files are added to the project"
+}

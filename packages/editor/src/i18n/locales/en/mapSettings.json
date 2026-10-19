@@ -1,0 +1,23 @@
+{
+  "title": "Map settings",
+  "name": "Name",
+  "tile": "Tile",
+  "tileReadOnly": "Tile size is a project setting",
+  "background": "Background",
+  "backgroundNone": "None",
+  "backgroundClear": "Remove background",
+  "backgroundInvalid": "Enter a color as #rrggbb",
+  "spawn": "Spawn point",
+  "spawnSet": "Cell {x}, {y}",
+  "spawnNone": "Not set",
+  "spawnPlace": "Place",
+  "spawnGo": "Go",
+  "world": "World position",
+  "advanced": "Advanced",
+  "seed": "Variant seed",
+  "apply": "Apply",
+  "applied": "Map settings applied",
+  "unchanged": "No changes",
+  "x": "X",
+  "y": "Y"
+}

@@ -1,0 +1,8 @@
+{
+  "label": "Layers",
+  "active": "Active layer",
+  "visible": "Visible layers",
+  "hint": "Tile and collision layers included in selection actions. Locked layers are skipped.",
+  "toggle": "Toggle selection layer scope",
+  "skipped": "Skipped layers: {layers}"
+}

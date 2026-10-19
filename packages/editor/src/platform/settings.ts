@@ -16,10 +16,10 @@
  */
 import { normalizeLayout, type DockLayout } from "../ui/layout/dockModel";
 import { parseChord } from "../commands/keymap";
-import type { Locale } from "../i18n";
+import { availableLocales, isAvailableLocale, type Locale } from "../i18n";
 import type { CommandId, ShortcutDef } from "../shortcuts/shortcuts";
 
-export const LOCALES: readonly Locale[] = ["tr", "en"];
+export const LOCALES: readonly Locale[] = availableLocales().map(locale => locale.id);
 
 export interface AppSettings {
   locale: Locale;
@@ -96,7 +96,7 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
 
   if ("locale" in record) {
     const locale = record.locale;
-    if (typeof locale === "string" && (LOCALES as readonly string[]).includes(locale)) settings.locale = locale as Locale;
+    if (typeof locale === "string" && isAvailableLocale(locale)) settings.locale = locale as Locale;
     else problems.push({ entry: "locale", reason: "locale", detail: JSON.stringify(locale) });
   }
 

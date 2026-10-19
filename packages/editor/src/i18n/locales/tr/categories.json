@@ -1,0 +1,12 @@
+{
+  "level": "Haritalar",
+  "entity": "Entity",
+  "edit": "Düzen",
+  "layer": "Katman",
+  "map": "Harita",
+  "file": "Dosya",
+  "view": "Görünüm",
+  "tool": "Araç",
+  "tileset": "Tileset",
+  "general": "Genel"
+}

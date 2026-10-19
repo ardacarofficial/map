@@ -1,0 +1,6 @@
+{
+  "overlay": "Tileset''i bırak",
+  "overlayHint": "PNG dosyası projeye eklenir",
+  "overlayMany": "{count, plural, one {#} other {#}} tileset''i bırak",
+  "overlayHintMany": "PNG dosyaları projeye eklenir"
+}

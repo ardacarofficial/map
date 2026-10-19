@@ -1,0 +1,10 @@
+{
+  "title": "Yedekten aç",
+  "description": "Son 10 yedek; açılan yedek haritanın yerine geçer.",
+  "empty": "Henüz yedek yok",
+  "chooseFolder": "Seç…",
+  "noFolder": "Yedek almak için projeyi önce bir klasöre kaydet.",
+  "loading": "Yükleniyor…",
+  "open": "Aç",
+  "latest": "En yeni"
+}

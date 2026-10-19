@@ -230,6 +230,6 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 ## 6. Hard constraints for every lane
 - These UI rules apply to every lane; core, format, exporter and Unity changes follow the v1.5 plan's data and migration rules. Keep edits within the lane's assigned ownership.
 - Keep every `data-*` attribute and accessible role/name listed in `/tmp/claude-0/-home-user-map/71aa0adb-d0ed-56a0-9a7b-c70c93d2a345/scratchpad/redesign/audit.md` §3 on an element with the same meaning. If an element is removed by the spec (e.g. a fixed panel host), move its attribute to the new home with the same behaviour, or update the affected e2e test in `/home/user/map/e2e/tests` in the same change and say so.
-- All visible text from `src/i18n/tr.ts` + `en.ts` (same keys in both; edit only the section of your area; add keys at the end of your section).
+- Every visible string through `t()`; same complete keys in built-in TR/EN resources (`src/i18n/locales/<id>/<feature>.json`), with ICU placeholders/plurals and matching argument names checked in tests. Add keys in your own feature file per locale; run `pnpm i18n:gen`.
 - Tokens only; no hard-coded colours in TSX (canvas code reads tokens via `canvas/colors.ts`).
 - `pnpm typecheck`, `pnpm lint`, `pnpm test` must pass.

@@ -1,0 +1,17 @@
+{
+  "width": "Genişlik",
+  "height": "Yükseklik",
+  "anchor": "Sabit kenar",
+  "summary": "{fromWidth} × {fromHeight} → {toWidth} × {toHeight}",
+  "cropWarning": "Kesilen kenardaki hücreler silinir (geri alınabilir).",
+  "anchorCell": "Sabit nokta: {position}",
+  "pos0": "sol üst",
+  "pos1": "üst",
+  "pos2": "sağ üst",
+  "pos3": "sol",
+  "pos4": "orta",
+  "pos5": "sağ",
+  "pos6": "sol alt",
+  "pos7": "alt",
+  "pos8": "sağ alt"
+}

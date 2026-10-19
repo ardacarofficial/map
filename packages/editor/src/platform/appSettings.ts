@@ -8,7 +8,7 @@ import { onLayoutCommit, useDockStore } from "../ui/layout/dockStore";
 import type { DockLayout } from "../ui/layout/dockModel";
 import { mergeLayoutSettings, SettingsWriteQueue } from "./layoutSettings";
 
-import { getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
+import { getLocale, isAvailableLocale, setLocale, subscribeLocale, t, type Locale, type MessageKey } from "../i18n";
 import { setShortcutOverrides, SHORTCUTS } from "../shortcuts/shortcuts";
 import { toast } from "../ui/toast/toastStore";
 import { getPlatform } from "./index";
@@ -59,6 +59,9 @@ function bump(): void {
   useAppSettings.setState((s) => ({ locale: getLocale(), revision: s.revision + 1 }));
 }
 
+// Direct setLocale() calls (including draft preview) refresh the same root revision.
+subscribeLocale(bump);
+
 /**
  * Parses and applies settings text. Invalid entries are logged and shown in
  * one toast, then ignored. Returns the problems.
@@ -67,9 +70,10 @@ export function applySettingsText(text: string, applyLayout = true): SettingsPro
   appliedText = text;
   const { settings, problems } = parseSettings(text, SHORTCUTS, getLocale());
   if (applyLayout && settings.layout) useDockStore.getState().applyExternal(settings.layout);
-  applyLocale(settings.locale);
+  const previousLocale = getLocale();
   setShortcutOverrides(settings.shortcuts);
-  bump();
+  applyLocale(settings.locale);
+  if (getLocale() === previousLocale) bump();
   if (problems.length > 0) {
     const messages = problems.map(describeProblem);
     for (const message of messages) getPlatform().log("warn", `settings: ${message}`);
@@ -130,9 +134,9 @@ export async function reloadAppSettingsIfChanged(): Promise<void> {
 
 /** Switches the UI language and stores it in the settings. */
 export async function setAppLocale(locale: Locale): Promise<void> {
+  locale = isAvailableLocale(locale) ? locale : "tr";
   if (locale === getLocale()) return;
   applyLocale(locale);
-  bump();
   const platform = getPlatform();
   try {
     const next = await settingsWrites.update(raw => withLocale(raw, locale, SHORTCUTS));

@@ -1,0 +1,20 @@
+{
+  "title": "Project settings",
+  "description": "Stored in project.smap; new maps start with these values.",
+  "tabGeneral": "General",
+  "tabUnity": "Unity",
+  "tabMore": "More",
+  "name": "Project name",
+  "newMapDefaults": "New map defaults",
+  "backgroundHint": "Canvas color of maps without their own.",
+  "unityFolderHint": "Where maps go in the Unity project; shown as a reminder in the export dialog.",
+  "ppu": "Pixels per unit",
+  "openExport": "Export to Unity…",
+  "entityTypes": "Entity types",
+  "entityTypesHint": "Types like NPC, door, chest and their fields",
+  "tilesets": "Tilesets",
+  "tilesetsHint": "Find and edit the project''s tilesets",
+  "appSettings": "App settings",
+  "appSettingsHint": "Language and shortcuts (for all projects)",
+  "saved": "Project settings saved"
+}

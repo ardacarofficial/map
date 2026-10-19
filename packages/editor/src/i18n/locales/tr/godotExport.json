@@ -1,0 +1,19 @@
+{
+  "label": "Godot 4",
+  "resourceRoot": "Kaynak klasörü",
+  "resourceRootHint": "Godot proje köküne göre klasör. Örnek: smap veya levels/world. Kök klasör için boş bırakın.",
+  "collision": "Çarpışma",
+  "invalidRoot": "Kaynak klasörü geçerli bir göreli yol olmalı: {path}",
+  "missingImage": "Gerekli PNG bulunamadı: {path}",
+  "invalidImage": "PNG okunamadı veya Godot için uygun değil: {path}",
+  "imageTooSmall": "PNG, tileset ızgarasını içermeyecek kadar küçük: {path}",
+  "nativeSizeMismatch": "{tileset}: kaynak tile {nativeWidth} × {nativeHeight} px, harita hücresi {cellWidth} × {cellHeight} px. Godot aktarımı için ölçüler aynı olmalı; pikseller ölçeklenmez.",
+  "cellSizeOutOfRange": "{map}: Godot hücre ölçüsü 1–16384 px aralığında olmalı.",
+  "rectangularTranspose": "{map}: döndürülmüş dikdörtgen tile desteklenmiyor. Kare hücre kullanın.",
+  "invalidTiles": "{map}: eksik tileset veya geçersiz tile başvurusu var. Aktarmadan önce düzeltin.",
+  "overflow": "{map}: hücre koordinatı veya atlas kimliği Godot sınırını aşıyor (−32768–32767; kimlikler 0–32767).",
+  "fileConflict": "Aktarımda aynı dosya adı birden fazla kaynak için kullanılıyor: {path}. Harita veya PNG dosyasını yeniden adlandırın.",
+  "inconsistentTileset": "{tileset}: seçilen haritalarda tileset tanımları farklı. Haritaların aynı kaynağı kullanmasını sağlayın.",
+  "differentCellSizes": "{map}: ortak Godot TileSet için seçilen haritaların hücre ölçüleri aynı olmalı. Farklı ölçüleri ayrı aktarın.",
+  "noMaps": "Aktarılacak harita seçilmedi."
+}

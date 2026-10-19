@@ -1,0 +1,9 @@
+{
+  "world": "Dünya",
+  "status": "Dünya",
+  "levelCount": "{count, plural, one {#} other {#}} harita",
+  "hintTitle": "Dünya haritası",
+  "hint": "Haritaları sürükleyerek yerleştir (Alt: serbest).",
+  "back": "Haritaya dön",
+  "toolsDisabled": "Dünya haritasında yalnızca kaydırma var"
+}

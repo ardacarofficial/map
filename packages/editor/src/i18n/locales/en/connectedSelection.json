@@ -1,0 +1,7 @@
+{
+  "mode": "Selection shape",
+  "rectangle": "Rectangle",
+  "connected": "Connected area",
+  "hint": "Four-connected cells with the same tile and flip bits on the active layer. Shift: add. Ctrl/Alt: subtract. Drag inside the selection to move.",
+  "toggle": "Toggle selection shape"
+}

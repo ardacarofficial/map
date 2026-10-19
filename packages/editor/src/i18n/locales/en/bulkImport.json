@@ -1,0 +1,18 @@
+{
+  "title": "Add {count, plural, one {# tileset} other {# tilesets}}",
+  "titleNew": "New project: {count, plural, one {# tileset} other {# tilesets}}",
+  "description": "The guesses are below. Fix a size in its row; click a row for details.",
+  "files": "Files",
+  "sizeLabel": "{name} tile size",
+  "removeRow": "Remove from list",
+  "group": "Group",
+  "autoAdd": "Add without asking when the guess is safe",
+  "addAll": "Add all ({count, number})",
+  "create": "Create project ({count, number})",
+  "detailApply": "Apply",
+  "badSize": "Invalid size",
+  "noTile": "Not even one tile fits",
+  "leftover": "{x}/{y} px left over",
+  "otherSize": "Map tile is {map} px",
+  "manual": "entered by hand"
+}

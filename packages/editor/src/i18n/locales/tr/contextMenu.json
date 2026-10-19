@@ -1,0 +1,19 @@
+{
+  "properties": "Özellikler",
+  "duplicate": "Çoğalt",
+  "delete": "Sil",
+  "goToTarget": "Hedefe git",
+  "cut": "Kes",
+  "copy": "Kopyala",
+  "paste": "Yapıştır",
+  "makeStamp": "Stamp olarak kaydet…",
+  "deselect": "Seçimi kaldır",
+  "recentRemove": "Listeden çıkar",
+  "recentClear": "Hepsini temizle",
+  "typeSelect": "Seç",
+  "typeEdit": "Türü düzenle…",
+  "typeFind": "Haritada bul ({count, plural, one {#} other {#}})",
+  "typeFindNone": "Haritada yok",
+  "typeDelete": "Türü sil",
+  "stampCopyName": "{name} kopya"
+}

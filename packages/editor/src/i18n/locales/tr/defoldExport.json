@@ -1,0 +1,15 @@
+{
+  "label": "Defold",
+  "projectSubfolderLabel": "Proje alt klasörü",
+  "projectSubfolderHint": "Defold proje kökünden başlayan klasör. Harita klasörü bunun altında oluşturulur; örnek: exported/orman.",
+  "collisionLabel": "Çarpışma",
+  "collisionHint": "Manuel Collision katmanlarının çözülmüş sonucunu statik kutular olarak aktarır.",
+  "projectSubfolder": "Defold projesinin içindeki bir alt klasörü kullanın. Sürücü yolu, ağ yolu ve .. kullanılamaz.",
+  "tileSize": "{tileset}: {width} × {height} px tile boyutu, {mapWidth} × {mapHeight} px harita hücresiyle eşleşmiyor. Defold için boyutlar eşleşmelidir.",
+  "layerOpacity": "{layer}: Defold, katman saydamlığını desteklemiyor. Opaklığı %100 yapın veya katmanı dışa aktarmadan çıkarın.",
+  "overlappingArt": "{layer}: Hücre sınırını aşan ve üst üste binen görseller Defold''a kayıpsız aktarılamıyor.",
+  "missingTexture": "{tileset}: PNG görseli eksik. Aktarmadan önce görseli yeniden yükleyin.",
+  "textureLayout": "{tileset}: PNG görselinin kenar payı kayıpsız dönüştürülemiyor. Görselin geçerli olduğunu ve tileset ızgarasıyla eşleştiğini kontrol edin.",
+  "invalidCells": "Geçersiz tile referansları nedeniyle aktarılamıyor: {detail}",
+  "tileIndex": "{layer}: Defold''un desteklediği son dosya tile numarası 65534. Tileset''i daha küçük parçalara ayırın."
+}

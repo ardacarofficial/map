@@ -1,0 +1,15 @@
+{
+  "label": "Defold",
+  "projectSubfolderLabel": "Project subfolder",
+  "projectSubfolderHint": "Folder relative to the Defold project root. The map folder is created inside it; for example: exported/forest.",
+  "collisionLabel": "Collision",
+  "collisionHint": "Export the resolved manual Collision layers as static boxes.",
+  "projectSubfolder": "Use a subfolder inside the Defold project. Drive paths, network paths and .. are not allowed.",
+  "tileSize": "{tileset}: Tile size {width} × {height} px does not match the {mapWidth} × {mapHeight} px map cell. Defold requires matching sizes.",
+  "layerOpacity": "{layer}: Defold does not support layer opacity. Set opacity to 100% or exclude the layer from export.",
+  "overlappingArt": "{layer}: Overlapping artwork extending outside its cell cannot be exported faithfully to Defold.",
+  "missingTexture": "{tileset}: PNG image is missing. Reload the image before exporting.",
+  "textureLayout": "{tileset}: The PNG outer margin cannot be converted losslessly. Check that the image is valid and matches the tileset grid.",
+  "invalidCells": "Invalid tile references prevent export: {detail}",
+  "tileIndex": "{layer}: Defold''s last supported file tile index is 65534. Split the tileset into smaller sources."
+}

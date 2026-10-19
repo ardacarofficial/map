@@ -154,6 +154,7 @@ export class OverlayRenderer {
     style: { fontFamily: "Inter Variable, Inter, system-ui, sans-serif", fontSize: 12, fontWeight: "500", fill: CANVAS_COLORS.text },
   });
   #hintUntil = 0;
+  #hintLabel: (() => string) | null = null;
   #hintAt: Point | null = null;
   #hintTimer: ReturnType<typeof setTimeout> | null = null;
   #antsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -177,9 +178,18 @@ export class OverlayRenderer {
     this.hint.visible = false;
   }
 
+  refreshLocale(): void {
+    if (this.#hintLabel) this.#hintText.text = this.#hintLabel();
+    this.#host.requestRender();
+  }
+
+  /** Current rendered label, also exposed to the dev-only canvas hook. */
+  get hintLabel(): string { return this.#hintText.text; }
+
   /** Shows `text` next to the pointer for {@link HINT_MS} (e.g. why a click did nothing). */
-  showHint(text: string): void {
-    this.#hintText.text = text;
+  showHint(text: string | (() => string)): void {
+    this.#hintLabel = typeof text === "function" ? text : () => text;
+    this.#hintText.text = this.#hintLabel();
     this.#hintAt = this.#host.pointer?.() ?? null;
     this.#hintUntil = performance.now() + HINT_MS;
     if (this.#hintTimer !== null) clearTimeout(this.#hintTimer);
@@ -591,6 +601,7 @@ export class OverlayRenderer {
     const cam = this.#host.camera;
     const res = cam.resolution;
     const text = this.#hintText;
+    if (this.#hintLabel) text.text = this.#hintLabel();
     if (text.resolution !== res) text.resolution = res;
     const padX = 8;
     const padY = 4;

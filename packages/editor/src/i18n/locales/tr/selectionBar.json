@@ -1,0 +1,12 @@
+{
+  "fill": "Doldur",
+  "erase": "Sil",
+  "copy": "Kopyala",
+  "cut": "Kes",
+  "saveStamp": "Stamp olarak kaydet…",
+  "fillNoLayer": "Önce bir katman seç",
+  "fillEntity": "Entity katmanı doldurulamaz",
+  "fillLocked": "Katman kilitli",
+  "fillHidden": "Katman gizli; önce göster",
+  "fillNoBrush": "Doldurmak için önce bir tile seç"
+}

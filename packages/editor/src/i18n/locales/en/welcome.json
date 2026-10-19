@@ -1,0 +1,13 @@
+{
+  "newProject": "New project…",
+  "open": "Open…",
+  "dropActive": "Drop to create the project",
+  "recent": "Recent projects",
+  "recentEmpty": "No saved projects yet",
+  "recentUnsupported": "This browser can''t remember recent projects",
+  "removeRecent": "Remove from list",
+  "templates": "Templates",
+  "dropShort": "Drop a tileset",
+  "recentMissing": "Folder not found",
+  "noThumbnail": "No preview"
+}

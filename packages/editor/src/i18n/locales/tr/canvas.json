@@ -1,0 +1,6 @@
+{
+  "blockedLocked": "Katman kilitli",
+  "blockedHidden": "Katman gizli; önce göster",
+  "blockedWrongKind": "Bu araç bu katmanda çalışmaz",
+  "rotateNonSquare": "Kare olmayan tile döndürülemez; X / Y ile çevir"
+}

@@ -8,7 +8,7 @@ import { getCommand, isEnabled } from "../../commands/registry";
 import { installWorldActions } from "../../commands/worldActions";
 import { registerSettingsCommands } from "../../platform/settingsCommands";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
-import { tr } from "../../i18n/tr";
+import { t } from "../../i18n";
 import { registerBrushCommands } from "../toolOptions/brushCommands";
 import { registerHistoryCommands } from "../history/historyCommands";
 import { registerRulerCommands } from "../layout/rulers";
@@ -41,8 +41,7 @@ describe("menu bar model", () => {
   it("has the six menus in order, with translated labels", () => {
     expect(MENUS.map((m) => m.id)).toEqual(["file", "edit", "view", "layer", "map", "help"]);
     for (const menu of MENUS) {
-      const [section, key] = menu.label.split(".") as [keyof typeof tr, string];
-      expect((tr[section] as Record<string, string>)[key]).toBeTruthy();
+      expect(t(menu.label)).not.toBe(menu.label);
     }
   });
 

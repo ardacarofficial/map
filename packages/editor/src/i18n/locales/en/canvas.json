@@ -1,0 +1,6 @@
+{
+  "blockedLocked": "The layer is locked",
+  "blockedHidden": "The layer is hidden; show it first",
+  "blockedWrongKind": "This tool does not work on this layer",
+  "rotateNonSquare": "Non-square tiles cannot be rotated; flip with X / Y"
+}

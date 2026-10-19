@@ -1,0 +1,14 @@
+{
+  "showInspector": "Show inspector",
+  "resizeSectionHint": "Drag: height · double-click: fit content",
+  "library": "Library",
+  "appBar": "App bar",
+  "toolRail": "Tools",
+  "canvas": "Canvas",
+  "statusBar": "Status bar",
+  "resize": "Column width",
+  "resizeHint": "Drag: width · double-click: default",
+  "showLibrary": "Show library",
+  "dock": "Bottom panel",
+  "resizeDock": "Bottom panel height"
+}

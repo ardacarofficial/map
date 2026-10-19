@@ -30,7 +30,7 @@ export function BackupsDialog() {
 }
 
 function locale(): string {
-  return getLocale() === "tr" ? "tr-TR" : "en-US";
+  return getLocale();
 }
 
 function relative(date: Date, now: number): string {

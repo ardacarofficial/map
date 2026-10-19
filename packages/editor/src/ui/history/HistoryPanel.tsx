@@ -1,7 +1,7 @@
 import type { MapStore } from "@smap/core";
 import { useEffect, useLayoutEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
-import { formatNumber, t } from "../../i18n";
+import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
 import { bindHistoryLabels, historyLabelsVersion, sharedHistoryLabels, subscribeHistoryLabels } from "../feedback/sharedHistoryLabels";
 import { Icon, type IconName } from "../primitives/Icon";
@@ -80,7 +80,7 @@ export function HistoryPanel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-history-panel>
-      {steps > 0 && <div className="flex h-row shrink-0 items-center px-3 text-xs text-faint tabular">{t("history.count", { count: formatNumber(steps) })}</div>}
+      {steps > 0 && <div className="flex h-row shrink-0 items-center px-3 text-xs text-faint tabular">{t("history.count", { count: steps })}</div>}
       {steps > 0 && <ol ref={listRef} role="listbox" aria-label={t("history.title")} className={`flex min-h-0 flex-col overflow-y-auto px-1.5 pb-2 ${steps > 0 ? "flex-1" : ""}`}>
         {rows.map((row, index) => (
           <li key={row.id ?? "initial"} role="option" aria-selected={row.state === "current"}>

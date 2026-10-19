@@ -1,0 +1,10 @@
+{
+  "undo": "Geri al",
+  "cancel": "Vazgeç",
+  "create": "Oluştur",
+  "close": "Kapat",
+  "save": "Kaydet",
+  "dontSave": "Kaydetme",
+  "px": "{value} px",
+  "cells": "{width} × {height}"
+}

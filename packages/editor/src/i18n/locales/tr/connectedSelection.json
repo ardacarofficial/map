@@ -1,0 +1,7 @@
+{
+  "mode": "Seçim biçimi",
+  "rectangle": "Dikdörtgen",
+  "connected": "Bağlı alan",
+  "hint": "Etkin katmanda aynı tile ve çevirme bitlerine sahip, kenardan bağlı hücreler. Shift: ekle. Ctrl/Alt: çıkar. Seçimin içinden sürükleyerek taşı.",
+  "toggle": "Seçim biçimini değiştir"
+}
