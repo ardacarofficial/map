@@ -1,3 +1,4 @@
+import { normalizeColorPalettes, type ColorPalette } from "./pixel/palettes";
 import type { Stamp } from "./stamp";
 /**
  * Project-level data (v1.0–v1.2): the ordered level list with stable level
@@ -53,6 +54,7 @@ export interface ProjectLevel extends LevelRef {
 
 /** Contents of `project.smap` (input form: optional fields may be missing). */
 export interface ProjectData {
+  readonly colorPalettes?: readonly ColorPalette[];
   /** Archived smart recipes carried by older project roots; sidecar files are also supported. */
   readonly generatedRecipes?: readonly Stamp[];
   readonly name: string;
@@ -103,6 +105,7 @@ export function levelIdFromPath(path: string): string {
  * position, or a retired id that is not a non-empty string.
  */
 export function normalizeProject(data: ProjectData): Project {
+  normalizeColorPalettes(data.colorPalettes === undefined ? [] : data.colorPalettes);
   const taken = new Set<string>();
   const retiredInput = data.retiredLevelIds ?? [];
   if (!Array.isArray(retiredInput)) throw new Error("retiredLevelIds must be an array");
@@ -143,6 +146,7 @@ export function normalizeProject(data: ProjectData): Project {
   return Object.freeze({
     ...(data.generatedRecipes?.length ? { generatedRecipes: Object.freeze([...data.generatedRecipes]) } : {}),
     name: data.name,
+    ...(data.colorPalettes?.length ? { colorPalettes: normalizeColorPalettes(data.colorPalettes) } : {}),
     levels: Object.freeze(levels),
     tilesets: data.tilesets,
     entityTypes: data.entityTypes ?? Object.freeze([]),

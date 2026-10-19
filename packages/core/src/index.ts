@@ -492,8 +492,17 @@ export { connectedSelection, selectionContains, selectionHasContent, combineSele
 export { flipRegion } from "./clip";
 export { exportDefold, defoldPreflight, defoldOrientation, DefoldExportError, DEFOLD_SHAPES_PER_OBJECT, type DefoldExportFile, type DefoldExportOptions, type DefoldImageBytes, type DefoldProblem, type DefoldProblemCode } from "./export/defold";
 
-export { canonicalRgba, equalRgba, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, hsvToHsl, hslToHsv, parseHex, formatHex, type Rgba8, type Hsva, type Hsla } from "./pixel/color";
+export { canonicalRgba as canonicalColor, equalRgba, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, hsvToHsl, hslToHsv, parseHex, formatHex, type Rgba8, type Hsva, type Hsla } from "./pixel/color";
 export { pixelLine, pixelFootprint, pixelRectangle, pixelStrokePoints, MAX_PIXEL_BRUSH_SIZE, type PixelPoint, type PixelRect, type PixelBrushShape } from "./pixel/tools";
 export { mirrorPixels, placedPixelSize, sourceToPlacedPixel, placedToSourcePixel, composePixelFlags, inversePixelFlags, type PixelMirrorAxes } from "./pixel/mirror";
 export { planPixelPoints, planPixelStroke, planPixelLine, planPixelRectangle, pixelDirtyRect, type RasterView, type PixelWrite, type PixelWritePlan, type TilePixelPlan, type PlacedRaster, type PixelGrid, type PixelStrokeOptions } from "./pixel/planner";
 export { planPixelFill, planPixelFillAt, type PixelFillMode } from "./pixel/fill";
+
+export * from "./pixel/assets";
+export * from "./pixel/ops";
+export * from "./pixel/metadata";
+export * from "./pixel/png";
+export * from "./pixel/palettes";
+export { migrateV6 } from "./migrations/v6";
+export { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY } from "./collection";
+export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistoryChange } from "./store";

@@ -34,7 +34,7 @@ function paintedStore() {
 describe("project serialization", () => {
   it("has a fixed layout", () => {
     const text = serializeProject({ name: "P", levels: [], tilesets: [] });
-    expect(text).toBe('{\n  "format": "smap-project",\n  "documentFormatVersion": 5,\n  "name": "P",\n  "levels": [],\n  "tilesets": []\n}\n');
+    expect(text).toBe('{\n  "format": "smap-project",\n  "documentFormatVersion": 6,\n  "name": "P",\n  "levels": [],\n  "tilesets": []\n}\n');
   });
 
   it("roundtrips byte-identically", () => {
@@ -119,7 +119,7 @@ describe("parse validation", () => {
   });
 
   it("rejects unknown future versions and bad versions", () => {
-    expectError((l) => (l.documentFormatVersion = 6), /newer than supported/);
+    expectError((l) => (l.documentFormatVersion = 7), /newer than supported/);
     expectError((l) => (l.documentFormatVersion = 0), /positive integer/);
     expectError((l) => delete l.documentFormatVersion, /documentFormatVersion/);
   });

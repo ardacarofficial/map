@@ -1,6 +1,11 @@
+import { RasterAssets, canonicalRgba, assertRasterSize, MAX_RASTER_BYTES, type RasterAssetsView, type RasterAssetInfo } from "./pixel/assets";
+import { editedImagePath, EDITED_ATLAS_COLUMNS, MAX_EDITED_TILES } from "./pixel/metadata";
+import { rasterContentHash } from "./pixel/png";
+import type { AllocateEditedTileOp, SetEditedTilesetOp, EditedTileSlot, EditTilePixelsOp, LoadRasterAssetOp, RemapCellsOp, PatchPixelsOp, PixelRectPatch, PixelDirtyRect } from "./pixel/ops";
+import { cellFlags, makeCell } from "./cell";
 import { isValidCell, cellPaletteIndex, type Cell } from "./cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, chunkKey, localIndex, type ChunkKey } from "./chunk";
-import { collectionProblem, normalizeCollection, remapCollectionsForTileset, type Collection } from "./collection";
+import { MAX_COLLECTION_ROWS, collectionProblem, normalizeCollection, remapCollectionsForTileset, type Collection } from "./collection";
 import { mapInfoProblem, mapPropsFrom, uniqueLayerName, type MapDocument, type MapInfo, type MapProps } from "./document";
 import { normalizeRandomSet, randomSetProblem, remapRandomSetsForTileset, type RandomSet } from "./randomSet";
 import {
@@ -85,6 +90,7 @@ export interface StoreChangeEvent {
   readonly cause: ChangeCause;
   /** Changed chunks per layer (empty when no cell changed). */
   readonly cells: readonly DirtyChunks[];
+  readonly pixelRects: readonly PixelDirtyRect[];
   /** Structural changes (empty when none). */
   readonly structure: readonly StructureChange[];
   /** True when `canUndo` / `canRedo` may have changed. */
@@ -196,7 +202,25 @@ export interface MapPropsHistoryChange {
  * One reversible change. Every change stores both sides; undo applies the
  * `before` sides (in reverse order), redo the `after` sides. No inverse ops.
  */
+export interface PixelsHistoryChange { readonly kind: "pixels"; readonly patches: readonly PixelRectPatch[] }
+export interface RasterSlotHistoryChange {
+  readonly kind: "rasterSlot";
+  readonly assetId: string;
+  readonly tileId: number;
+  readonly before: Omit<RasterAssetInfo, "revision"> | undefined;
+  readonly after: Omit<RasterAssetInfo, "revision">;
+  readonly beforeBytes: Uint8Array | undefined;
+  readonly afterBytes: Uint8Array;
+}
+export interface PaletteAppendHistoryChange {
+  readonly kind: "paletteAppend";
+  readonly before: readonly PaletteEntry[];
+  readonly after: readonly PaletteEntry[];
+}
 export type HistoryChange =
+  | PixelsHistoryChange
+  | RasterSlotHistoryChange
+  | PaletteAppendHistoryChange
   | CellsHistoryChange
   | LayerHistoryChange
   | LayerPropsHistoryChange
@@ -245,6 +269,7 @@ export interface HistoryListItem {
 export interface MapStoreOptions {
   /** Maximum number of undo steps kept. Defaults to 1000. */
   historyLimit?: number;
+  rasterAssets?: RasterAssets;
 }
 
 /** Groups dirty chunk keys per layer, preserving first-seen order. */
@@ -297,6 +322,31 @@ class ChangeRecorder {
 
   recordStructural(change: HistoryChange): void {
     this.#flush();
+    // Full-tile history snapshots merge per tile between allocation barriers.
+    // Cell/metadata ordering stays intact; dirty events still report exact rects.
+    if (change.kind === "pixels") {
+      const remaining: PixelRectPatch[] = [];
+      for (const patch of change.patches) {
+        let merged = false;
+        for (let i = this.#changes.length - 1; i >= 0; i--) {
+          const prior = this.#changes[i]!;
+          if (prior.kind !== "pixels" && prior.kind !== "tileset" && prior.kind !== "cells") break;
+          if (prior.kind !== "pixels") continue;
+          const at = prior.patches.findIndex(p => p.assetId === patch.assetId && p.tileId === patch.tileId);
+          if (at < 0) continue;
+          const old = prior.patches[at]!;
+          if (old.x === patch.x && old.y === patch.y && old.width === patch.width && old.height === patch.height) {
+            const patches = prior.patches.map((p, j) => j === at ? ownedPixelPatch(p, old.before, patch.after) : p);
+            this.#changes[i] = Object.freeze({ kind: "pixels", patches: Object.freeze(patches) });
+            merged = true;
+          }
+          break;
+        }
+        if (!merged) remaining.push(patch);
+      }
+      if (remaining.length) this.#changes.push(Object.freeze({ kind: "pixels", patches: Object.freeze(remaining) }));
+      return;
+    }
     // Consecutive edits of one entity layer (a drag) merge into one change.
     const last = this.#changes[this.#changes.length - 1];
     if (change.kind === "entities" && last?.kind === "entities" && last.layerId === change.layerId) {
@@ -416,6 +466,7 @@ function shiftChunks(
 
 /** Accumulates the effects of applying history changes. */
 class ApplyResult {
+  readonly pixelRects: PixelDirtyRect[] = [];
   readonly dirty = new DirtyTracker();
   readonly structure = new Set<StructureChange>();
 }
@@ -447,6 +498,7 @@ function assertImageSize(name: string, width: number, height: number): void {
 const STRUCTURE_ORDER: readonly StructureChange[] = ["layers", "tilesets", "palette", "map", "entities", "entityTypes", "randomSets", "collections", "props"];
 
 interface OpContext {
+  readonly pixelRects: PixelDirtyRect[];
   readonly rec: ChangeRecorder;
   readonly local: boolean;
   readonly dirty: DirtyTracker;
@@ -466,6 +518,7 @@ interface OpContext {
  */
 export class MapStore {
   readonly #doc: MapDocument;
+  readonly #rasters: RasterAssets;
   readonly #listeners = new Set<StoreListener>();
   readonly #undo: HistoryEntry[] = [];
   readonly #redo: HistoryEntry[] = [];
@@ -481,8 +534,11 @@ export class MapStore {
 
   constructor(document: MapDocument, options: MapStoreOptions = {}) {
     this.#doc = document;
+    this.#rasters = options.rasterAssets ?? new RasterAssets();
     this.#historyLimit = Math.max(0, options.historyLimit ?? 1000);
   }
+
+  get rasterAssets(): RasterAssetsView { return this.#rasters.view; }
 
   /** The document. Read freely; never mutate it directly. */
   get document(): MapDocument {
@@ -584,6 +640,12 @@ export class MapStore {
   dispatch<O extends Op>(op: O): OpResult<O>;
   dispatch(op: Op): OpResult<Op> {
     switch (op.type) {
+      case "setEditedTileset": return this.#setEditedTileset(op);
+      case "allocateEditedTile": return this.#allocateEditedTile(op);
+      case "editTilePixels": return this.#editTilePixels(op);
+      case "patchPixels": return this.#patchPixels(op);
+      case "remapCells": return this.#remapCells(op);
+      case "loadRasterAsset": return this.#loadRasterAsset(op);
       case "paintCells":
         return this.#paintCells(op);
       case "setRandomSet":
@@ -729,6 +791,155 @@ export class MapStore {
   }
 
   // ---------------------------------------------------------------- ops
+
+  #setEditedTileset(op: SetEditedTilesetOp): void {
+    const old = this.#doc.getTileset(op.tileset.id);
+    if (!old?.edited || !op.tileset.edited) throw new Error('setEditedTileset requires an existing edited asset');
+    const next = normalizeTileset(op.tileset);
+    const problem = tilesetProblem(next);
+    if (problem) throw new Error(problem);
+    if (old.tileWidth !== next.tileWidth || old.tileHeight !== next.tileHeight || next.edited!.nextTileId < old.edited.nextTileId || old.edited.origins.some(origin => !next.edited!.origins.some(o => JSON.stringify(o) === JSON.stringify(origin)))) throw new Error('edited slots and origins cannot be reassigned');
+    if (JSON.stringify(old) === JSON.stringify(next)) return;
+    const ctx = this.#openOp();
+    this.#replaceTileset(ctx, next);
+    this.#closeOp(ctx);
+  }
+
+  #loadRasterAsset(op: LoadRasterAssetOp): void {
+    if (this.inTransaction || this.canUndo || this.canRedo) throw new Error('loadRasterAsset requires an empty history');
+    const ts = this.#doc.getTileset(op.asset.assetId);
+    if (!ts) throw new Error('loadRasterAsset: unknown tileset');
+    const { tileWidth, tileHeight, columns, rows } = op.asset;
+    if (tileWidth !== ts.tileWidth || tileHeight !== ts.tileHeight || columns !== ts.columns || rows !== ts.rows) throw new Error('raster grid differs from tileset');
+    const data = canonicalRgba(tileWidth * columns, tileHeight * rows, op.asset.data);
+    if (ts.edited && rasterContentHash(tileWidth * columns, tileHeight * rows, data) !== ts.edited.contentHash) throw new Error('raster content hash mismatch');
+    if (ts.edited) {
+      for (let id = ts.edited.nextTileId; id < columns * rows; id++) {
+        for (let y = 0; y < tileHeight; y++) {
+          const p = ((Math.floor(id / columns) * tileHeight + y) * tileWidth * columns + (id % columns) * tileWidth) * 4;
+          if (data.subarray(p, p + tileWidth * 4).some(Boolean)) throw new Error('unallocated edited slots must be transparent');
+        }
+      }
+    }
+    this.#rasters._load({ ...op.asset, data }, ts.edited?.nextTileId);
+    this.#emit({ cause: 'dispatch', cells: [], structure: [], pixelRects: Array.from({ length: ts.edited?.nextTileId ?? columns * rows }, (_, tileId) => ({ assetId: ts.id, tileId, x: 0, y: 0, width: tileWidth, height: tileHeight })), historyChanged: false });
+  }
+
+  #allocateEditedTile(op: AllocateEditedTileOp): EditedTileSlot {
+    const pixels = canonicalRgba(op.tileWidth, op.tileHeight, op.pixels);
+    assertRasterSize(op.tileWidth * EDITED_ATLAS_COLUMNS, op.tileHeight);
+    if (op.source && (!op.source.tilesetId || !Number.isSafeInteger(op.source.tileId) || op.source.tileId < 0 || !op.source.pixelHash)) throw new Error('invalid edited source');
+    const ts = this.#doc.tilesets.find(t => t.edited && t.tileWidth === op.tileWidth && t.tileHeight === op.tileHeight && t.edited.nextTileId < MAX_EDITED_TILES && (Math.ceil((t.edited.nextTileId + 1) / EDITED_ATLAS_COLUMNS) * op.tileHeight * op.tileWidth * EDITED_ATLAS_COLUMNS * 4 <= MAX_RASTER_BYTES));
+    let assetId = ts?.id;
+    if (!assetId) for (let n = 1; ; n++) {
+      const candidate = `edited-${op.tileWidth}x${op.tileHeight}-${n}`;
+      if (!this.#doc.getTileset(candidate) && !this.#rasters.info(candidate)) { assetId = candidate; break; }
+    }
+    const tileId = ts?.edited?.nextTileId ?? 0;
+    const rows = Math.ceil((tileId + 1) / EDITED_ATLAS_COLUMNS);
+    const width = op.tileWidth * EDITED_ATLAS_COLUMNS, height = rows * op.tileHeight;
+    assertRasterSize(width, height);
+    const before = this.#rasters.info(assetId!);
+    if (ts && (!before || before.tileCount !== ts.edited!.nextTileId || before.columns !== ts.columns || before.rows !== ts.rows || before.tileWidth !== ts.tileWidth || before.tileHeight !== ts.tileHeight)) throw new Error('edited raster must be loaded before allocation');
+    const oldTile = this.#rasters.getTile(assetId!, tileId)?.data;
+    const old = this.#rasters.getAsset(assetId!);
+    const data = new Uint8Array(width * height * 4);
+    if (old) data.set(old.data);
+    for (let y = 0; y < op.tileHeight; y++) data.set(pixels.subarray(y * op.tileWidth * 4, (y + 1) * op.tileWidth * 4), ((Math.floor(tileId / 16) * op.tileHeight + y) * width + (tileId % 16) * op.tileWidth) * 4);
+    const contentHash = rasterContentHash(width, height, data);
+    const origins = [...(ts?.edited?.origins ?? []), ...(op.source ? [{ tileId, sourceTilesetId: op.source.tilesetId, sourceTileId: op.source.tileId, sourcePixelHash: op.source.pixelHash }] : [])];
+    const next = normalizeTileset({ ...(ts ?? { id: assetId!, name: 'Düzenlenen', tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, margin: 0, spacing: 0 }), rows, imagePath: editedImagePath(assetId!, contentHash), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: tileId + 1, contentHash, origins } });
+    const problem = tilesetProblem(next);
+    if (problem) throw new Error(problem);
+    // Preflight palette capacity before any raster/metadata mutation.
+    if (this.#doc.palette.size >= 0x1fffffff) throw new Error('palette is full');
+    const ctx = this.#openOp();
+    const after = Object.freeze({ tileCount: tileId + 1, assetId: assetId!, tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, rows });
+    this.#rasters._slot(after, assetId!, tileId, pixels);
+    ctx.rec.recordStructural(Object.freeze({ kind: 'rasterSlot', assetId: assetId!, tileId, before, after, get beforeBytes() { return oldTile?.slice(); }, get afterBytes() { return pixels.slice(); } }));
+    if (ts) this.#replaceTileset(ctx, next);
+    else this.#setTilesetList(ctx, [...this.#doc.tilesets, next]);
+    const paletteBefore = Object.freeze([...this.#doc.palette.entries()]);
+    const paletteIndex = this.#doc.palette._getOrAdd(assetId!, tileId);
+    ctx.rec.recordStructural(Object.freeze({ kind: 'paletteAppend', before: paletteBefore, after: Object.freeze([...this.#doc.palette.entries()]) }));
+    ctx.structure.add('palette');
+    ctx.pixelRects.push({ assetId: assetId!, tileId, x: 0, y: 0, width: op.tileWidth, height: op.tileHeight });
+    this.#closeOp(ctx);
+    return Object.freeze({ assetId: assetId!, tileId, paletteIndex });
+  }
+
+  #remapCells(op: RemapCellsOp): LayerPatch {
+    this.#assertTile('remapCells', op.tilesetId, op.tileId);
+    const layer = this.#doc.getLayer(op.layerId);
+    if (!isTileLayer(layer)) throw new Error('remapCells requires a tile layer');
+    for (const c of op.cells) if (!Number.isInteger(c.x) || !Number.isInteger(c.y) || !this.#doc.inBounds(c.x, c.y)) throw new RangeError('remapCells: cell outside map');
+    if (layer.locked || !op.cells.length) return emptyPatch(layer.id);
+    const index = this.#doc.palette.indexOf(op.tilesetId, op.tileId);
+    if (!index) throw new Error('remapCells: add palette entry before remapping');
+    return this.#paintCells({ type: 'paintCells', layerId: layer.id, cells: op.cells.map(c => ({ ...c, cell: makeCell(index, cellFlags(layer.getCell(c.x, c.y))) })) });
+  }
+
+  #editTilePixels(op: EditTilePixelsOp): readonly PixelRectPatch[] {
+    const tile = this.#rasters.getTile(op.assetId, op.tileId);
+    if (!tile) throw new Error('editTilePixels: missing raster tile');
+    assertPixelRect(op, tile.width, tile.height);
+    const before = cropPixels(tile.data, tile.width, op);
+    if (op.before && !equalBytes(before, op.before)) throw new Error('stale pixel patch');
+    return this.#patchPixels({ type: 'patchPixels', patches: [{ ...op, before, after: op.after }] });
+  }
+
+  #patchPixels(op: PatchPixelsOp): readonly PixelRectPatch[] {
+    const patches: PixelRectPatch[] = [];
+    const rects: PixelDirtyRect[] = [];
+    const images = new Map<string, { width: number; height: number; data: Uint8Array }>();
+    const tiles = new Map<string, { rect: PixelDirtyRect; before: Uint8Array; after: Uint8Array }>();
+    // All validation, hashing and allocation happens before the first mutation.
+    for (const p of op.patches) {
+      const ts = this.#doc.getTileset(p.assetId);
+      if (ts?.edited && this.#rasters.info(p.assetId)?.tileCount !== ts.edited.nextTileId) throw new Error('edited metadata must be synchronized before writing');
+      if (!ts?.edited || !Number.isSafeInteger(p.tileId) || p.tileId < 0 || p.tileId >= ts.edited.nextTileId) throw new Error('pixel writes require an allocated edited tile');
+      const tile = this.#rasters.getTile(p.assetId, p.tileId);
+      if (!tile) throw new Error('pixel raster is not loaded');
+      assertPixelRect(p, tile.width, tile.height);
+      const before = cropPixels(tile.data, tile.width, p);
+      if (!(p.before instanceof Uint8Array) || !equalBytes(before, p.before)) throw new Error('stale pixel patch');
+      const after = canonicalRgba(p.width, p.height, p.after);
+      for (const q of rects) if (p.assetId === q.assetId && p.tileId === q.tileId && p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height) throw new Error('overlapping pixel patches');
+      rects.push(dirtyPixelRect(p));
+      if (equalBytes(before, after)) continue;
+      patches.push(ownedPixelPatch(p, before, after));
+      const key = `${p.assetId.length}:${p.assetId}:${p.tileId}`;
+      let history = tiles.get(key);
+      if (!history) {
+        history = { rect: { assetId: p.assetId, tileId: p.tileId, x: 0, y: 0, width: tile.width, height: tile.height }, before: tile.data, after: tile.data.slice() };
+        tiles.set(key, history);
+      }
+      for (let row = 0; row < p.height; row++) history.after.set(after.subarray(row * p.width * 4, (row + 1) * p.width * 4), ((p.y + row) * tile.width + p.x) * 4);
+      let image = images.get(p.assetId);
+      if (!image) { image = this.#rasters.getAsset(p.assetId)!; images.set(p.assetId, image); }
+      const x = (p.tileId % ts.columns) * ts.tileWidth + p.x;
+      const y = Math.floor(p.tileId / ts.columns) * ts.tileHeight + p.y;
+      for (let row = 0; row < p.height; row++) image.data.set(after.subarray(row * p.width * 4, (row + 1) * p.width * 4), ((y + row) * image.width + x) * 4);
+    }
+    if (!patches.length) return Object.freeze([]);
+    const metadata = [...images].map(([id, image]) => {
+      const ts = this.#doc.getTileset(id)!;
+      const contentHash = rasterContentHash(image.width, image.height, image.data);
+      return normalizeTileset({ ...ts, imagePath: editedImagePath(id, contentHash), edited: { ...ts.edited!, contentHash } });
+    });
+    const ctx = this.#openOp();
+    for (const p of patches) {
+      this.#rasters._rect(p.assetId, p.tileId, p.x, p.y, p.width, p.height, p.after);
+      ctx.pixelRects.push(dirtyPixelRect(p));
+    }
+    const owned = Object.freeze(patches);
+    ctx.rec.recordStructural(Object.freeze({ kind: 'pixels', patches: Object.freeze([...tiles.values()].map(t => ownedPixelPatch(t.rect, t.before, t.after))) }));
+    for (const next of metadata) this.#replaceTileset(ctx, next);
+    this.#closeOp(ctx);
+    return owned;
+  }
+
+
 
   #paintCells(op: PaintCellsOp): LayerPatch {
     const layer = this.#doc.getLayer(op.layerId);
@@ -1126,6 +1337,7 @@ export class MapStore {
 
   #updateTilesetGrid(op: UpdateTilesetGridOp): TilesetRemapResult {
     const current = this.#doc.getTileset(op.tilesetId);
+    if (current?.edited) throw new Error("edited atlas grids cannot change");
     if (!current) throw new Error(`updateTilesetGrid: unknown tileset "${op.tilesetId}"`);
     const spec = { tileWidth: op.tileWidth, tileHeight: op.tileHeight, margin: op.margin, spacing: op.spacing };
     const problem = tileGridSpecProblem(spec);
@@ -1139,6 +1351,7 @@ export class MapStore {
 
   #replaceTilesetImage(op: ReplaceTilesetImageOp): TilesetRemapResult {
     const current = this.#doc.getTileset(op.tilesetId);
+    if (current?.edited) throw new Error("edited atlas grids cannot change");
     if (!current) throw new Error(`replaceTilesetImage: unknown tileset "${op.tilesetId}"`);
     assertImageSize("replaceTilesetImage", op.imageWidth, op.imageHeight);
     return this.#regridTileset("replaceTilesetImage", current, tilesetWithGrid(current, current, op.imageWidth, op.imageHeight));
@@ -1239,6 +1452,7 @@ export class MapStore {
   }
 
   #addPaletteEntry(op: AddPaletteEntryOp): number {
+    if (op.undoable !== undefined && op.undoable !== true) throw new TypeError("addPaletteEntry: undoable must be true or omitted");
     const tileset = this.#doc.getTileset(op.tilesetId);
     if (!tileset) throw new Error(`addPaletteEntry: unknown tileset "${op.tilesetId}"`);
     if (!isValidTileId(tileset, op.tileId)) {
@@ -1247,8 +1461,18 @@ export class MapStore {
     const palette = this.#doc.palette;
     const existing = palette.indexOf(op.tilesetId, op.tileId);
     if (existing !== 0) return existing;
+    const before = tileset.edited || op.undoable === true ? Object.freeze([...palette.entries()]) : undefined;
     const index = palette._getOrAdd(op.tilesetId, op.tileId);
-    this.#emit({ cause: "dispatch", cells: [], structure: ["palette"], historyChanged: false });
+    if (before) {
+      this.#recordStructural({ kind: "paletteAppend", before, after: Object.freeze([...palette.entries()]) }, ["palette"]);
+      return index;
+    }
+    // Nonundoable growth can retain slots from a cancelled replacement
+    // allocation. Invalidate allocation-dependent redo before its raw cell
+    // indices can claim those slots. Cell-only redo keeps legacy semantics.
+    const historyChanged = this.#redo.some(entry => entry.changes.some(change => change.kind === "paletteAppend"));
+    if (historyChanged) this.#redo.length = 0;
+    this.#emit({ cause: "dispatch", cells: [], structure: ["palette"], historyChanged });
     return index;
   }
 
@@ -1384,10 +1608,15 @@ export class MapStore {
   }
 
   #setCollection(op: SetCollectionOp): void {
-    const problem = collectionProblem(op.collection);
+    const existing = this.#doc.getCollection(op.collection.id);
+    const legacy = !!existing && (existing.rows ?? 0) > MAX_COLLECTION_ROWS;
+    const problem = collectionProblem(op.collection, legacy);
     if (problem) throw new Error(`setCollection: ${problem}`);
-    for (const c of op.collection.cells) this.#assertTile("setCollection", c.tilesetId, c.tileId);
     const normalized = normalizeCollection(op.collection);
+    if (existing && legacy && ((normalized.rows ?? 0) > (existing.rows ?? 0) || normalized.columns > existing.columns)) {
+      throw new Error("setCollection: legacy rows and columns cannot grow");
+    }
+    for (const c of op.collection.cells) this.#assertTile("setCollection", c.tilesetId, c.tileId);
     const before = this.#doc.collections;
     const index = before.findIndex((c) => c.id === normalized.id);
     if (index >= 0 && JSON.stringify(before[index]) === JSON.stringify(normalized)) return;
@@ -1485,6 +1714,7 @@ export class MapStore {
   #openOp(): OpContext {
     const local = this.#depth === 0;
     return {
+      pixelRects: [],
       rec: local ? new ChangeRecorder() : this.#pending!,
       local,
       dirty: new DirtyTracker(),
@@ -1504,8 +1734,8 @@ export class MapStore {
     }
     const cells = reportCells ? ctx.dirty.result() : [];
     const structure = STRUCTURE_ORDER.filter((s) => ctx.structure.has(s));
-    if (cells.length === 0 && structure.length === 0 && !historyChanged) return;
-    this.#emit({ cause: "dispatch", cells, structure, historyChanged });
+    if (cells.length === 0 && structure.length === 0 && ctx.pixelRects.length === 0 && !historyChanged) return;
+    this.#emit({ cause: "dispatch", cells, structure, pixelRects: ctx.pixelRects, historyChanged });
   }
 
   /** Replaces a tileset (metadata change) and records it. */
@@ -1569,6 +1799,26 @@ export class MapStore {
   #applyChange(change: HistoryChange, side: "before" | "after", result: ApplyResult): void {
     const doc = this.#doc;
     switch (change.kind) {
+      case "pixels": {
+        const patches = side === "before" ? [...change.patches].reverse() : change.patches;
+        for (const p of patches) {
+          this.#rasters._rect(p.assetId, p.tileId, p.x, p.y, p.width, p.height, p[side]);
+          result.pixelRects.push(dirtyPixelRect(p));
+        }
+        return;
+      }
+      case "rasterSlot": {
+        this.#rasters._slot(change[side], change.assetId, change.tileId, side === "before" ? change.beforeBytes : change.afterBytes);
+        result.pixelRects.push({ assetId: change.assetId, tileId: change.tileId, x: 0, y: 0, width: change.after.tileWidth, height: change.after.tileHeight });
+        return;
+      }
+      case "paletteAppend": {
+        // Legacy nonundoable additions can follow this step. Their stable
+        // indices must survive replay, so retain the allocation's slot too.
+        if (doc.palette.size <= change.after.length) doc.palette._restore(change[side]);
+        result.structure.add("palette");
+        return;
+      }
       case "cells": {
         const layer = doc.getLayer(change.layerId);
         if (!layer) throw new Error(`history: layer "${change.layerId}" is missing`);
@@ -1710,14 +1960,14 @@ export class MapStore {
   }
 
   /** Event fields for applied changes; dirty chunks of layers no longer in the document are dropped. */
-  #eventParts(result: ApplyResult): Pick<StoreChangeEvent, "cells" | "structure"> {
+  #eventParts(result: ApplyResult): Pick<StoreChangeEvent, "cells" | "structure" | "pixelRects"> {
     const cells = result.dirty.result().filter((d) => this.#doc.getLayer(d.layerId) !== undefined);
-    return { cells, structure: STRUCTURE_ORDER.filter((s) => result.structure.has(s)) };
+    return { cells, pixelRects: result.pixelRects, structure: STRUCTURE_ORDER.filter((s) => result.structure.has(s)) };
   }
 
-  #emit(change: Omit<StoreChangeEvent, "revision">): void {
-    if (change.cells.length > 0 || change.structure.length > 0) this.#revision++;
-    const event: StoreChangeEvent = Object.freeze({ revision: this.#revision, ...change });
+  #emit(change: Omit<StoreChangeEvent, "revision" | "pixelRects"> & { pixelRects?: readonly PixelDirtyRect[] }): void {
+    if (change.cells.length > 0 || change.structure.length > 0 || change.pixelRects?.length) this.#revision++;
+    const event: StoreChangeEvent = Object.freeze({ revision: this.#revision, ...change, pixelRects: Object.freeze((change.pixelRects ?? []).map(r => Object.freeze({ ...r }))) });
     let firstError: unknown = null;
     for (const listener of [...this.#listeners]) {
       try {
@@ -1728,4 +1978,21 @@ export class MapStore {
     }
     if (firstError !== null) throw firstError;
   }
+}
+
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean { return a.length === b.length && a.every((v, i) => v === b[i]); }
+function dirtyPixelRect(p: PixelDirtyRect): PixelDirtyRect {
+  return Object.freeze({ assetId: p.assetId, tileId: p.tileId, x: p.x, y: p.y, width: p.width, height: p.height });
+}
+function assertPixelRect(p: PixelDirtyRect, width: number, height: number): void {
+  if (![p.x,p.y,p.width,p.height].every(Number.isSafeInteger) || p.x < 0 || p.y < 0 || p.width < 1 || p.height < 1 || p.x + p.width > width || p.y + p.height > height) throw new RangeError('pixel rect outside tile bounds');
+}
+function cropPixels(data: Uint8Array, stride: number, p: PixelDirtyRect): Uint8Array {
+  const out = new Uint8Array(p.width * p.height * 4);
+  for (let row=0; row<p.height; row++) out.set(data.subarray(((p.y+row)*stride+p.x)*4, ((p.y+row)*stride+p.x+p.width)*4), row*p.width*4);
+  return out;
+}
+function ownedPixelPatch(p: PixelDirtyRect, before: Uint8Array, after: Uint8Array): PixelRectPatch {
+  const a = before.slice(), b = after.slice();
+  return Object.freeze({ ...dirtyPixelRect(p), get before() { return a.slice(); }, get after() { return b.slice(); } });
 }

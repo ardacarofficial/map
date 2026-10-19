@@ -1,3 +1,4 @@
+import type { PixelOp, EditedTileSlot, PixelRectPatch } from "./pixel/ops";
 /**
  * Operations: plain-data commands, the only way to change a document.
  * Send them with `MapStore.dispatch(op)`.
@@ -137,14 +138,17 @@ export interface AddLayerOp {
 }
 
 /**
- * Ensures a palette entry exists for (`tilesetId`, `tileId`) and returns its
- * index. Deduplicates. Not undoable (the palette is append-only so that cells
- * in undo history keep pointing at the right tile).
+ * Ensures a palette entry exists and returns its index. Deduplicates.
+ * Ordinary entries keep legacy append-only semantics by default; edited
+ * entries are journaled. `undoable: true` also journals a new source entry
+ * so compound transactions restore the exact palette on undo/rollback.
+ * Nonundoable growth clears redo that depends on journaled palette additions.
  */
 export interface AddPaletteEntryOp {
   readonly type: "addPaletteEntry";
   readonly tilesetId: string;
   readonly tileId: number;
+  readonly undoable?: true;
 }
 
 /**
@@ -395,6 +399,7 @@ export interface SetMapPropsOp {
 }
 
 export type Op =
+  | PixelOp
   | SetRandomSetOp
   | RemoveRandomSetOp
   | SetCollectionOp
@@ -426,6 +431,12 @@ export type OpType = Op["type"];
 
 /** What `dispatch` returns for each op type. */
 export interface OpResultMap {
+  setEditedTileset: void;
+  allocateEditedTile: EditedTileSlot;
+  editTilePixels: readonly PixelRectPatch[];
+  patchPixels: readonly PixelRectPatch[];
+  remapCells: LayerPatch;
+  loadRasterAsset: void;
   /** Cells the brush changed. */
   setRandomSet: void;
   removeRandomSet: void;
