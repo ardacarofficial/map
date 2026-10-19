@@ -8,6 +8,8 @@ for (const saved of [false,true]) {
     if (saved) await saveRoad(page);
     await page.keyboard.press("b");
     await dragRoad(page, [[4,4],[7,4]]);
+    // A press released during preparation commits when its source is ready.
+    await expect.poll(async () => (await roadCells(page)).cells.length).toBe(4);
     const result = await roadCells(page);
     expect(result.cells, "a four-cell, one-cell-high road; repeated 3×3 blocks are forbidden").toHaveLength(4);
     expect(result.generated).toHaveLength(1);

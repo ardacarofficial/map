@@ -29,6 +29,19 @@ let cacheStore: MapStore | undefined;
 const cache = new Map<string, BrushRecord>();
 const preferences = new Map<string, boolean>();
 
+/** Deterministic async gate and timings, exposed only by the debug canvas hook. */
+export const smartBrushPreparationDebug = import.meta.env.DEV || import.meta.env.VITE_SMAP_DEBUG === "1" ? {
+  gate: null as Promise<boolean> | null,
+  finish: null as ((fail: boolean) => void) | null,
+  durations: [] as number[],
+  pending: 0,
+  hold() {
+    this.release();
+    this.gate = new Promise(resolve => { this.finish = resolve; });
+  },
+  release(fail = false) { this.finish?.(fail); this.finish = null; this.gate = null; },
+} : null;
+
 export function autoBrush(clip: TileClip | null): BrushRecord | undefined { return clip ? records.get(clip) : undefined; }
 export function brushCandidate(clip = useEditorStore.getState().stamp): boolean { return !!autoBrush(clip) || !!(clip as Stamp | null)?.nineSlice; }
 export function preparedBrush(clip: TileClip | null): Stamp | null { return autoBrush(clip)?.prepared?.stamp ?? null; }
@@ -46,6 +59,7 @@ function signal(record: BrushRecord): void {
 
 /** Inspect the original selection before the panel's empty-cell filtering can shrink its bounds. */
 export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], emptyIds: ReadonlySet<number>, clip: TileClip): void {
+  const started = performance.now();
   const store = useEditorStore.getState().project?.store, image = getTilesetImage(tileset.id);
   if (!store || !image || ids.length === 0) return;
   let col = Infinity, row = Infinity, right = 0, bottom = 0;
@@ -78,11 +92,17 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   const targets = hit?.targets;
   const record: BrushRecord = { key, store, tileset, ids: [...ids], emptyIds, image, source, ...(targets ? { targets } : {}), pending: Promise.resolve(), failed: false, published: false };
   records.set(clip, record); cache.set(key, record);
-  record.pending = runPreparation(record, source, targets);
+  record.pending = runPreparation(record, source, targets, started);
 }
-function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMap<string, string>): Promise<void> {
+function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMap<string, string>, started = performance.now()): Promise<void> {
   const { store, image, tileset } = record;
-  return prepareSmartStamp(source, undefined, targets).then(prepared => {
+  const gate = smartBrushPreparationDebug?.gate;
+  if (smartBrushPreparationDebug) smartBrushPreparationDebug.pending++;
+  const prepare = async () => {
+    if (gate && await gate) throw new Error("PNG encoding failed (debug)");
+    return prepareSmartStamp(source, undefined, targets);
+  };
+  return prepare().then(prepared => {
     if (getTilesetImage(tileset.id) !== image || useEditorStore.getState().project?.store !== store) {
       for (const asset of prepared.assets) asset.image.bitmap.close();
       record.failed = true;
@@ -97,6 +117,9 @@ function runPreparation(record: BrushRecord, source: Stamp, targets?: ReadonlyMa
     if (getTilesetImage(tileset.id) !== image || useEditorStore.getState().project?.store !== store) return;
     signal(record);
     toast.error(t("smartStamp.failed", { detail: String(error) }));
+  }).finally(() => {
+    if (smartBrushPreparationDebug) smartBrushPreparationDebug.pending--;
+    if (!gate) smartBrushPreparationDebug?.durations.push(performance.now() - started);
   });
 }
 export async function waitForSelectionBrush(clip: TileClip): Promise<PreparedSmartStamp | undefined> {

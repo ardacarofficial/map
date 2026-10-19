@@ -401,7 +401,8 @@ export class PointerInput {
       tools.cancel();
       return;
     }
-    if (this.#pan || tools.gesture) return;
+    const gesture = tools.gesture;
+    if (this.#pan || (gesture && !(gesture.kind === "pendingSmart" && gesture.released))) return;
     if (e.button === 1 || (e.button === 0 && (this.#spaceDown || this.#handTool()))) {
       this.#startPan(e);
       return;
@@ -468,6 +469,9 @@ export class PointerInput {
     if (this.#host.world()?.busy) this.#host.world()?.cancel();
     const g = this.#host.tools.gesture;
     if (g && e.pointerId === g.pointerId) {
+      // Pointerup releases capture automatically; the completed buffer still awaits readiness.
+      if (g.kind === "pendingSmart" && g.released && e.type === "lostpointercapture") return;
+      if (g.kind === "pendingSmart") { this.#host.tools.cancel(); return; }
       if (g.kind === "smart" && e.type === "pointercancel") this.#host.tools.cancel();
       else this.#host.tools.end();
     }
