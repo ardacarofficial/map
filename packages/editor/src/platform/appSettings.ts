@@ -1,3 +1,4 @@
+import { pixelColorSettings, usePixelColors } from "../state/pixelColors";
 /**
  * Applies the settings file (language + shortcut overrides) and keeps the UI
  * in step with it. The React root subscribes to `revision`, so a language or
@@ -12,7 +13,7 @@ import { getLocale, isAvailableLocale, setLocale, subscribeLocale, t, type Local
 import { setShortcutOverrides, SHORTCUTS } from "../shortcuts/shortcuts";
 import { toast } from "../ui/toast/toastStore";
 import { getPlatform } from "./index";
-import { defaultSettingsText, parseSettings, withLocale, type SettingsProblem } from "./settings";
+import { defaultSettingsText, formatSettings, parseSettings, withLocale, type SettingsProblem } from "./settings";
 
 interface AppSettingsState {
   locale: Locale;
@@ -69,6 +70,7 @@ subscribeLocale(bump);
 export function applySettingsText(text: string, applyLayout = true): SettingsProblem[] {
   appliedText = text;
   const { settings, problems } = parseSettings(text, SHORTCUTS, getLocale());
+  if (settings.pixelColors) { applyingPixelColors = true; usePixelColors.setState(settings.pixelColors); applyingPixelColors = false; }
   if (applyLayout && settings.layout) useDockStore.getState().applyExternal(settings.layout);
   const previousLocale = getLocale();
   setShortcutOverrides(settings.shortcuts);
@@ -166,6 +168,8 @@ export function installSettingsReload(): () => void {
 
 // Docking writes share the locale/dialog queue. Rapid resize/drop commits are
 // coalesced, and each merge preserves fields edited by another settings writer.
+let applyingPixelColors = false;
+let pixelColorsTimer: ReturnType<typeof setTimeout> | undefined;
 const settingsWrites = new SettingsWriteQueue(
   () => getPlatform().readSettings(),
   async text => { await getPlatform().writeSettings(text); appliedText = text; },
@@ -202,6 +206,15 @@ export async function loadAppSettings(): Promise<void> {
   const revision = useDockStore.getState().revision;
   try { await readAppSettings(); }
   finally {
+    usePixelColors.subscribe(() => {
+      if (applyingPixelColors) return;
+      clearTimeout(pixelColorsTimer);
+      pixelColorsTimer = setTimeout(() => {
+        void settingsWrites.update(raw => {
+          try { const record: unknown = JSON.parse(raw ?? defaultSettingsText(SHORTCUTS, getLocale())); if (!record || typeof record !== "object" || Array.isArray(record)) return null; return formatSettings({ ...record, pixelColors: pixelColorSettings() }); } catch { return null; }
+        }).catch(error => getPlatform().log("warn", `pixel colours: ${String(error)}`));
+      }, 100);
+    });
     onLayoutCommit(layout => { void storeLayout(layout); });
     if (useDockStore.getState().revision !== revision) void storeLayout(useDockStore.getState().layout);
   }

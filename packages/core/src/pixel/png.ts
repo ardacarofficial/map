@@ -1,4 +1,4 @@
-import { canonicalRgba } from './assets';
+import { assertRasterSize, canonicalRgba } from './assets';
 
 function u32(n: number): number[] { return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]; }
 function crc32(bytes: Uint8Array): number {
@@ -39,11 +39,48 @@ export function encodeRgbaPng(width: number, height: number, rgba: Uint8Array): 
   return out;
 }
 
+// Preparation and live dispatch often hash the exact same small atlas. Cache
+// owned canonical snapshots, with byte equality (no fingerprint collisions).
+// Large atlases are never retained here; total cache storage is at most 1 MiB.
+const HASH_CACHE_BYTES = 1024 * 1024;
+const hashCache: { width: number; height: number; pixels: Uint8Array; fingerprint: number; hash: string }[] = [];
+let hashCacheBytes = 0;
+function pixelFingerprint(rgba: Uint8Array): number {
+  let hash = 2166136261;
+  for (let p = 0; p < rgba.length; p += 4) {
+    const a = rgba[p + 3]!, word = a ? (rgba[p]! | (rgba[p + 1]! << 8) | (rgba[p + 2]! << 16) | (a << 24)) : 0;
+    hash = Math.imul(hash ^ word, 16777619);
+  }
+  return hash >>> 0;
+}
+function cachedHash(width: number, height: number, rgba: Uint8Array, fingerprint: number): string | undefined {
+  for (let n = 0; n < hashCache.length; n++) {
+    const entry = hashCache[n]!;
+    if (entry.width !== width || entry.height !== height || entry.fingerprint !== fingerprint) continue;
+    let equal = true;
+    for (let p = 0; p < rgba.length; p += 4) {
+      const a = rgba[p + 3]!;
+      if (a !== entry.pixels[p + 3] || (a !== 0 && (rgba[p] !== entry.pixels[p] || rgba[p + 1] !== entry.pixels[p + 1] || rgba[p + 2] !== entry.pixels[p + 2]))) { equal = false; break; }
+    }
+    if (equal) { hashCache.splice(n, 1); hashCache.unshift(entry); return entry.hash; }
+  }
+  return undefined;
+}
 /** SHA-256 of big-endian width/height then canonical tight RGBA8. Pure and byte-stable across runtimes. */
 export function rasterContentHash(width: number, height: number, rgba: Uint8Array): string {
+  assertRasterSize(width, height);
+  if (!(rgba instanceof Uint8Array) || rgba.length !== width * height * 4) throw new RangeError('incorrect RGBA8 byte length');
+  const fingerprint = rgba.length <= HASH_CACHE_BYTES ? pixelFingerprint(rgba) : 0;
+  const hit = rgba.length <= HASH_CACHE_BYTES ? cachedHash(width, height, rgba, fingerprint) : undefined;
+  if (hit) return hit;
   const pixels = canonicalRgba(width, height, rgba);
   const bytes = new Uint8Array(8 + pixels.length); bytes.set(u32(width)); bytes.set(u32(height), 4); bytes.set(pixels, 8);
-  return sha256(bytes);
+  const hash = sha256(bytes);
+  if (pixels.length <= HASH_CACHE_BYTES) {
+    hashCache.unshift({ width, height, pixels, fingerprint, hash }); hashCacheBytes += pixels.length;
+    while (hashCacheBytes > HASH_CACHE_BYTES || hashCache.length > 8) hashCacheBytes -= hashCache.pop()!.pixels.length;
+  }
+  return hash;
 }
 const K = new Uint32Array([
   0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,

@@ -1,5 +1,5 @@
 import { tilesetPixels } from "./tilesetPixels";
-import type { Tileset } from "@smap/core";
+import type { PixelDirtyRect, Tileset } from "@smap/core";
 import { pngHash } from "./pngHash";
 import type { PngBytes } from "../io/fileData";
 /**
@@ -9,16 +9,18 @@ import type { PngBytes } from "../io/fileData";
  * not serializable.
  */
 
+export type TilesetBitmap = ImageBitmap | (HTMLCanvasElement & { close(): void });
+
 export interface TilesetImage {
   tilesetId: string;
-  bitmap: ImageBitmap;
+  bitmap: TilesetBitmap;
   /** Original PNG bytes, or undefined until a generated image is saved/exported. */
   bytes: Uint8Array | undefined;
 }
 
 const encoders = new WeakMap<TilesetImage, () => Promise<Uint8Array>>();
 const encoding = new WeakMap<TilesetImage, Promise<Uint8Array>>();
-export function deferredTilesetImage(tilesetId: string, bitmap: ImageBitmap, encode: () => Promise<Uint8Array>): TilesetImage {
+export function deferredTilesetImage(tilesetId: string, bitmap: TilesetBitmap, encode: () => Promise<Uint8Array>): TilesetImage {
   const image: TilesetImage = { tilesetId, bitmap, bytes: undefined };
   encoders.set(image, encode); return image;
 }
@@ -47,7 +49,7 @@ const retired = new WeakSet<TilesetImage>();
 const closed = new WeakSet<TilesetImage>();
 function closeImage(image: TilesetImage): void {
   if (closed.has(image) || leases.get(image)) return;
-  closed.add(image); image.bitmap.close();
+  closed.add(image); if ("close" in image.bitmap) image.bitmap.close();
 }
 export function retainTilesetImage(image: TilesetImage): () => void {
   leases.set(image, (leases.get(image) ?? 0) + 1);
@@ -76,7 +78,7 @@ export function sourceVersionMatches(id:string, version:SourceVersion, tileset:T
  const current=tilesetSourceVersion(tileset,image);return current.content===version.content&&current.grid===version.grid;
 }
 
-type Listener = (tilesetId: string) => void;
+type Listener = (tilesetId: string, pixelRects?: readonly PixelDirtyRect[]) => void;
 
 const images = new Map<string, TilesetImage>();
 const listeners = new Set<Listener>();
@@ -89,15 +91,15 @@ export function allTilesetImages(): IterableIterator<TilesetImage> {
   return images.values();
 }
 
-export function setTilesetImage(image: TilesetImage): void {
+export function setTilesetImage(image: TilesetImage, pixelRects?: readonly PixelDirtyRect[]): void {
   const previous=images.get(image.tilesetId);
   if(previous === image)return;
-  imageContentVersion(image);
+  if (!pixelRects) imageContentVersion(image);
   if(previous){retired.add(previous);closeImage(previous);}
   images.set(image.tilesetId, image);
   // Start provenance hashing alongside image publication, before a user picks a smart source.
   if (image.bytes) void pngHash(image.bytes).catch(() => {});
-  for (const l of listeners) l(image.tilesetId);
+  for (const l of listeners) l(image.tilesetId, pixelRects);
 }
 
 export function clearTilesetImages(): void {

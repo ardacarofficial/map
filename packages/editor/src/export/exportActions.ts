@@ -334,6 +334,7 @@ export function previewZipFiles(project: OpenProject) {
     levelPath: project.levelPath,
     tilesetBytes,
     levels: library.levels,
+    colorPalettes: library.colorPalettes,
     stamps: library.stamps,
     otherLevels: others,
     ...(ws ? { retiredLevelIds: ws.retiredLevelIds } : {}),

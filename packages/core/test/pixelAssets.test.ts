@@ -360,3 +360,17 @@ it('canonicalization owns bytes even when the input slice method shares memory',
   source.fill(0);
   expect([...actual]).toEqual([0,0,0,0,1,2,3,255]);
 });
+
+it('cached raster hashes own canonical bytes and match SHA-256 after mutation and eviction', () => {
+  const oracle = (width: number, height: number, pixels: Uint8Array) => {
+    const geometry = new Uint8Array(8), view = new DataView(geometry.buffer); view.setUint32(0, width); view.setUint32(4, height);
+    return createHash('sha256').update(new Uint8Array([...geometry, ...canonicalRgba(width, height, pixels)])).digest('hex');
+  };
+  const pixels = new Uint8Array(32 * 32 * 4).fill(255), first = rasterContentHash(32, 32, pixels);
+  expect(first).toBe(oracle(32, 32, pixels));
+  pixels[0] = 9; expect(rasterContentHash(32, 32, pixels)).toBe(oracle(32, 32, pixels));
+  pixels[0] = 255; expect(rasterContentHash(32, 32, pixels)).toBe(first);
+  pixels.set([99, 88, 77, 0]); const zero = rasterContentHash(32, 32, pixels); pixels.set([1, 2, 3, 0]); expect(rasterContentHash(32, 32, pixels)).toBe(zero);
+  for (let n = 1; n < 20; n++) { const data = new Uint8Array(16 * n * 4).fill(n); expect(rasterContentHash(16, n, data)).toBe(oracle(16, n, data)); }
+  expect(rasterContentHash(32, 32, pixels)).toBe(oracle(32, 32, pixels));
+});

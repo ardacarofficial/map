@@ -1,3 +1,4 @@
+import { installPixelAssets } from "./pixelAssetIo";
 import type { GeneratedRecipe } from "./smartStampRecipes";
 
 import {
@@ -61,6 +62,9 @@ export interface SavedLevel {
 }
 
 export interface SaveLevelsInput {
+  /** Save As: caller preloads every map, including clean ones. */
+  allLevels?: boolean;
+  colorPalettes?: SaveProjectInput["colorPalettes"];
   tilesetBytes: SaveProjectInput["tilesetBytes"];
   stamps?: readonly Stamp[];
   generatedRecipes?: readonly GeneratedRecipe[];
@@ -158,6 +162,7 @@ export class LevelWorkspace {
   #cache(entry: LevelEntry): void {
     this.#entries.set(entry.id, entry);
     this.history.register(entry.id, entry.store);
+    installPixelAssets(entry.store);
     entry.store.subscribe(event => {
       if (event.cells.length || event.structure.length || event.pixelRects.length) this.markDirty(entry.id);
     });
@@ -517,7 +522,7 @@ export class LevelWorkspace {
   async save(fs: ProjectFileSystem, input: SaveLevelsInput): Promise<SavedLevel[]> {
     const active = this.active;
     const activeLevel = this.activeLevel;
-    const entries = this.#toWrite();
+    const entries = input.allLevels ? this.#levels.map(level => this.#entries.get(level.id)!).filter(Boolean) : this.#toWrite();
     const revisions = new Map(entries.map((e) => [e, e.store.revision]));
     const paths = new Map(entries.map((e) => [e, this.level(e.id)!.path]));
     const removed = [...this.#removedFiles];
@@ -530,6 +535,7 @@ export class LevelWorkspace {
       otherLevels: entries.filter((e) => e !== active).map((e) => ({ path: paths.get(e)!, document: e.store.document })),
       removeFiles: removed,
       tilesetBytes: input.tilesetBytes,
+      ...(input.colorPalettes ? { colorPalettes: input.colorPalettes } : {}),
       ...(input.stamps ? { stamps: input.stamps } : {}),
       ...(input.generatedRecipes ? { generatedRecipes: input.generatedRecipes } : {}),
       ...(input.keepStampFiles ? { keepStampFiles: input.keepStampFiles } : {}),

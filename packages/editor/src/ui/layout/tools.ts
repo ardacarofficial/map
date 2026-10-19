@@ -17,3 +17,5 @@ export const TOOLS: readonly { id: ToolId; icon: IconName; command: CommandId; g
 export function toolIcon(id: ToolId): IconName {
   return TOOLS.find((tool) => tool.id === id)?.icon ?? "pencil";
 }
+
+export const PIXEL_TOOLS: typeof TOOLS = [...TOOLS.filter(t => t.id !== "entity" && t.id !== "rect"), { id: "line", icon: "pencil", command: "tool.line" }, { id: "rect", icon: "square", command: "tool.rect" }];

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
 import { createDocument, MapStore, RasterAssets, serializeLevel } from '../../src';
 import { WorldHistory } from '../../src/pixel/worldHistory';
@@ -174,4 +174,15 @@ describe('compound world pixel plans', () => {
     expect(peer.rasterAssets.getTile(unrelated.assetId, 0)!.data).toEqual(pixels(9));
   });
 
+});
+
+it('prepares raster-only edits without enumerating unrelated map layers/chunks', () => {
+  const { maps, history } = setup(), origin = maps[0]!;
+  const slot = origin.store.dispatch({ type: 'allocateEditedTile', tileWidth: 1, tileHeight: 1, pixels: pixels(4) });
+  history.reset();
+  const layers = vi.spyOn(origin.store.document, 'layers', 'get');
+  const plan = prepareWorldEdit(origin.mapId, [{ mapId: origin.mapId, store: origin.store, operations: [{ type: 'editTilePixels', assetId: slot.assetId, tileId: 0, x: 0, y: 0, width: 1, height: 1, after: pixels(9) }] }]);
+  expect(layers).not.toHaveBeenCalled(); layers.mockRestore();
+  applyWorldEdit(history, plan); expect(origin.store.rasterAssets.getTile(slot.assetId, 0)!.data).toEqual(pixels(9));
+  history.undo(); expect(origin.store.rasterAssets.getTile(slot.assetId, 0)!.data).toEqual(pixels(4));
 });

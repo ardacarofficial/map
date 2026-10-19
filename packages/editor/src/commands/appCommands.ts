@@ -1,3 +1,5 @@
+import { usePixelUi } from "../state/pixelUi";
+import { registerPixelCommands } from "./pixelCommands";
 /** Every command of the app, registered once at startup. */
 import { canMoveHistory, moveHistory } from "../io/worldHistoryCommands";
 import {
@@ -64,9 +66,9 @@ const ctx = (): EditContext => contextOf(editor());
 const when = (predicate: (c: EditContext) => boolean) => () => !isWorldView() && predicate(ctx());
 const tool = (id: ToolId): Command => ({
   id: `tool.${id}`,
-  title: `commands.tool.${id}`,
+  title: id === "line" ? "pixel.line" : `commands.tool.${id}`,
   category: "tool",
-  enabled: () => hasProject() && !isWorldView(),
+  enabled: () => hasProject() && !isWorldView() && (usePixelUi.getState().mode === "tile" || id !== "entity"),
   run: () => editor().setTool(id),
 });
 
@@ -494,6 +496,7 @@ const COMMANDS: Command[] = [
 let registered = false;
 
 export function registerAppCommands(): void {
+  registerPixelCommands();
   if (registered) return;
   registered = true;
   registerCommands(COMMANDS);

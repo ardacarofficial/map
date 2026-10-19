@@ -1,3 +1,4 @@
+import { usePixelUi } from "../../state/pixelUi";
 import { cellPaletteIndex, isTileLayer } from "@smap/core";
 import { useCallback, useSyncExternalStore, type ReactNode } from "react";
 
@@ -49,6 +50,7 @@ function CanvasViewChoice() {
 
 /** Facts at left, canvas view and the editor's single zoom field at right. */
 export function StatusBar() {
+  const pixel = usePixelUi(s => s.mode === "pixel" ? s.hover : null);
   const project = useEditorStore((s) => s.project);
   const hover = useEditorStore((s) => s.hoverCell);
   const activeLayerId = useEditorStore((s) => s.activeLayerId);
@@ -61,6 +63,7 @@ export function StatusBar() {
   return (
     <footer aria-label={t("layout.statusBar")} data-status-bar className="flex h-statusbar shrink-0 items-center border-t border-line bg-bg text-xs text-muted [&>*+*]:border-l [&>*+*]:border-line-subtle">
       {world ? <Cell data="world"><span>{t("world.status")}</span><span className="text-faint">·</span><span className="tabular">{t("world.levelCount", { count: levelCount })}</span></Cell> : <>
+        {pixel && <Cell data="pixel" className="font-mono tabular">{t("pixel.coordinates", pixel)}</Cell>}
         <Cell data="cell" className="gap-3 font-mono tabular"><span className="flex gap-1"><span className="text-faint">{t("status.x")}</span><span className="text-text">{hover?.x ?? t("status.noCell")}</span></span><span className="flex gap-1"><span className="text-faint">{t("status.y")}</span><span className="text-text">{hover?.y ?? t("status.noCell")}</span></span></Cell>
         {tileId !== null && <Cell data="tile-id" className={`font-mono tabular ${tileId === "empty" ? "text-faint" : ""}`}>{tileId === "empty" ? t("status.noCell") : t("status.tileId", { id: tileId })}</Cell>}
         {layer && <Cell data="layer"><span className="max-w-50 truncate">{t("status.layerName", { name: layer.name })}</span></Cell>}

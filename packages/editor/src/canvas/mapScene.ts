@@ -1,4 +1,7 @@
-import { chunkKey, type SmartStampPlan, type Tileset } from "@smap/core";
+import { placedPixelSize } from "@smap/core";
+import { quadUvs } from "./rotation";
+import type { PixelOwner } from "./pixelEditing";
+import { chunkKey, type PixelDirtyRect, type SmartStampPlan, type Tileset } from "@smap/core";
 import { TilePreview } from "./preview";
 /**
  * Tile layers of one MapStore as Pixi display objects.
@@ -25,7 +28,7 @@ import {
   type StoreChangeEvent,
   type TileLayer,
 } from "@smap/core";
-import { Container, Graphics, Mesh, MeshGeometry, type Texture } from "pixi.js";
+import { CanvasSource, Container, Graphics, Mesh, MeshGeometry, Texture } from "pixi.js";
 
 import { buildChunkQuads, type QuadSource } from "./chunkGeometry";
 import { CANVAS_COLORS } from "./colors";
@@ -64,12 +67,19 @@ const PREBUILD_MARGIN = 2;
 export type ImageLookup = (tilesetId: string) => CanvasImageSource | undefined;
 
 export class MapScene {
+  /** CPU backing-page footprint; actual GPU transfer counters live in pixelUpload.ts. */
+  readonly metrics = { pageBytesTouched: 0, geometryBuilds: 0 };
   /** World-space root: map background + layers. Add it to the camera container. */
   readonly root = new Container();
   readonly store: MapStore;
   readonly #layers = new Container();
   readonly #background = new Graphics();
+  #nativeExtent = 0;
   readonly #backgroundColor: number;
+  readonly #pixelDirect = new Map<string, PixelDirtyRect>();
+  readonly #pixelPreviews = new Map<string, { canvas: HTMLCanvasElement; mesh: Mesh; texture: Texture }>();
+  #pixelLayer: string | null = null;
+  readonly #pixelMasks = new Set<string>();
   readonly #smartMasks = new Map<string, Set<string>>();
   readonly #smartPreviews: TilePreview[] = [];
   #smartKey: string | null = null;
@@ -98,13 +108,20 @@ export class MapScene {
     this.#onChange = onChange;
     this.root.addChild(this.#background, this.#layers);
     this.#drawBackground();
+    this.#syncNativeExtent();
     for (const ts of store.document.tilesets) this.#ensureAtlas(ts.id);
     this.#syncLayers();
     this.#unsubscribe = store.subscribe((e) => this.#handle(e));
   }
 
   /** Builds (or rebuilds) the atlas of `tilesetId` from its image and marks dependent chunks dirty. */
-  imageChanged(tilesetId: string): void {
+  imageChanged(tilesetId: string, pixelRects?: readonly PixelDirtyRect[]): void {
+    const ts = this.store.document.getTileset(tilesetId), entry = this.#atlases.get(tilesetId), image = this.#images(tilesetId);
+    if (pixelRects && ts?.edited && entry && image) {
+      this.metrics.pageBytesTouched += entry.atlas.updateTiles(pixelRects, ts, image);
+      entry.atlas.pages.forEach((texture, i) => this.#groupTextures.set(entry.groupBase + i, texture));
+      this.#onChange(); return;
+    }
     const staged = this.#stagedTilesets.get(tilesetId);
     if (!this.store.document.getTileset(tilesetId) && !staged) return;
     this.#buildAtlas(tilesetId, staged);
@@ -131,7 +148,8 @@ export class MapScene {
   quadSource(tilesetId: string, tileId: number): QuadSource | undefined {
     const a = this.#atlases.get(tilesetId);
     const uv = a?.atlas.uv(tileId);
-    return a && uv ? { group: a.groupBase + uv.page, u0: uv.u0, v0: uv.v0, u1: uv.u1, v1: uv.v1 } : undefined;
+    const ts = this.store.document.getTileset(tilesetId) ?? this.#stagedTilesets.get(tilesetId);
+    return a && uv ? { ...(ts ? { width: ts.tileWidth, height: ts.tileHeight } : {}), group: a.groupBase + uv.page, u0: uv.u0, v0: uv.v0, u1: uv.u1, v1: uv.v1 } : undefined;
   }
 
   /** Texture of a quad group (atlas page) from {@link quadSource}. */
@@ -223,6 +241,9 @@ export class MapScene {
 
   /** Syncs layer visibility/opacity and hides chunks outside the visible cell range. */
   updateVisibility(x0: number, y0: number, x1: number, y1: number): void {
+    const map = this.store.document.map;
+    x0 -= Math.ceil(Math.max(0, this.#nativeExtent - map.tileWidth) / map.tileWidth);
+    y1 += Math.ceil(Math.max(0, this.#nativeExtent - map.tileHeight) / map.tileHeight);
     const cx0 = Math.floor(x0 / CHUNK_SIZE);
     const cy0 = Math.floor(y0 / CHUNK_SIZE);
     const cx1 = Math.floor((x1 - 1) / CHUNK_SIZE);
@@ -274,7 +295,52 @@ export class MapScene {
     }
   }
 
+  /** One retained native tile canvas per stroke owner; existing slots update in place. */
+  setPixelPreview(layerId: string, owners: readonly PixelOwner[], restoreDirect = true): void {
+    if (this.#pixelLayer && this.#pixelLayer !== layerId) this.setPixelPreview(this.#pixelLayer, []);
+    this.#pixelLayer = owners.length ? layerId : null;
+    const directKeys = new Set(owners.filter(o => o.previewAsset).map(o => `${o.cellX},${o.cellY}`));
+    for (const [key, ref] of this.#pixelDirect) if (!directKeys.has(key)) {
+      const ts = this.store.document.getTileset(ref.assetId), image = this.#images(ref.assetId);
+      if (restoreDirect && ts && image) this.metrics.pageBytesTouched += this.#atlases.get(ref.assetId)?.atlas.updateTiles([ref], ts, image) ?? 0;
+      this.#pixelDirect.delete(key);
+    }
+    for (const o of owners) if (o.previewAsset) {
+      const key = `${o.cellX},${o.cellY}`, old = this.#pixelDirect.get(key), rect = o.previewRect ?? { x: 0, y: 0, width: o.width, height: o.height };
+      const x = Math.min(old?.x ?? rect.x, rect.x), y = Math.min(old?.y ?? rect.y, rect.y);
+      const dirty = { x, y, width: Math.max(old ? old.x + old.width : 0, rect.x + rect.width) - x, height: Math.max(old ? old.y + old.height : 0, rect.y + rect.height) - y };
+      this.metrics.pageBytesTouched += this.#atlases.get(o.previewAsset.assetId)?.atlas.previewTile(o.previewAsset.tileId, o.data, dirty) ?? 0;
+      this.#pixelDirect.set(key, { ...o.previewAsset, ...dirty });
+    }
+    owners = owners.filter(o => !o.previewAsset);
+    const keys = new Set(owners.map(o => `${o.cellX},${o.cellY}`));
+    for (const [key, p] of this.#pixelPreviews) if (!keys.has(key)) {
+      const [x, y] = key.split(",").map(Number) as [number, number];
+      p.mesh.removeFromParent(); p.mesh.geometry.destroy(); p.mesh.destroy(); p.texture.destroy(true);
+      this.#pixelPreviews.delete(key); this.#pixelMasks.delete(key); this.#markDirty(layerId, chunkKey(x >> 5, y >> 5));
+    }
+    const parent = this.#views.get(layerId)?.container;
+    if (!parent) return;
+    for (const o of owners) {
+      const key = `${o.cellX},${o.cellY}`;
+      let p = this.#pixelPreviews.get(key);
+      if (!p) {
+        const canvas = document.createElement("canvas"); canvas.width = o.width; canvas.height = o.height;
+        const texture = new Texture({ source: new CanvasSource({ resource: canvas, scaleMode: "nearest", autoGenerateMipmaps: false }) });
+        const extent = placedPixelSize(o.width, o.height, o.flags), x = o.x, y = o.y;
+        const geometry = new MeshGeometry({ positions: new Float32Array([x, y, x + extent.width, y, x + extent.width, y + extent.height, x, y + extent.height]), uvs: new Float32Array(quadUvs({ u0: 0, v0: 0, u1: 1, v1: 1 }, o.flags)), indices: new Uint32Array([0, 1, 2, 0, 2, 3]) });
+        const mesh = new Mesh({ geometry, texture }); parent.addChild(mesh);
+        p = { canvas, texture, mesh }; this.#pixelPreviews.set(key, p); this.#pixelMasks.add(key);
+        this.#markDirty(layerId, chunkKey(o.cellX >> 5, o.cellY >> 5));
+      }
+      p.canvas.getContext("2d", { willReadFrequently: true })!.putImageData(new ImageData(new Uint8ClampedArray(o.data), o.width, o.height), 0, 0);
+      p.texture.source.update();
+    }
+    // The pointer controller owns scheduling; a preview flushed in a frame needs no extra frame.
+  }
+
   destroy(): void {
+    if (this.#pixelLayer) this.setPixelPreview(this.#pixelLayer, []);
     this.setSmartPreview(null, null);
     this.#unsubscribe();
     for (const view of this.#views.values()) for (const c of view.chunks.values()) destroyChunkView(c);
@@ -296,7 +362,9 @@ export class MapScene {
       for (const k of chunks) set.add(k);
       changed = true;
     }
+    if (e.structure.includes("palette")) this.#resolved = [];
     if (e.structure.includes("tilesets")) {
+      this.#syncNativeExtent();
       for (const ts of this.store.document.tilesets) this.#ensureAtlas(ts.id);
       changed = true;
     }
@@ -312,6 +380,10 @@ export class MapScene {
     // "palette": append-only, existing indices keep their meaning → nothing to rebuild.
     // Layer visibility/opacity are read every frame, so any structural change just re-renders.
     if (changed || e.structure.length > 0) this.#onChange();
+  }
+
+  #syncNativeExtent(): void {
+    this.#nativeExtent = this.store.document.tilesets.reduce((max, ts) => Math.max(max, ts.tileWidth, ts.tileHeight), 0);
   }
 
   #drawBackground(): void {
@@ -363,7 +435,7 @@ export class MapScene {
     }
     const old = this.#atlases.get(tilesetId);
     const groupBase = this.#nextGroup;
-    this.#nextGroup += atlas.pages.length;
+    this.#nextGroup += atlas.layout.pages.length;
     atlas.pages.forEach((tex, i) => this.#groupTextures.set(groupBase + i, tex));
     this.#atlases.set(tilesetId, { atlas, groupBase });
     this.#resolved = [];
@@ -419,7 +491,8 @@ export class MapScene {
     if (cached !== undefined) return cached ?? undefined;
     const a = this.#atlases.get(entry.tilesetId);
     const uv = a?.atlas.uv(entry.tileId);
-    const src = a && uv ? { group: a.groupBase + uv.page, u0: uv.u0, v0: uv.v0, u1: uv.u1, v1: uv.v1 } : null;
+    const ts = this.store.document.getTileset(entry.tilesetId);
+    const src = a && uv ? { ...(ts ? { width: ts.tileWidth, height: ts.tileHeight } : {}), group: a.groupBase + uv.page, u0: uv.u0, v0: uv.v0, u1: uv.u1, v1: uv.v1 } : null;
     this.#resolved[paletteIndex] = src;
     return src ?? undefined;
   }
@@ -439,10 +512,12 @@ export class MapScene {
     const { cx, cy } = parseChunkKey(key);
     const mask = this.#smartMasks.get(layer.id);
     let data = chunk.data;
-    if (mask?.size) {
+    const pixelMask = this.#pixelLayer === layer.id ? this.#pixelMasks : undefined;
+    if (mask?.size || pixelMask?.size) {
       data = new Uint32Array(chunk.data);
-      for (const cell of mask) { const [x, y] = cell.split(",").map(Number) as [number, number]; if ((x >> 5) === cx && (y >> 5) === cy) data[(y & 31) * 32 + (x & 31)] = 0; }
+      for (const cell of [...(mask ?? []), ...(pixelMask ?? [])]) { const [x, y] = cell.split(",").map(Number) as [number, number]; if ((x >> 5) === cx && (y >> 5) === cy) data[(y & 31) * 32 + (x & 31)] = 0; }
     }
+    this.metrics.geometryBuilds++;
     const batches = buildChunkQuads(data, tileWidth, tileHeight, (i) => this.#resolve(i, used));
     const container = new Container({ x: cx * CHUNK_SIZE * tileWidth, y: cy * CHUNK_SIZE * tileHeight });
     for (const b of batches) {

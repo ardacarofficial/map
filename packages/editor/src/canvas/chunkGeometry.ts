@@ -8,6 +8,8 @@ import { quadUvs } from "./rotation";
 
 /** Where a palette index is drawn from. `group` identifies the texture (atlas page). */
 export interface QuadSource {
+  readonly width?: number;
+  readonly height?: number;
   readonly group: number;
   readonly u0: number;
   readonly v0: number;
@@ -79,10 +81,13 @@ export function buildChunkQuads(
     const cell = data[i]! >>> 0;
     const lx = i & (CHUNK_SIZE - 1);
     const ly = i >> CHUNK_SHIFT;
+    const diagonal = (cell & 0x20000000) !== 0;
+    const width = diagonal ? src.height ?? tileW : src.width ?? tileW;
+    const height = diagonal ? src.width ?? tileH : src.height ?? tileH;
     const x0 = lx * tileW;
-    const y0 = ly * tileH;
-    const x1 = x0 + tileW;
-    const y1 = y0 + tileH;
+    const y0 = (ly + 1) * tileH - height;
+    const x1 = x0 + width;
+    const y1 = y0 + height;
     const q = b.filled++;
     const p = q * 8;
     const pos = b.positions;
@@ -135,9 +140,12 @@ export function buildCellQuads(cells: readonly CellQuad[], tileW: number, tileH:
     for (const c of cells) {
       if (c.src.group !== group) continue;
       const x0 = c.x * tileW;
-      const y0 = c.y * tileH;
-      const x1 = x0 + tileW;
-      const y1 = y0 + tileH;
+      const diagonal = (c.flags & 0x20000000) !== 0;
+      const width = diagonal ? c.src.height ?? tileW : c.src.width ?? tileW;
+      const height = diagonal ? c.src.width ?? tileH : c.src.height ?? tileH;
+      const y0 = (c.y + 1) * tileH - height;
+      const x1 = x0 + width;
+      const y1 = y0 + height;
       const p = q * 8;
       positions.set([x0, y0, x1, y0, x1, y1, x0, y1], p);
       uvs.set(quadUvs(c.src, c.flags), p);

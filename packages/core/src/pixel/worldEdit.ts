@@ -1,3 +1,4 @@
+import { createDocument } from '../document';
 import { isTileLayer } from '../layer';
 import { parseLevel, serializeLevel } from '../serialize';
 import { MapStore } from '../store';
@@ -65,6 +66,10 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
   const writesRaster = participants.some(p => p.operations.some(op => ['allocateEditedTile', 'patchPixels', 'editTilePixels'].includes(op.type)));
   if (writesRaster && participants.some(p => p.store.rasterAssets !== shared)) throw new WorldEditError([{ mapId: originMapId, reason: 'invalid', detail: 'participants must share RasterAssets' }]);
   const rasterVersions = participants.flatMap(p => p.store.rasterAssets.assetIds().map(assetId => ({ mapId: p.mapId, assetId, revision: p.store.rasterAssets.info(assetId)!.revision })));
+  // Pixel-only preparation must not serialize unrelated map chunks or copy
+  // unrelated raster pages. The same version guards still cover the complete registry.
+  const rasterOnly = participants.every(p => p.operations.every(op => op.type === 'editTilePixels' || op.type === 'patchPixels' || op.type === 'setEditedTileset'));
+  const touched = new Set(participants.flatMap(p => p.operations.flatMap(op => op.type === 'editTilePixels' ? [op.assetId] : op.type === 'patchPixels' ? op.patches.map(rect => rect.assetId) : [])));
   // Each shared view has one detached backing store for the simulation.
   const copies = new Map<typeof shared, RasterAssets>();
   const simulated = participants.map(p => {
@@ -72,13 +77,15 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
     if (!rasters) {
       rasters = new RasterAssets(); copies.set(p.store.rasterAssets, rasters);
       for (const assetId of p.store.rasterAssets.assetIds()) {
+        if (rasterOnly && !touched.has(assetId)) continue;
         const info = p.store.rasterAssets.info(assetId)!, image = p.store.rasterAssets.getAsset(assetId)!;
         // Owned simulation data, including slots not referenced by these participant documents.
         rasters._load({ ...info, data: image.data }, info.tileCount);
       }
     }
     const doc = p.store.document;
-    const store = new MapStore(parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes, { randomSets: doc.randomSets, collections: doc.collections }), { rasterAssets: rasters });
+    const snapshot = rasterOnly ? createDocument({ ...doc.map, tilesets: doc.tilesets }) : parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes, { randomSets: doc.randomSets, collections: doc.collections });
+    const store = new MapStore(snapshot, { rasterAssets: rasters });
     return store;
   });
   let rasterOwner: string | undefined;

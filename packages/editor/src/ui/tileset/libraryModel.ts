@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 /**
  * The tileset library as pure functions (unit tested): search filter,
  * groups (from `Tileset.group`, in library order, the ungrouped bucket
@@ -9,8 +10,8 @@ import type { Tileset } from "@smap/core";
 /** Group name of the ungrouped bucket ("Grupsuz"). */
 export const UNGROUPED = "";
 
-export function groupOf(tileset: Pick<Tileset, "group">): string {
-  return tileset.group ?? UNGROUPED;
+export function groupOf(tileset: Pick<Tileset, "group"> & Partial<Pick<Tileset, "edited">>): string {
+  return tileset.group ?? (tileset.edited ? t("pixel.edited") : UNGROUPED);
 }
 
 /** Case- and accent-insensitive key ("Çimen" ≈ "cimen", "İ" ≈ "i"). */
@@ -51,7 +52,7 @@ export interface TilesetGroup<T> {
  * ungrouped bucket last. Empty groups do not exist (a group is only a name
  * on its tilesets).
  */
-export function groupTilesets<T extends Pick<Tileset, "group">>(tilesets: readonly T[]): TilesetGroup<T>[] {
+export function groupTilesets<T extends Pick<Tileset, "group"> & Partial<Pick<Tileset, "edited">>>(tilesets: readonly T[]): TilesetGroup<T>[] {
   const order: string[] = [];
   const byName = new Map<string, T[]>();
   for (const ts of tilesets) {
@@ -68,7 +69,7 @@ export function groupTilesets<T extends Pick<Tileset, "group">>(tilesets: readon
 }
 
 /** Every group name in use, in library order (ungrouped left out). */
-export function groupNames(tilesets: readonly Pick<Tileset, "group">[]): string[] {
+export function groupNames(tilesets: readonly (Pick<Tileset, "group"> & Partial<Pick<Tileset, "edited">>)[]): string[] {
   return groupTilesets(tilesets)
     .map((g) => g.name)
     .filter((g) => g !== UNGROUPED);
@@ -125,7 +126,7 @@ export function planTilesetMove(tilesets: readonly Pick<Tileset, "id" | "group">
 }
 
 /** A unique group name for "Yeni grup" (`base`, `base 2`, …). */
-export function uniqueGroupName(tilesets: readonly Pick<Tileset, "group">[], base: string): string {
+export function uniqueGroupName(tilesets: readonly (Pick<Tileset, "group"> & Partial<Pick<Tileset, "edited">>)[], base: string): string {
   const used = new Set(groupNames(tilesets).map(searchKey));
   if (!used.has(searchKey(base))) return base;
   for (let n = 2; ; n++) if (!used.has(searchKey(`${base} ${n}`))) return `${base} ${n}`;

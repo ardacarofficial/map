@@ -1,3 +1,7 @@
+import { EditedAssetError } from "./editedPng";
+import { usePixelUi } from "../state/pixelUi";
+import type { ColorPalette } from "@smap/core";
+import { loadEditedRaster } from "./pixelAssetIo";
 import { SmartBrushError, formatSmartBrushError } from "../commands/smartBrushErrors";
 import { suggestImportedGrid } from "../commands/smartBrushGrid";
 import { publishSavedBrushAssets } from "../commands/smartBrushActions";
@@ -157,7 +161,7 @@ function activate(
   images: readonly TilesetImage[],
   target: ProjectFolder | null,
   levelText: string | null = null,
-  library: { stamps: Stamp[]; generatedRecipes?: readonly GeneratedRecipe[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[]; settings?: ProjectSettings } = {
+  library: { colorPalettes?: readonly ColorPalette[]; stamps: Stamp[]; generatedRecipes?: readonly GeneratedRecipe[]; brokenStampFiles: string[]; levels: ProjectLevel[]; retiredLevelIds?: string[]; settings?: ProjectSettings } = {
     stamps: [],
     brokenStampFiles: [],
     levels: defaultLevels(project.levelPath),
@@ -176,6 +180,7 @@ function activate(
   });
   activeLayerMemory.clear();
   clearLevelViews();
+  usePixelUi.getState().setMode("tile");
   useProjectLibrary.getState().load(library);
   clearTilesetImages();
   for (const image of images) setTilesetImage(image);
@@ -200,6 +205,7 @@ function announceFormatMigration(document: MapDocument, levelId: string): void {
 
 /** Human-readable (Turkish) message for an IO error. */
 export function describeError(error: unknown): string {
+  if (error instanceof EditedAssetError) return t("pixel.invalidAsset", { path: error.paths.join(", ") });
   if(error instanceof SmartBrushError)return formatSmartBrushError(error);
   if (error instanceof FormatError) return t("toast.formatError", { detail: error.message });
   if (error instanceof ProjectOpenError) return t(error.problem === "noLevel" ? "toast.noLevel" : "toast.noProjectFile");
@@ -703,7 +709,11 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
     try {
       const lib = useProjectLibrary.getState();
       ws.name = project.name;
+      const allLevels = folder !== target;
+      if (allLevels) for (const level of ws.levels) await ws.load(level.id, folder?.fs ?? null);
       const levels = await ws.save(target.fs, {
+        allLevels,
+        colorPalettes: lib.colorPalettes,
         stamps: lib.stamps,
         generatedRecipes: lib.generatedRecipes,
         keepStampFiles: lib.brokenStampFiles,
@@ -911,8 +921,10 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
   const loaded = await loadProject(target.fs, decodePng, levelId ? { levelId } : {});
   const store = new MapStore(loaded.document);
   store.clearHistory();
+  for (const image of loaded.images) { const tileset = loaded.document.getTileset(image.tilesetId); if (tileset?.edited) loadEditedRaster(store, tileset, image.bytes!); }
   const project: OpenProject = { name: loaded.name, store, levelPath: loaded.levelPath, levelId: loaded.levelId };
   activate(project, loaded.images, target, loaded.levelText, {
+    colorPalettes: loaded.colorPalettes ?? [],
     stamps: loaded.stamps,
     generatedRecipes: loaded.generatedRecipes,
     brokenStampFiles: loaded.brokenStamps,
@@ -1085,7 +1097,7 @@ export function installSession(): () => void {
     // The stamp editor's temporary map is not part of the project (saved with "Kaydet" only).
     if (project.levelId?.startsWith("stamp:")) return;
     unsubscribeStore = project.store.subscribe((event) => {
-      if (event.cells.length === 0 && event.structure.length === 0) return;
+      if (event.cells.length === 0 && event.structure.length === 0 && event.pixelRects.length === 0) return;
       const ws = workspace;
       if (ws && ws.entry(ws.activeId)?.store === project.store && !ws.isDirty(ws.activeId)) {
         ws.markDirty(ws.activeId);

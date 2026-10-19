@@ -12,6 +12,10 @@ import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "pixel.mode"
+  | "tool.line"
+  | "pixel.swap"
+  | "pixel.reset"
   | "map.border"
   | "stamp.nineSlice"
   | "smartBrush.matchGrid"
@@ -110,6 +114,10 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  { command: "pixel.mode", keys: ["M"] },
+  { command: "tool.line", keys: ["L"] },
+  { command: "pixel.swap", keys: ["Shift+X"] },
+  { command: "pixel.reset", keys: ["D"] },
   { command: "map.border", keys: [] },
   { command: "stamp.nineSlice", keys: [] },
   { command: "smartBrush.matchGrid", keys: [] },
