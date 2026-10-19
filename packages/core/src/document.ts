@@ -6,7 +6,7 @@ import { normalizeRandomSet, randomSetsProblem, type RandomSet } from "./randomS
 import { normalizeTileset, type Tileset } from "./tileset";
 
 /** Editor project/level/stamp/clip format. Legacy conversion is raw JSON and preserves stored tile cells. */
-export const DOCUMENT_FORMAT_VERSION = 4;
+export const DOCUMENT_FORMAT_VERSION = 5;
 /** Default tile size in pixels. */
 export const DEFAULT_TILE_SIZE = 32;
 /**

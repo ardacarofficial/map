@@ -29,7 +29,7 @@ describe("legacy smart recipes through project IO", () => {
     const closedLevel=parseLevel(JSON.stringify(oldLevel),loaded.document.tilesets);
     const next=new MemoryFileSystem("Save As");
     await saveProject(next,{name:loaded.name,document:loaded.document,levelPath:loaded.levelPath,levels:loaded.levels,stamps:[],generatedRecipes:loaded.generatedRecipes,otherLevels:[{path:"levels/closed.json",document:closedLevel}],tilesetBytes:id=>id==="source"?sourcePng:bankPng});
-    expect(JSON.parse(await next.readText("project.smap")).documentFormatVersion).toBe(4);
+    expect(JSON.parse(await next.readText("project.smap")).documentFormatVersion).toBe(5);
     expect(await next.readText("tilesets/baked.recipe.json")).not.toMatch(/"(?:terrains|terrainSets|solidTiles|terrainId|setId)"/);
     const reopened=await loadProject(next,decode);
     expect(reopened.stamps).toEqual([]);expect(reopened.generatedRecipes).toHaveLength(1);

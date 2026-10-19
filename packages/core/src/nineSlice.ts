@@ -1,3 +1,4 @@
+import { bandBlits, bandLayout, bandSample, bandWidth, type BandedSource } from "./smartStamp/bands";
 /** Pure nine-slice addressing and ordinary-atlas bake instructions. No pixels or map state are mutated. */
 import { cellFlags, cellPaletteIndex, CELL_FLAG_MASK, FLIP_D, FLIP_H, FLIP_V, isValidCell } from "./cell";
 import type { TileClip } from "./clip";
@@ -43,9 +44,11 @@ export function inverseOrientation(orientation: number): number {
 }
 
 /** Eligibility diagnosis. Holes are allowed for area use; road conversion requires nine nonempty representatives. */
-export function nineSliceProblem(source: TileClip, options: { readonly roadLayerId?: string } = {}): string | null {
+export function nineSliceProblem(source: TileClip & BandedSource, options: { readonly roadLayerId?: string } = {}): string | null {
   const { width: n, height: m } = source;
   if (!Number.isInteger(n) || !Number.isInteger(m) || n < 3 || m < 3) return "nine-slice dimensions must be integers >= 3 with a one-cell border";
+  const b = bandWidth(source);
+  if (!Number.isSafeInteger(b) || b < 1 || (b > 1 && (n <= 2*b || m <= 2*b))) return "invalid nine-slice border";
   if (source.layers.length === 0) return "nine-slice requires a source layer";
   if (new Set(source.layers.map(l => l.layerId)).size !== source.layers.length) return "duplicate source layer id";
   for (const layer of source.layers) {
@@ -61,6 +64,7 @@ export function nineSliceProblem(source: TileClip, options: { readonly roadLayer
   if (options.roadLayerId !== undefined) {
     const layer = source.layers.find(l => l.layerId === options.roadLayerId);
     if (!layer || layer.grid) return "road requires an explicitly chosen tile layer";
+    if (b > 1 && layer.cells.some(c => !c)) return "banded road requires full patches";
     for (const y of [0, 1, m - 1]) for (const x of [0, 1, n - 1]) if (!layer.cells[y * n + x]) return `missing road representative at (${x}, ${y})`;
   }
   return null;
@@ -80,7 +84,8 @@ export interface NineSliceLayout {
 }
 
 /** Source row-major; m collapsed-width slots; n collapsed-height slots; isolated; 47 ascending reduced masks. */
-export function nineSliceLayout(source: Pick<TileClip, "width" | "height">): NineSliceLayout {
+export function nineSliceLayout(source: BandedSource): NineSliceLayout {
+  if (bandWidth(source) > 1) return bandLayout(source);
   const { width: n, height: m } = source;
   if (!Number.isInteger(n) || !Number.isInteger(m) || n < 3 || m < 3) throw new RangeError("nine-slice source must be at least 3 by 3");
   const collapsedWidth = n * m, collapsedHeight = collapsedWidth + m, isolated = collapsedHeight + n, bank = isolated + 1;
@@ -88,10 +93,10 @@ export function nineSliceLayout(source: Pick<TileClip, "width" | "height">): Nin
 }
 
 /** Source regions in row-major order: NW, N strip, NE, W strip, centre, E strip, SW, S strip, SE. */
-export function nineSliceRegions(source: Pick<TileClip, "width" | "height">): readonly CellRect[] {
+export function nineSliceRegions(source: BandedSource): readonly CellRect[] {
   nineSliceLayout(source);
-  const { width: n, height: m } = source;
-  return [0, 1, 2].flatMap(y => [0, 1, 2].map(x => ({ x: x === 2 ? n - 1 : x, y: y === 2 ? m - 1 : y, width: x === 1 ? n - 2 : 1, height: y === 1 ? m - 2 : 1 })));
+  const { width: n, height: m } = source, b = bandWidth(source);
+  return [0, 1, 2].flatMap(y => [0, 1, 2].map(x => ({ x: x === 2 ? n - b : x*b, y: y === 2 ? m - b : y*b, width: x === 1 ? n - 2*b : b, height: y === 1 ? m - 2*b : b })));
 }
 
 /** One sampled atlas slot and its raw grid contributors. Baked pixels already include source cell flags. */
@@ -111,12 +116,13 @@ function assertRect(rect: CellRect): void {
  * Samples intended geometry before clipping. A point outside it returns null.
  * D4 transforms dimensions, border roles and periodic phase together. Width/height 1 splice opposing caps.
  */
-export function sampleNineSlice(rect: CellRect, worldCell: CellPoint, source: Pick<TileClip, "width" | "height">, orientation = 0): NineSliceSample | null {
+export function sampleNineSlice(rect: CellRect, worldCell: CellPoint, source: BandedSource, orientation = 0): NineSliceSample | null {
   assertRect(rect); assertOrientation(orientation);
   const l = nineSliceLayout(source), { width: n, height: m } = source;
   if (!Number.isInteger(worldCell.x) || !Number.isInteger(worldCell.y)) throw new RangeError("sample coordinates must be integers");
   const local = { x: worldCell.x - rect.x, y: worldCell.y - rect.y };
   if (local.x < 0 || local.y < 0 || local.x >= rect.width || local.y >= rect.height) return null;
+  if (bandWidth(source) > 1) return bandSample(rect, worldCell, source, orientation);
   const p = orientPoint(local, rect.width, rect.height, inverseOrientation(orientation));
   const W = orientation & FLIP_D ? rect.height : rect.width, H = orientation & FLIP_D ? rect.width : rect.height;
   const sx = phase(p.x, W, n), sy = phase(p.y, H, m);
@@ -129,7 +135,7 @@ export function sampleNineSlice(rect: CellRect, worldCell: CellPoint, source: Pi
 }
 
 /** Row-major rectangle samples, optionally restricted to a window; phase always uses the full intended rectangle. */
-export function planNineSliceRect(rect: CellRect, source: Pick<TileClip, "width" | "height">, orientation = 0, window?: CellRect): NineSliceSample[] {
+export function planNineSliceRect(rect: CellRect, source: BandedSource, orientation = 0, window?: CellRect): NineSliceSample[] {
   assertRect(rect); assertOrientation(orientation); nineSliceLayout(source);
   if (window) assertRect(window);
   const out: NineSliceSample[] = [];
@@ -166,7 +172,7 @@ function rawRect(r: NineSlicePixelRect, width: number, height: number, flags: nu
 }
 
 /** Per-quadrant source index for a blob mask; missing authored inner joins use the centre's corresponding quadrant. */
-export function nineSliceMaskSources(source: Pick<TileClip, "width" | "height">, mask: number): readonly number[] {
+export function nineSliceMaskSources(source: BandedSource, mask: number): readonly number[] {
   nineSliceLayout(source);
   const { width: n, height: m } = source;
   return [[1, 64, 0, n, 1], [1, 4, n - 1, 2 * n - 1, 1], [16, 4, n * m - 1, 2 * n - 1, (m - 1) * n + 1], [16, 64, (m - 1) * n, n, (m - 1) * n + 1]].map(([a, b, corner, vertical, horizontal]) => (mask & a!) ? (mask & b!) ? n + 1 : vertical! : (mask & b!) ? horizontal! : corner!);
@@ -180,12 +186,13 @@ export function nineSliceMaskSources(source: Pick<TileClip, "width" | "height">,
  * generated tileset id and these slot ids, so already placed cells keep their palette references.
  * Diagonal source flags require square pixel tiles, matching editor rotation constraints.
  */
-export function nineSliceBlits(source: TileClip, layerId: string, tileWidth: number, tileHeight: number, innerCorner?: NineSliceInnerCorner): NineSliceBlit[] {
+export function nineSliceBlits(source: TileClip & BandedSource, layerId: string, tileWidth: number, tileHeight: number, innerCorner?: NineSliceInnerCorner): NineSliceBlit[] {
   const problem = nineSliceProblem(source);
   if (problem) throw new Error(problem);
   if (!Number.isInteger(tileWidth) || !Number.isInteger(tileHeight) || tileWidth < 1 || tileHeight < 1) throw new RangeError("tile dimensions must be positive integers");
   const layer = source.layers.find(l => l.layerId === layerId);
   if (!layer || layer.grid) throw new Error("bake requires a source tile layer");
+  if (bandWidth(source) > 1) { if (innerCorner) throw new Error("banded inner corners use the source centre patch"); return bandBlits(source, layerId, tileWidth, tileHeight); }
   const { width: n, height: m } = source, layout = nineSliceLayout(source), out: NineSliceBlit[] = [];
   const emit = (slot: number, indices: readonly number[], mask?: number) => {
     for (let q = 0; q < 4; q++) {

@@ -1175,6 +1175,7 @@ export const en: Messages = {
   },
 
   smartBrush: {
+    bandHint: "Roads snap to world-aligned units {border} tiles wide. Size counts units; Area preserves corners and splices narrow sizes at the midpoint.",
     failed: "Preparation failed",
     label: "Smart",
     hint: "Draw roads or areas using the selected borders. Turn off to place plain blocks.",

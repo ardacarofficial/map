@@ -86,7 +86,7 @@ describe("generated nine-slice assets", () => {
 
 it("serializes generated metadata in fixed v3 key order, never inferring it from a name on old assets", () => {
   const baked = prepareNineSliceTileset(stamp, "s", options()), text = serializeProject({ name: "P", levels: [], tilesets: [art, baked] }), parsed = JSON.parse(text);
-  expect(parsed.documentFormatVersion).toBe(4);
+  expect(parsed.documentFormatVersion).toBe(5);
   expect(Object.keys(parsed.tilesets[1])).toEqual(["id", "name", "generated", "imagePath", "tileWidth", "tileHeight", "columns", "rows", "margin", "spacing"]);
   expect(Object.keys(parsed.tilesets[1].generated)).toEqual(["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion", "sources"]);
   expect(Object.keys(parsed.tilesets[1].generated.sources[0])).toEqual(["tilesetId", "imageHash"]);

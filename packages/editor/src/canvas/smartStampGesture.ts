@@ -15,9 +15,11 @@ export function smartRect(g: Pick<SmartGesture, "start" | "end" | "square" | "fr
   const { a, b } = constrainRect(g.start, g.end, g);
   return normalizeRect(a.x, a.y, b.x, b.y)!;
 }
-export function addRoadSamples(g: Pick<SmartGesture, "members" | "offsets" | "last" | "end" | "version">, points: readonly CellPoint[]): void {
+export function addRoadSamples(g: Pick<SmartGesture, "members" | "offsets" | "last" | "end" | "version"> & { readonly stamp?: Stamp }, points: readonly CellPoint[]): void {
+  const b=g.stamp?.nineSlice?.border ?? 1;
+  const macro=(p:CellPoint)=>({x:Math.floor(p.x/b),y:Math.floor(p.y/b)});
   for (const p of points) {
-    for (const q of footprintCells(orthogonalBridge(g.last, p), g.offsets)) g.members.add(`${q.x},${q.y}`);
+    for (const q of footprintCells(orthogonalBridge(macro(g.last), macro(p)), g.offsets)) g.members.add(`${q.x*b},${q.y*b}`);
     g.last = p; g.end = p;
   }
   g.version++;

@@ -1,3 +1,4 @@
+import { bandWidth, type BandedSource } from "./bands";
 /** Persistent mask → generated slot mapping. Source/cap variants retain the layout-1 ABI. */
 import type { TileClip } from "../clip";
 import { nineSliceLayout, nineSliceProblem } from "../nineSlice";
@@ -27,8 +28,10 @@ export function profileIndex(profile: RoadProfile): ReadonlyMap<number, readonly
 }
 
 /** Full source copies, compact caps and the 47-mask bank, in their original v3 slot order. */
-export function buildRoadProfile(source: TileClip, layerId: string): RoadProfile {
+export function buildRoadProfile(source: TileClip & BandedSource, layerId: string): RoadProfile {
   const problem = nineSliceProblem(source, { roadLayerId: layerId }); if (problem) throw new Error(problem);
+  const b=bandWidth(source);
+  if(b>1) {const l=nineSliceLayout(source);return normalizeRoadProfile({tiles:BLOB47_MASKS.flatMap((mask,rank)=>Array.from({length:b*b},(_,i)=>({tileId:l.bank+rank*b*b+i,mask})))});}
   return buildLayout1RoadProfile(source.width, source.height);
 }
 /** Reconstruct layout-1 provenance without loading a PNG or inspecting map cells. */

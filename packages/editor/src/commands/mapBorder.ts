@@ -78,7 +78,7 @@ function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[]
         } catch { /* Authored area stamps with holes retain the area planner's skip semantics. */ }
       }
     }
-    if (stamp.nineSlice?.road) {
+    if (stamp.nineSlice?.road && stamp.nineSlice.border === 1) {
       const membership = { bounds: band.rect, contains, cells: band.cells };
       // Staged assets are accepted only by windowed preview plans. Four strips cover
       // the complete perimeter plus repair halos without scanning the empty interior.
@@ -94,8 +94,16 @@ function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[]
       }
       cells.push(...[...writes.values()].sort((a, b) => a.y - b.y || a.x - b.x));
     } else {
-      const plan = planSmartStampArea(doc, stamp, band.rect, { ...options, ...(staged ? { window: band.rect, previewTilesets } : {}), mapping: [{ clipLayerId: source.layerId, targetLayerId: layer.id, name: layer.name }] });
-      for (const l of plan.layers) for (const w of l.writes) if ("tile" in w && w.tile && contains(w.x, w.y)) cells.push({ x: w.x, y: w.y, entry: w.tile, flags: w.flags ?? 0 });
+      // Area artwork keeps its free tile phase. Read four strips so a thin border
+      // on a large map never plans or allocates its empty interior.
+      const r = band.rect, thickness = band.thickness;
+      const windows = [{ ...r, height: thickness }, { ...r, y: r.y + r.height - thickness, height: thickness }, { ...r, width: thickness }, { ...r, x: r.x + r.width - thickness, width: thickness }];
+      const writes = new Map<number, PreviewCell>();
+      for (const window of windows) {
+        const plan = planSmartStampArea(doc, stamp, r, { ...options, thickness, window, previewTilesets, mapping: [{ clipLayerId: source.layerId, targetLayerId: layer.id, name: layer.name }] });
+        for (const l of plan.layers) for (const w of l.writes) if ("tile" in w && w.tile && contains(w.x, w.y)) writes.set(w.y * doc.map.width + w.x, { x: w.x, y: w.y, entry: w.tile, flags: w.flags ?? 0 });
+      }
+      cells.push(...[...writes.values()].sort((a, b) => a.y - b.y || a.x - b.x));
     }
   } else {
     const random = activeRandomSet(doc, layer);

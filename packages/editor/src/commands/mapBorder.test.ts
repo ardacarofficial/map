@@ -249,3 +249,12 @@ describe("map border command", () => {
   });
 
 });
+
+it("thick borders plan only the requested band, without reading a large empty interior",()=>{
+ const store=fixture(512,512),source={width:6,height:6,palette:Array.from({length:36},(_,tileId)=>({tilesetId:"tiles",tileId:tileId%9})),layers:[{layerId:"source",name:"Source",cells:Uint32Array.from({length:36},(_,i)=>i+1)}],nineSlice:{border:2,tileLayers:[{layerId:"source",tilesetId:"baked"}]}};
+ const stamp:Stamp={...source,id:"thick",name:"Thick"};
+ store.dispatch({type:"addTileset",tileset:{id:"baked",name:"Baked",imagePath:"baked.png",tileWidth:32,tileHeight:32,columns:20,rows:20,margin:0,spacing:0}});
+ useEditorStore.getState().setStamp(stamp);openMapBorder();updateMapBorder({thickness:2});
+ const reads=vi.spyOn(store.document.getLayer("l")!,"getCell"),plan=borderPlan(useMapBorder.getState().draft!);
+ expect(plan.reason).toBeNull();expect(plan.cells).toHaveLength(4080);expect(reads.mock.calls.length).toBeLessThan(20_000);reads.mockRestore();
+});

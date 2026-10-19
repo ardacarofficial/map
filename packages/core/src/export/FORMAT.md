@@ -256,9 +256,47 @@ ids are 1, 2, … in layer then entity order; `nextobjectid` follows them.
 
 ## Editor format compatibility
 
-The separate editor format is now `documentFormatVersion: 4`. Raw migration
+The separate editor format uses `documentFormatVersion: 5` (v4 removed terrain metadata). Raw migration
 removes legacy marking metadata and invisible legacy grids without deriving
 or changing tile cells, palette order, flips, layer properties or source PNGs.
 Saved nine-slice stamps retain their generated PNG slots and a smart-owned
 complete road profile, including custom variants. The game wire format above
 remains `smapExport: 1`, with stride 5 and the same collision RLE.
+
+### Editor format 5: thick smart sources
+
+The v4→v5 migration changes only version headers (including embedded recipes). Cells,
+palette entries, flags, saved preferences and layout-1 slot ids are unchanged.
+`Stamp.nineSlice.border` is a positive integer b; thick sources have dimensions
+at least 2b+1 in each axis; dimensions need not be multiples of b. `smartDisabled` keeps the plain-block preference.
+Generated layout 2 additionally stores `border: b`. Its permanent slot order is:
+source row-major; widths w=1..2b−1 (each w×sourceHeight row-major); heights
+h=1..2b−1 (each sourceWidth×h); compact h-major then w-major patches; finally
+47 ascending blob masks, each a b×b row-major patch. With S=b(2b−1), the bank
+starts at WH+S(H+W)+S² and contains 47b² tiles. Regeneration retains this exact
+order, identity, grid and capacity. A macro role whose edge/centre span is shorter
+than b wraps within that span, never into the opposite outer band. This extends
+validation to previously unsupported sizes without changing any existing format-5
+slots or pixels; no migration or additional format bump is needed. Layout 1 is
+byte-for-byte unchanged.
+
+Selection identity is independent of detector/cache versions. The original b=1
+selection-id ABI is retained; matching archived direct-selection recipes also
+retain their existing ids, atlas and road family after reselection. Detector 4
+requires coherent outer-boundary evidence for thick bands and full-span segments:
+mirrored opposite profiles match within RGBA delta 16 for at least 95% of pixels
+at **every** segment position. Each corner's inward-facing boundary profile
+continues both adjacent edge profiles (tile gutters excluded; a constant RGB tint
+offset is allowed). Every tile at every edge depth must differ from its centre
+phase. Globally periodic material is rejected; nonperiodicity and unrelated tile
+colours do not establish a boundary. Full-span segments do not count as observed
+repetition. Small pixel grain is tolerated; asymmetric or incoherent artwork may
+conservatively remain plain. Full 3×3 selections retain their unconditional rule.
+This classifier change does not change recipe identity, atlas slots or format 5.
+
+Road logical cells are b×b map tiles aligned to (0,0), including clipped map-edge
+cells. D4 orientation transforms both patch positions and each tile's pixels.
+Area uses free tile coordinates; short axes splice the outer bands at
+ceil(targetPixels/2), with no resampling. Map borders use area artwork clipped
+to the requested tile band and gaps. Game/Unity export schemas are unchanged;
+generated tiles export as ordinary tile references and PNGs.

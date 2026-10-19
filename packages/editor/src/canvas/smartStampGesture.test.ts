@@ -121,3 +121,12 @@ describe("smart gestures", () => {
     expect(useSmartStampSession.getState().orientation).toBe(0);
   });
 });
+
+it("thick samples bridge on the origin lattice and brush size counts macro cells, including negatives",()=>{
+ const {store,stamp,layerId}=fixture();const thick={...stamp,nineSlice:{...stamp.nineSlice!,border:3}};
+ const g=smartHoverGesture(store,thick,layerId,{x:-1,y:-1},"road",0,1,"square");
+ addRoadSamples(g,[{x:10,y:7}]);expect([...g.members].sort()).toEqual(["-3,-3","0,-3","0,0","3,0","3,3","6,3","9,3","9,6"].sort());
+ const reverse=smartHoverGesture(store,thick,layerId,{x:10,y:7},"road",0,1,"square");addRoadSamples(reverse,[{x:-1,y:-1}]);expect([...reverse.members].sort()).toEqual([...g.members].sort());
+ const wide=smartHoverGesture(store,thick,layerId,{x:7,y:7},"road",0,3,"square");
+ expect(wide.members.size).toBe(9);expect([...wide.members].every(key=>key.split(",").map(Number).every(v=>Number.isInteger(v/3)))).toBe(true);
+});

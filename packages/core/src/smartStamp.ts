@@ -1,3 +1,5 @@
+import { solveMacroRoad } from "./smartStamp/macroRoad";
+import { bandWidth } from "./smartStamp/bands";
 
 import { cellFlags, cellPaletteIndex, FLIP_D, makeCell } from "./cell";
 import type { MapDocument } from "./document";
@@ -146,7 +148,7 @@ export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRec
     const x0 = Math.max(0, rect.x, window?.x ?? 0), y0 = Math.max(0, rect.y, window?.y ?? 0);
     const x1 = Math.min(doc.map.width, rect.x + rect.width, window ? window.x + window.width : Infinity), y1 = Math.min(doc.map.height, rect.y + rect.height, window ? window.y + window.height : Infinity);
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const w = at(x, y); if (w) writes.set(y * doc.map.width + x, w); }
-    if (!source.grid && stamp.nineSlice!.road?.tilesetId === asset!.tilesetId) {
+    if (!source.grid && bandWidth(stamp) === 1 && stamp.nineSlice!.road?.tilesetId === asset!.tilesetId) {
       const { road, profile } = roadProfile(doc, stamp, options);
       const membership: RoadMembership = { bounds: rect, contains: (x, y) => doc.inBounds(x, y) && contains(rect, x, y) && at(x, y) !== null };
       const repairs = solveRoadFromReader(virtual, profile, road.tilesetId, membership, {
@@ -183,7 +185,8 @@ export function planSmartStampRoad(doc: MapDocument, stamp: Stamp, layerId: stri
   validate(doc, stamp, orientation, options);
   const { road, profile } = roadProfile(doc, stamp, options), layer = doc.getLayer(layerId);
   if (!isTileLayer(layer)) throw new Error("road requires an existing tile layer");
-  const writes = layer.locked || !layer.visible ? [] : solveRoadFromReader(reader(doc, layerId), profile, road.tilesetId, membership, { orientation, erase: !!options.erase, ...(options.window ? { window: options.window } : {}) });
+  const solveOptions = { orientation, erase: !!options.erase, ...(options.window ? { window: options.window } : {}) };
+  const writes = layer.locked || !layer.visible ? [] : bandWidth(stamp)>1 ? solveMacroRoad(reader(doc,layerId),road.tilesetId,nineSliceLayout(stamp).bank,bandWidth(stamp),membership,solveOptions) : solveRoadFromReader(reader(doc, layerId), profile, road.tilesetId, membership, solveOptions);
   return finish(doc, options, [{ sourceLayerId: stamp.nineSlice!.tileLayers.find(l => l.tilesetId === road.tilesetId)!.layerId, layerId, name: layer.name, grid: false, writes }]);
 }
 

@@ -486,7 +486,7 @@ export * from "./smartStamp/topology";
 export * from "./smartStamp/roadProfile";
 export * from "./smartStamp/roadSolver";
 export type { RgbaImage } from "./tilesetPixels";
-export { detectNineSliceSelection, type NineSliceSelectionInput, type NineSliceDetection } from "./smartStamp/detect";
+export { NINE_SLICE_DETECTOR_VERSION, NINE_SLICE_DETECTION_THRESHOLDS, detectNineSliceSelection, type NineSliceSelectionInput, type NineSliceDetection } from "./smartStamp/detect";
 export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorderOptions, type MapBorder } from "./mapBorder";
 export { connectedSelection, selectionContains, selectionHasContent, combineSelections, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
 export { flipRegion } from "./clip";

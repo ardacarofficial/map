@@ -836,7 +836,7 @@ export class MapStore {
       if (!old) throw new Error("setTilesetMeta: only an existing generated asset may be regenerated");
       const problem = tilesetProblem({ ...tileset, generated: op.generated });
       if (problem) throw new Error(`setTilesetMeta: ${problem}`);
-      if ((["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion"] as const).some(k => old[k] !== op.generated![k])) throw new Error("setTilesetMeta: generated origin and slot layout cannot change");
+      if ((["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion", "border"] as const).some(k => old[k] !== op.generated![k])) throw new Error("setTilesetMeta: generated origin and slot layout cannot change");
     }
     const generated = op.generated === undefined ? tileset.generated : normalizeTileset({ ...tileset, generated: op.generated }).generated;
     if (op.undoable === false) {
@@ -1560,7 +1560,7 @@ export class MapStore {
     const generated = this.#generatedProvenance.get(tileset.id);
     const old = tileset.generated;
     if (!old || !generated) return tileset;
-    const sameOrigin = (["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion"] as const).every(k => old[k] === generated[k]);
+    const sameOrigin = (["kind", "stampId", "layerId", "sourceWidth", "sourceHeight", "layoutVersion", "border"] as const).every(k => old[k] === generated[k]);
     return sameOrigin ? { ...tileset, generated } : tileset;
   }
 

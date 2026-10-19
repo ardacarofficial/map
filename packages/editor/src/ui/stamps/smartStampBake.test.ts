@@ -58,3 +58,73 @@ describe("smart stamp bake", () => {
     expect(() => rasterizeSmartStamp(s, "ground", { ...ts, columns: 8, rows: 8 }, new Map([[ts.id, { tileset: ts, pixels: source(3) }]]))).toThrow("does not fit");
   });
 });
+
+import { sampleNineSlice, inverseOrientation } from "@smap/core";
+import fc from "fast-check";
+/** Independent pixel oracle: splice outer bands at the midpoint, otherwise tile the centre span. */
+function verifyBandedPixels(b:number,size:number,w:number,h:number,sourceFlags:number,orientation:number,n=3*b,m=4*b) {
+ const ts={...sheet(size),columns:n,rows:m};
+ const s:Stamp={...stamp(sourceFlags),width:n,height:m,palette:Array.from({length:n*m},(_,tileId)=>({tilesetId:"source",tileId})),layers:[{layerId:"ground",name:"Ground",cells:Uint32Array.from({length:n*m},(_,i)=>makeCell(i+1,sourceFlags))}],nineSlice:{border:b,tileLayers:[]}};
+ const data=Uint8ClampedArray.from({length:n*m*size*size*4},(_,i)=>Math.floor(i/4)%251),pixels={width:n*size,height:m*size,data};
+ const l=nineSliceLayout(s),target={...ts,id:"baked",columns:16,rows:Math.ceil(l.slots/16)};
+ const baked=rasterizeSmartStamp(s,"ground",target,new Map([[ts.id,{tileset:ts,pixels}]]));
+ const W=orientation&FLIP_D?h:w,H=orientation&FLIP_D?w:h;
+ const coord=(p:number,length:number,full:number)=>length<2*b*size?(p<Math.ceil(length/2)?p:full-length+p):p<b*size?p:p>=length-b*size?full-length+p:b*size+(p-b*size)%(full-2*b*size);
+ let mismatch="";
+ for(let y=0;y<h*size&&!mismatch;y++)for(let x=0;x<w*size;x++){
+  const sample=sampleNineSlice({x:-2,y:-3,width:w,height:h},{x:-2+Math.floor(x/size),y:-3+Math.floor(y/size)},s,orientation)!;
+  const local=orientPoint({x:x%size,y:y%size},size,size,inverseOrientation(orientation));
+  const actual=pixel(baked,(sample.slot%16)*size+local.x,Math.floor(sample.slot/16)*size+local.y);
+  const canonical=orientPoint({x,y},w*size,h*size,inverseOrientation(orientation));
+  const sx=coord(canonical.x,W*size,n*size),sy=coord(canonical.y,H*size,m*size);
+  const raw=orientPoint({x:sx%size,y:sy%size},size,size,inverseOrientation(sourceFlags));
+  const expected=pixel(pixels,Math.floor(sx/size)*size+raw.x,Math.floor(sy/size)*size+raw.y);
+  if(actual.some((v,i)=>v!==expected[i])){mismatch=`b=${b} size=${size} target=${w}x${h} sourceFlags=${sourceFlags} orientation=${orientation} pixel=${x},${y}`;break;}
+ }
+ expect(mismatch).toBe("");
+}
+it("layout-2 area pixels preserve corners and symmetric caps in every size class and D4 orientation",()=>{
+ for(const b of [2,3])for(const w of [1,b,2*b-1,2*b,2*b+1,11])for(const h of [1,b,2*b-1,2*b,2*b+1,10])for(const orientation of [0,FLIP_H,FLIP_V,FLIP_D,(FLIP_H|FLIP_D)>>>0])verifyBandedPixels(b,3,w,h,FLIP_V,orientation);
+});
+it("banded area pixel oracle holds for random source flips, rectangle shapes and pixel sizes",()=>{
+ fc.assert(fc.property(fc.integer({min:2,max:4}),fc.constantFrom(3,16,32),fc.integer({min:1,max:12}),fc.integer({min:1,max:12}),fc.constantFrom(0,FLIP_H,FLIP_V,FLIP_D,(FLIP_H|FLIP_D)>>>0),fc.constantFrom(0,FLIP_H,FLIP_V,FLIP_D),(b,size,w,h,flags,orientation)=>verifyBandedPixels(b,size,w,h,flags,orientation)),{numRuns:30});
+},60_000);
+
+import { BLOB47_MASKS } from "@smap/core";
+it("every thick road mask copies its macro quadrants losslessly, including odd b and pixel sizes",()=>{
+ for(const b of [2,3])for(const size of [3,16])for(const flags of [0,FLIP_H,FLIP_V,FLIP_D]){
+  const n=3*b,ts={...sheet(size),columns:n,rows:n},s:Stamp={...stamp(flags),width:n,height:n,palette:Array.from({length:n*n},(_,tileId)=>({tilesetId:"source",tileId})),layers:[{layerId:"ground",name:"Ground",cells:Uint32Array.from({length:n*n},(_,i)=>makeCell(i+1,flags))}],nineSlice:{border:b,tileLayers:[]}};
+  const pixels={width:n*size,height:n*size,data:Uint8Array.from({length:n*n*size*size*4},(_,i)=>(i*73+Math.floor(i/31))%256)};
+  const layout=nineSliceLayout(s),target={...ts,columns:16,rows:Math.ceil(layout.slots/16)},atlas=rasterizeSmartStamp(s,"ground",target,new Map([[ts.id,{tileset:ts,pixels}]]));
+  let mismatch="";
+  for(let rank=0;rank<47&&!mismatch;rank++)for(let y=0;y<b*size&&!mismatch;y++)for(let x=0;x<b*size;x++){
+   const right=x>=Math.floor(b*size/2),bottom=y>=Math.floor(b*size/2),mask=BLOB47_MASKS[rank]!;
+   const vertical=!!(mask&(bottom?16:1)),horizontal=!!(mask&(right?4:64));
+   const rx=horizontal?1:right?2:0,ry=vertical?1:bottom?2:0;
+   const sx=rx*b*size+x,sy=ry*b*size+y,raw=orientPoint({x:sx%size,y:sy%size},size,size,inverseOrientation(flags));
+   const expected=pixel(pixels,Math.floor(sx/size)*size+raw.x,Math.floor(sy/size)*size+raw.y);
+   const slot=layout.bank+rank*b*b+Math.floor(y/size)*b+Math.floor(x/size),actual=pixel(atlas,(slot%16)*size+x%size,Math.floor(slot/16)*size+y%size);
+   if(actual.some((v,i)=>v!==expected[i])){mismatch=`b=${b}, size=${size}, flags=${flags}, mask=${mask}, pixel=${x},${y}`;break;}
+  }
+  expect(mismatch).toBe("");
+ }
+});
+
+it("non-multiple sources tile their centre without spilling into opposite bands, in area and every road mask",()=>{
+ for(const [b,n,m] of [[2,7,6],[2,6,7],[2,5,5],[3,7,8]] as const){
+  for(const orientation of [0,FLIP_H,FLIP_V,FLIP_D])for(const size of [3,16])for(const w of [1,b,2*b-1,2*b,2*b+1,11])verifyBandedPixels(b,size,w,7,FLIP_H,orientation,n,m);
+  for(const flags of [0,FLIP_H,FLIP_V,FLIP_D]){
+   const size=3,ts={...sheet(size),columns:n,rows:m},s:Stamp={...stamp(),width:n,height:m,palette:Array.from({length:n*m},(_,tileId)=>({tilesetId:"source",tileId})),layers:[{layerId:"ground",name:"Ground",cells:Uint32Array.from({length:n*m},(_,i)=>makeCell(i+1,flags))}],nineSlice:{border:b,tileLayers:[]}};
+   const pixels={width:n*size,height:m*size,data:Uint8Array.from({length:n*m*size*size*4},(_,i)=>(i*73+Math.floor(i/31))%256)};
+   const layout=nineSliceLayout(s),target={...ts,columns:16,rows:Math.ceil(layout.slots/16)},atlas=rasterizeSmartStamp(s,"ground",target,new Map([[ts.id,{tileset:ts,pixels}]]));
+   const coord=(role:number,p:number,full:number)=>role===0?p:role===2?(full-b)*size+p:b*size+p%((full-2*b)*size);
+   for(let rank=0;rank<47;rank++)for(let y=0;y<b*size;y++)for(let x=0;x<b*size;x++){
+    const right=x>=Math.floor(b*size/2),bottom=y>=Math.floor(b*size/2),mask=BLOB47_MASKS[rank]!;
+    const rx=mask&(right?4:64)?1:right?2:0,ry=mask&(bottom?16:1)?1:bottom?2:0;
+    const sx=coord(rx,x,n),sy=coord(ry,y,m),raw=orientPoint({x:sx%size,y:sy%size},size,size,inverseOrientation(flags));
+    const expected=pixel(pixels,Math.floor(sx/size)*size+raw.x,Math.floor(sy/size)*size+raw.y),slot=layout.bank+rank*b*b+Math.floor(y/size)*b+Math.floor(x/size);
+    expect(pixel(atlas,(slot%16)*size+x%size,Math.floor(slot/16)*size+y%size)).toEqual(expected);
+   }
+  }
+ }
+},60_000);

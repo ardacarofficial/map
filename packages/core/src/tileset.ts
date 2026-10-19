@@ -30,7 +30,8 @@ export interface GeneratedTilesetMetadata {
   readonly layerId: string;
   readonly sourceWidth: number;
   readonly sourceHeight: number;
-  readonly layoutVersion: 1;
+  readonly layoutVersion: 1 | 2;
+  readonly border?: number;
   /** Authored inner art must survive reopen, so PNG regeneration can repeat the same quarter recipe. */
   readonly innerCorner?: NineSliceInnerCorner;
   /** Unique source ids, sorted by code-unit order; includes an optional authored inner-corner PNG. */
@@ -41,9 +42,10 @@ export interface GeneratedTilesetMetadata {
 export function generatedTilesetMetadataProblem(value: unknown): string | null {
   if (!value || typeof value !== "object") return "generated metadata must be an object";
   const g = value as Record<string, unknown>;
-  if (g["kind"] !== "nineSlice" || g["layoutVersion"] !== 1) return "unsupported generated kind or layout version";
+  if (g["kind"] !== "nineSlice" || (g["layoutVersion"] !== 1 && g["layoutVersion"] !== 2)) return "unsupported generated kind or layout version";
   for (const key of ["stampId", "layerId"]) if (typeof g[key] !== "string" || !g[key]) return `generated ${key} must be nonempty`;
   for (const key of ["sourceWidth", "sourceHeight"]) if (typeof g[key] !== "number" || !Number.isSafeInteger(g[key]) || (g[key] as number) < 3) return `generated ${key} must be an integer >= 3`;
+  if (g["layoutVersion"] === 2 && (typeof g["border"] !== "number" || !Number.isSafeInteger(g["border"]) || g["border"] < 2 || (g["sourceWidth"] as number) <= 2*g["border"] || (g["sourceHeight"] as number) <= 2*g["border"])) return "invalid generated border";
   if (!Array.isArray(g["sources"])) return "generated sources must be an array";
   const ids = new Set<string>();
   for (const entry of g["sources"]) {
@@ -63,7 +65,7 @@ export function generatedTilesetMetadataProblem(value: unknown): string | null {
 export function normalizeGeneratedTilesetMetadata(value: GeneratedTilesetMetadata): GeneratedTilesetMetadata {
   const problem = generatedTilesetMetadataProblem(value);
   if (problem) throw new Error(problem);
-  return Object.freeze({ kind: "nineSlice", stampId: value.stampId, layerId: value.layerId, sourceWidth: value.sourceWidth, sourceHeight: value.sourceHeight, layoutVersion: 1, ...(value.innerCorner ? { innerCorner: Object.freeze({ tile: Object.freeze({ tilesetId: value.innerCorner.tile.tilesetId, tileId: value.innerCorner.tile.tileId }), ...(value.innerCorner.flags ? { flags: value.innerCorner.flags } : {}) }) } : {}), sources: Object.freeze([...value.sources].sort((a, b) => a.tilesetId < b.tilesetId ? -1 : a.tilesetId > b.tilesetId ? 1 : 0).map(s => Object.freeze({ tilesetId: s.tilesetId, imageHash: s.imageHash }))) });
+  return Object.freeze({ kind: "nineSlice", stampId: value.stampId, layerId: value.layerId, sourceWidth: value.sourceWidth, sourceHeight: value.sourceHeight, layoutVersion: value.layoutVersion, ...(value.layoutVersion === 2 ? { border: value.border! } : {}), ...(value.innerCorner ? { innerCorner: Object.freeze({ tile: Object.freeze({ tilesetId: value.innerCorner.tile.tilesetId, tileId: value.innerCorner.tile.tileId }), ...(value.innerCorner.flags ? { flags: value.innerCorner.flags } : {}) }) } : {}), sources: Object.freeze([...value.sources].sort((a, b) => a.tilesetId < b.tilesetId ? -1 : a.tilesetId > b.tilesetId ? 1 : 0).map(s => Object.freeze({ tilesetId: s.tilesetId, imageHash: s.imageHash }))) });
 }
 
 /** False for user assets; true when a generated asset has a changed or missing input PNG hash. Does not mutate freshness. */

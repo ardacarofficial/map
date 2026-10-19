@@ -9,9 +9,9 @@ import { OptionLabel } from "./parts";
 export function SmartStampOptions() {
   const clip=useEditorStore(s=>s.stamp),tool=useEditorStore(s=>s.tool);
   const {usage,setUsage}=useSmartStampSession(),stamp=activeSmartStamp();
-  const enabled=!brushDisabled(clip);
+  const enabled=!brushDisabled(clip),border=stamp?.nineSlice?.border ?? autoBrush(clip)?.source.nineSlice?.border ?? 1;
   return <div className="flex shrink-0 items-center gap-2" data-smart-stamp-mode={usage}>
-    <Tooltip label={t("smartBrush.hint")}><span className="flex items-center gap-2">
+    <Tooltip label={border>1?t("smartBrush.bandHint",{border}):t("smartBrush.hint")}><span className="flex items-center gap-2">
       <OptionLabel>{t("smartBrush.label")}</OptionLabel>
       <Toggle label={t("smartBrush.label")} data-smart-brush="" data-nine-slice="" checked={enabled} onChange={setBrushSmartEnabled} />
     </span></Tooltip>

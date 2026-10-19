@@ -1,3 +1,4 @@
+import { migrateV5 } from "./migrations/v5";
 /** Deterministic project/level/stamp/clip JSON. Legacy conversion is raw and never derives cells. */
 import { migrateV4, retainLegacyRoadFamilies } from "./migrations/v4";
 import { decodeUint32LE, encodeUint32LE } from "./base64";
@@ -645,7 +646,7 @@ function readRoot(text: string, format: string, what: string, tilesets: readonly
     );
   }
   try {
-    return migrateV4(root, tilesets as unknown as readonly Record<string, unknown>[]);
+    return migrateV5(migrateV4(root, tilesets as unknown as readonly Record<string, unknown>[]));
   } catch (error) {
     throw new FormatError("", (error as Error).message);
   }
