@@ -491,3 +491,9 @@ export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorde
 export { connectedSelection, selectionContains, selectionHasContent, combineSelections, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
 export { flipRegion } from "./clip";
 export { exportDefold, defoldPreflight, defoldOrientation, DefoldExportError, DEFOLD_SHAPES_PER_OBJECT, type DefoldExportFile, type DefoldExportOptions, type DefoldImageBytes, type DefoldProblem, type DefoldProblemCode } from "./export/defold";
+
+export { canonicalRgba, equalRgba, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, hsvToHsl, hslToHsv, parseHex, formatHex, type Rgba8, type Hsva, type Hsla } from "./pixel/color";
+export { pixelLine, pixelFootprint, pixelRectangle, pixelStrokePoints, MAX_PIXEL_BRUSH_SIZE, type PixelPoint, type PixelRect, type PixelBrushShape } from "./pixel/tools";
+export { mirrorPixels, placedPixelSize, sourceToPlacedPixel, placedToSourcePixel, composePixelFlags, inversePixelFlags, type PixelMirrorAxes } from "./pixel/mirror";
+export { planPixelPoints, planPixelStroke, planPixelLine, planPixelRectangle, pixelDirtyRect, type RasterView, type PixelWrite, type PixelWritePlan, type TilePixelPlan, type PlacedRaster, type PixelGrid, type PixelStrokeOptions } from "./pixel/planner";
+export { planPixelFill, planPixelFillAt, type PixelFillMode } from "./pixel/fill";
