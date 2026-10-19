@@ -130,3 +130,8 @@ describe("export checks", () => {
     expect(states({ copyTextures: false })).toEqual(["layers:ok", "target:ok"]);
   });
 });
+
+it.each(["godot", "defold"] as const)("allows %s collision-only exports when tile layers are excluded", target => {
+  expect(canExport(exportChecks({ target, selectedLayers: 0, collision: true, hasFolder: true, copyTextures: true, missingImages: [], warnings: [] }))).toBe(true);
+  expect(canExport(exportChecks({ target, selectedLayers: 0, collision: false, hasFolder: true, copyTextures: true, missingImages: [], warnings: [] }))).toBe(false);
+});

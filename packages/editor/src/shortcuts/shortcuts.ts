@@ -84,6 +84,7 @@ export type CommandId =
   | "file.open"
   | "file.save"
   | "file.saveAs"
+  | `file.export.${"unity" | "tmj" | "png" | "json" | "zip" | "godot" | "defold"}`
   | "file.export"
   | "file.close"
   | "file.openBackup"
@@ -150,6 +151,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "file.save", keys: ["Ctrl+S"] },
   { command: "file.saveAs", keys: ["Ctrl+Shift+S"] },
   { command: "file.export", keys: ["Ctrl+E"] },
+  { command: "file.export.unity", keys: [] },
+  { command: "file.export.tmj", keys: [] },
+  { command: "file.export.png", keys: [] },
+  { command: "file.export.json", keys: [] },
+  { command: "file.export.zip", keys: [] },
+  { command: "file.export.godot", keys: [] },
+  { command: "file.export.defold", keys: [] },
   /** Commands without a default key (reachable from the command palette). */
   { command: "file.close", keys: [] },
   { command: "file.openBackup", keys: [] },

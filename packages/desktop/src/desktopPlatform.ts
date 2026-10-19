@@ -98,6 +98,11 @@ export function createDesktopPlatform(): Platform {
       return locationOf(fs);
     },
 
+    async pickExportFolder() {
+      const dir = await bridge.pickFolderDialog();
+      return dir ? locationOf(new TauriFileSystem(dir)) : null;
+    },
+
     openPath(path) {
       return open(path);
     },

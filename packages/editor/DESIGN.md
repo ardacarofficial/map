@@ -14,7 +14,7 @@ The canvas is the product; chrome recedes. Every pixel has a job.
 1. **One home per function.** A command may also live in a menu, the command palette and a context menu, but on screen it appears in exactly one visible place.
 2. **Values, not instructions.** Labels are nouns. Explanations go to tooltips. At most one line of secondary text per dialog; no hint paragraphs in panels.
 3. **Facts look like text; editable things look like fields.** Read-only values are plain text. Only typeable values get a field box.
-4. **One accent per view.** Accent fill = the single primary action of the current surface (dialog submit; "Unity'ye aktar" in the app bar). Selection uses a soft tint + 1 px accent-line. Active tool = accent icon on `active` fill.
+4. **One accent per view.** Accent fill = the single primary action of the current surface (dialog submit; "Dışa aktar" in the app bar). Selection uses a soft tint + 1 px accent-line. Active tool = accent icon on `active` fill.
 5. **Fixed sizes.** Only the sizes in §3 exist. No arbitrary `[..px]` classes except layout math that cannot be expressed with tokens.
 6. **Instant.** 0 ms on the painting path (tool switch, hover, brush preview). UI motion ≤ 120 ms; panels 150 ms. Respect `prefers-reduced-motion`.
 7. **Keyboard first.** Every tool has a key; tooltips show it. Focus rings are visible but never wrap huge containers (use an inset 1 px accent line for large focus targets). F6 cycles focus in physical zone order: canvas → left groups → right groups → bottom groups; Shift+F6 reverses the order; Tab hides panels only while the canvas is focused.
@@ -119,7 +119,7 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│ Dosya Düzen Görünüm Harita Yardım │ Proje / [Ana harita ×][+] │ Unity'ye aktar          │
+│ Dosya Düzen Görünüm Harita Yardım │ Proje / [Ana harita ×][+] │ Dışa aktar              │
 ├────┬─────────────────────────────┬──────────────────────────────┬───────────────────────┤
 │    │ Tileset | Stamp'ler | Proje │ Kalem · Boyut · Akıllı …     │ Denetçi | Geçmiş      │
 │T   ├─────────────────────────────┼──────────────────────────────┤                       │
@@ -139,7 +139,7 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 ### 4.1 App bar (36, `bg`)
 - Left: 16 px logo glyph, menubar (text-sm, items 28 high, px 8).
 - Then a 1 px divider, the **project name** button (`title`, 500, ▾ opens project menu: Yeniden adlandır, Proje ayarları…, Son projeler) followed by `/` in `faint` and the **document tabs** inline (28 high, max 180 px each, close `×` only on hover/active, dirty dot `warning` 6 px, `+` icon button). Document tabs no longer take their own row.
-- Right: save state (`muted`, check icon or warning dot; `role=status`, `data-save-state`), then the single primary button "Unity'ye aktar" (28 px, accent, upload icon 16, keeps `data-export-unity`; opens the export dialog).
+- Right: save state (`muted`, check icon or warning dot; `role=status`, `data-save-state`), then the single primary button "Dışa aktar" (28 px, accent, upload icon 16, keeps `data-export-unity` and `data-export-open`; opens the export dialog on the last successful target).
 
 ### 4.2 Tool rail (left, 40, `bg`, right border `line`)
 Order (groups separated by 8 px gap + 1 px `line-subtle` 16 px wide):
@@ -219,6 +219,11 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Form rows: label above field in dialogs (text-sm `muted`), 12 px between rows; segmented controls for small enums (24/28 high, radius 4, selected = `active` fill + `title` text + 1 px `line-strong`, not accent).
 - Advanced sections: plain disclosure "› Gelişmiş" (no bordered card).
 - Welcome screen: left-aligned two-column layout, max width 1040, vertically centred. Left column (360): app name text-xl, three action rows (Yeni proje… Ctrl+N, Aç… Ctrl+O, Tileset bırak – the drop zone is a dashed 1 px `line-strong` area 96 high), then "Şablonlar" as compact rows (icon 16 + name + meta `faint`). Right column: "Son projeler" grid of cards (thumbnail 16:10 on checker, name, date `faint`), empty state = one line `muted`.
+
+### 4.10.1 Export dialog
+- **Dışa aktar** is the one home for Unity, Tiled TMJ, PNG, JSON, Zip, Godot 4 and Defold. L dialog; target radio rows show a name and one-line description, followed by destination, target options and layer selection. The right column shows the map preview, preflight problems and planned files. Errors block publication; engine entity/portal companions stay beside the native resources.
+- Successful exports remember the target and options per world. Cancelling or a failed export keeps the previous selection. Folder choices and Unity's export-on-save switch retain their existing immediate persistence; automatic export remains Unity-only. Resolve all files before publishing, write resources before map entry points, and preserve unrelated destination files.
+
 
 ---
 

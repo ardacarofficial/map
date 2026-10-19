@@ -165,3 +165,14 @@ describe("desktop platform", () => {
     unsubscribe();
   });
 });
+
+it("picks an export folder directly without creating a world subfolder", async () => {
+  const platform = createDesktopPlatform();
+  handlers.set("dialog_pick_folder", () => "/games/godot/maps");
+  const location = await platform.pickExportFolder!();
+  expect(location?.label).toBe("/games/godot/maps");
+  expect(location?.fs.name).toBe("maps");
+  expect(calls.some(([cmd]) => cmd === "project_use_folder" || cmd === "create_dir_all")).toBe(false);
+  handlers.set("dialog_pick_folder", () => null);
+  expect(await platform.pickExportFolder!()).toBeNull();
+});

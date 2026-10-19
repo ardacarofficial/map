@@ -6,8 +6,8 @@ interface ExportUiState {
   /** Export dialog open. */
   open: boolean;
   /**
-   * Target to show when the dialog opens (the app bar's "Unity'ye aktar"
-   * opens it on Unity); `null` = the project's last target.
+   * Target to show when the dialog opens (the app bar's "Dışa aktar"
+   * opens the last successful target); `null` = the project's last target.
    */
   initialTarget: ExportTarget | null;
   /** An export is being written. */
@@ -31,7 +31,7 @@ export const useExportStore = create<ExportUiState>()((set) => ({
 
 /**
  * Opens the export dialog, on `target` when given (e.g. the app bar's
- * primary "Unity'ye aktar" button: `openExportDialog({ target: "unity" })`),
+ * primary "Dışa aktar" button: `openExportDialog()`),
  * otherwise on the project's last export target.
  */
 export function openExportDialog(options: { target?: ExportTarget } = {}): void {
