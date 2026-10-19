@@ -338,7 +338,7 @@ export function stampUsesTileset(stamp: Stamp, tilesetId: string): boolean {
 export async function loadAllLevels(ws: LevelWorkspace, fs: ProjectFileSystem | null): Promise<string[]> {
   const failed: string[] = [];
   for (const level of ws.levels) {
-    if (level.id === ws.activeId) continue;
+    if (level.id === ws.activeId) { ws.pin(level.id); continue; }
     try {
       await ws.load(level.id, fs);
       ws.pin(level.id);
@@ -448,7 +448,7 @@ export function syncLevelGrids(ws: LevelWorkspace): LevelSync {
       const have = entry.store.document.getTileset(want.id);
       if (!have || sameGrid(have, want)) continue;
       touched = true;
-      const r = followGrid(entry.store, want);
+      const r = followGrid(entry.store, want, !ws.history.collecting);
       out.clearedCells += r.cleared;
       out.restoredCells += r.restored;
       out.keptCells += r.kept;
@@ -467,7 +467,7 @@ interface FollowResult {
   kept: number;
 }
 
-function followGrid(store: MapStore, want: Tileset): FollowResult {
+function followGrid(store: MapStore, want: Tileset, reuseHistory: boolean): FollowResult {
   const out: FollowResult = { cleared: 0, restored: 0, kept: 0 };
   const records = levelRecords.get(store) ?? [];
   const current = () => store.document.getTileset(want.id)!;
@@ -477,24 +477,24 @@ function followGrid(store: MapStore, want: Tileset): FollowResult {
 
   // 1. The level's own step for this very change.
   const top = store.peekUndo();
-  if (top && records.some((r) => r.entryId === top.id && r.tilesetId === want.id && sameGrid(r.to, have) && sameGrid(r.from, want))) {
+  if (reuseHistory && top && records.some((r) => r.entryId === top.id && r.tilesetId === want.id && sameGrid(r.to, have) && sameGrid(r.from, want))) {
     store.undo();
     if (matches()) return out;
     store.redo();
   }
   const next = store.peekRedo();
-  if (next && records.some((r) => r.entryId === next.id && r.tilesetId === want.id && sameGrid(r.from, have) && sameGrid(r.to, want))) {
+  if (reuseHistory && next && records.some((r) => r.entryId === next.id && r.tilesetId === want.id && sameGrid(r.from, have) && sameGrid(r.to, want))) {
     store.redo();
     if (matches()) return out;
     store.undo();
   }
   // Unrecorded history (the level made the edit itself before records existed): try its top steps.
-  if (store.canUndo && !records.some((r) => r.entryId === store.peekUndo()?.id)) {
+  if (reuseHistory && store.canUndo && !records.some((r) => r.entryId === store.peekUndo()?.id)) {
     store.undo();
     if (matches()) return out;
     store.redo();
   }
-  if (store.canRedo && !records.some((r) => r.entryId === store.peekRedo()?.id)) {
+  if (reuseHistory && store.canRedo && !records.some((r) => r.entryId === store.peekRedo()?.id)) {
     store.redo();
     if (matches()) return out;
     store.undo();
@@ -625,7 +625,7 @@ export function syncLevelLists(ws: LevelWorkspace): ListSync {
     if (id === ws.activeId) continue;
     const entry = ws.entry(id)!;
     const listChanged = tilesetListKey(entry.store.document.tilesets) !== wantKey;
-    if (listChanged) followList(entry.store, want);
+    if (listChanged) followList(entry.store, want, !ws.history.collecting);
     let provenanceChanged = false;
     for (const ts of want) {
       const have = entry.store.document.getTileset(ts.id);
@@ -643,20 +643,20 @@ export function syncLevelLists(ws: LevelWorkspace): ListSync {
 }
 
 /** Moves `store`'s tileset list to `want` (its own recorded step first, else the core ops). */
-function followList(store: MapStore, want: readonly Tileset[]): void {
+function followList(store: MapStore, want: readonly Tileset[], reuseHistory: boolean): void {
   if (store.inTransaction) store.commit();
   const wantKey = tilesetListKey(want);
   const records = listRecords.get(store) ?? [];
   const key = () => tilesetListKey(store.document.tilesets);
   const haveKey = key();
   const top = store.peekUndo();
-  if (top && records.some((r) => r.entryId === top.id && r.to === haveKey && r.from === wantKey)) {
+  if (reuseHistory && top && records.some((r) => r.entryId === top.id && r.to === haveKey && r.from === wantKey)) {
     store.undo();
     if (key() === wantKey) return;
     store.redo();
   }
   const next = store.peekRedo();
-  if (next && records.some((r) => r.entryId === next.id && r.from === haveKey && r.to === wantKey)) {
+  if (reuseHistory && next && records.some((r) => r.entryId === next.id && r.from === haveKey && r.to === wantKey)) {
     store.redo();
     if (key() === wantKey) return;
     store.undo();

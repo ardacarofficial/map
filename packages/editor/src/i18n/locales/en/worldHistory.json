@@ -1,0 +1,5 @@
+{
+  "deleteReset": "Deleting this map clears all undo and redo history for this world.",
+  "invalid": "History no longer matches the map changes. Nothing was applied.",
+  "entry": "{map} · {action}"
+}

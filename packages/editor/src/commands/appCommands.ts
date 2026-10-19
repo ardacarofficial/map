@@ -1,4 +1,5 @@
 /** Every command of the app, registered once at startup. */
+import { canMoveHistory, moveHistory } from "../io/worldHistoryCommands";
 import {
   addTilesetFiles,
   closeProject,
@@ -21,10 +22,8 @@ import {
   hasSelectedEntity,
   canFlip,
   canPaste,
-  canRedo,
   canRemoveLayer,
   canSelectAll,
-  canUndo,
   contextOf,
   type EditContext,
 } from "./enablement";
@@ -70,9 +69,6 @@ const tool = (id: ToolId): Command => ({
   enabled: () => hasProject() && !isWorldView(),
   run: () => editor().setTool(id),
 });
-const markDirty = () => {
-  if (!editor().dirty) editor().setDirty(true);
-};
 
 /** Asks the canvas to act; no-op while it is still starting. */
 const canvas = (fn: (h: NonNullable<ReturnType<typeof getCanvasHandle>>) => void) => () => {
@@ -200,18 +196,18 @@ const COMMANDS: Command[] = [
     id: "edit.undo",
     title: "commands.edit.undo",
     category: "edit",
-    enabled: () => canUndo(ctx()),
+    enabled: () => canMoveHistory("undo"),
     run: () => {
-      if (editor().project?.store.undo()) markDirty();
+      void moveHistory("undo");
     },
   },
   {
     id: "edit.redo",
     title: "commands.edit.redo",
     category: "edit",
-    enabled: () => canRedo(ctx()),
+    enabled: () => canMoveHistory("redo"),
     run: () => {
-      if (editor().project?.store.redo()) markDirty();
+      void moveHistory("redo");
     },
   },
   { id: "edit.cut", title: "commands.edit.cut", category: "edit", enabled: () => !isWorldView() && canUseSelectionScope(), run: () => void cutSelection() },

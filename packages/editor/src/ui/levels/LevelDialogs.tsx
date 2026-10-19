@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { createLevel, nextLevelName, openNewLevelDialog, portalsTo, removeLevel, askRemoveLevel, useLevelUi } from "../../commands/levelActions";
 import { t } from "../../i18n";
+import { getLevelWorkspace } from "../../io/session";
 import type { PortalReferences } from "../../io/levelWorkspace";
 import { useProjectLibrary } from "../../io/projectLibrary";
 import { useEditorStore } from "../../state/editorStore";
@@ -170,7 +171,7 @@ function RemoveLevelBody({ id, name }: { id: string; name: string }) {
           }
         />
       </div>
-      <AlertDialog.Description className="mt-2 text-md text-muted">{t("levels.removeDescription")}</AlertDialog.Description>
+      <AlertDialog.Description className="mt-2 text-md text-muted">{t("levels.removeDescription")} {getLevelWorkspace()?.history.dependsOn(id) && t("worldHistory.deleteReset")}</AlertDialog.Description>
       <div
         className={`mt-4 flex items-start gap-2 rounded-md text-sm ${refs && refs.count > 0 ? "text-danger" : "text-muted"}`}
         data-portal-refs={refs?.count ?? ""}

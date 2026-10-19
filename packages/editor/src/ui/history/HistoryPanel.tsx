@@ -1,13 +1,15 @@
 import type { MapStore } from "@smap/core";
 import { useEffect, useLayoutEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
+import { activeWorldHistory, moveHistory } from "../../io/worldHistoryCommands";
+import { useProjectLibrary } from "../../io/projectLibrary";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
-import { bindHistoryLabels, historyLabelsVersion, sharedHistoryLabels, subscribeHistoryLabels } from "../feedback/sharedHistoryLabels";
+import { bindHistoryLabels, historyLabelsFor, historyLabelsVersion, sharedHistoryLabels, subscribeHistoryLabels } from "../feedback/sharedHistoryLabels";
 import { Icon, type IconName } from "../primitives/Icon";
 import { historyVerbs } from "./historyVerbs";
 import { registerHistoryCommands } from "./historyCommands";
-import { applyJump, historyRows, jumpFor, type HistoryRow } from "./historyModel";
+import { applyJump, historyRows, jumpFor, verbForChanges, type HistoryRow } from "./historyModel";
 
 registerHistoryCommands();
 
@@ -50,19 +52,31 @@ function useHistoryChanges(store: MapStore | undefined): void {
 }
 
 /**
- * Geçmiş tab: every undo step of the open map, oldest first, from core
- * `historyEntries()`. The current state is marked ("Şu an"); clicking an
+ * Geçmiş tab: every chronological world action (or local stamp action), oldest first. The current state is marked ("Şu an"); clicking an
  * earlier row undoes back to it, a later (undone) row redoes up to it. No
  * branches or checkpoints: a new edit drops the undone rows.
  */
 export function HistoryPanel() {
   const store = useEditorStore((s) => s.project?.store);
+  const levels = useProjectLibrary((s) => s.levels);
   useHistoryChanges(store);
   useSyncExternalStore(subscribeHistoryLabels, historyLabelsVersion);
   useEffect(() => bindHistoryLabels(store), [store]);
   const listRef = useRef<HTMLOListElement>(null);
+  const world = activeWorldHistory();
+  useSyncExternalStore(listener => world?.subscribe(listener) ?? (() => {}), () => world?.version ?? 0);
 
-  const rows = store ? historyRows(store.historyEntries(), (id) => sharedHistoryLabels.labelOf(id), (id) => historyVerbs.labelOf(id)) : [];
+  const entries = world?.entries();
+  const byId = new Map(entries?.map(entry => [entry.id, entry] as const));
+  const names = new Map(levels.map(level => [level.id, level.name]));
+  const rows = entries ? historyRows(entries.map(e => ({ ...e.item, state: e.state })), id => {
+    const entry = byId.get(id)!;
+    const p = entry.participants.find(p => p.mapId === entry.originMapId) ?? entry.participants[0]!;
+    return historyLabelsFor(world!.store(p.mapId)!).labelOf(p.entryId);
+  }, id => verbForChanges(byId.get(id)!.changes)).map(row => {
+    const entry = row.id === null ? undefined : byId.get(row.id);
+    return entry ? { ...row, label: t("worldHistory.entry", { map: names.get(entry.originMapId) ?? entry.originMapId, action: row.label }) } : row;
+  }) : store ? historyRows(store.historyEntries(), (id) => sharedHistoryLabels.labelOf(id), (id) => historyVerbs.labelOf(id)) : [];
   const currentIndex = rows.findIndex((r) => r.state === "current");
   const steps = rows.length - 1;
 
@@ -75,7 +89,9 @@ export function HistoryPanel() {
 
   const go = (index: number) => {
     if (store.inTransaction) return;
-    applyJump(store, jumpFor(rows, index));
+    const jump = jumpFor(rows, index);
+    if (world && jump) void moveHistory(jump.move, jump.id);
+    else applyJump(store, jump);
   };
 
   return (

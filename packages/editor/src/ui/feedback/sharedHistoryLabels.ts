@@ -1,5 +1,5 @@
 /**
- * One {@link HistoryLabels} for the open document, shared by the undo pill
+ * Per-store {@link HistoryLabels}, shared by the undo HUD
  * (`UndoHud`) and the Geçmiş tab (`ui/history/HistoryPanel`): the canvas
  * names its strokes once ("Kalem · 12 hücre") and both read the names.
  * `UndoHud` feeds the canvas' stroke summaries; anyone may bind the store.
@@ -11,7 +11,14 @@ import { useEditorStore } from "../../state/editorStore";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import { HistoryLabels } from "./historyLabels";
 
-export const sharedHistoryLabels = new HistoryLabels();
+const byStore = new WeakMap<MapStore, HistoryLabels>();
+export let sharedHistoryLabels = new HistoryLabels();
+
+export function historyLabelsFor(store: MapStore): HistoryLabels {
+  let labels = byStore.get(store);
+  if (!labels) { labels = new HistoryLabels(); byStore.set(store, labels); }
+  return labels;
+}
 
 let boundStore: MapStore | undefined;
 let version = 0;
@@ -30,11 +37,11 @@ function bump(): void {
   for (const l of [...listeners]) l();
 }
 
-/** The labels now belong to `store`'s history (a new store = a new history: labels are forgotten). */
+/** Bind the active store; switching maps preserves each store's labels for world history. */
 export function bindHistoryLabels(store: MapStore | undefined): void {
   if (store === boundStore) return;
   boundStore = store;
-  sharedHistoryLabels.reset();
+  sharedHistoryLabels = store ? historyLabelsFor(store) : new HistoryLabels();
   tilesetStroke = false;
   bump();
 }

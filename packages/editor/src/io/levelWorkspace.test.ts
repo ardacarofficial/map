@@ -281,3 +281,19 @@ it("retains cached level identity and undo/redo when only generated provenance c
   cached.redo(); expect(cell(cached, 2, 1)).not.toBe(0);
   cached.undo(); cached.undo(); expect(cell(cached, 1, 1)).toBe(0);
 });
+
+ it("synchronizes renamed tilesets and project data without dropping local or world history", async () => {
+  const ws = workspace(), main = ws.activeId;
+  const other = ws.add({ ...NEW, name: "Other" });
+  await ws.activate(other.id, null);
+  const cached = ws.active.store;
+  paint(cached, 1, 1); paint(cached, 2, 1); cached.undo();
+  const entries = cached.historyEntries();
+  await ws.activate(main, null);
+  ws.active.store.dispatch({ type: "setTilesetMeta", tilesetId: "grass", name: "Meadow" });
+  await ws.activate(other.id, null);
+  expect(ws.active.store).toBe(cached);
+  expect(cached.historyEntries()).toEqual(entries.filter(e => e.state === "done"));
+  expect(cached.document.getTileset("grass")?.name).toBe("Meadow");
+  expect(ws.history.undoDepth).toBeGreaterThan(0);
+});

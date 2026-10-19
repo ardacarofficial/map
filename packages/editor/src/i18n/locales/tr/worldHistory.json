@@ -1,0 +1,5 @@
+{
+  "deleteReset": "Harita silinince bu dünyanın tüm geri alma ve yineleme geçmişi temizlenir.",
+  "invalid": "Geçmiş, harita değişiklikleriyle eşleşmiyor. Hiçbir işlem uygulanmadı.",
+  "entry": "{map} · {action}"
+}

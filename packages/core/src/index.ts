@@ -508,3 +508,7 @@ export { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY } from "./collection";
 export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistoryChange } from "./store";
 
 export { exportGodot, preflightGodot, GodotPreflightError, encodeGodotCells, type GodotCell, type GodotMapInput, type GodotOptions, type GodotImageBytes, type GodotFile, type GodotPlan, type GodotProblem, type GodotProblemKey } from "./export/godot";
+export { WorldHistory } from "./pixel/worldHistory";
+export type { WorldHistoryEntry, WorldHistoryRow, WorldParticipant } from "./pixel/worldHistory";
+export { prepareWorldEdit, applyWorldEdit, WorldEditError } from "./pixel/worldEdit";
+export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEditPlan, WorldEditBlocker } from "./pixel/worldEdit";
