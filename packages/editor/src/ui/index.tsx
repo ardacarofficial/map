@@ -22,6 +22,8 @@ import { EntityTypesDialog } from "./entities/EntityTypesDialog";
 import { SaveStampDialog } from "./stamps/SaveStampDialog";
 import { installLayerSync } from "../commands/layerSync";
 import { installLevelActions } from "../commands/levelActions";
+import { installUsageActions } from "../extras/usageActions";
+import { installBookmarkActions } from "../extras/bookmarkActions";
 import { installWorldActions } from "../commands/worldActions";
 import { installTilesetActions } from "../commands/tilesetActions";
 import { TilesetImportDialog } from "./tilesetImport/TilesetImportDialog";
@@ -58,6 +60,8 @@ export function App() {
     const uninstallLayerSync = installLayerSync();
     const uninstallLevelActions = installLevelActions();
     const uninstallWorldActions = installWorldActions();
+    const uninstallUsageActions = installUsageActions();
+    const uninstallBookmarks = installBookmarkActions();
     const uninstallTilesetActions = installTilesetActions();
     return () => {
       uninstallShortcuts();
@@ -65,6 +69,8 @@ export function App() {
       uninstallLayerSync();
       uninstallLevelActions();
       uninstallWorldActions();
+      uninstallUsageActions();
+      uninstallBookmarks();
       uninstallTilesetActions();
     };
   }, []);

@@ -1,0 +1,21 @@
+{
+  "title": "Yer imleri",
+  "add": "Yer imi ekle…",
+  "name": "Ad",
+  "rename": "Yer imini yeniden adlandır…",
+  "delete": "Yer imini sil",
+  "jump": "Yer imine git",
+  "provider": "Yer imi",
+  "empty": "Bu haritada yer imi yok",
+  "sessionOnly": "Yer imleri bu oturumda saklanıyor; kalıcı depolama kullanılamıyor.",
+  "slot1": "1. yer imine git",
+  "slot2": "2. yer imine git",
+  "slot3": "3. yer imine git",
+  "slot4": "4. yer imine git",
+  "slot5": "5. yer imine git",
+  "slot6": "6. yer imine git",
+  "slot7": "7. yer imine git",
+  "slot8": "8. yer imine git",
+  "slot9": "9. yer imine git",
+  "confirmAdd": "Ekle"
+}

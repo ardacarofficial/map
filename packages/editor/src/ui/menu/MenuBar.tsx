@@ -1,6 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { Menubar } from "@base-ui/react/menubar";
 
+import { BookmarksMenu } from "../../extras/BookmarksMenu";
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { t } from "../../i18n";
 import { openRecentProject } from "../../io/session";
@@ -105,6 +106,7 @@ function MenuItems({ menu }: { menu: MenuDef }) {
           {label}
         </Menu.Item>
       );
+    if (menu.id === "view" && entry.command === "view.frameMap") return [item, <BookmarksMenu key="submenu-bookmarks" />];
     if (menu.submenu?.after === entry.command) return [item, <RecentProjectsSubmenu key="submenu-recent" />];
     return item;
   });

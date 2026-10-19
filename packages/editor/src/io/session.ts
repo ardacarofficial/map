@@ -678,10 +678,10 @@ export interface ProjectSavedEvent {
   levels: readonly SavedLevel[];
 }
 
-const savedListeners = new Set<(event: ProjectSavedEvent) => void>();
+const savedListeners = new Set<(event: ProjectSavedEvent) => void | Promise<void>>();
 
-/** Runs `listener` after every successful save (e.g. auto export to Unity). Returns an unsubscribe. */
-export function onProjectSaved(listener: (event: ProjectSavedEvent) => void): () => void {
+/** Runs after successful file writes; returned promises keep the save pending (e.g. view-setting migration). Returns an unsubscribe. */
+export function onProjectSaved(listener: (event: ProjectSavedEvent) => void | Promise<void>): () => void {
   savedListeners.add(listener);
   return () => savedListeners.delete(listener);
 }
@@ -723,7 +723,8 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
       publishLevelState();
       for (const listener of savedListeners) {
         try {
-          listener({ project, fs: target.fs, manual, levels });
+          const completion = listener({ project, fs: target.fs, manual, levels });
+          if (completion) await completion;
         } catch (error) {
           console.error(error);
         }

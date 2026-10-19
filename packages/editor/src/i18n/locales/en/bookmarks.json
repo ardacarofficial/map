@@ -1,0 +1,21 @@
+{
+  "title": "Bookmarks",
+  "add": "Add bookmark…",
+  "name": "Name",
+  "rename": "Rename bookmark…",
+  "delete": "Delete bookmark",
+  "jump": "Go to bookmark",
+  "provider": "Bookmark",
+  "empty": "No bookmarks in this map",
+  "sessionOnly": "Bookmarks are kept for this session; persistent storage is unavailable.",
+  "slot1": "Go to bookmark 1",
+  "slot2": "Go to bookmark 2",
+  "slot3": "Go to bookmark 3",
+  "slot4": "Go to bookmark 4",
+  "slot5": "Go to bookmark 5",
+  "slot6": "Go to bookmark 6",
+  "slot7": "Go to bookmark 7",
+  "slot8": "Go to bookmark 8",
+  "slot9": "Go to bookmark 9",
+  "confirmAdd": "Add"
+}

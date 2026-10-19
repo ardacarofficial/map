@@ -1,0 +1,21 @@
+{
+  "find": "Find usages…",
+  "title": "Usages",
+  "refresh": "Refresh",
+  "next": "Next usage",
+  "previous": "Previous usage",
+  "loading": "Scanning world…",
+  "error": "Some maps could not be read — refresh.",
+  "changed": "Changed — refresh",
+  "count": "{count, plural, one {# usage} other {# usages}}",
+  "results": "Usage results",
+  "mapCount": "{name} · {count, plural, one {# usage} other {# usages}}",
+  "cell": "{layer} · {x}, {y} · Tile {tile}",
+  "flipH": "Flipped horizontally",
+  "flipV": "Flipped vertically",
+  "flipD": "Flipped diagonally",
+  "noFlip": "No flip",
+  "previousPage": "Previous page",
+  "nextPage": "Next page",
+  "page": "{page} / {total}"
+}

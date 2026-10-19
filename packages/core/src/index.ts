@@ -512,3 +512,5 @@ export { WorldHistory } from "./pixel/worldHistory";
 export type { WorldHistoryEntry, WorldHistoryRow, WorldParticipant } from "./pixel/worldHistory";
 export { prepareWorldEdit, applyWorldEdit, WorldEditError } from "./pixel/worldEdit";
 export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEditPlan, WorldEditBlocker } from "./pixel/worldEdit";
+
+export { tileUsageBatches, type TileUsage } from "./tileUsage";

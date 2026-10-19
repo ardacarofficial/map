@@ -199,6 +199,11 @@ The panel switcher rail is removed. `data-rail` values move: `world` moves to th
 - Geçmiş: rows 24, newest at bottom, current row `accent-soft`, future rows `faint`. Labels are verbs ("Katman ekle", "Boya 12 hücre").
   Undo/redo follows one chronological history across the world, activates the action’s origin map, and shows its name in each row; a compound pixel edit is one step. Temporary stamp documents keep local history; deleting a participating map explicitly resets world history.
 
+### 4.6.1 Kullanımları bul
+- One results home: a section at the top of the existing Denetçi. It follows the inspector's dock zone, so users can keep drawing and move the list with the established layout. Tileset/selection and palette-slot context menus plus the command palette start the same read-only world search; no search modal or extra panel.
+- Map name and per-map count, layer, zero-based X/Y, tile id and flip facts use ordinary text. Rows are keyboard buttons (Click/Enter jumps); the current row uses neutral `active`, focus uses `accent`. Only 50 results are mounted per page; next/previous usage follows the full list across pages. Refresh and close stay in the section, with F3/Shift+F3 labels from the single shortcut list.
+- Navigation activates the map, centres the cell and flashes the existing one-cell `accent` feedback; it creates no selection or history entry. Any content/list/disk change marks the snapshot “Değişti — yenile” and disables stale jumps. Unopened maps are parsed/scanned in a worker without activating or caching them; live documents are scanned in sparse chunk batches with a 4 ms scheduling budget.
+
 ### 4.7 Status bar (24, `bg`, top border `line`, text-xs `muted`)
 Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile id, layer, map size, tile px. Right: Harita|Dünya segmented (20 high) and the **zoom field** (editable, "%100" Turkish format, ▾ presets: Sığdır Shift+1, %50, %100 Ctrl+0, %200, %400). This is the only canvas zoom readout; Tileset has its own zoom control.
 
@@ -218,6 +223,11 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Menu: `popup`, radius 6, padding 4, items 24 high, px 8, text-sm, icon 16 column optional, shortcut right in `muted` mono text-xs (no boxed keycaps in menus), highlighted item `hover-popup`, separators 1 px `line-subtle` with 4 px margin, danger items `danger` text. App menus and the recent-project submenu fit the available viewport height and scroll vertically.
 - Tooltip: `popup`, radius 4, px 8 py 4, text-sm `text`, shortcut in a `kbd` chip (text-xs mono `muted`, 1 px `line-strong`, radius 2).
 - Command palette: width M 560, top 12vh, input 40 high text-md, rows 32: command name `text` + category `faint` + shortcut right; empty query shows recent commands first.
+
+### 4.9.1 Yer imleri
+- One menu home: Görünüm → Yer imleri. Add uses the existing name prompt; each named row has jump/rename/delete actions in its submenu. The command palette provides “Yer imi: <name>” and named rename/delete entries for the current map. The palette updates when a map switch or asynchronous view-setting load changes its entries. No permanent bookmark panel.
+- Ctrl+Shift+D adds; Ctrl+1…9 jumps to the first nine entries in list order. These free defaults and their user overrides come only from `shortcuts.ts`. Names are fields only while adding/renaming; listed names are text. Existing menu/scroll/focus primitives and token sizes apply.
+- A bookmark stores the centre in map pixels and zoom in local view storage, keyed by world identity + stable map id. Desktop folders use their path; browser directory handles get a persistent identity using `isSameEntry` (equal folder names remain separate worlds). Unsaved worlds are isolated per session; first save carries their bookmarks over before reporting completion. Corrupt/blocked storage is tolerated and a failed persistence write reports session-only retention. No map-format or undo change. Jumps snap through the existing camera restore path and clamp to valid cell centres after a map resize.
 
 ### 4.10 Dialogs & welcome
 - Settings uses an L dialog, 160 px category sidebar, 1 px divider and scrollable category body. Header and Save/Cancel footer stay visible at short heights. Arrow Up/Down and Home/End navigate the sidebar; narrow windows replace it with one category Select.
