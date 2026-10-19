@@ -2,7 +2,7 @@
   "title": "Map settings",
   "name": "Name",
   "tile": "Tile",
-  "tileReadOnly": "Tile size is a project setting",
+  "tileReadOnly": "Tile size comes from the world default",
   "background": "Background",
   "backgroundNone": "None",
   "backgroundClear": "Remove background",

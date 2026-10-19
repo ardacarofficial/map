@@ -1,10 +1,10 @@
 {
-  "title": "Proje ayarları",
-  "description": "project.smap içinde saklanır; yeni haritalar bu değerlerle açılır.",
+  "title": "Dünya ayarları",
+  "description": "Yeni haritaların boyut, tile ve katman varsayılanları. project.smap içinde saklanır.",
   "tabGeneral": "Genel",
   "tabUnity": "Unity",
   "tabMore": "Diğer",
-  "name": "Proje adı",
+  "name": "Dünya adı",
   "newMapDefaults": "Yeni harita varsayılanları",
   "backgroundHint": "Kendi rengi olmayan haritaların tuval rengi.",
   "unityFolderHint": "Unity projesinde haritaların yazılacağı yer; aktarma penceresinde hatırlatılır.",
@@ -13,8 +13,8 @@
   "entityTypes": "Entity türleri",
   "entityTypesHint": "NPC, kapı, sandık gibi türler ve alanları",
   "tilesets": "Tileset''ler",
-  "tilesetsHint": "Projedeki tileset''leri bul ve düzenle",
+  "tilesetsHint": "Dünyadaki tileset''leri bul ve düzenle",
   "appSettings": "Uygulama ayarları",
-  "appSettingsHint": "Dil ve kısayollar (tüm projeler için)",
-  "saved": "Proje ayarları kaydedildi"
+  "appSettingsHint": "Dil ve kısayollar (tüm dünyalar için)",
+  "saved": "Dünya ayarları kaydedildi"
 }

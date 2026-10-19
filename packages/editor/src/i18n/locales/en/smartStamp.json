@@ -11,7 +11,7 @@
   "road": "Road",
   "singleLayer": "Road requires one complete tile layer.",
   "command": "9-slice…",
-  "changed": "The stamp or project changed. Prepare it again.",
+  "changed": "The stamp or world changed. Prepare it again.",
   "failed": "Preparation failed: {detail}",
   "generated": "Generated",
   "dialogTitle": "9-slice stamp",

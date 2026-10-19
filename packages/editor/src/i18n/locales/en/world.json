@@ -2,8 +2,10 @@
   "world": "World",
   "status": "World",
   "levelCount": "{count, plural, one {# map} other {# maps}}",
-  "hintTitle": "World map",
+  "hintTitle": "World overview",
   "hint": "Drag maps to position them (Alt: free).",
   "back": "Back to the map",
-  "toolsDisabled": "Only panning on the world map"
+  "toolsDisabled": "Only panning in the world overview",
+  "firstMapName": "First map name",
+  "overviewName": "World: {name}"
 }

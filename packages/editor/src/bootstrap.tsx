@@ -23,6 +23,7 @@ import { registerExportCommands } from "./commands/exportCommands";
 import { installKeyboardLayout } from "./commands/keymap";
 import { installAutoExport } from "./export/exportActions";
 import { t } from "./i18n";
+import { useProjectLibrary } from "./io/projectLibrary";
 import { readSaveIndicator, subscribeSaveIndicator } from "./io/saveIndicator";
 import { openProjectPath } from "./io/session";
 import { browserPlatform, setPlatform, type Platform } from "./platform";
@@ -72,7 +73,9 @@ function installTitle(platform: Platform): () => void {
   const update = () => {
     const project = useEditorStore.getState().project;
     const app = t("app.name");
-    const title = project ? `${readSaveIndicator().unsaved ? "● " : ""}${project.name} — ${app}` : app;
+    const mapName = useProjectLibrary.getState().levels.find(l => l.id === project?.levelId)?.name;
+    const breadcrumb = project ? `${project.name}${mapName ? ` / ${mapName}` : ""}` : "";
+    const title = project ? `${readSaveIndicator().unsaved ? "● " : ""}${breadcrumb} — ${app}` : app;
     if (title === last) return;
     last = title;
     platform.setTitle(title);

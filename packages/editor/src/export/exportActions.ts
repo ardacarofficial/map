@@ -34,15 +34,17 @@ export function formatClock(date: Date): string {
   return date.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
-/** Level name used for exported file names ("main"). */
+/** Map display name used for exported file names. */
 export function projectLevelName(project: OpenProject): string {
-  return levelName(project.levelPath);
+  return sourceLevelName(activeSource(project));
 }
 
 /** The level an export writes: the open one, or another level of the project (dialog's "Harita"). */
 export interface ExportSource {
   readonly document: MapDocument;
-  /** Project-relative level file, e.g. `"levels/main.json"` (gives the export file names). */
+  /** Name captured by the save pipeline so a queued export survives a world switch. */
+  readonly levelName?: string;
+  /** Project-relative level file, e.g. `"levels/main.json"` (kept stable across renames). */
   readonly levelPath: string;
   readonly levelId?: string | undefined;
 }
@@ -52,9 +54,11 @@ export function activeSource(project: OpenProject): ExportSource {
   return { document: project.store.document, levelPath: project.levelPath, levelId: project.levelId };
 }
 
-/** Level name of a source, for file names ("main"). */
+/** Map display name for file names, falling back to the path for older sources. */
 export function sourceLevelName(source: ExportSource): string {
-  return levelName(source.levelPath);
+  if (source.levelName !== undefined) return source.levelName;
+  const levels = useProjectLibrary.getState().levels;
+  return levels.find(l => source.levelId ? l.id === source.levelId : l.path === source.levelPath)?.name ?? levelName(source.levelPath);
 }
 
 /**
@@ -372,7 +376,7 @@ export function installAutoExport(): () => void {
     target: autoTarget,
     files: (project) => {
       const settings = autoSettings ?? defaultExportSettings(project.name);
-      return previewFiles("unity", { document: project.document, levelPath: project.levelPath ?? `levels/${project.levelName}.json`, levelId: project.levelId }, settings);
+      return previewFiles("unity", { document: project.document, levelPath: project.levelPath ?? `levels/${project.levelName}.json`, levelId: project.levelId, levelName: project.exportName ?? project.levelName }, settings);
     },
     onExported: ({ project, set, at }) => {
       autoProblemShown = false;
@@ -395,6 +399,7 @@ export function installAutoExport(): () => void {
         name: project.name,
         document: level.store.document,
         levelName: levelName(level.path),
+        exportName: level.name,
         levelPath: level.path,
         levelId: level.id,
         manual,

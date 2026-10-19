@@ -16,7 +16,7 @@
   "groupExpand": "Grubu genişlet",
   "remove": "Kaldır…",
   "removeTitle": "“{name}” kaldırılsın mı?",
-  "removeDescription": "Tileset projeden çıkar; kullanıldığı hücreler temizlenir. Ctrl+Z ile tek adımda geri alınır.",
+  "removeDescription": "Tileset dünyadan çıkar; kullanıldığı hücreler temizlenir. Ctrl+Z ile tek adımda geri alınır.",
   "removeConfirm": "Hücreleri temizle ve sil",
   "removeCancel": "Vazgeç",
   "removed": "Tileset kaldırıldı: {name}",

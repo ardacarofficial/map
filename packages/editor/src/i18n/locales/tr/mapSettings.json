@@ -2,7 +2,7 @@
   "title": "Harita ayarları",
   "name": "Ad",
   "tile": "Tile",
-  "tileReadOnly": "Tile boyutu proje ayarıdır",
+  "tileReadOnly": "Tile boyutu dünya varsayılanından gelir",
   "background": "Arka plan",
   "backgroundNone": "Yok",
   "backgroundClear": "Arka planı kaldır",

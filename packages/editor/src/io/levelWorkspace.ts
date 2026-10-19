@@ -44,6 +44,7 @@ export interface NewLevelOptions {
   width: number;
   height: number;
   tileSize: number;
+  tileHeight?: number;
   /** Name of the empty tile layer a new level starts with. */
   layerName: string;
   /** Round 4: the project's layer template (bottom to top); replaces the single `layerName` layer when non-empty. */
@@ -316,7 +317,7 @@ export class LevelWorkspace {
       width: options.width,
       height: options.height,
       tileWidth: options.tileSize,
-      tileHeight: options.tileSize,
+      tileHeight: options.tileHeight ?? options.tileSize,
       tilesets: source.tilesets,
       entityTypes: source.entityTypes,
       ...projectDataOf(source),

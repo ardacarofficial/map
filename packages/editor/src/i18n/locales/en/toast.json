@@ -33,14 +33,14 @@
   "imageTooSmall": "{name} is smaller than one tile ({tile} px).",
   "saveFailed": "Couldn''t save: {detail}",
   "openFailed": "Couldn''t open: {detail}",
-  "formatError": "Project file is damaged or unrecognized ({detail})",
+  "formatError": "World file is damaged or unrecognized ({detail})",
   "noProjectFile": "This folder has no project.smap.",
-  "noLevel": "The project has no level.",
+  "noLevel": "The world has no map.",
   "missingTilesetImage": "Tileset image not found: {path}",
   "permissionDenied": "Folder access was not granted.",
   "fsUnsupported": "This browser can''t save to folders. Use Chrome or Edge.",
-  "folderTaken": "Folder “{name}” already contains a project; pick another place.",
+  "folderTaken": "Folder “{name}” already contains a world; pick another place.",
   "canvasFailed": "Couldn''t start the canvas: {detail}",
-  "recentGone": "Project folder no longer exists: {name}",
+  "recentGone": "World folder no longer exists: {name}",
   "dismiss": "Dismiss"
 }

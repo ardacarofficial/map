@@ -4,7 +4,7 @@
   "languageEn": "English",
   "languageChanged": "Language: English",
   "dialogTitle": "App settings",
-  "dialogDescription": "Language and shortcuts apply to all projects.",
+  "dialogDescription": "Language and shortcuts apply to all worlds.",
   "dialogLocation": "Location: {path}",
   "dialogDefaults": "Defaults",
   "dialogCancel": "Cancel",
