@@ -1,6 +1,5 @@
 /**
- * The user's settings file (CLAUDE.md v0.5: "Kısayollar ayar dosyasından
- * değiştirilebilir; ayrı ekran yok"). Pure parsing / validation / merging;
+ * The user's settings file. Pure parsing / validation / merging;
  * `appSettings.ts` applies the result.
  *
  * ```json
@@ -15,7 +14,7 @@
  * reported and ignored, never fatal.
  */
 import { normalizeLayout, type DockLayout } from "../ui/layout/dockModel";
-import { parseChord } from "../commands/keymap";
+import { chordIdentity, chordsOverlap } from "../commands/keymap";
 import { availableLocales, isAvailableLocale, type Locale } from "../i18n";
 import type { CommandId, ShortcutDef } from "../shortcuts/shortcuts";
 
@@ -48,6 +47,7 @@ const NAMED_CODES = new Set([
   "Space", "Tab", "Escape", "Enter", "Backspace", "Delete", "Insert", "Home", "End", "PageUp", "PageDown",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "Equal", "Plus", "Minus", "Comma", "Period", "Slash", "Backslash", "Semicolon", "Quote", "Backquote", "BracketLeft", "BracketRight",
+  "IntlBackslash", "IntlRo", "IntlYen",
   "NumpadAdd", "NumpadSubtract", "NumpadMultiply", "NumpadDivide", "NumpadDecimal", "NumpadEnter",
 ]);
 
@@ -60,13 +60,13 @@ export function isValidKeyString(keys: string): boolean {
   const key = parts.pop() ?? "";
   const mods = parts.map((p) => p.toLowerCase());
   if (mods.some((m) => !MODIFIERS.has(m)) || new Set(mods).size !== mods.length) return false;
-  if (/^[A-Za-z0-9]$/.test(key)) return true;
+  if (/^[!-~]$/.test(key)) return true;
   if (/^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F([1-9]|1[0-9]|2[0-4]))$/.test(key)) return true;
   return NAMED_CODES.has(key);
 }
 
 function chordId(keys: string): string {
-  return JSON.stringify(parseChord(keys));
+  return chordIdentity(keys);
 }
 
 /**
@@ -149,20 +149,20 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
  * over an override; between two overrides the one listed first wins.
  */
 function dropConflicts(overrides: Map<CommandId, string[]>, defaults: readonly ShortcutDef[], problems: SettingsProblem[]): void {
-  const owner = new Map<string, CommandId>();
+  const owner: { key: string; command: CommandId }[] = [];
   for (const def of defaults) {
     if (overrides.has(def.command)) continue;
-    for (const k of def.keys) if (!owner.has(chordId(k))) owner.set(chordId(k), def.command);
+    for (const key of def.keys) owner.push({ key, command: def.command });
   }
   for (const [command, keys] of overrides) {
     const kept: string[] = [];
     for (const k of keys) {
-      const other = owner.get(chordId(k));
+      const other = owner.find(entry => entry.command !== command && chordsOverlap(entry.key, k))?.command;
       if (other && other !== command) {
         problems.push({ entry: `shortcuts.${command}`, reason: "conflict", detail: `${k} → ${other}` });
         continue;
       }
-      owner.set(chordId(k), command);
+      owner.push({ key: k, command });
       kept.push(k);
     }
     overrides.set(command, kept);
@@ -177,14 +177,9 @@ export function mergeShortcuts(defaults: readonly ShortcutDef[], overrides: Read
   });
 }
 
-/**
- * The file written on first run: every command with its current keys, so the
- * user edits values instead of guessing command ids (JSON has no comments).
- */
-export function defaultSettingsText(defaults: readonly ShortcutDef[], locale: Locale): string {
-  const shortcuts: Record<string, string[]> = {};
-  for (const d of defaults) if (!FIXED_COMMANDS.has(d.command)) shortcuts[d.command] = [...d.keys];
-  return formatSettings({ locale, shortcuts });
+/** First-run file stores differences only; absent commands retain their defaults. */
+export function defaultSettingsText(_defaults: readonly ShortcutDef[], locale: Locale): string {
+  return formatSettings({ locale, shortcuts: {} });
 }
 
 /**
@@ -224,4 +219,18 @@ export function withLocale(text: string | null, locale: Locale, defaults: readon
     // Broken file: leave it to the user.
   }
   return null;
+}
+
+/** Remove redundant legacy defaults while preserving unknown/invalid entries for diagnostics. */
+export function compactSettingsText(text: string, defaults: readonly ShortcutDef[]): string {
+  const raw: unknown = JSON.parse(text);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new SyntaxError("Expected a JSON object");
+  const record = raw as Record<string, unknown>;
+  const value = record.shortcuts;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const shortcuts = { ...value as Record<string, unknown> };
+    for (const def of defaults) if (JSON.stringify(shortcuts[def.command]) === JSON.stringify(def.keys)) delete shortcuts[def.command];
+    record.shortcuts = shortcuts;
+  }
+  return formatSettings(record);
 }

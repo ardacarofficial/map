@@ -84,6 +84,7 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 
 | Thing | Size |
 |---|---|
+| Settings dialog / sidebar | 880 / 160 px (`--spacing-dialog-l`, `--spacing-settings-sidebar`); category Select replaces sidebar below dialog M width |
 | App bar | 36 px |
 | Tab strip (panel tabs, dock tabs, document tabs) | 28 px, text-sm, active = `title` text + 2 px accent underline; inactive = `muted` |
 | Options bar | 36 px |
@@ -213,6 +214,11 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Command palette: width M 560, top 12vh, input 40 high text-md, rows 32: command name `text` + category `faint` + shortcut right; empty query shows recent commands first.
 
 ### 4.10 Dialogs & welcome
+- Settings uses an L dialog, 160 px category sidebar, 1 px divider and scrollable category body. Header and Save/Cancel footer stay visible at short heights. Arrow Up/Down and Home/End navigate the sidebar; narrow windows replace it with one category Select.
+- General, Appearance, Panels, Shortcuts, Language, Export and Advanced share one draft, including Advanced JSON. Panel/ruler/language edits preview; Cancel/close/Esc restores the opening snapshot. Save uses the serialized settings writer; write failure retains the draft. Facts are plain text, controls use shared 24/28 px primitives.
+- Panels edits existing left/right/bottom dock groups, including contextual panels. Add moves an existing panel; hide, reorder, zone selection, split/merge and reset use the existing flat dock model.
+- Shortcuts lists every single-source command, searches translated names/categories/keys and records before app commands. Conflicts require explicit Replace/Cancel; reset-all requires confirmation. Held Space/middle pan stays fixed. Language shows native names and translation completeness; export shows existing per-world defaults.
+
 - Harita → "Kenar…" (also in the command palette) opens an M dialog with live canvas preview: "Kalınlık", "İç boşluk", four side toggles, and gap rows (side/start/length). Gap starts are zero-based from the inset boundary, left→right or top→bottom, and cut through the full thickness without clearing existing cells. Use the current tile/pattern/random/smart brush on the active visible, unlocked tile layer; smart corners use the core planner. Report clamped dimensions on narrow maps and blocked-layer reasons. "Uygula" is one undo step; Esc/"Vazgeç" leaves the document unchanged.
 - Dialog: radius 8, header (title text-lg 600, optional one-line subtitle `muted`, close icon button), body padding 16, footer row: secondary "Vazgeç" (neutral `active` fill) + primary (accent) right-aligned; destructive primary uses danger.
 - Form rows: label above field in dialogs (text-sm `muted`), 12 px between rows; segmented controls for small enums (24/28 high, radius 4, selected = `active` fill + `title` text + 1 px `line-strong`, not accent).

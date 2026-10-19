@@ -34,7 +34,7 @@ export interface KeyEventLike {
 function toCode(key: string): string {
   if (/^[A-Z]$/i.test(key)) return `Key${key.toUpperCase()}`;
   if (/^[0-9]$/.test(key)) return `Digit${key}`;
-  return key;
+  return CHAR_CODES[key] ?? key;
 }
 
 /** Parses "Ctrl+Shift+P" into a chord. Modifier order does not matter. "Ctrl+Plus" is Ctrl and "+". */
@@ -70,6 +70,8 @@ const CODE_CHARS: Readonly<Record<string, string>> = {
   BracketRight: "]",
 };
 
+const CHAR_CODES: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(CODE_CHARS).map(([code, character]) => [character, code]));
+
 /** Numpad keys type the same thing with NumLock on or off. */
 const NUMPAD_CHARS: Readonly<Record<string, string>> = {
   NumpadAdd: "+",
@@ -82,7 +84,7 @@ const NUMPAD_CHARS: Readonly<Record<string, string>> = {
 export function chordChar(code: string): string | null {
   if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  return CODE_CHARS[code] ?? null;
+  return CODE_CHARS[code] ?? (/^[!-~]$/.test(code) ? code : null);
 }
 
 /** The (lower-case) character an event typed, or null for named keys ("Enter", "F2", "Dead"). */
@@ -247,6 +249,7 @@ const KEY_LABELS: Record<string, string> = {
 };
 
 function keyLabel(code: string): string {
+  if (code.startsWith("Intl")) return layoutFallbackChar(code) ?? code;
   const ch = chordChar(code);
   // "[" needs AltGr on Turkish-Q; the same physical key (ğ) works, so show that.
   if (ch !== null && layoutChars && !layoutChars.has(ch) && !/^[0-9]$/.test(ch)) {
@@ -281,4 +284,18 @@ export function formatChord(keys: string, mac = false): string {
 /** True when running on macOS (Cmd is shown instead of Ctrl). */
 export function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+/** Stable conflict identity, including aliases matched by the same physical key. */
+export function chordIdentity(keys: string): string {
+  const chord = parseChord(keys);
+  return JSON.stringify({ ...chord, code: normalizedCode(chord.code) });
+}
+
+/** Symbol characters can match with either Shift state; physical/letter bindings cannot. */
+export function chordsOverlap(a: string, b: string): boolean {
+  const left = parseChord(a), right = parseChord(b);
+  if (left.ctrl !== right.ctrl || left.alt !== right.alt || normalizedCode(left.code) !== normalizedCode(right.code)) return false;
+  const flexibleShift = (chord: KeyChord) => !chord.shift && chordChar(chord.code) !== null && !/^[a-z0-9]$/.test(chordChar(chord.code)!);
+  return left.shift === right.shift || flexibleShift(left) || flexibleShift(right);
 }

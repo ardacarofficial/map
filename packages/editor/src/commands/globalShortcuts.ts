@@ -15,6 +15,7 @@
  * - With a project open, browser keys that would reload, print or search the
  *   page (F5, Ctrl+R, Ctrl+P, Ctrl+F, F7, Ctrl+U) do nothing.
  */
+import { captureRecordedKey } from "../platform/settingsUi/keyRecording";
 import { CANVAS_HOST_ATTR } from "../ui/canvas/canvasHandle";
 import { useEditorStore } from "../state/editorStore";
 import { pasteText } from "./clipboard";
@@ -108,7 +109,8 @@ function onKeyDown(event: KeyboardEvent): void {
   runCommand(id);
 }
 
-function onKeyDownCapture(): void {
+function onKeyDownCapture(event: KeyboardEvent): void {
+  if (captureRecordedKey(event)) return;
   modalAtKeyDown = modalOpen();
 }
 

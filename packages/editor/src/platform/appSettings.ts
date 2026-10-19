@@ -12,7 +12,7 @@ import { getLocale, isAvailableLocale, setLocale, subscribeLocale, t, type Local
 import { setShortcutOverrides, SHORTCUTS } from "../shortcuts/shortcuts";
 import { toast } from "../ui/toast/toastStore";
 import { getPlatform } from "./index";
-import { defaultSettingsText, parseSettings, withLocale, type SettingsProblem } from "./settings";
+import { compactSettingsText, defaultSettingsText, parseSettings, withLocale, type SettingsProblem } from "./settings";
 
 interface AppSettingsState {
   locale: Locale;
@@ -32,6 +32,8 @@ export const useAppSettings = create<AppSettingsState>()((set) => ({
 
 /** The settings text we last applied (focus reload skips unchanged files). */
 let appliedText: string | null = null;
+let settingsPreview = 0;
+let previewSequence = 0;
 
 const REASON_KEYS: Record<SettingsProblem["reason"], MessageKey> = {
   json: "settings.reasonJson",
@@ -89,7 +91,7 @@ export async function readSettingsText(): Promise<string> {
 
 /**
  * Startup: reads and applies the settings. On the desktop a missing file is
- * created with every command's current keys (so the user can edit values).
+ * created with the locale and an empty shortcut override set.
  */
 async function readAppSettings(): Promise<void> {
   const revision = useDockStore.getState().revision;
@@ -120,14 +122,16 @@ async function readAppSettings(): Promise<void> {
 
 /** Re-reads the settings when they changed outside (edited in a text editor). */
 export async function reloadAppSettingsIfChanged(): Promise<void> {
+  if (settingsPreview || useAppSettings.getState().dialogOpen) return;
   await settingsWrites.idle();
+  if (settingsPreview || useAppSettings.getState().dialogOpen) return;
   let text: string | null;
   try {
     text = await getPlatform().readSettings();
   } catch {
     return;
   }
-  if (text === null || text === appliedText) return;
+  if (settingsPreview || useAppSettings.getState().dialogOpen || text === null || text === appliedText) return;
   const problems = applySettingsText(text);
   if (problems.length === 0) toast.info(t("settings.reloaded"));
 }
@@ -152,7 +156,7 @@ export async function setAppLocale(locale: Locale): Promise<void> {
 
 /** Saves the text from the settings dialog and applies it. Throws `SyntaxError` for invalid JSON. */
 export async function saveSettingsText(text: string): Promise<SettingsProblem[]> {
-  JSON.parse(text);
+  text = compactSettingsText(text, SHORTCUTS);
   await settingsWrites.update(() => text);
   return applySettingsText(text);
 }
@@ -174,7 +178,7 @@ let pendingLayout: DockLayout | null = null;
 let writingLayout = false;
 let reportedLayoutFailure = false;
 async function storeLayout(layout: DockLayout): Promise<void> {
-  if (getPlatform().kind !== "desktop") return;
+  if (settingsPreview || getPlatform().kind !== "desktop") return;
   pendingLayout = layout;
   if (writingLayout) return;
   writingLayout = true;
@@ -205,4 +209,32 @@ export async function loadAppSettings(): Promise<void> {
     onLayoutCommit(layout => { void storeLayout(layout); });
     if (useDockStore.getState().revision !== revision) void storeLayout(useDockStore.getState().layout);
   }
+}
+
+/** A modal preview owns the live dock until save succeeds or cancellation restores it. */
+export async function beginSettingsPreview() {
+  const token = ++previewSequence;
+  settingsPreview = token;
+  const layout = useDockStore.getState().layout;
+  const locale = getLocale();
+  let finished = false;
+  const cancel = () => {
+    if (finished || settingsPreview !== token) return;
+    finished = true;
+    useDockStore.getState().applyExternal(layout);
+    setLocale(locale);
+    settingsPreview = 0;
+  };
+  try {
+    await settingsWrites.idle();
+    const text = await readSettingsText();
+    return { text, cancel, async save(text: string) {
+      const raw: unknown = JSON.parse(text);
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new SyntaxError("Expected a JSON object");
+      const problems = await saveSettingsText(text);
+      finished = true;
+      settingsPreview = 0;
+      return problems;
+    } };
+  } catch (error) { cancel(); throw error; }
 }
