@@ -9,7 +9,9 @@ import { prepareSelectionBrush, preparedBrush, publishBrushAssets, publishSavedB
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { saveClipAsStamp } from "../ui/tileset/SelectionSection";
 import { bakeSmartStamp } from "../ui/stamps/smartStampBake";
-vi.mock("../state/tilesetPixels",()=>({tilesetPixels:(_bitmap:ImageBitmap,rect:{x:number;y:number;width:number;height:number})=>roadPixels(rect)}));
+import { tilesetPixels } from "../state/tilesetPixels";
+import { decodePng } from "../../../core/test/png";
+vi.mock("../state/tilesetPixels",()=>({tilesetPixels:vi.fn((_bitmap:ImageBitmap,rect:{x:number;y:number;width:number;height:number})=>roadPixels(rect))}));
 vi.mock("../ui/stamps/smartStampBake",async importOriginal=>({...await importOriginal<typeof BakeModule>(),bakeSmartStamp:vi.fn(async(_s:Stamp,_l:string,t:Tileset)=>({tilesetId:t.id,bytes:Uint8Array.of(1),bitmap:{close:vi.fn()} as unknown as ImageBitmap}))}));
 const source:Tileset={id:"source",name:"Source",imagePath:"tilesets/source.png",columns:12,rows:8,tileWidth:32,tileHeight:32,margin:0,spacing:0};
 function setup(){
@@ -19,7 +21,65 @@ function setup(){
  const clip=clipFromTileset(source,{x:2,y:1,w:3,h:3},{layerId})!;const ids=[14,15,16,26,27,28,38,39,40];
  prepareSelectionBrush(source,ids,new Set(),clip);useEditorStore.getState().setStamp(clip);return{store,clip,ids};
 }
-beforeEach(()=>{clearTilesetImages();vi.mocked(bakeSmartStamp).mockClear();});
+beforeEach(()=>{clearTilesetImages();vi.mocked(bakeSmartStamp).mockClear();vi.mocked(tilesetPixels).mockReset().mockImplementation((_bitmap,rect)=>roadPixels(rect!));});
+it.each([[3,3],[5,4],[7,6]])("forces an object %i×%i to b=1, remembers reselection, saves and reloads using existing metadata",async(width,height)=>{
+ const {store}=setup();await waitForSelectionBrush(useEditorStore.getState().stamp!);
+ // The real 3×3 bush and larger ambiguous flat blocks have no cached road classification.
+ const object={...source,id:"object"};store.dispatch({type:"addTileset",tileset:object});
+ setTilesetImage({tilesetId:object.id,bytes:Uint8Array.of(1),bitmap:{close:vi.fn()} as unknown as ImageBitmap});
+ const select=()=>{
+  const clip=clipFromTileset(object,{x:2,y:1,w:width,h:height})!;
+  vi.mocked(tilesetPixels).mockImplementation((_bitmap,rect)=>{
+   const p=roadPixels(rect);
+   if(width===3&&height===3)p.data.set(decodePng(readFileSync(new URL("../../../../e2e/fixtures/smart-object-32-bush.png",import.meta.url))).data);
+   else{p.data.fill(128);for(let i=3;i<p.data.length;i+=4)p.data[i]=255;}
+   return p;
+  });
+  prepareSelectionBrush(object,Array.from({length:width*height},(_,i)=>(1+Math.floor(i/width))*12+2+i%width),new Set(),clip);useEditorStore.getState().setStamp(clip);return clip;
+ };
+ const clip=select();expect(autoBrush(clip)).toBeUndefined();
+ setBrushSmartEnabled(true);const forced=useEditorStore.getState().stamp!;
+ const prepared=await waitForSelectionBrush(forced);expect(prepared?.stamp.nineSlice?.border).toBe(1);expect(prepared?.stamp.nineSlice?.road).toBeDefined();expect(brushDisabled(forced)).toBe(false);
+ const again=select();await waitForSelectionBrush(again);expect(brushDisabled(again)).toBe(false);expect(preparedBrush(again)?.id).toBe(prepared?.stamp.id);
+ const saved=(await saveClipAsStamp(store.document,again,"Forced path"))!;
+ const {serializeStamp,parseStamp}=await import("@smap/core");const reopened=parseStamp(serializeStamp(saved));
+ expect(reopened.nineSlice?.road).toBeDefined();expect(reopened.smartDisabled).not.toBe(true);
+ useProjectLibrary.getState().load({stamps:[reopened],levels:[]});useEditorStore.getState().setStamp(reopened);expect(brushDisabled(reopened)).toBe(false);
+ setBrushSmartEnabled(false);expect(brushDisabled(useEditorStore.getState().stamp)).toBe(true);expect(useProjectLibrary.getState().stamps[0]!.smartDisabled).toBe(true);
+});
+it("forcing an already saved plain object updates its saved recipe without another save-as",async()=>{
+ const {clip,store}=setup();await waitForSelectionBrush(clip);
+ const plain=clipFromTileset(source,{x:3,y:1,w:3,h:3})!;
+ const ids=[15,16,17,27,28,29,39,40,41];
+ vi.mocked(tilesetPixels).mockImplementation((_bitmap,rect)=>{const p=roadPixels(rect);p.data.fill(128);return p;});
+ prepareSelectionBrush(source,ids,new Set(),plain);useEditorStore.getState().setStamp(plain);
+ const saved=(await saveClipAsStamp(store.document,plain,"Object"))!;expect(saved.nineSlice).toBeUndefined();
+ setBrushSmartEnabled(true);await waitForSelectionBrush(useEditorStore.getState().stamp!);
+ expect(useProjectLibrary.getState().stamps[0]!.nineSlice?.road).toBeDefined();
+});
+it("small or incomplete source rectangles and grid mismatches cannot be forced",async()=>{
+ const {store}=setup();await waitForSelectionBrush(useEditorStore.getState().stamp!);
+ const {brushCanEnable}=await import("./smartBrushActions");
+ for(const [w,h,hole]of [[2,2,false],[2,4,false],[4,2,false],[3,3,true]]as const){
+  const ids=Array.from({length:w*h},(_,i)=>(1+Math.floor(i/w))*12+2+i%w),empty=new Set(hole?[ids[4]!]:[]);
+  const clip=clipFromTileset(source,{x:2,y:1,w,h},{skipTileIds:empty})!;prepareSelectionBrush(source,ids,empty,clip);useEditorStore.getState().setStamp(clip);
+  expect(brushCanEnable(clip)).toBe(false);setBrushSmartEnabled(true);expect(autoBrush(clip)).toBeUndefined();
+ }
+ const clip=clipFromTileset(source,{x:3,y:1,w:3,h:3})!;prepareSelectionBrush(source,[15,16,17,27,28,29,39,40,41],new Set(),clip);useEditorStore.getState().setStamp(clip);await waitForSelectionBrush(clip);
+ store.dispatch({type:"resizeMap",width:24,height:20,tileWidth:16,tileHeight:16});setBrushSmartEnabled(true);expect(brushDisabled(clip)).toBe(true);
+});
+it("a plain flip before forcing has a distinct recipe and cannot poison an unflipped reselection",async()=>{
+ const {clip}=setup();await waitForSelectionBrush(clip);
+ vi.mocked(tilesetPixels).mockImplementation((_bitmap,rect)=>{const p=roadPixels(rect);p.data.fill(128);return p;});
+ const plain=clipFromTileset(source,{x:3,y:1,w:3,h:3})!,ids=[15,16,17,27,28,29,39,40,41];
+ prepareSelectionBrush(source,ids,new Set(),plain);useEditorStore.getState().setStamp(plain);
+ const {flipBrush}=await import("./rotateCommands");const {cellFlags,FLIP_H}=await import("@smap/core");
+ flipBrush("x");setBrushSmartEnabled(true);const flipped=(await waitForSelectionBrush(useEditorStore.getState().stamp!))!;
+ expect([...flipped.source.layers[0]!.cells].every(c=>cellFlags(c)===FLIP_H)).toBe(true);
+ const next=clipFromTileset(source,{x:3,y:1,w:3,h:3})!;prepareSelectionBrush(source,ids,new Set(),next);useEditorStore.getState().setStamp(next);setBrushSmartEnabled(true);
+ const normal=(await waitForSelectionBrush(useEditorStore.getState().stamp!))!;
+ expect([...normal.source.layers[0]!.cells].every(c=>cellFlags(c)===0)).toBe(true);expect(normal.source.id).not.toBe(flipped.source.id);
+});
 it("prepares without dirtying history/library, caches the recipe, and archives only a committed publication",async()=>{
  const {store,clip,ids}=setup(),before=serializeLevel(store.document),revision=useProjectLibrary.getState().revision;
  await waitForSelectionBrush(clip);expect(useEditorStore.getState().stamp).toBe(clip);expect(preparedBrush(clip)?.nineSlice?.road).toBeDefined();expect(store.undoDepth).toBe(0);expect(serializeLevel(store.document)).toBe(before);expect(useProjectLibrary.getState().revision).toBe(revision);expect(useProjectLibrary.getState().stamps).toHaveLength(0);

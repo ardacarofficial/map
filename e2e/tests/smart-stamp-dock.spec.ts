@@ -112,7 +112,7 @@ for(const [variant,width,height,qualifies]of [["-wide",6,6,true],["-empty",3,3,f
  test(`${width}×${height} ${variant||"small"}: conservative automatic detection`,async({page})=>{
   await openRoadSheet(page,32,variant);await selectRoad(page,width,height);
   if(qualifies){await expect(page.locator("[data-smart-brush]")).toBeChecked();await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(variant==="-banded"?8:4);}
-  else{await expect(page.locator("[data-smart-brush]")).toBeDisabled();await dragRoad(page,[[4,4]]);expect((await roadCells(page)).generated).toHaveLength(0);expect((await roadCells(page)).cells).toHaveLength(width*height-(variant==="-empty"?1:0));}
+  else{await expect(page.locator("[data-smart-brush]")).toBeDisabled();await expect(page.locator("[data-smart-brush-reason]")).toHaveText("Akıllı fırça için en az 3×3 dolu bir dikdörtgen seçin.");await dragRoad(page,[[4,4]]);expect((await roadCells(page)).generated).toHaveLength(0);expect((await roadCells(page)).cells).toHaveLength(width*height-(variant==="-empty"?1:0));}
  });
 }
 

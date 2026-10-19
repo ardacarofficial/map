@@ -19,7 +19,7 @@ function art(w=6,h=6): NineSliceSelectionInput {
 describe("detectNineSliceSelection",()=>{
  it("requires pixels for a full offset 3×3 and verifies bordered artwork",()=>{
    expect(detectNineSliceSelection(input())).toBeNull();
-   expect(detectNineSliceSelection(art(3,3))).toMatchObject({version:5,border:1,xBands:[1,1,1],reason:"repeating-bands",sourceIds:input().ids});
+   expect(detectNineSliceSelection(art(3,3))).toMatchObject({version:6,border:1,xBands:[1,1,1],reason:"repeating-bands",sourceIds:input().ids});
  });
  it("rejects holes, duplicate/permuted/invalid ids and empty tiles before bounding-box reduction",()=>{
    const s=input();
@@ -94,4 +94,17 @@ it("verifies transparent road borders while ignoring RGB hidden under zero alpha
   a.set([0,0,0,0],i);b.set([x*3%256,y*5%256,255,0],i);
  }
  const expected=detectNineSliceSelection({...s,pixels:{...p,data:a}});expect(expected?.border).toBe(1);expect(detectNineSliceSelection({...s,pixels:{...p,data:b}})).toEqual(expected);
+});
+
+it("accepts arbitrary asymmetric details beside a continuous wrap without mutating pixels",()=>{
+ fc.assert(fc.property(fc.integer({min:1,max:12}),fc.boolean(),fc.integer({min:35,max:80}),(start,far,contrast)=>{
+  const s=art(3,3),p=s.pixels!,data=p.data.slice(),px=far?14:1;
+  for(let py=start;py<Math.min(15,start+3);py++){
+   const i=((1+2*18+py)*p.width+1+3*18+px)*4;
+   data.set([160-contrast,170-contrast,180-contrast,255],i);
+  }
+  const before=data.slice(),input={...s,pixels:{...p,data}};
+  expect(detectNineSliceSelection(input)?.border).toBe(1);
+  expect(detectNineSliceSelection(input)).toEqual(detectNineSliceSelection(input));expect(data.every((v,i)=>v===before[i])).toBe(true);
+ }),{numRuns:40});
 });
