@@ -2,7 +2,7 @@ import { remedyBrushGrid } from "./smartBrushGrid";
 import { SmartBrushError } from "./smartBrushErrors";
 import { reportSmartBrushError } from "./smartBrushErrors";
 import { sourceVersionMatches, tilesetSourceVersion, tilesetWorldVersion, retainTilesetImage, type SourceVersion } from "../state/tilesetImages";
-import { smartBrushPreparationDebug, autoBrush, attachPreparedBrush, preparedBrush, brushCandidate, brushDisabled, brushUnavailable, refreshUnpublishedBrush, setBrushSmartEnabled } from "./smartBrushActions";
+import { smartBrushPreparationDebug, autoBrush, attachPreparedBrush, preparedBrush, brushCandidate, brushCanEnable, brushDisabled, brushUnavailable, refreshUnpublishedBrush, setBrushSmartEnabled } from "./smartBrushActions";
 import { queueSmartStampRegeneration } from "../state/smartStampJobs";
 export { waitForSmartStampRegeneration } from "../state/smartStampJobs";
 import { bakeRecipeVersion, sameBakeRecipe } from "../io/smartStampRecipes";
@@ -142,7 +142,7 @@ export function installSmartStamps(): void {
   if (installed) return; installed = true;
   registerCommands([
     { id:"smartBrush.matchGrid",title:"smartStamp.matchGridCommand",category:"edit",enabled:()=>brushUnavailable(useEditorStore.getState().stamp)?.code==="gridMismatch",run:remedyBrushGrid },
-    { id: "stamp.nineSlice", title: "smartBrush.command", category: "edit", enabled: () => {const clip=useEditorStore.getState().stamp;return (!!autoBrush(clip)||!!(clip as Stamp|null)?.nineSlice)&&!brushUnavailable(clip);}, checked: () => brushCandidate() && !brushDisabled(useEditorStore.getState().stamp), run: () => setBrushSmartEnabled(brushDisabled(useEditorStore.getState().stamp)) },
+    { id: "stamp.nineSlice", title: "smartBrush.command", category: "edit", enabled: () => {const clip=useEditorStore.getState().stamp;return brushCanEnable(clip)&&!brushUnavailable(clip);}, checked: () => brushCandidate() && !brushDisabled(useEditorStore.getState().stamp), run: () => setBrushSmartEnabled(!brushCandidate()||brushDisabled(useEditorStore.getState().stamp)) },
   ]);
   let stopWatching: (() => void) | undefined;
   useEditorStore.subscribe((state, prev) => {

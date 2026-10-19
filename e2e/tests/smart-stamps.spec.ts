@@ -104,9 +104,13 @@ test("9 dilim road: straight, L, T, +, joining strokes, transforms, erase, cance
   await page.locator("canvas[aria-label='map canvas']").first().dispatchEvent("pointercancel", { pointerId: 1 });
   await page.mouse.up(); expect(await snapshot(page)).toEqual(cancelBefore);
   await page.mouse.move(10, 10); await page.keyboard.press("Control+s");
-  await expect.poll(() => readOpfsText(page, "project.smap")).not.toBeNull();
-  const project = JSON.parse((await readOpfsText(page, "project.smap"))!);
-  expect(project.tilesets.some((t: { generated?: unknown; imagePath: string }) => t.generated && t.imagePath.startsWith("tilesets/"))).toBe(true);
+  // Autosave can replace the file between an existence check and a second read.
+  await expect.poll(async () => {
+    const text = await readOpfsText(page, "project.smap");
+    if (!text) return false;
+    const project = JSON.parse(text);
+    return project.tilesets.some((t: { generated?: unknown; imagePath: string }) => t.generated && t.imagePath.startsWith("tilesets/"));
+  }).toBe(true);
   await expect.poll(() => page.evaluate(async () => { const { useUiStore } = await import(/* @vite-ignore */ String("/src/ui/uiStore.ts")); return useUiStore.getState().busy; })).toBe(false);
   const saved = await snapshot(page); await page.reload(); await page.getByRole("button", { name: /^Aç…/ }).click();
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();

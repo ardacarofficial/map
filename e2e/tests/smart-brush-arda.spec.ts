@@ -65,17 +65,47 @@ test("populated mismatch opens the existing new-map dialog prefilled and preserv
  await dialog.locator("button[type='submit']").click();await expect(dialog).toBeHidden();await expect(page.locator("[data-smart-brush]")).toBeChecked();
  await page.keyboard.press("b");await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(4);await noErrors(page);
 });
-for(const size of [16,32])for(const saved of [false,true])test(`round bush ${size}px ${saved?"saved":"direct"} stays one plain object`,async({page})=>{
+async function openBush(page:Page,size:number){
  await page.goto("/");await expect(page.locator(WELCOME_DROP)).toBeVisible();
  await dropFile(page,WELCOME_DROP,`bush-${size}.png`,[...readFileSync(new URL(`../fixtures/smart-object-${size}-bush.png`,import.meta.url))]);
  await page.getByTestId("tileset-card").getByLabel("Tile genişliği",{exact:true}).fill(String(size));await confirmTilesetCard(page);await watchErrors(page);
  const grid=page.locator("[data-tileset-grid]").first(),box=(await grid.boundingBox())!;
  await page.mouse.move(box.x+box.width/6,box.y+box.height/6);await page.mouse.down();await page.mouse.move(box.x+box.width*5/6,box.y+box.height*5/6,{steps:4});await page.mouse.up();
- await expect(page.locator("[data-smart-brush]")).toBeDisabled();await expect(page.locator("[data-smart-brush-reason]")).toHaveText("Tek nesne");await expect(page.getByRole("radio",{name:"Yol",exact:true})).toHaveCount(0);
+}
+for(const size of [16,32])for(const saved of [false,true])test(`round bush ${size}px ${saved?"saved":"direct"} stays one plain object`,async({page})=>{
+ await openBush(page,size);
+ await expect(page.locator("[data-smart-brush]")).toBeEnabled();await expect(page.locator("[data-smart-brush]")).not.toBeChecked();await expect(page.locator("[data-smart-brush-reason]")).toHaveText("Tek nesne");await expect(page.getByRole("radio",{name:"Yol",exact:true})).toHaveCount(0);
  if(saved&&size===32)await page.keyboard.press("x");
  if(saved)await saveRoad(page);
  await page.keyboard.press("b");await dragRoad(page,[[4,4]]);
  const result=await roadCells(page);expect(result.generated).toHaveLength(0);expect(result.cells).toHaveLength(9);expect(result.cells.map(c=>c.tileId)).toEqual(saved&&size===32?[2,1,0,5,4,3,8,7,6]:[0,1,2,3,4,5,6,7,8]);expect(result.cells.every(c=>c.flags===(saved&&size===32?0x80000000:0))).toBe(true);await noErrors(page);
+});
+for(const size of [16,32])test(`bush ${size}px: force smart, save, reload, then switch back to a plain object`,async({page})=>{
+ await openBush(page,size);const toggle=page.locator("[data-smart-brush]");
+ await expect(toggle).toBeEnabled();await expect(toggle).not.toBeChecked();
+ await expect(toggle).toHaveAttribute("aria-description","Tek nesne olarak algılandı. Yol/alan fırçası olarak kullanmak için açın.");
+ await toggle.click();await expect(toggle).toBeChecked();await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();
+ await page.keyboard.press("b");await dragRoad(page,[[4,4],[7,4]]);
+ const direct=await roadCells(page);expect(direct.generated).toHaveLength(1);expect(direct.cells).toHaveLength(4);
+ expect(direct.cells.every(c=>c.tilesetId===direct.generated[0]!.id)).toBe(true);
+ await saveRoad(page);await expect(toggle).toBeChecked();await page.keyboard.press("b");await dragRoad(page,[[7,4],[7,6]]);
+ expect((await roadCells(page)).cells).toHaveLength(6);await saveFolder(page);
+ const saved=JSON.parse((await readOpfsText(page,"stamps/koy-yolu.json"))!);expect(saved.nineSlice.border).toBe(1);expect(saved.nineSlice.road).toBeDefined();expect(saved.smartDisabled).not.toBe(true);await noErrors(page);
+ await page.reload();await watchErrors(page);await page.getByRole("button",{name:/^Aç…/}).click();
+ await page.locator("[data-panel-tab='stamps']").click();await page.locator("[data-stamp-id='koy-yolu']").dblclick();
+ await expect(toggle).toBeChecked();await page.keyboard.press("b");await dragRoad(page,[[4,8],[7,8]]);
+ const reopened=await roadCells(page);expect(reopened.generated).toHaveLength(1);expect(reopened.cells).toHaveLength(10);
+ expect(reopened.cells.every(c=>c.tilesetId===direct.generated[0]!.id)).toBe(true);
+ await toggle.click();await expect(toggle).not.toBeChecked();await page.keyboard.press("b");await dragRoad(page,[[12,4]]);
+ const plain=(await roadCells(page)).cells.filter(c=>c.tilesetId!==direct.generated[0]!.id);
+ expect(plain).toHaveLength(9);expect(plain.map(c=>c.tileId)).toEqual([0,1,2,3,4,5,6,7,8]);await noErrors(page);
+});
+for(const size of [16,32])for(const material of ["pebbles","moss"])test(`asymmetric ${size}px ${material} path stays automatically smart`,async({page})=>{
+ await openRoadSheet(page,size,`-asymmetric-${material}`);await watchErrors(page);await selectRoad(page);
+ await expect(page.locator("[data-smart-brush]")).toBeChecked();await page.keyboard.press("b");
+ await dragRoad(page,[[4,4],[8,4],[8,7]]);await dragRoad(page,[[6,2],[6,6]]);
+ const result=await roadCells(page);expect(result.generated).toHaveLength(1);expect(result.cells).toHaveLength(12);
+ expect(result.cells.every(c=>c.tilesetId===result.generated[0]!.id)).toBe(true);await noErrors(page);
 });
 for(const scale of [1,1.25,1.5])test(`preview / save tooltip geometry at ${scale} display scale`,async({browser})=>{
  const context=await browser.newContext({viewport:{width:1366,height:768},deviceScaleFactor:scale});const page=await context.newPage();

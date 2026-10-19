@@ -5,7 +5,7 @@ import { rememberSourcePreview, copySourcePreview } from "../ui/stamps/stampThum
 /** Shared preparation for dock brushes and saved stamps. Library entries are always explicit user saves. */
 import { SmartBrushError, formatSmartBrushError, smartBrushError, logSmartBrush } from "./smartBrushErrors";
 import { imageContentVersion, sourceVersionMatches, tilesetSourceVersion, tilesetWorldVersion, type SourceVersion } from "../state/tilesetImages";
-import { detectNineSliceSelection, type MapStore, type Stamp, type TileClip, type Tileset } from "@smap/core";
+import { cellFlags, detectNineSliceSelection, NINE_SLICE_DETECTOR_VERSION, type MapStore, type Stamp, type TileClip, type Tileset } from "@smap/core";
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage, setTilesetImage, type TilesetImage } from "../state/tilesetImages";
 import { tilesetPixels } from "../state/tilesetPixels";
@@ -77,6 +77,18 @@ function retainedPreparation(record:BrushRecord|undefined):PreparedSmartStamp|un
   return record?.prepared ?? (record?.state.status==="unavailable"?record.state.previous:undefined);
 }
 export function brushCandidate(clip = useEditorStore.getState().stamp): boolean { return !!autoBrush(clip) || !!(clip as Stamp | null)?.nineSlice; }
+/** Pixel classification is a default; a complete rectangle also admits an explicit b=1 recipe. */
+export function brushCanEnable(clip: TileClip | null): boolean {
+  if (brushCandidate(clip)) return true;
+  const selection=clip&&selections.get(clip);
+  if (!clip || !selection || clip.width<3 || clip.height<3 || selection.ids.length!==clip.width*clip.height) return false;
+  const {tileset,ids,emptyIds}=selection;
+  // Source order can differ after a plain flip/rotation; the full source must still be a rectangle.
+  const cols=new Set(ids.map(id=>id%tileset.columns)),rows=new Set(ids.map(id=>Math.floor(id/tileset.columns)));
+  return cols.size*rows.size===ids.length && Math.max(...cols)-Math.min(...cols)+1===cols.size && Math.max(...rows)-Math.min(...rows)+1===rows.size
+    && new Set(ids).size===ids.length && ids.every(id=>id>=0&&id<tileset.columns*tileset.rows&&!emptyIds.has(id))
+    && clip.layers.length===1 && !clip.layers[0]!.grid && clip.layers[0]!.cells.every(cell=>cell!==0);
+}
 export function brushPreparationState(clip:TileClip|null):BrushPreparationState|{readonly status:"ready";readonly stored:Stamp} {
  const unavailable=brushUnavailable(clip);if(unavailable&&autoBrush(clip)?.state.status!=="failed")return {status:"unavailable",error:unavailable};
  const record=autoBrush(clip);if(record)return record.state;
@@ -99,7 +111,7 @@ function signal(record: BrushRecord): void {
 }
 
 /** Inspect the original selection before the panel's empty-cell filtering can shrink its bounds. */
-export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], emptyIds: ReadonlySet<number>, clip: TileClip): void {
+export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], emptyIds: ReadonlySet<number>, clip: TileClip, force = false): void {
   const started = performance.now();
   const profile = brushProfile();
   const store = useEditorStore.getState().project?.store, image = getTilesetImage(tileset.id);
@@ -123,9 +135,15 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   const pixels = profileSpan(profile, "selection.pixels", () => tilesetPixels(image.bitmap, pixelRect));
   const detected = profileSpan(profile, "detector", () => detectNineSliceSelection({ tileset, rect, ids, emptyIds, pixels }));
   logSmartBrush("selection",{level:useEditorStore.getState().project?.levelId,source:tileset.id,native:[tileset.tileWidth,tileset.tileHeight],map:[store.document.map.tileWidth,store.document.map.tileHeight],rect,band:detected?.border,reason:detected?.reason??"plain"});
-  if (!detected) return;
   if (cacheStore !== store) { cache.clear(); preferences.clear(); cacheStore = store; }
-  const key = profileSpan(profile, "cache.key", () => JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, detected.version, detected.border, detected.border > 1 ? 2 : 1]));
+  const border=detected?.border??1;
+  // A plain object may have been flipped/rotated before the user forces it on.
+  // Such content has its own recipe; ordinary untransformed selection identities stay stable.
+  const transformed=clip.width!==rect.width||clip.height!==rect.height||clip.layers.some(l=>l.cells.some(c=>cellFlags(c)!==0));
+  const transformRecipe=transformed?[clip.width,clip.height,clip.layers.map(l=>[...l.cells])]:[];
+  const key = profileSpan(profile, "cache.key", () => JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, NINE_SLICE_DETECTOR_VERSION, border, border > 1 ? 2 : 1,...transformRecipe]));
+  // An existing explicit recipe survives reselecting artwork the detector calls an object.
+  if (!detected && (!brushCanEnable(clip) || (!force&&!cache.has(key)))) return;
   const hit = cache.get(key);
   if (hit && hit.version.content === imageContentVersion(image) && !hit.failed) {
     records.set(clip, hit);
@@ -136,11 +154,11 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   // Image bytes invalidate the cache, but never the recipe or atlas identity.
   // Recipe identity has its own stable ABI: preserve the detector-1 b=1 key.
   // Classification thresholds invalidate preparation caches, never persisted families.
-  const identity = JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, 1, ...(detected.border > 1 ? [detected.border, 2] : [])]);
+  const identity = JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, 1, ...(border > 1 ? [border, 2] : []),...transformRecipe]);
   let hash = 2166136261;
   for (const ch of identity) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
   let source: Stamp = {
-    ...clip, nineSlice: { border: detected.border, tileLayers: [] }, id: `selection-${hash.toString(16)}`,
+    ...clip, nineSlice: { border, tileLayers: [] }, id: `selection-${hash.toString(16)}`,
     name: hit?.prepared?.source.name ?? `${tileset.name} ${rect.width}×${rect.height} @ ${rect.col},${rect.row}`,
     layers: clip.layers.map(layer => ({ ...layer, layerId: "tileset", name: tileset.id })),
   };
@@ -150,7 +168,7 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   const library = useProjectLibrary.getState();
   for (const asset of store.document.tilesets) {
     const g = asset.generated;
-    if (!g?.stampId.startsWith("selection-") || (g.border ?? 1) !== detected.border || g.sourceWidth !== source.width || g.sourceHeight !== source.height) continue;
+    if (!g?.stampId.startsWith("selection-") || (g.border ?? 1) !== border || g.sourceWidth !== source.width || g.sourceHeight !== source.height) continue;
     const recipe = library.generatedRecipes.find(r => r.tilesetId === asset.id)?.stamp ?? library.stamps.find(s => s.id === g.stampId);
     if (recipe && recipe.id === g.stampId && sameBakeRecipe(recipe, source)) { source = { ...source, id: recipe.id, name: recipe.name }; break; }
   }
@@ -242,7 +260,13 @@ export function attachPreparedBrush(clip: TileClip, from: TileClip): void {
 }
 export function setBrushSmartEnabled(enabled: boolean): void {
   const editor = useEditorStore.getState(), clip = editor.stamp;
-  if (!clip || !brushCandidate(clip)) return;
+  if (!clip || !brushCanEnable(clip) || (brushUnavailable(clip)&&autoBrush(clip)?.state.status!=="failed")) return;
+  if (!brushCandidate(clip)) {
+    if (!enabled) return;
+    const selection=selections.get(clip)!;
+    prepareSelectionBrush(selection.tileset,selection.ids,selection.emptyIds,clip,true);
+    if (!autoBrush(clip)) return;
+  }
   const record = autoBrush(clip), stamp = clip as Stamp, next = { ...clip, smartDisabled: !enabled };
   if (record) { if (!stamp.id) preferences.set(record.key, !enabled); }
   attachPreparedBrush(next,clip);
@@ -250,6 +274,16 @@ export function setBrushSmartEnabled(enabled: boolean): void {
   const view = useTilesetView.getState();
   if (view.selection?.clip === clip) view.setSelection({ ...view.selection, clip: next });
   editor.setStamp(next);
+  if (stamp.id && record && !stamp.nineSlice) void record.pending.then(()=>{
+    // A plain library stamp can also be forced in place. Save the completed
+    // ordinary recipe, preserving any off/name edits made while it prepared.
+    const saved=useProjectLibrary.getState().stamps.find(s=>s.id===stamp.id&&autoBrush(s)===record);
+    const nineSlice=record.prepared?.stamp.nineSlice;
+    if (!saved || !nineSlice) return;
+    const updated={...saved,nineSlice};
+    attachPreparedBrush(updated,saved);useProjectLibrary.getState().addStamp(updated);
+    if (useEditorStore.getState().stamp===saved) useEditorStore.getState().setStamp(updated);
+  });
 }
 /** Saving an unused library brush must also save its PNG and recipe, including Save As from another level. */
 export async function publishSavedBrushAssets(): Promise<void> {

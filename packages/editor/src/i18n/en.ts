@@ -1212,6 +1212,8 @@ export const en: Messages = {
     newGridMap: "New {size} px map",
     object: "Single object",
     plainReason: "Repeatable edges and centre could not be verified; places as a plain object.",
+    forceHint: "Detected as a single object. Turn on to use as a road/area brush.",
+    bandRequired: "Select a complete rectangle of at least 3×3 tiles for a smart brush.",
     importGridTitle: "Map cell size",
     importGridQuestion: "Tileset: {sourceW}×{sourceH} px; empty map: {mapW}×{mapH} px. Use the tileset size for this map?",
     keepGrid: "Keep map size",

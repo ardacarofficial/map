@@ -1215,6 +1215,8 @@ export const tr = {
     newGridMap: "{size} px yeni harita",
     object: "Tek nesne",
     plainReason: "Tekrarlanan kenar ve merkez doğrulanamadı; parça düz yerleşir.",
+    forceHint: "Tek nesne olarak algılandı. Yol/alan fırçası olarak kullanmak için açın.",
+    bandRequired: "Akıllı fırça için en az 3×3 dolu bir dikdörtgen seçin.",
     importGridTitle: "Haritanın hücre ölçüsü",
     importGridQuestion: "Tileset {sourceW}×{sourceH} px, boş harita {mapW}×{mapH} px. Harita tileset ölçüsünü kullansın mı?",
     keepGrid: "Harita ölçüsünü koru",
