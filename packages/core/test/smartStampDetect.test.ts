@@ -18,7 +18,7 @@ function art(w=6,h=6): NineSliceSelectionInput {
 }
 describe("detectNineSliceSelection",()=>{
  it("accepts the original full offset 3×3, without classifying its artwork",()=>{
-   expect(detectNineSliceSelection(input())).toMatchObject({version:1,border:1,xBands:[1,1,1],reason:"three-by-three",sourceIds:input().ids});
+   expect(detectNineSliceSelection(input())).toMatchObject({version:4,border:1,xBands:[1,1,1],reason:"three-by-three",sourceIds:input().ids});
  });
  it("rejects holes, duplicate/permuted/invalid ids and empty tiles before bounding-box reduction",()=>{
    const s=input();

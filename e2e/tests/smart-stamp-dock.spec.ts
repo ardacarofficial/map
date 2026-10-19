@@ -108,10 +108,10 @@ test("Akıllı off is a plain block, per-selection preference and saved preferen
   await expect(toggle).not.toBeChecked();await page.keyboard.press("b");await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(18);
 });
 
-for(const [variant,width,height,qualifies]of [["-wide",6,6,true],["-empty",3,3,false],["",2,2,false],["-banded",6,6,false]] as const){
+for(const [variant,width,height,qualifies]of [["-wide",6,6,true],["-empty",3,3,false],["",2,2,false],["-banded",6,6,true]] as const){
  test(`${width}×${height} ${variant||"small"}: conservative automatic detection`,async({page})=>{
   await openRoadSheet(page,32,variant);await selectRoad(page,width,height);
-  if(qualifies){await expect(page.locator("[data-smart-brush]")).toBeChecked();await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(4);}
+  if(qualifies){await expect(page.locator("[data-smart-brush]")).toBeChecked();await expect(page.getByRole("radio",{name:"Yol",exact:true})).toBeVisible();await dragRoad(page,[[4,4],[7,4]]);expect((await roadCells(page)).cells).toHaveLength(variant==="-banded"?8:4);}
   else{await expect(page.locator("[data-smart-brush]")).toHaveCount(0);await dragRoad(page,[[4,4]]);expect((await roadCells(page)).generated).toHaveLength(0);expect((await roadCells(page)).cells).toHaveLength(width*height-(variant==="-empty"?1:0));}
  });
 }

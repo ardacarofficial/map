@@ -46,7 +46,7 @@ export interface Stamp extends TileClip {
 
 /** Persisted nine-slice metadata. Generated assets are ordinary project tilesets; no map-cell links are stored. */
 export interface StampNineSlice {
-  readonly border: 1;
+  readonly border: number;
   /** Exactly one entry per source tile layer, in source layer order. Grids have no baked asset. */
   readonly tileLayers: readonly { readonly layerId: string; readonly tilesetId: string }[];
   /** Optional single-layer road profile. Must refer to one of tileLayers' generated tilesets. */
@@ -59,7 +59,7 @@ export function stampNineSliceProblem(source: TileClip, value: unknown): string 
   if (problem) return problem;
   if (!value || typeof value !== "object") return "nineSlice must be an object";
   const meta = value as Record<string, unknown>;
-  if (meta["border"] !== 1) return "nineSlice border must be 1";
+  if (typeof meta["border"] !== "number" || !Number.isSafeInteger(meta["border"]) || meta["border"] < 1 || (meta["border"] > 1 && (source.width <= 2*meta["border"] || source.height <= 2*meta["border"]))) return "invalid nineSlice border";
   const layers = meta["tileLayers"], sourceLayers = source.layers.filter(l => !l.grid);
   if (!Array.isArray(layers) || layers.length !== sourceLayers.length) return "nineSlice tileLayers must match source tile layers";
   const assets = new Set<string>();
@@ -72,7 +72,7 @@ export function stampNineSliceProblem(source: TileClip, value: unknown): string 
     const road = meta["road"] as Record<string, unknown> | null;
     if (!road || typeof road !== "object" || typeof road["tilesetId"] !== "string" || !assets.has(road["tilesetId"]) || roadProfileProblem(road["profile"])) return "nineSlice road requires a baked tileset and complete road profile";
     const layerId = sourceLayers[layers.findIndex(l => (l as Record<string, unknown>)["tilesetId"] === road["tilesetId"])]!.layerId;
-    return nineSliceProblem(source, { roadLayerId: layerId });
+    return nineSliceProblem({ ...source, nineSlice: { border: meta["border"] as number } }, { roadLayerId: layerId });
   }
   return null;
 }
@@ -81,7 +81,7 @@ export function stampNineSliceProblem(source: TileClip, value: unknown): string 
 export function normalizeStampNineSlice(source: TileClip, value: StampNineSlice): StampNineSlice {
   const problem = stampNineSliceProblem(source, value);
   if (problem) throw new Error(problem);
-  return Object.freeze({ border: 1, tileLayers: Object.freeze(value.tileLayers.map(l => Object.freeze({ layerId: l.layerId, tilesetId: l.tilesetId }))), ...(value.road ? { road: Object.freeze({ tilesetId: value.road.tilesetId, profile: normalizeRoadProfile(value.road.profile) }) } : {}) });
+  return Object.freeze({ border: value.border, tileLayers: Object.freeze(value.tileLayers.map(l => Object.freeze({ layerId: l.layerId, tilesetId: l.tilesetId }))), ...(value.road ? { road: Object.freeze({ tilesetId: value.road.tilesetId, profile: normalizeRoadProfile(value.road.profile) }) } : {}) });
 }
 
 /** Library metadata of a stamp (round 4). */

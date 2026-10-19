@@ -1178,6 +1178,7 @@ export const tr = {
   },
 
   smartBrush: {
+    bandHint: "Yol {border} tile genişliğindeki birimlerle dünya ızgarasına oturur. Boyut birim sayısıdır; Alan köşeleri korur ve dar boyutları ortadan birleştirir.",
     failed: "Hazırlanamadı",
     label: "Akıllı",
     hint: "Seçili kenarları kullanarak yol veya alan çiz. Kapatınca düz blok yerleştirir.",

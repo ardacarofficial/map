@@ -1,3 +1,4 @@
+import { bandWidth } from "./smartStamp/bands";
 /** Pure authoring metadata. PNG IO and atomic staging belong to the editor; source PNGs are always read-only. */
 import type { NineSliceInnerCorner } from "./nineSlice";
 import { NINE_SLICE_LAYOUT_VERSION, nineSliceBlits, nineSliceLayout } from "./nineSlice";
@@ -14,7 +15,7 @@ export interface PrepareNineSliceTilesetOptions {
   readonly tilesets: readonly Tileset[];
   /** Actual current PNG byte hashes, supplied by the editor. Unknown/missing hashes reject the bake. */
   readonly imageHashes: ReadonlyMap<string, string>;
-  /** New sheets default to 8 columns. Regeneration must retain the existing columns. */
+  /** Layout 1 defaults to 8 columns; layout 2 uses compact packing. Regeneration must retain the existing columns. */
   readonly columns?: number;
   /** Omitted during regeneration retains the saved choice; null explicitly restores square inner joins. */
   readonly innerCorner?: NineSliceInnerCorner | null;
@@ -35,12 +36,13 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
   const idProblem = stampIdProblem(stamp.id) ?? stampIdProblem(options.id);
   if (idProblem) throw new Error(idProblem);
   if (relativePathProblem(options.imagePath) || !/^tilesets\/.+\.png$/i.test(options.imagePath)) throw new Error("generated image must be a separate PNG under tilesets/");
+  const border = bandWidth(stamp), layoutVersion = border > 1 ? 2 : NINE_SLICE_LAYOUT_VERSION;
   const existing = options.tilesets.find(t => t.id === options.id);
   if (existing && !existing.generated) throw new Error("cannot replace a user tileset with a generated bake");
   if (options.tilesets.some(t => t.id !== existing?.id && t.imagePath.toLowerCase() === options.imagePath.toLowerCase())) throw new Error("generated output cannot overwrite another tileset PNG");
   if (existing) {
     const g = existing.generated!;
-    if (g.kind !== "nineSlice" || g.layoutVersion !== NINE_SLICE_LAYOUT_VERSION || g.stampId !== stamp.id || g.layerId !== layerId) throw new Error("generated origin/layout does not match this stamp layer");
+    if (g.kind !== "nineSlice" || g.layoutVersion !== layoutVersion || (g.border ?? 1) !== border || g.stampId !== stamp.id || g.layerId !== layerId) throw new Error("generated origin/layout does not match this stamp layer");
     if (g.sourceWidth !== stamp.width || g.sourceHeight !== stamp.height) throw new Error("source dimensions changed; allocate a new generated id instead of moving slots");
     if (existing.imagePath !== options.imagePath || existing.tileWidth !== options.tileWidth || existing.tileHeight !== options.tileHeight) throw new Error("regeneration must retain the generated PNG path and pixel dimensions");
     if (options.columns !== undefined && options.columns !== existing.columns) throw new Error("regeneration must retain columns so tile ids never move");
@@ -54,7 +56,7 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
     if (source.id === options.id || source.imagePath.toLowerCase() === options.imagePath.toLowerCase()) throw new Error("generated output cannot overwrite its source PNG");
     sourceIds.add(source.id);
   }
-  const columns = existing?.columns ?? options.columns ?? 8;
+  const columns = existing?.columns ?? options.columns ?? (border > 1 ? Math.ceil(Math.sqrt(layout.slots)) : 8);
   if (!Number.isInteger(columns) || columns < 1) throw new Error("generated columns must be a positive integer");
   const sources = [...sourceIds].sort().map(tilesetId => {
     const imageHash = options.imageHashes.get(tilesetId);
@@ -65,7 +67,7 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
     ...(existing ?? {}), id: options.id, name: `${stamp.name} (yol)`, imagePath: options.imagePath,
     tileWidth: options.tileWidth, tileHeight: options.tileHeight, columns,
     rows: Math.max(existing?.rows ?? 0, Math.ceil(layout.slots / columns)), margin: existing?.margin ?? 0, spacing: existing?.spacing ?? 0,
-    generated: { kind: "nineSlice", stampId: stamp.id, layerId, sourceWidth: stamp.width, sourceHeight: stamp.height, layoutVersion: NINE_SLICE_LAYOUT_VERSION, ...(innerCorner ? { innerCorner } : {}), sources },
+    generated: { kind: "nineSlice", stampId: stamp.id, layerId, sourceWidth: stamp.width, sourceHeight: stamp.height, layoutVersion, ...(border > 1 ? { border } : {}), ...(innerCorner ? { innerCorner } : {}), sources },
   };
   const problem = tilesetProblem(next);
   if (problem) throw new Error(problem);

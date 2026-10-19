@@ -60,7 +60,10 @@ export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInn
       assets.push({ tileset, image }); tileLayers.push({ layerId: layer.layerId, tilesetId: id });
     }
     for (const [id, snapshot] of snapshots) if (getTilesetImage(id) !== snapshot) throw new SmartStampChangedError();
-    const prepared = { store, sources: snapshots, source: stamp, stamp: Object.freeze({ ...stamp, nineSlice: { border: 1 as const, tileLayers, ...(road ? { road } : {}) } }), assets };
+    const nineSlice = { border: stamp.nineSlice?.border ?? 1, tileLayers, ...(road ? { road } : {}) };
+    // Detection supplies the band before atlas ids exist. Never archive that draft metadata.
+    const canonical = stamp.nineSlice?.tileLayers.length === 0 ? { ...stamp, nineSlice } : stamp;
+    const prepared = { store, sources: snapshots, source: canonical, stamp: Object.freeze({ ...stamp, nineSlice }), assets };
     // Publish synchronous in-memory preparation before selection-triggered React work.
     ready?.(prepared);
     return prepared;

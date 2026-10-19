@@ -222,3 +222,19 @@ it("rejects an incompatible legacy target before baking instead of retrying fore
   expect(store.document.getTileset(bank.id)?.generated).toEqual(bank.generated);
   expect(getTilesetImage(bank.id)).toBe(image);
 });
+
+it("archives a valid thick source and regenerates layout 2 without moving cells or overwriting the PNG",async()=>{
+ const ts={...source,columns:6,rows:6},store=new MapStore(createDocument({width:20,height:20,tileWidth:5,tileHeight:5}));
+ store.dispatch({type:"addTileset",tileset:ts});const layerId=store.dispatch({type:"addLayer",layer:{name:"Ground"}});
+ const draft:Stamp={id:"selection-thick",name:"Thick",width:6,height:6,palette:Array.from({length:36},(_,tileId)=>({tilesetId:ts.id,tileId})),layers:[{layerId:"s",name:"Source",cells:Uint32Array.from({length:36},(_,i)=>i+1)}],nineSlice:{border:2,tileLayers:[]}};
+ const image={tilesetId:ts.id,bytes:Uint8Array.of(1,2,3),bitmap:{width:30,height:30,close:vi.fn()}as unknown as ImageBitmap};setTilesetImage(image);
+ useEditorStore.getState().setProject({name:"Thick",store,levelPath:"levels/main.json"});useProjectLibrary.getState().load({stamps:[],levels:[]});
+ const prepared=await prepareSmartStamp(draft),asset=prepared.assets[0]!;
+ expect(parseStamp(serializeStamp(prepared.source)).nineSlice?.border).toBe(2);expect(asset.tileset.generated).toMatchObject({layoutVersion:2,border:2});
+ store.dispatch({type:"addTileset",tileset:asset.tileset});setTilesetImage(asset.image);useProjectLibrary.getState().rememberGeneratedRecipes([{tilesetId:asset.tileset.id,stamp:prepared.source}]);
+ store.dispatch({type:"paintCells",layerId,cells:[{x:2,y:3,cell:store.getOrAddPaletteIndex(asset.tileset.id,204)}]});const before=serializeLevel(store.document),depth=store.undoDepth;
+ setTilesetImage({...image,bytes:Uint8Array.of(4,5,6)});await waitForSmartStampRegeneration();
+ expect(store.document.tilesets).toHaveLength(2);expect(serializeLevel(store.document)).toBe(before);expect(store.undoDepth).toBe(depth);
+ expect(store.document.getTileset(asset.tileset.id)?.generated).toMatchObject({layoutVersion:2,border:2});expect(getTilesetImage(ts.id)?.bytes).toEqual(Uint8Array.of(4,5,6));
+ for(const files of [unityExportFiles(store.document,"main",id=>getTilesetImage(id)?.bytes),tmjExportFiles(store.document,"main",id=>getTilesetImage(id)?.bytes)])expect(files.missingImages).toEqual([]);
+});

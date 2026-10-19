@@ -3,7 +3,7 @@ import { parseStamp, serializeClip, stampTilesetUsage, type Stamp, type Tileset 
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 export interface GeneratedRecipe { readonly tilesetId: string; readonly stamp: Stamp }
 export const generatedRecipePath = (tilesetId: string): string => `tilesets/${tilesetId}.recipe.json`;
-export function sameBakeRecipe(a: Stamp, b: Stamp): boolean { return serializeClip(a) === serializeClip(b); }
+export function sameBakeRecipe(a: Stamp, b: Stamp): boolean { return (a.nineSlice?.border ?? 1) === (b.nineSlice?.border ?? 1) && serializeClip(a) === serializeClip(b); }
 export async function loadGeneratedRecipes(fs: ProjectFileSystem, assets: readonly Tileset[], stamps: readonly Stamp[], broken: string[] = []): Promise<GeneratedRecipe[]> {
   const recipes: GeneratedRecipe[] = [];
   for (const asset of assets) {

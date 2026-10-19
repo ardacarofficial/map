@@ -5,6 +5,7 @@ import { getTilesetImage, onTilesetImage, setTilesetImage, type TilesetImage } f
 import { tilesetPixels } from "../state/tilesetPixels";
 import { brushProfile, profileSpan, type BrushProfile } from "../state/smartBrushProfile";
 import { useProjectLibrary } from "../io/projectLibrary";
+import { sameBakeRecipe } from "../io/smartStampRecipes";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { refreshSmartStampSession } from "../ui/stamps/smartStampSession";
 import { toast } from "../ui/toast/toastStore";
@@ -85,7 +86,7 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
   const detected = profileSpan(profile, "detector", () => detectNineSliceSelection({ tileset, rect, ids, emptyIds, pixels }));
   if (!detected) return;
   if (cacheStore !== store) { cache.clear(); preferences.clear(); cacheStore = store; }
-  const key = profileSpan(profile, "cache.key", () => JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, detected.version]));
+  const key = profileSpan(profile, "cache.key", () => JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, detected.version, detected.border, detected.border > 1 ? 2 : 1]));
   const hit = cache.get(key);
   if (hit && hit.image === image && !hit.failed) {
     records.set(clip, hit);
@@ -93,13 +94,26 @@ export function prepareSelectionBrush(tileset: Tileset, ids: readonly number[], 
     return;
   }
   // Image bytes invalidate the cache, but never the recipe or atlas identity.
+  // Recipe identity has its own stable ABI: preserve the detector-1 b=1 key.
+  // Classification thresholds invalidate preparation caches, never persisted families.
+  const identity = JSON.stringify([tileset.id, rect, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows, 1, ...(detected.border > 1 ? [detected.border, 2] : [])]);
   let hash = 2166136261;
-  for (const ch of key) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
-  const source: Stamp = {
-    ...clip, id: `selection-${hash.toString(16)}`,
+  for (const ch of identity) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  let source: Stamp = {
+    ...clip, nineSlice: { border: detected.border, tileLayers: [] }, id: `selection-${hash.toString(16)}`,
     name: hit?.prepared?.source.name ?? `${tileset.name} ${rect.width}×${rect.height} @ ${rect.col},${rect.row}`,
     layers: clip.layers.map(layer => ({ ...layer, layerId: "tileset", name: tileset.id })),
   };
+  // Also recognize already-written selections from other detector versions by
+  // their actual recipe. Keep the archived id so provenance and road membership
+  // continue using exactly the same atlas, including pre-upgrade layout 1.
+  const library = useProjectLibrary.getState();
+  for (const asset of store.document.tilesets) {
+    const g = asset.generated;
+    if (!g?.stampId.startsWith("selection-") || (g.border ?? 1) !== detected.border || g.sourceWidth !== source.width || g.sourceHeight !== source.height) continue;
+    const recipe = library.generatedRecipes.find(r => r.tilesetId === asset.id)?.stamp ?? library.stamps.find(s => s.id === g.stampId);
+    if (recipe && recipe.id === g.stampId && sameBakeRecipe(recipe, source)) { source = { ...source, id: recipe.id, name: recipe.name }; break; }
+  }
   const targets = hit?.targets;
   const record: BrushRecord = { key, store, tileset, ids: [...ids], emptyIds, image, source, ...(targets ? { targets } : {}), pending: Promise.resolve(), failed: false, published: false };
   records.set(clip, record); cache.set(key, record);
