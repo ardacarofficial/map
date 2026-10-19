@@ -1,3 +1,4 @@
+import { roadPixels } from "../commands/roadPixels.testHelper";
 import { afterEach, expect, it, vi } from "vitest";
 import { clipFromTileset, createDocument, MapStore, serializeLevel, type Tileset } from "@smap/core";
 import type * as BakeModule from "../ui/stamps/smartStampBake";
@@ -8,7 +9,7 @@ import { clearTilesetImages, setTilesetImage } from "../state/tilesetImages";
 import { useToastStore } from "../ui/toast/toastStore";
 import { ToolController, type ToolHost } from "./toolController";
 
-vi.mock("../state/tilesetPixels", () => ({ tilesetPixels: () => ({ width: 96, height: 96, data: new Uint8Array(96 * 96 * 4).fill(255) }) }));
+vi.mock("../state/tilesetPixels", () => ({ tilesetPixels: (_bitmap:ImageBitmap,rect:{x:number;y:number;width:number;height:number}) => roadPixels(rect) }));
 vi.mock("../ui/stamps/smartStampBake", async original => ({ ...await original<typeof BakeModule>(), bakeSmartStamp: vi.fn() }));
 const source: Tileset = { id: "source", name: "Source", imagePath: "source.png", columns: 3, rows: 3, tileWidth: 32, tileHeight: 32, margin: 0, spacing: 0 };
 const event = (x: number, y: number, buttons = 1, samples?: PointerEvent[]) => ({ pointerId: 1, button: 0, buttons, clientX: x, clientY: y, shiftKey: false, altKey: false, preventDefault() {}, getCoalescedEvents: () => samples ?? [] }) as unknown as PointerEvent;
@@ -102,7 +103,10 @@ it("preparation failure clears the gesture, leaves history untouched and reports
   const { store, controller, move, up, ready, before } = setup();
   controller.pointerDown(event(4, 4), { x: 4, y: 4 }); move(7, 4); up(); await ready(true);
   expect(controller.gesture).toBeNull(); expect(serializeLevel(store.document)).toBe(before); expect(store.undoDepth).toBe(0);
-  expect(useToastStore.getState().toasts[0]?.message).toContain("PNG encoding failed");
+  expect(useToastStore.getState().toasts[0]?.message).toContain("Fırça hazırlanamadı");
+  const {setBrushSmartEnabled}=await import("../commands/smartBrushActions");setBrushSmartEnabled(false);
+  controller.pointerDown(event(4,4),{x:4,y:4});controller.pointerUp(event(4,4,0));
+  expect([...store.document.layers[0]!.chunks()].flatMap(c=>[...c.data]).filter(Boolean)).toHaveLength(9);
 });
 
 it.each(["brush", "tool", "layer", "project"])("does not apply a released buffer after changing the %s", async change => {
@@ -123,4 +127,13 @@ it("rechecks a layer locked during preparation and reports the existing blocked 
   store.dispatch({ type: "setLayerProps", layerId, props: { locked: true } });
   await ready(); expect(host.blocked).toHaveBeenCalledWith({ reason: "locked", layerId });
   expect(store.document.tilesets).toEqual([source]); expect([...store.document.getLayer(layerId)!.chunks()]).toHaveLength(0);
+});
+
+it("a removed source gives friendly unavailable feedback and never falls back to a plain gesture",async()=>{
+ const {store,controller,ready}=setup();await ready();
+ store.dispatch({type:"removeTileset",tilesetId:source.id});const before=serializeLevel(store.document);
+ useToastStore.setState({toasts:[]});
+ expect(()=>controller.pointerDown(event(4,4),{x:4,y:4})).not.toThrow();
+ expect(useToastStore.getState().toasts[0]?.message).toContain("Kaynak tileset bulunamadı");
+ expect(serializeLevel(store.document)).toBe(before);expect(store.inTransaction).toBe(false);expect(controller.gesture).toBeNull();
 });

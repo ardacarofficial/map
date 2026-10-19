@@ -26,3 +26,14 @@ Material variations cover 5×5..8×8, stone/plank/grass and D4. Framed grain
 covers road/wall/water tones, b=2/3, positive centre spans, non-square sources
 and D4. Independent fast-check properties also vary offsets, margin and spacing.
 These are finite synthetic corpus measurements, not universal classification guarantees.
+
+The `smart-object-16-bush.png` fixture is the planning lane's realistic round grass bush (48×48). `smart-object-32-bush.png` duplicates each source pixel 2×2 to preserve the same native silhouette at 32 px tiles. Both are one complete 3×3 object, with nonempty corners, and must remain plain under every D4 orientation. Detector v5 requires pixel evidence even for 3×3; white/black sheets are not road fixtures.
+
+The detector-v6 positive corpus adds `smart-road-{16,32}-asymmetric-{pebbles,moss}.png`.
+These offset 3×3 paths retain the authored border/centre and add shaded pebbles or
+moss beside the centre tile's wrap seam, plus a grass blade on only the north
+edge. Opposite inner profiles intentionally
+differ by more than 32 channel levels on over 5% of the seam; the actual wrap
+remains continuous. All four must detect automatically under D4 and paint roads
+in the browser. Regenerate with `python e2e/fixtures/generate-asymmetric.py`
+(Pillow is needed only for authoring, never for running tests).

@@ -51,7 +51,7 @@ for (const value of [1, 3]) test(`pre-role v1 stamp terrain ${value} is removed 
   expect(placed.some(l => ["Terrain", "Old"].includes(l.name))).toBe(false);
   expect(placed.find(l => l.name === "Collision")?.cells).toEqual([1, 2, 0, 0, 0, 0, 0, 0, 0]);
   await canvas.focus(); await page.keyboard.press("Control+s");
-  await expect.poll(async () => JSON.parse((await readOpfsText(page, `stamps/pre-role-${value}.json`)) ?? "null")?.documentFormatVersion).toBe(5);
+  await expect.poll(async () => JSON.parse((await readOpfsText(page, `stamps/pre-role-${value}.json`)) ?? "null")?.documentFormatVersion).toBe(6);
   await waitForSaveIdle(page);
   await page.reload(); await expectWelcome(page); await page.getByRole("button", { name: /^Aç…/ }).click();
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible({ timeout: 30_000 });
@@ -76,7 +76,7 @@ test("legacy library and sidecar use the referenced road family through drawing,
   await page.keyboard.press("Control+z"); await expect.poll(ids).toEqual(before);
   await page.keyboard.press("Control+Shift+z"); await expect.poll(ids).toEqual([12, 31, 29]);
   await page.keyboard.press("Control+s");
-  await expect.poll(async () => JSON.parse((await readOpfsText(page, "stamps/road.json")) ?? "null")?.documentFormatVersion).toBe(5);
+  await expect.poll(async () => JSON.parse((await readOpfsText(page, "stamps/road.json")) ?? "null")?.documentFormatVersion).toBe(6);
   await waitForSaveIdle(page);
   for (const path of ["stamps/road.json", "tilesets/baked.recipe.json"]) {
     const saved = JSON.parse((await readOpfsText(page, path))!);

@@ -47,3 +47,25 @@ it("hashes an immutable PNG buffer once and invalidates by revision identity", a
     expect(await pngHash(new Uint8Array(bytes))).toBe(a); expect(digest).toHaveBeenCalledTimes(2);
   } finally { digest.mockRestore(); }
 });
+
+it("releases a retired bitmap exactly once after its last job releases it",async()=>{
+ const {retainTilesetImage}=await import("./tilesetImages");
+ const close=vi.fn(),first={tilesetId:"source",bytes:Uint8Array.of(1),bitmap:{close} as unknown as ImageBitmap};setTilesetImage(first);
+ const releaseA=retainTilesetImage(first),releaseB=retainTilesetImage(first);
+ setTilesetImage({tilesetId:"source",bytes:Uint8Array.of(2),bitmap:{close:vi.fn()} as unknown as ImageBitmap});
+ expect(close).not.toHaveBeenCalled();releaseA();expect(close).not.toHaveBeenCalled();releaseB();releaseB();expect(close).toHaveBeenCalledTimes(1);clearTilesetImages();expect(close).toHaveBeenCalledTimes(1);
+});
+it("versions decoded premultiplied pixels independently of PNG encoding and invisible RGB",async()=>{
+ const {imageContentVersion}=await import("./tilesetImages");
+ const read=vi.fn(),draw=vi.fn();
+ vi.stubGlobal("document",{createElement:()=>({getContext:()=>({drawImage:draw,getImageData:read})})});
+ try{
+  const image=(bytes:number[])=>({tilesetId:"rgba",bytes:Uint8Array.from(bytes),bitmap:{width:2,height:1,close:vi.fn()} as unknown as ImageBitmap});
+  read.mockReturnValueOnce({data:Uint8ClampedArray.of(10,20,30,255,255,200,100,0)});
+  const a=imageContentVersion(image([1,2,3]));
+  read.mockReturnValueOnce({data:Uint8ClampedArray.of(10,20,30,255,0,0,0,0)});
+  expect(imageContentVersion(image([4,5,6]))).toBe(a);
+  read.mockReturnValueOnce({data:Uint8ClampedArray.of(11,20,30,255,0,0,0,0)});
+  expect(imageContentVersion(image([1,2,3]))).not.toBe(a);
+ }finally{vi.unstubAllGlobals();}
+});

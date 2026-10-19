@@ -2,7 +2,7 @@
 import { composeOrientation, orientPoint, cellFlags, cellPaletteIndex, makeCell, FLIP_D, type Stamp, type TileClip } from "@smap/core";
 import { create } from "zustand";
 import { useEditorStore, type ToolId } from "../../state/editorStore";
-import { autoBrush, brushCandidate, brushDisabled, preparedBrush } from "../../commands/smartBrushActions";
+import { autoBrush, brushCandidate, brushDisabled, preparedBrush, brushUnavailable, refreshUnpublishedBrush } from "../../commands/smartBrushActions";
 import { isStampLevelId } from "../stampEditor/stampDoc";
 
 type Usage = "area" | "road";
@@ -20,7 +20,7 @@ export const useSmartStampSession = create<{
   transform: flags => set(s => ({ orientation: composeOrientation(s.orientation, flags) })),
 }));
 export function smartStamp(clip: TileClip | null = useEditorStore.getState().stamp): Stamp | null {
-  if (brushDisabled(clip)) return null;
+  if (brushDisabled(clip) || brushUnavailable(clip)) return null;
   const stamp = preparedBrush(clip) ?? clip as Stamp | null;
   return stamp?.nineSlice ? stamp : null;
 }
@@ -40,6 +40,7 @@ export function refreshSmartStampSession(changedStore = false): void {
 }
 useEditorStore.subscribe((state, prev) => {
   if (state.project?.store !== prev.project?.store || state.stamp !== prev.stamp || state.tool !== prev.tool) {
+    if(state.project?.store !== prev.project?.store)refreshUnpublishedBrush(state.stamp);
     refreshSmartStampSession(state.project?.store !== prev.project?.store);
   }
 });

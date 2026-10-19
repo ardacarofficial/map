@@ -1,3 +1,4 @@
+import { SmartGridDialog } from "./toolOptions/SmartGridDialog";
 /**
  * React panels (toolbar, layers, tileset, properties, status bar).
  * Tile data never lives in React state; panels send commands to the
@@ -84,6 +85,7 @@ export function App() {
       <SaveStampDialog />
       <EntityTypesDialog />
       <NewLevelDialog />
+      <SmartGridDialog />
       <RemoveLevelDialog />
       <TilesetImportDialog />
       {!hasProject && <Toaster />}

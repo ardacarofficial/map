@@ -7,10 +7,10 @@ it("v4→v5 changes only the version header, retaining source flags, off prefere
  const stamp:Stamp={...source(),id:"road",name:"Road",smartDisabled:true,nineSlice:{border:1,tileLayers:[{layerId:"s",tilesetId:"baked"}],road:{tilesetId:"baked",profile:ts.roadProfile}}};
  const store=new MapStore(createDocument({width:8,height:8,tileWidth:16,tileHeight:16}));store.dispatch({type:"addTileset",tileset:ts});const layerId=store.dispatch({type:"addLayer",layer:{name:"Ground"}});store.dispatch({type:"paintCells",layerId,cells:[{x:2,y:3,cell:makeCell(store.getOrAddPaletteIndex("baked",31),FLIP_H)}]});
  const project=serializeProject({name:"P",tilesets:[ts],levels:[],generatedRecipes:[stamp]}),level=serializeLevel(store.document),saved=serializeStamp(stamp);
- const old=(s:string)=>s.replaceAll('"documentFormatVersion": 5','"documentFormatVersion": 4');
+ const old=(s:string)=>s.replaceAll('"documentFormatVersion": 6','"documentFormatVersion": 4');
  expect(serializeProject(parseProject(old(project)))).toBe(project);
  expect(serializeLevel(parseLevel(old(level),[ts]))).toBe(level);
  expect(serializeStamp(parseStamp(old(saved)))).toBe(saved);
  const input=Object.freeze(JSON.parse(old(project))),before=JSON.stringify(input),next=migrateV5(input);
- expect(JSON.stringify(input)).toBe(before);expect(migrateV5(next)).toBe(next);expect(next.generatedRecipes).toEqual([JSON.parse(saved)]);
+ expect(JSON.stringify(input)).toBe(before);expect(migrateV5(next)).toBe(next);expect(next.generatedRecipes).toEqual([JSON.parse(saved.replaceAll('"documentFormatVersion": 6','"documentFormatVersion": 5'))]);
 });

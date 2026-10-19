@@ -8,6 +8,25 @@ let fixtureRoot=decodeURIComponent(import.meta.url.replace(/^file:\/\//, "")).re
 if (/^\/[A-Za-z]:/.test(fixtureRoot)) fixtureRoot=fixtureRoot.slice(1);
 fixtureRoot+="/../../../e2e/fixtures/";
 const png=(name:string)=>decodePng(readFileSync(fixtureRoot+name+".png"));
+for(const size of [16,32])for(const material of ["pebbles","moss"])it(`accepts asymmetric ${size}px ${material} path decorations under D4`,()=>{
+ const source=png(`smart-road-${size}-asymmetric-${material}`),n=3*size;
+ // Deliberately not mirrored: the inner seam profiles differ on >5% of a tile.
+ let different=0;
+ for(let y=0;y<size;y++){
+  const a=((2*size+y)*source.width+3*size+1)*4,b=((2*size+y)*source.width+4*size-2)*4;
+  if(source.data.subarray(a,a+4).some((v,c)=>Math.abs(v-source.data[b+c]!)>32))different++;
+ }
+ expect(different/size).toBeGreaterThan(.05);
+ for(let flags=0;flags<8;flags++){
+  const data=source.data.slice();
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+   let dx=x,dy=y;if(flags&1)[dx,dy]=[dy,dx];if(flags&2)dx=n-1-dx;if(flags&4)dy=n-1-dy;
+   const a=((size+y)*source.width+2*size+x)*4,b=((size+dy)*source.width+2*size+dx)*4;
+   data.set(source.data.subarray(a,a+4),b);
+  }
+  expect(detectNineSliceSelection({tileset:{id:"path",columns:12,rows:8,tileWidth:size,tileHeight:size,margin:0,spacing:0},rect:{col:2,row:1,width:3,height:3},ids:[14,15,16,26,27,28,38,39,40],emptyIds:new Set(),pixels:{...source,data}})?.border).toBe(1);
+ }
+});
 for(const[size,suffix,n,qualifies]of [[16,"",3,true],[32,"",3,true],[32,"-wide",6,true],[32,"-empty",3,false],[32,"-banded",6,true]]as const){
  it(`classifies actual offset PNG art ${size}${suffix}`,()=>{
   const pixels=png(`smart-road-${size}${suffix}`),tileset={id:"road",columns:12,rows:8,tileWidth:size,tileHeight:size,margin:0,spacing:0};
@@ -47,4 +66,13 @@ for(const name of ["texture","brick","warehouse"])it(`keeps the opaque ${name} s
 for(const size of [16,32])for(const material of ["stone","plank","grass"])it(`keeps the nonperiodic ${size}px ${material} sheet plain`,()=>{
  const pixels=png(`smart-road-${size}-material-${material}`);
  expect(detectNineSliceSelection({tileset:{id:"material",columns:12,rows:8,tileWidth:size,tileHeight:size,margin:0,spacing:0},rect:{col:2,row:1,width:6,height:6},ids:Array.from({length:36},(_,i)=>(1+Math.floor(i/6))*12+2+i%6),emptyIds:new Set(),pixels})).toBeNull();
+});
+
+for(const size of [16,32])it(`keeps realistic round ${size}px bush plain under D4`,()=>{
+ const pixels=png(`smart-object-${size}-bush`);
+ for(let flags=0;flags<8;flags++){
+  const n=size*3,data=pixels.data.slice();
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){let dx=x,dy=y;if(flags&1)[dx,dy]=[dy,dx];if(flags&2)dx=n-1-dx;if(flags&4)dy=n-1-dy;data.set(pixels.data.subarray((y*n+x)*4,(y*n+x+1)*4),(dy*n+dx)*4);}
+  expect(detectNineSliceSelection({tileset:{id:"bush",columns:3,rows:3,tileWidth:size,tileHeight:size,margin:0,spacing:0},rect:{col:0,row:0,width:3,height:3},ids:[0,1,2,3,4,5,6,7,8],emptyIds:new Set(),pixels:{...pixels,data}})).toBeNull();
+ }
 });

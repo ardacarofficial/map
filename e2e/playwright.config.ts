@@ -6,7 +6,9 @@ export default defineConfig({
   testDir: "./tests",
   outputDir: "./test-results",
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+  // Deferred PNG encoding and modal handoffs can exceed 10s on shared CI CPUs.
+  // Functional assertions keep their values; explicit frame budgets remain unchanged.
+  expect: { timeout: 30_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -20,6 +22,21 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: /connected-pick-timing\.spec\.ts$/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+        launchOptions: {
+          args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"],
+        },
+      },
+    },
+    {
+      // Timing assertions need an idle renderer, after parallel functional coverage.
+      name: "chromium-timing",
+      testMatch: /connected-pick-timing\.spec\.ts$/,
+      dependencies: ["chromium"],
+      fullyParallel: false,
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 },

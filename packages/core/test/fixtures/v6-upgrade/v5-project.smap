@@ -1,0 +1,311 @@
+{
+  "format": "smap-project",
+  "documentFormatVersion": 5,
+  "name": "Frozen v1.5 direct selection",
+  "levels": [
+    {
+      "id": "main",
+      "name": "Main",
+      "path": "levels/main.json",
+      "world": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "tilesets": [
+    {
+      "id": "smart-road-32",
+      "name": "smart-road-32",
+      "imagePath": "tilesets/smart-road-32.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 12,
+      "rows": 8,
+      "margin": 0,
+      "spacing": 0
+    },
+    {
+      "id": "generated-selection-ea78d74d-1",
+      "name": "smart-road-32 3×3 @ 2,1 (yol)",
+      "group": "Üretilen",
+      "generated": {
+        "kind": "nineSlice",
+        "stampId": "selection-ea78d74d",
+        "layerId": "tileset",
+        "sourceWidth": 3,
+        "sourceHeight": 3,
+        "layoutVersion": 1,
+        "sources": [
+          {
+            "tilesetId": "smart-road-32",
+            "imageHash": "de21564167c905ae1be2e7991f4cdd5fa57e70f7edac21988a40b352aac8e053"
+          }
+        ]
+      },
+      "roadProfile": {
+        "tiles": [
+          {
+            "tileId": 0,
+            "mask": 28
+          },
+          {
+            "tileId": 1,
+            "mask": 124
+          },
+          {
+            "tileId": 2,
+            "mask": 112
+          },
+          {
+            "tileId": 3,
+            "mask": 31
+          },
+          {
+            "tileId": 4,
+            "mask": 255
+          },
+          {
+            "tileId": 5,
+            "mask": 241
+          },
+          {
+            "tileId": 6,
+            "mask": 7
+          },
+          {
+            "tileId": 7,
+            "mask": 199
+          },
+          {
+            "tileId": 8,
+            "mask": 193
+          },
+          {
+            "tileId": 9,
+            "mask": 16
+          },
+          {
+            "tileId": 10,
+            "mask": 17
+          },
+          {
+            "tileId": 11,
+            "mask": 1
+          },
+          {
+            "tileId": 12,
+            "mask": 4
+          },
+          {
+            "tileId": 13,
+            "mask": 68
+          },
+          {
+            "tileId": 14,
+            "mask": 64
+          },
+          {
+            "tileId": 15,
+            "mask": 0
+          },
+          {
+            "tileId": 16,
+            "mask": 0
+          },
+          {
+            "tileId": 17,
+            "mask": 1
+          },
+          {
+            "tileId": 18,
+            "mask": 4
+          },
+          {
+            "tileId": 19,
+            "mask": 5
+          },
+          {
+            "tileId": 20,
+            "mask": 7
+          },
+          {
+            "tileId": 21,
+            "mask": 16
+          },
+          {
+            "tileId": 22,
+            "mask": 17
+          },
+          {
+            "tileId": 23,
+            "mask": 20
+          },
+          {
+            "tileId": 24,
+            "mask": 21
+          },
+          {
+            "tileId": 25,
+            "mask": 23
+          },
+          {
+            "tileId": 26,
+            "mask": 28
+          },
+          {
+            "tileId": 27,
+            "mask": 29
+          },
+          {
+            "tileId": 28,
+            "mask": 31
+          },
+          {
+            "tileId": 29,
+            "mask": 64
+          },
+          {
+            "tileId": 30,
+            "mask": 65
+          },
+          {
+            "tileId": 31,
+            "mask": 68
+          },
+          {
+            "tileId": 32,
+            "mask": 69
+          },
+          {
+            "tileId": 33,
+            "mask": 71
+          },
+          {
+            "tileId": 34,
+            "mask": 80
+          },
+          {
+            "tileId": 35,
+            "mask": 81
+          },
+          {
+            "tileId": 36,
+            "mask": 84
+          },
+          {
+            "tileId": 37,
+            "mask": 85
+          },
+          {
+            "tileId": 38,
+            "mask": 87
+          },
+          {
+            "tileId": 39,
+            "mask": 92
+          },
+          {
+            "tileId": 40,
+            "mask": 93
+          },
+          {
+            "tileId": 41,
+            "mask": 95
+          },
+          {
+            "tileId": 42,
+            "mask": 112
+          },
+          {
+            "tileId": 43,
+            "mask": 113
+          },
+          {
+            "tileId": 44,
+            "mask": 116
+          },
+          {
+            "tileId": 45,
+            "mask": 117
+          },
+          {
+            "tileId": 46,
+            "mask": 119
+          },
+          {
+            "tileId": 47,
+            "mask": 124
+          },
+          {
+            "tileId": 48,
+            "mask": 125
+          },
+          {
+            "tileId": 49,
+            "mask": 127
+          },
+          {
+            "tileId": 50,
+            "mask": 193
+          },
+          {
+            "tileId": 51,
+            "mask": 197
+          },
+          {
+            "tileId": 52,
+            "mask": 199
+          },
+          {
+            "tileId": 53,
+            "mask": 209
+          },
+          {
+            "tileId": 54,
+            "mask": 213
+          },
+          {
+            "tileId": 55,
+            "mask": 215
+          },
+          {
+            "tileId": 56,
+            "mask": 221
+          },
+          {
+            "tileId": 57,
+            "mask": 223
+          },
+          {
+            "tileId": 58,
+            "mask": 241
+          },
+          {
+            "tileId": 59,
+            "mask": 245
+          },
+          {
+            "tileId": 60,
+            "mask": 247
+          },
+          {
+            "tileId": 61,
+            "mask": 253
+          },
+          {
+            "tileId": 62,
+            "mask": 255
+          }
+        ]
+      },
+      "imagePath": "tilesets/generated-selection-ea78d74d-1.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 8,
+      "rows": 8,
+      "margin": 0,
+      "spacing": 0
+    }
+  ]
+}

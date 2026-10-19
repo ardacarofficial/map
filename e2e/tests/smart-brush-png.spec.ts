@@ -24,7 +24,8 @@ for (const alpha of [false, true]) test(`preview and painting need no PNG; savin
     const { rasterizeSmartStamp } = await import(/* @vite-ignore */ String("/src/ui/stamps/smartStampBake.ts"));
     const editor = useEditorStore.getState(), prepared = autoBrush(editor.stamp).prepared, asset = prepared.assets[0];
     const sources = new Map();
-    for (const [id, image] of prepared.sources) {
+    for (const [id] of prepared.sources) {
+      const image = getTilesetImage(id);
       // Independent legacy whole-sheet read and native PNG path, including alpha quantization.
       const canvas = document.createElement("canvas"); canvas.width = image.bitmap.width; canvas.height = image.bitmap.height;
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!; ctx.drawImage(image.bitmap, 0, 0);

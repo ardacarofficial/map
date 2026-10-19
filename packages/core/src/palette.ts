@@ -61,6 +61,13 @@ export class Palette {
     return index;
   }
 
+  /** @internal Exact restoration of transaction-owned appended slots. */
+  _restore(entries: readonly PaletteEntry[]): void {
+    this.#entries.length = 0;
+    this.#lookup.clear();
+    for (const e of entries) this._getOrAdd(e.tilesetId, e.tileId);
+  }
+
   /**
    * @internal Rewrites existing entries in place (tileset grid edits remap
    * the tile ids of one tileset; used by the store and its history). The

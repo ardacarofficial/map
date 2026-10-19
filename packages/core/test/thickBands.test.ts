@@ -90,7 +90,7 @@ it("uses negative-safe origin alignment and clips partial map-edge macro patches
 });
 it("roundtrips thick saved sources, off preference and layout-2 metadata deterministically",()=>{
  const {stamp,atlas}=prepared(3),disabled={...stamp,smartDisabled:true};
- const text=serializeStamp(disabled);expect(JSON.parse(text).documentFormatVersion).toBe(5);
+ const text=serializeStamp(disabled);expect(JSON.parse(text).documentFormatVersion).toBe(6);
  expect(parseStamp(text)).toEqual(disabled);expect(serializeStamp(parseStamp(text))).toBe(text);
  expect(atlas.generated).toMatchObject({layoutVersion:2,border:3});
 });

@@ -1,3 +1,4 @@
+import { editedTilesetMetadataProblem, normalizeEditedTilesetMetadata, EDITED_ATLAS_COLUMNS, type EditedTilesetMetadata } from "./pixel/metadata";
 import { normalizeRoadProfile, roadProfileProblem, type RoadProfile } from "./smartStamp/roadProfile";
 /**
  * Tileset metadata. Core never loads images; it only knows the grid layout.
@@ -86,6 +87,7 @@ export interface Tileset {
   readonly group?: string;
   /** Generated PNG provenance. Omitted = user-owned PNG; never overwrite a user asset to bake or regenerate. */
   readonly generated?: GeneratedTilesetMetadata;
+  readonly edited?: EditedTilesetMetadata;
   /** Smart-owned complete road family, including archived custom variants. */
   readonly roadProfile?: RoadProfile;
   /** Image path relative to the project folder, `/`-separated, e.g. `"tilesets/grass.png"`. */
@@ -107,6 +109,7 @@ export function normalizeTileset(tileset: Tileset): Tileset {
     name: tileset.name,
     ...(tileset.group !== undefined && tileset.group !== "" ? { group: tileset.group } : {}),
     ...(tileset.generated !== undefined ? { generated: normalizeGeneratedTilesetMetadata(tileset.generated) } : {}),
+    ...(tileset.edited ? { edited: normalizeEditedTilesetMetadata(tileset.edited) } : {}),
     ...(tileset.roadProfile ? { roadProfile: normalizeRoadProfile(tileset.roadProfile) } : {}),
     imagePath: tileset.imagePath,
     tileWidth: tileset.tileWidth,
@@ -145,7 +148,7 @@ export function tilePosition(tileset: Tileset, tileId: number): { col: number; r
 
 /** True when `tileId` is an integer addressing a tile of `tileset`. */
 export function isValidTileId(tileset: Tileset, tileId: number): boolean {
-  return Number.isInteger(tileId) && tileId >= 0 && tileId < tileCount(tileset);
+  return Number.isInteger(tileId) && tileId >= 0 && tileId < (tileset.edited?.nextTileId ?? tileCount(tileset));
 }
 
 /** Pixel rectangle of `tileId` in the tileset image (respects margin and spacing). */
@@ -194,6 +197,13 @@ export function tilesetProblem(tileset: Tileset): string | null {
     if (tileset.generated.sources.some(s => s.tilesetId === tileset.id)) return "generated asset cannot be its own source";
     const { sourceWidth: w, sourceHeight: h } = tileset.generated;
     if (!Number.isSafeInteger(w * h + w + h + 48) || tileset.columns * tileset.rows < w * h + w + h + 48) return "generated grid is smaller than its fixed slot layout";
+  }
+  if (tileset.edited !== undefined) {
+    const problem = editedTilesetMetadataProblem(tileset.edited);
+    if (problem) return problem;
+    if (tileset.generated) return "an edited asset cannot have a road generation recipe";
+    if (tileset.columns !== EDITED_ATLAS_COLUMNS || tileset.margin !== 0 || tileset.spacing !== 0 || tileset.rows !== Math.ceil(tileset.edited.nextTileId / EDITED_ATLAS_COLUMNS)) return "edited atlas layout must be append-only with 16 columns";
+    if (!/^tilesets\/.+\.png$/i.test(tileset.imagePath)) return "edited imagePath must be a PNG under tilesets/";
   }
   if (tileset.roadProfile) {
     const problem = roadProfileProblem(tileset.roadProfile);

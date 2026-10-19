@@ -15,7 +15,7 @@ describe("frozen e94d93d → format 4", () => {
     const project = parseProject(read(`v${version}-project.json`));
     const before = raw(`v${version}-level.json`), doc = parseLevel(read(`v${version}-level.json`), project.tilesets);
     const after = JSON.parse(serializeLevel(doc));
-    expect(after.documentFormatVersion).toBe(5);
+    expect(after.documentFormatVersion).toBe(6);
     expect(after.palette).toEqual(before.palette);
     expect(after.layers).toEqual(before.layers.filter((l: { role?: string }) => l.role !== "terrain"));
     const images = new Map([[version === 3 ? "source" : "terrain", decodePng(readFileSync(fixtureRoot + `v${version}-source.png`))]]);
@@ -30,7 +30,7 @@ describe("frozen e94d93d → format 4", () => {
     expect(stamp.nineSlice === undefined).toBe(version < 3);
     const texts = [serializeProject(project), serializeLevel(doc), serializeStamp(stamp), serializeClip(clip)];
     for (const text of texts) {
-      expect(fileFormatVersion(text)).toBe(5); expect(text.endsWith("\n")).toBe(true); expect(text).not.toContain("\r");
+      expect(fileFormatVersion(text)).toBe(6); expect(text.endsWith("\n")).toBe(true); expect(text).not.toContain("\r");
       expect(text).not.toMatch(/"(?:terrains|terrainSets|solidTiles|setId|terrainId)"/);
     }
     expect(serializeProject(parseProject(texts[0]!))).toBe(texts[0]);

@@ -300,3 +300,114 @@ Area uses free tile coordinates; short axes splice the outer bands at
 ceil(targetPixels/2), with no resampling. Map borders use area artwork clipped
 to the requested tile band and gaps. Game/Unity export schemas are unchanged;
 generated tiles export as ordinary tile references and PNGs.
+
+## Defold
+
+`exportDefold(doc, levelName, imageBytes, options)` plans pure `{path,text}` /
+`{path,bytes}` files for Defold 1.9.8 (commit
+`67542769598a1b794877c96f740f3f527f63f491`). The editor adapter is
+`export/targets/defold.ts`; folder picking, persistence and writing belong to
+the common export dialog. No import or live link is involved.
+
+Choose the Defold **project root** as the destination. `projectSubfolder`
+defaults to `exported`; the map name is appended. For map `forest`, add
+`/exported/forest/map.collection` to the game's collection. Each used tileset
+has a PNG and `.tilesource` retaining tile dimensions and spacing. Defold's
+margin surrounds **every tile**, while the editor's margin surrounds the whole
+image. A nonzero outer margin is therefore cropped from the exported PNG copy;
+native `tile_margin` and companion JSON `margin` become 0. Tile samples, channel
+depth, palettes, transparency and colour profiles are preserved losslessly;
+source/project PNGs remain unchanged. Zero-margin PNGs are copied byte for byte.
+Resource references start with `/` relative to the Defold project, while file
+paths are relative without `/`. Windows separators in the subfolder normalize
+to `/`; OS drive/UNC paths and traversal are preflight errors. Generated numeric
+resource names avoid basename collisions, reserved filenames and string escaping.
+
+A tile layer is split into one `.tilemap` component per used tileset, in source
+order. Layer z values increase in document/source order within `[0,1)`. Visibility
+is preserved. File tile IDs are **zero-based**, including visible tile 0; empty
+cells are omitted. File cell coordinates are `(x, -editorY-1)`. Thus the map's
+top-left pixel is the native origin and the map extends toward negative Y.
+Lua `set_tile`/`get_tile` use one-based coordinates and tile numbers instead.
+H/V/diagonal flags map through the pinned renderer's corner permutations, with
+editor flags 0..7 becoming native H/V/rotate90 masks `[0,1,2,3,6,4,7,5]`.
+
+Collision uses **all resolved manual Collision grids**, including hidden grids
+and passable overrides, independently of visual selection or empty artwork.
+Identical horizontal runs merge across adjacent rows into static boxes. Box data
+is half extents `(widthPx/2,heightPx/2,0.5)` with identity rotation, mass 0,
+friction 0.1, restitution 0, group `map`, mask `default`. Batches of at most 16
+boxes each get a separate collision component/GO; no excess rectangles are dropped.
+Visual GOs also batch at 16 components. Large packages can require increasing
+the host project's `physics.max_collision_objects`, `collection.max_instances`,
+`tilemap.max_count` and `tilemap.max_tile_count` settings to the exported counts.
+
+`game.json` retains the existing `smapExport:1` schema, entities (including
+portal fields), spawn and collision RLE. Its image names reference the packaged
+PNGs, with their normalized margin. Its coordinates remain **Y down**; consumers convert entity box origins
+with `nativeY=-y-height` and point/spawn/portal positions with `nativeY=-y`.
+Entities are companion data for game code, not automatically instantiated GOs.
+Include the JSON path in the host project's `[resource] custom_resources` when
+loading it with `sys.load_resource`; referencing the collection alone does not
+bundle companion data. The engine-verification fixture demonstrates this setting.
+
+`layers` and `collision` follow the existing exporter options. Preflight blocks
+non-unit tile-layer opacity, mismatched tile/cell dimensions, rotated nonsquare
+footprints, overlapping oversized art, missing PNGs or invalid tile references.
+Native tile IDs must be below 65535 (the runtime's empty-cell sentinel). The
+entire package fails together, with translated editor errors. Output order,
+numeric names and LF text are deterministic. Official pinned schema snapshots,
+strict protobuf-text tests and the engine verification provenance are in
+`packages/core/test/fixtures/defold/README.md`.
+## Editor authoring format 6
+
+The authoring formats (`smap-project`, `smap-level`, `smap-stamp`, `smap-clip`)
+now write `documentFormatVersion: 6`. This does **not** change `smapExport: 1`,
+Unity cells, TMJ GIDs, cell flags, or source PNG paths. Migrations run v4 → v5
+→ v6; v6 only supplies collection rows and advances embedded recipe headers.
+It never derives cells, replaces PNGs, or reclassifies old smart recipes.
+
+Project collections persist `{id,name,columns,rows,cells}`. Both dimensions
+normally range from 1 to 256, with capacity at most 65536. Migration sets
+`rows = max(2,maxOccupiedY+2)` (empty collections get 2); oversized legacy
+layouts are retained rather than truncated. Mutation refuses a shrink past
+occupied bounds and refuses growth of an oversized legacy layout.
+
+Optional project `colorPalettes` contains ordered `{name,colors}` records;
+colors are canonical lowercase `#rrggbbaa`. Standalone `.smap-colors.json` is
+`{version:1,name,colors}` with the same ordered colours. These are separate
+from collections of tile references. Absent lists do not add raster payloads.
+
+An edited tileset is an ordinary PNG-backed tileset with optional metadata:
+
+```jsonc
+"edited": {
+  "kind": "pixel",
+  "layoutVersion": 1,
+  "nextTileId": 2,
+  "contentHash": "<64 lowercase SHA-256 hex digits>",
+  "origins": [
+    {"tileId":0,"sourceTilesetId":"grass","sourceTileId":5,"sourcePixelHash":"<captured pixel hash>"}
+  ]
+}
+```
+
+Origins are sorted by tile id, unique, and may reference removed sources.
+Empty-cell clones have no origin. `generated` retains its road-specific meaning;
+`isGeneratedAsset` recognizes either marker. They cannot both be present.
+Logical ids are stable (`edited-16x16-1`); the atlas has 16 fixed columns,
+zero margin/spacing and append-only tile slots. Rows grow; full atlases allocate
+the next id. Source geometry and tile ids are never renumbered by a pixel edit.
+
+Decoded RGBA8 belongs to core's raster store, not JSON. Persisted PNG paths are
+content-addressed revisions (`tilesets/edited-16x16-1-<hash>.png`). The hash is
+SHA-256 over big-endian uint32 pixel width and height, then tightly packed
+straight RGBA8 with zero RGB at alpha 0. The deterministic encoder writes
+noninterlaced RGBA8, filter 0, stored DEFLATE blocks, CRC32 and Adler32. External
+IO saves new PNG revisions before publishing the project manifest and retains
+revisions needed by backups. Core performs no file IO or PNG decoding.
+
+Unity/JSON/TMJ exporters and PNG draw lists treat an edited tileset exactly
+like any other grid: normal tile ids, source rectangles, flags and PNG path.
+Generated recipes and authoring provenance do not enter engine-facing schemas.
+See [the raster API](../pixel/README.md) for transaction and reader contracts.

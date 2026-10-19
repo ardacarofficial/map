@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "i18n:gen": "node --experimental-strip-types scripts/i18n-gen.ts",
-    "i18n:migrate": "node --experimental-strip-types scripts/i18n-migrate.ts"
+    "i18n:migrate": "node --experimental-strip-types scripts/i18n-migrate.ts",
+    "i18n:import-legacy": "node --experimental-strip-types scripts/i18n-migrate.ts --files"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

@@ -17,8 +17,9 @@ function art(w=6,h=6): NineSliceSelectionInput {
   return {...s,pixels:{width,height,data}};
 }
 describe("detectNineSliceSelection",()=>{
- it("accepts the original full offset 3×3, without classifying its artwork",()=>{
-   expect(detectNineSliceSelection(input())).toMatchObject({version:4,border:1,xBands:[1,1,1],reason:"three-by-three",sourceIds:input().ids});
+ it("requires pixels for a full offset 3×3 and verifies bordered artwork",()=>{
+   expect(detectNineSliceSelection(input())).toBeNull();
+   expect(detectNineSliceSelection(art(3,3))).toMatchObject({version:6,border:1,xBands:[1,1,1],reason:"repeating-bands",sourceIds:input().ids});
  });
  it("rejects holes, duplicate/permuted/invalid ids and empty tiles before bounding-box reduction",()=>{
    const s=input();
@@ -45,15 +46,15 @@ describe("detectNineSliceSelection",()=>{
      expect(detectNineSliceSelection({...s,pixels:{...p,data:d}}),kind).toBeNull();
    }
  });
- it("uses alpha, ignores invisible RGB, and accepts opaque black 3×3",()=>{
+ it("rejects a boundaryless opaque black 3×3",()=>{
    const s=art(3,3),p=s.pixels!,d=p.data.slice();
    for(let i=0;i<d.length;i+=4){ d[i]=0;d[i+1]=0;d[i+2]=0; }
-   expect(detectNineSliceSelection({...s,pixels:{...p,data:d}})).not.toBeNull();
+   expect(detectNineSliceSelection({...s,pixels:{...p,data:d}})).toBeNull();
  });
  it("is deterministic, immutable and independent of sheet stride/offset",()=>{
    fc.assert(fc.property(fc.integer({min:3,max:80}),fc.integer({min:0,max:20}),fc.integer({min:0,max:20}),(columns,col,row)=>{
      const s=input();const c=col%(columns-2);const v={...s,tileset:{...s.tileset,columns,rows:row+3},rect:{col:c,row,width:3,height:3},ids:Array.from({length:9},(_,i)=>(row+Math.floor(i/3))*columns+c+i%3)};
-     const before=JSON.stringify(v);expect(detectNineSliceSelection(v)).toEqual(detectNineSliceSelection(v));expect(detectNineSliceSelection(v)?.border).toBe(1);expect(JSON.stringify(v)).toBe(before);
+     const before=JSON.stringify(v);expect(detectNineSliceSelection(v)).toEqual(detectNineSliceSelection(v));expect(detectNineSliceSelection(v)).toBeNull();expect(JSON.stringify(v)).toBe(before);
    }));
  });
 });
@@ -72,4 +73,38 @@ it("reads cropped RGBA with an explicit origin identically to a full sheet",()=>
  const s=art(),p=s.pixels!,originX=1+2*18,originY=1+18,width=6*18-2,height=6*18-2,data=new Uint8Array(width*height*4);
  for(let y=0;y<height;y++)data.set(p.data.subarray(((originY+y)*p.width+originX)*4,((originY+y)*p.width+originX+width)*4),y*width*4);
  expect(detectNineSliceSelection({...s,pixels:{originX,originY,width,height,data}})).toEqual(detectNineSliceSelection(s));
+});
+
+it("verified 3×3 evidence is invariant under arbitrary sheet offsets and gutters",()=>{
+ fc.assert(fc.property(fc.integer({min:0,max:7}),fc.integer({min:0,max:7}),fc.integer({min:0,max:3}),fc.integer({min:0,max:3}),(col,row,margin,spacing)=>{
+  const original=art(3,3),p=original.pixels!,stride=16+spacing,columns=col+4,rows=row+4,width=margin*2+columns*stride,height=margin*2+rows*stride,data=new Uint8Array(width*height*4);
+  for(let y=0;y<3;y++)for(let x=0;x<3;x++)for(let py=0;py<16;py++)for(let px=0;px<16;px++){
+   const a=((1+(1+y)*18+py)*p.width+1+(2+x)*18+px)*4,b=((margin+(row+y)*stride+py)*width+margin+(col+x)*stride+px)*4;
+   data.set(p.data.subarray(a,a+4),b);
+  }
+  const source={tileset:{...original.tileset,columns,rows,margin,spacing},rect:{col,row,width:3,height:3},ids:Array.from({length:9},(_,i)=>(row+Math.floor(i/3))*columns+col+i%3),emptyIds:new Set<number>(),pixels:{width,height,data}};
+  const before=data.slice();expect(detectNineSliceSelection(source)?.border).toBe(1);expect(data.every((v,i)=>v===before[i])).toBe(true);expect(detectNineSliceSelection(source)).toEqual(detectNineSliceSelection(source));
+ }),{numRuns:40});
+});
+
+it("verifies transparent road borders while ignoring RGB hidden under zero alpha",()=>{
+ const s=art(3,3),p=s.pixels!,a=p.data.slice(),b=p.data.slice();
+ for(let y=0;y<48;y++)for(let x=0;x<48;x++)if(Math.min(x,y,47-x,47-y)<2){
+  const i=((1+(1+Math.floor(y/16))*18+y%16)*p.width+1+(2+Math.floor(x/16))*18+x%16)*4;
+  a.set([0,0,0,0],i);b.set([x*3%256,y*5%256,255,0],i);
+ }
+ const expected=detectNineSliceSelection({...s,pixels:{...p,data:a}});expect(expected?.border).toBe(1);expect(detectNineSliceSelection({...s,pixels:{...p,data:b}})).toEqual(expected);
+});
+
+it("accepts arbitrary asymmetric details beside a continuous wrap without mutating pixels",()=>{
+ fc.assert(fc.property(fc.integer({min:1,max:12}),fc.boolean(),fc.integer({min:35,max:80}),(start,far,contrast)=>{
+  const s=art(3,3),p=s.pixels!,data=p.data.slice(),px=far?14:1;
+  for(let py=start;py<Math.min(15,start+3);py++){
+   const i=((1+2*18+py)*p.width+1+3*18+px)*4;
+   data.set([160-contrast,170-contrast,180-contrast,255],i);
+  }
+  const before=data.slice(),input={...s,pixels:{...p,data}};
+  expect(detectNineSliceSelection(input)?.border).toBe(1);
+  expect(detectNineSliceSelection(input)).toEqual(detectNineSliceSelection(input));expect(data.every((v,i)=>v===before[i])).toBe(true);
+ }),{numRuns:40});
 });

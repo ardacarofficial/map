@@ -1,3 +1,4 @@
+import { sourcePreviewGrid } from "../stamps/stampThumb";
 import type { Stamp } from "@smap/core";
 import { SmartStampProperties } from "../stamps/SmartStampProperties";
 
@@ -275,9 +276,11 @@ function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
   const stampId = activeStampId(clip);
   const [naming, setNaming] = useState<TileClip | null>(null);
   const gridLayers = clip.layers.filter((l) => l.grid).length;
+  const sourceGrid=sourcePreviewGrid(clip,id=>doc.getTileset(id));
   return (
     <>
       <PropGrid>
+        {sourceGrid&&(sourceGrid.tileWidth!==doc.map.tileWidth||sourceGrid.tileHeight!==doc.map.tileHeight)&&<PropRow label={t("smartStamp.sourcePreview")}><ReadField>{t("smartStamp.nativeSize",{width:sourceGrid.tileWidth,height:sourceGrid.tileHeight})}</ReadField></PropRow>}
         <PropRow label={t("inspector.size")}>
           <ReadField>{t("inspector.clipSize", { width: clip.width, height: clip.height })}</ReadField>
         </PropRow>

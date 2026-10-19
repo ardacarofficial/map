@@ -1,3 +1,5 @@
+import { migrateV6 } from "./migrations/v6";
+import { normalizeColorPalettes, type ColorPalette } from "./pixel/palettes";
 import { migrateV5 } from "./migrations/v5";
 /** Deterministic project/level/stamp/clip JSON. Legacy conversion is raw and never derives cells. */
 import { migrateV4, retainLegacyRoadFamilies } from "./migrations/v4";
@@ -76,6 +78,7 @@ export function serializeProject(project: ProjectData): string {
     format: PROJECT_FORMAT,
     documentFormatVersion: DOCUMENT_FORMAT_VERSION,
     name: p.name,
+    ...(p.colorPalettes?.length ? { colorPalettes: p.colorPalettes } : {}),
     levels: p.levels.map((level) => ({ id: level.id, name: level.name, path: level.path, world: { x: level.world.x, y: level.world.y } })),
     tilesets: p.tilesets.map(tilesetJson),
     ...(p.generatedRecipes?.length ? { generatedRecipes: p.generatedRecipes.map(s => JSON.parse(serializeStamp(s))) } : {}),
@@ -217,6 +220,7 @@ function tilesetJson(tileset: Tileset): Record<string, unknown> {
     name: t.name,
     ...(t.group !== undefined ? { group: t.group } : {}),
     ...(t.generated !== undefined ? { generated: t.generated } : {}),
+    ...(t.edited ? { edited: t.edited } : {}),
     ...(t.roadProfile ? { roadProfile: t.roadProfile } : {}),
     imagePath: t.imagePath,
     tileWidth: t.tileWidth,
@@ -288,6 +292,7 @@ export function parseProject(text: string): Project {
   if (root["collections"] !== undefined) {
     collections = arr(root, "collections", "").map((item, i) => {
       const c = obj(item, `collections[${i}]`);
+      if (c["rows"] === undefined) throw new FormatError(`collections[${i}].rows`, "must be explicit in format 6");
       if (!Array.isArray(c["cells"])) throw new FormatError(`collections[${i}].cells`, "must be an array");
       return c as unknown as Collection;
     });
@@ -299,9 +304,15 @@ export function parseProject(text: string): Project {
   if (root["settings"] !== undefined) {
     settings = obj(root["settings"], "settings") as ProjectSettingsInput;
   }
+  let colorPalettes: readonly ColorPalette[];
+  try {
+    colorPalettes = normalizeColorPalettes((root["colorPalettes"] === undefined ? [] : root["colorPalettes"]) as readonly ColorPalette[]);
+  } catch (error) {
+    throw new FormatError("colorPalettes", (error as Error).message);
+  }
   const generatedRecipes = root["generatedRecipes"] === undefined ? [] : arr(root, "generatedRecipes", "").map(r => parseStamp(toJson(r), tilesets));
   try {
-    return normalizeProject({ name, levels, tilesets, entityTypes, retiredLevelIds, randomSets, collections, settings, generatedRecipes });
+    return normalizeProject({ name, levels, tilesets, entityTypes, retiredLevelIds, randomSets, collections, settings, generatedRecipes, colorPalettes });
   } catch (error) {
     const message = (error as Error).message;
     throw new FormatError(message.startsWith("settings") ? "settings" : "levels", message);
@@ -646,7 +657,7 @@ function readRoot(text: string, format: string, what: string, tilesets: readonly
     );
   }
   try {
-    return migrateV5(migrateV4(root, tilesets as unknown as readonly Record<string, unknown>[]));
+    return migrateV6(migrateV5(migrateV4(root, tilesets as unknown as readonly Record<string, unknown>[])));
   } catch (error) {
     throw new FormatError("", (error as Error).message);
   }
@@ -674,6 +685,7 @@ function readTileset(item: unknown, path: string, version: number): Tileset {
     ...tileset,
     ...(version >= 3 && t["generated"] !== undefined ? { generated: t["generated"] as NonNullable<Tileset["generated"]> } : {}),
     ...(group !== undefined ? { group } : {}),
+    ...(t["edited"] !== undefined ? { edited: t["edited"] as NonNullable<Tileset["edited"]> } : {}),
     ...(t["roadProfile"] !== undefined ? { roadProfile: t["roadProfile"] as NonNullable<Tileset["roadProfile"]> } : {}),
   };
   const problem = tilesetProblem(full);

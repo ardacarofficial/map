@@ -35,16 +35,20 @@ export interface Collection {
   readonly name: string;
   /** Display width in cells, `[1, MAX_COLLECTION_COLUMNS]`. */
   readonly columns: number;
+  /** Explicit persisted height. Omitted only by pre-v6 API callers; normalization fills it. */
+  readonly rows?: number;
   readonly cells: readonly CollectionCell[];
 }
 
 /** Widest collection. */
 export const MAX_COLLECTION_COLUMNS = 256;
+export const MAX_COLLECTION_ROWS = 256;
+export const MAX_COLLECTION_CAPACITY = 65536;
 /** Most cells in one collection. */
 export const MAX_COLLECTION_CELLS = 65536;
 
 /** Why `collection` is not valid, or `null`. Order of `cells` does not matter here. */
-export function collectionProblem(collection: Collection): string | null {
+export function collectionProblem(collection: Collection, allowLegacyOversize = false): string | null {
   if (typeof collection !== "object" || collection === null) return "collection must be an object";
   const { id, name, columns, cells } = collection;
   if (typeof id !== "string" || id.length === 0 || id.length > 128) return "collection id must be a non-empty string of at most 128 characters";
@@ -54,12 +58,17 @@ export function collectionProblem(collection: Collection): string | null {
   }
   if (!Array.isArray(cells)) return `collection "${id}": cells must be an array`;
   if (cells.length > MAX_COLLECTION_CELLS) return `collection "${id}": more than ${MAX_COLLECTION_CELLS} cells`;
+  const rows = collection.rows === undefined ? Math.max(2, collectionRows(collection) + 1) : collection.rows;
+  const legacy = allowLegacyOversize && rows <= MAX_COLLECTION_CELLS + 2;
+  if (!Number.isInteger(rows) || rows < 1 || (!legacy && rows > MAX_COLLECTION_ROWS)) return `collection "${id}": rows must be an integer in [1, ${MAX_COLLECTION_ROWS}]`;
+  if (!legacy && columns * rows > MAX_COLLECTION_CAPACITY) return `collection "${id}": capacity exceeds ${MAX_COLLECTION_CAPACITY}`;
   const seen = new Set<number>();
   for (const [i, c] of cells.entries()) {
     const at = `collection "${id}" cell ${i}`;
     if (typeof c !== "object" || c === null) return `${at}: must be an object`;
     if (!Number.isInteger(c.x) || c.x < 0 || c.x >= columns) return `${at}: x must be an integer in [0, ${columns - 1}]`;
     if (!Number.isInteger(c.y) || c.y < 0 || c.y > MAX_COLLECTION_CELLS) return `${at}: y must be an integer ≥ 0`;
+    if (c.y >= rows) return `${at}: row outside collection bounds`;
     if (typeof c.tilesetId !== "string" || c.tilesetId.length === 0) return `${at}: tilesetId must be a non-empty string`;
     if (!Number.isInteger(c.tileId) || c.tileId < 0) return `${at}: tileId must be an integer ≥ 0`;
     const flags = c.flags ?? 0;
@@ -75,7 +84,7 @@ export function collectionProblem(collection: Collection): string | null {
 export function collectionsProblem(collections: readonly Collection[]): string | null {
   const ids = new Set<string>();
   for (const c of collections) {
-    const problem = collectionProblem(c);
+    const problem = collectionProblem(c, true);
     if (problem) return problem;
     if (ids.has(c.id)) return `duplicate collection id "${c.id}"`;
     ids.add(c.id);
@@ -91,7 +100,7 @@ export function normalizeCollection(collection: Collection): Collection {
       const flags = (c.flags ?? 0) >>> 0;
       return Object.freeze({ x: c.x, y: c.y, tilesetId: c.tilesetId, tileId: c.tileId, ...(flags !== 0 ? { flags } : {}) });
     });
-  return Object.freeze({ id: collection.id, name: collection.name, columns: collection.columns, cells: Object.freeze(cells) });
+  return Object.freeze({ id: collection.id, name: collection.name, columns: collection.columns, rows: collection.rows === undefined ? Math.max(2, collectionRows(collection) + 1) : collection.rows, cells: Object.freeze(cells) });
 }
 
 /** Number of rows in use (`max y + 1`, 0 when empty). */

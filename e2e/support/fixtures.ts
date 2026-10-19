@@ -92,11 +92,13 @@ export async function pixelDiffRatio(page: Page, a: Buffer, b: Buffer): Promise<
 }
 
 /** Confirms the tileset import card (opened by a tileset drop / paste) with its inferred settings. */
-export async function confirmTilesetCard(page: Page): Promise<void> {
+export async function confirmTilesetCard(page: Page, options: {gridChoice?:"keep"|"ask"} = {}): Promise<void> {
   const card = page.getByTestId("tileset-card");
   await expect(card).toBeVisible();
   await card.locator("button[type=submit]").click();
-  await expect(card).toBeHidden();
+  // The following size-choice modal can open during the exit animation.
+  // Verify the import is closed without waiting for its transition node to unmount.
+  await expect(page.locator('[data-testid="tileset-card"]:not([data-closed])')).toHaveCount(0);
   // Import can start a project before Pixi's asynchronous initialization finishes.
   // A visible canvas alone does not yet provide the camera/debug hook used by the callers.
   const hasProject = await page.evaluate(async () => {
@@ -104,6 +106,9 @@ export async function confirmTilesetCard(page: Page): Promise<void> {
     return useEditorStore.getState().project !== null;
   });
   if (hasProject) await expect.poll(() => page.evaluate(() => Object.hasOwn(window, "__smap"))).toBe(true);
+  // Existing import scenarios retain their map grid; grid-choice tests answer explicitly.
+  const gridQuestion=page.locator("[data-dialog='smart-grid']");
+  if(options.gridChoice!=="ask"&&await gridQuestion.isVisible())await gridQuestion.getByRole("button",{name:"Harita ölçüsünü koru",exact:true}).click();
 }
 
 /** The welcome screen's "Tileset bırak" card (drops anywhere work too; this one is the visible target). */

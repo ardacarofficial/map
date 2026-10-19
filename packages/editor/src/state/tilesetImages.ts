@@ -1,3 +1,5 @@
+import { tilesetPixels } from "./tilesetPixels";
+import type { Tileset } from "@smap/core";
 import { pngHash } from "./pngHash";
 import type { PngBytes } from "../io/fileData";
 /**
@@ -35,6 +37,45 @@ export function tilesetPngSource(id: string): PngBytes | undefined {
   const image = getTilesetImage(id); return image ? image.bytes ?? (() => tilesetImageBytes(image)) : undefined;
 }
 
+/** World lifetime is independent of the active map/store. */
+let worldVersion = 0;
+export function tilesetWorldVersion(): number { return worldVersion; }
+export interface SourceVersion { readonly content: string; readonly grid: string }
+const contentVersions = new WeakMap<TilesetImage, string>();
+const leases = new WeakMap<TilesetImage, number>();
+const retired = new WeakSet<TilesetImage>();
+const closed = new WeakSet<TilesetImage>();
+function closeImage(image: TilesetImage): void {
+  if (closed.has(image) || leases.get(image)) return;
+  closed.add(image); image.bitmap.close();
+}
+export function retainTilesetImage(image: TilesetImage): () => void {
+  leases.set(image, (leases.get(image) ?? 0) + 1);
+  let released=false;
+  return () => { if(released)return;released=true;leases.set(image, (leases.get(image) ?? 1)-1);if(retired.has(image))closeImage(image); };
+}
+/** Once per decoded snapshot; invisible RGB is excluded from premultiplied content. */
+export function imageContentVersion(image: TilesetImage): string {
+  const hit=contentVersions.get(image);if(hit)return hit;
+  let bytes=image.bytes ?? new Uint8Array(), geometry="encoded";
+  if (image.bitmap.width && image.bitmap.height && typeof document !== "undefined" && typeof document.createElement === "function") {
+    const {width,height}=image.bitmap,pixels=tilesetPixels(image.bitmap,{x:0,y:0,width,height});
+    bytes=new Uint8Array(pixels.data.length);
+    for(let i=0;i<bytes.length;i+=4){const a=pixels.data[i+3]!;for(let c=0;c<3;c++)bytes[i+c]=Math.round(pixels.data[i+c]!*a/255);bytes[i+3]=a;}
+    geometry=`${width}x${height}`;
+  }
+  let a=2166136261,b=0x9e3779b9;
+  for(const v of bytes){a=Math.imul(a^v,16777619)>>>0;b=Math.imul(b^v,2246822519)>>>0;}
+  const version=`${geometry}:${bytes.length}:${a.toString(16)}:${b.toString(16)}`;contentVersions.set(image,version);return version;
+}
+export function tilesetSourceVersion(tileset: Tileset, image: TilesetImage): SourceVersion {
+ return {content:imageContentVersion(image),grid:JSON.stringify([tileset.tileWidth,tileset.tileHeight,tileset.margin,tileset.spacing,tileset.columns,tileset.rows])};
+}
+export function sourceVersionMatches(id:string, version:SourceVersion, tileset:Tileset|undefined): boolean {
+ const image=getTilesetImage(id);if(!image||!tileset)return false;
+ const current=tilesetSourceVersion(tileset,image);return current.content===version.content&&current.grid===version.grid;
+}
+
 type Listener = (tilesetId: string) => void;
 
 const images = new Map<string, TilesetImage>();
@@ -49,7 +90,10 @@ export function allTilesetImages(): IterableIterator<TilesetImage> {
 }
 
 export function setTilesetImage(image: TilesetImage): void {
-  images.get(image.tilesetId)?.bitmap.close();
+  const previous=images.get(image.tilesetId);
+  if(previous === image)return;
+  imageContentVersion(image);
+  if(previous){retired.add(previous);closeImage(previous);}
   images.set(image.tilesetId, image);
   // Start provenance hashing alongside image publication, before a user picks a smart source.
   if (image.bytes) void pngHash(image.bytes).catch(() => {});
@@ -57,7 +101,8 @@ export function setTilesetImage(image: TilesetImage): void {
 }
 
 export function clearTilesetImages(): void {
-  for (const img of images.values()) img.bitmap.close();
+  worldVersion++;
+  for (const img of images.values()) { retired.add(img); closeImage(img); }
   images.clear();
 }
 
@@ -78,4 +123,4 @@ export function notifyTilesetImage(tilesetId: string): void {
 }
 
 /** Releases a staged asset when an atomic bake fails. */
-export function removeTilesetImage(id: string): void { images.get(id)?.bitmap.close(); images.delete(id); }
+export function removeTilesetImage(id: string): void { const image=images.get(id);if(image){retired.add(image);closeImage(image);}images.delete(id);for(const l of listeners)l(id); }

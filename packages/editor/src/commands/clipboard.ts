@@ -1,3 +1,4 @@
+import { attachPreparedBrush } from "./smartBrushActions";
 /**
  * Copy / cut / paste / delete of the marquee region on the captured selection layers.
  *
@@ -142,11 +143,11 @@ export function flipStampOrTile(axis: "x" | "y"): boolean {
     const flipped = flipClip(state.stamp, axis);
     // A saved stamp stays one (id + name kept), so the canvas still places it with `placeStamp`.
     const saved = state.stamp as Partial<Stamp>;
-    state.setStamp(
+    const next =
       typeof saved.id === "string" && typeof saved.name === "string"
         ? Object.freeze({ ...flipped, id: saved.id, name: saved.name })
-        : flipped,
-    );
+        : flipped;
+    attachPreparedBrush(next,state.stamp);state.setStamp(next);
     return true;
   }
   const layer = activeLayer(contextOf(state));

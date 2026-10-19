@@ -17,7 +17,8 @@
     "perf": "pnpm --filter @smap/e2e exec playwright test -c perf/playwright.config.ts",
     "desktop:dev": "pnpm --filter @smap/desktop tauri dev",
     "desktop:build": "pnpm --filter @smap/desktop tauri build",
-    "i18n:gen": "pnpm --filter @smap/editor i18n:gen"
+    "i18n:gen": "pnpm --filter @smap/editor i18n:gen",
+    "i18n:import-legacy": "node --experimental-strip-types packages/editor/scripts/i18n-migrate.ts --files"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

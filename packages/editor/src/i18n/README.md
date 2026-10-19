@@ -64,18 +64,47 @@ production resources.
 
 ## Migrating keys from parallel lanes
 
-The old TS catalogs are removed. To migrate additive legacy keys after merging
-another lane, run from `packages/editor`:
+The old TS catalogs are removed. If a later lane (for example Godot export)
+leaves trusted legacy catalogs, run this **one command from the repo root**:
+
+```sh
+pnpm i18n:import-legacy <path/to/tr.ts> <path/to/en.ts>
+```
+
+Paths are relative to the current working directory (absolute paths also work).
+The command imports missing keys into feature JSON files and regenerates the
+key/argument schema. It does not delete the input files, any existing resource
+keys, unrelated feature files, or locale metadata. Reviewed ICU translations
+win by default. Thus a new `godotExport` section can be imported without
+overwriting the smart-brush and Defold messages already migrated.
+
+When the lane also **edits existing legacy messages**, supply a comparison ref
+that still contains the old catalogs:
+
+```sh
+pnpm i18n:import-legacy <path/to/tr.ts> <path/to/en.ts> --base-ref <lane-parent-revision>
+```
+
+Messages added or changed since that ref replace those JSON keys; unchanged
+legacy messages preserve reviewed ICU text. The v1.6 integration used
+`--base-ref 36cd32b` against `8ca6c20`: 31 additions per locale, no edits to
+existing messages. Their exact legacy text is frozen in
+`__fixtures__/merged-main.legacy.json` and checked at sample value 2 alongside
+the original migration snapshot. New count messages get ICU plurals; review
+singular sentence grammar after import. Remove leftover TS files explicitly
+after reviewing the result, so production storage remains JSON-only.
+
+Git-only imports are also supported from `packages/editor`:
 
 ```sh
 pnpm i18n:migrate --ref <revision-containing-tr.ts-and-en.ts>
 pnpm i18n:gen
 ```
 
-Without `--ref`, the converter reads restored local `src/i18n/tr.ts` / `en.ts`.
-It transpiles trusted repository catalogs, quotes ICU literals, introduces count
-plurals and only adds missing entries. Existing ICU translations win. Review
-singular sentence grammar and remove the restored TS files afterwards.
+`i18n:migrate` also accepts `--base-ref`. Without `--ref`, it reads restored
+local `src/i18n/tr.ts` / `en.ts`. Both commands transpile trusted repository
+catalogs, verify TR/EN key/placeholder parity before writing, and quote ICU
+literals. They are developer tools, not a runtime import of untrusted files.
 `__fixtures__/migration.expected.json` freezes the original rendered output of
 every baseline key at sample value 2; singular wording changes have separate
 tests. Direct `setLocale()` updates notify subscribers, refresh the existing

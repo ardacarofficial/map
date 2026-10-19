@@ -69,6 +69,7 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
   // Enter imports.
   await page.keyboard.press("Enter");
   await expect(card).toBeHidden();
+  await page.locator("[data-dialog='smart-grid']").getByRole("button",{name:"Harita ölçüsünü koru",exact:true}).click();
   await expect(page.locator("[data-tileset-switcher-name]")).toHaveText("dungeon-16");
   await expect(page.getByText("Tileset eklendi: dungeon-16 · 24 tile")).toHaveCount(0);
 
