@@ -493,7 +493,7 @@ export function missingBrush(
 
 /** Tools whose footprint size (`[` `]`, size readout) means something. */
 export function usesBrushSize(tool: ToolId): boolean {
-  return tool === "brush" || tool === "eraser";
+  return tool === "brush" || tool === "eraser" || tool === "line";
 }
 
 /**

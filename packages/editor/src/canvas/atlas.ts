@@ -135,3 +135,17 @@ export function tileUV(layout: AtlasLayout, tileId: number): TileUV | undefined 
     v1: (slot.y + layout.tileH) / page.height,
   };
 }
+
+/** Intersect each extrusion blit in source space, preserving stretched edge pixels. */
+export function dirtyTileBlits(sx: number, sy: number, w: number, h: number, dx: number, dy: number, pad: number, dirty: { x: number; y: number; width: number; height: number }): Blit[] {
+  const out: Blit[] = [];
+  for (const b of tileBlits(sx, sy, w, h, dx, dy, pad)) {
+    const x = Math.max(b.sx, sx + dirty.x), y = Math.max(b.sy, sy + dirty.y);
+    const width = Math.min(b.sx + b.sw, sx + dirty.x + dirty.width) - x;
+    const height = Math.min(b.sy + b.sh, sy + dirty.y + dirty.height) - y;
+    if (width <= 0 || height <= 0) continue;
+    const scaleX = b.dw / b.sw, scaleY = b.dh / b.sh;
+    out.push({ sx: x, sy: y, sw: width, sh: height, dx: b.dx + (x - b.sx) * scaleX, dy: b.dy + (y - b.sy) * scaleY, dw: width * scaleX, dh: height * scaleY });
+  }
+  return out;
+}

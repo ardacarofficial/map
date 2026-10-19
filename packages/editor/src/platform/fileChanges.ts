@@ -53,7 +53,7 @@ async function reloadOnce(path: string): Promise<void> {
   const project = useEditorStore.getState().project;
   const folder = getProjectFolder();
   if (!project || !folder) return;
-  const tilesets = project.store.document.tilesets.filter((ts) => ts.imagePath === path);
+  const tilesets = project.store.document.tilesets.filter((ts) => ts.imagePath === path && !ts.edited);
   if (tilesets.length === 0) return;
 
   let bytes: Uint8Array;

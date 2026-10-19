@@ -1,3 +1,5 @@
+import type { PixelController } from "./pixelController";
+import { usePixelUi } from "../state/pixelUi";
 import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * DOM input of the map canvas: pointer events (routed to panning or the
@@ -52,6 +54,7 @@ export interface InputHost {
   /** Bring a pending layout resize into the camera before converting coordinates. */
   syncRect?(): DOMRect;
   readonly tools: ToolController;
+  readonly pixel?: PixelController;
   map(): MapInfo | undefined;
   /** The active layer can be painted (cursor shows "not-allowed" otherwise). */
   paintable(): boolean;
@@ -150,7 +153,7 @@ export class PointerInput {
     c.addEventListener("lostpointercapture", (e) => this.#onPointerEnd(e), opts);
     c.addEventListener("pointerenter", (e) => this.#setPointer(e), opts);
     c.addEventListener("pointerleave", () => {
-      if (this.#host.tools.gesture || this.#pan || this.#host.world()?.busy) return;
+      if (this.#host.tools.gesture || this.#host.pixel?.busy || this.#pan || this.#host.world()?.busy) return;
       this.pointer = null;
       this.#host.requestRender();
     }, opts);
@@ -175,6 +178,7 @@ export class PointerInput {
     window.addEventListener("keyup", (e) => this.#onKey(e, false), opts);
     window.addEventListener("blur", () => {
       // Focus left the window mid-gesture (Alt+Tab, a dialog): the pointer-up may never come.
+      this.#host.pixel?.cancel();
       if (this.#host.tools.gesture) this.#host.tools.end();
       if (this.#pan) this.#endPan();
       this.#spaceDown = false;
@@ -194,6 +198,12 @@ export class PointerInput {
     if (map && this.pointer && !this.#host.world()) {
       const c = this.#host.camera.cellAt(this.pointer);
       if (c && c.x >= 0 && c.y >= 0 && c.x < map.width && c.y < map.height) cell = c;
+    }
+    if (usePixelUi.getState().mode === "pixel") {
+      const cam = this.#host.camera, off = { x: Math.round(cam.camera.x * cam.resolution) / cam.resolution, y: Math.round(cam.camera.y * cam.resolution) / cam.resolution };
+      const p = cell && this.pointer ? { x: Math.floor((this.pointer.x - off.x) / cam.camera.zoom), y: Math.floor((this.pointer.y - off.y) / cam.camera.zoom) } : null;
+      const prevPixel = usePixelUi.getState().hover;
+      if (p?.x !== prevPixel?.x || p?.y !== prevPixel?.y) usePixelUi.setState({ hover: p });
     }
     const prev = this.#hover;
     if (prev === cell || (prev && cell && prev.x === cell.x && prev.y === cell.y)) return;
@@ -344,6 +354,7 @@ export class PointerInput {
       this.updateCursor();
       return;
     }
+    if (this.#host.pixel?.busy) { e.preventDefault(); this.#host.pixel.cancel(); return; }
     if (!this.#host.tools.gesture) return;
     e.preventDefault();
     this.#host.tools.cancel();
@@ -358,7 +369,7 @@ export class PointerInput {
     if (e.defaultPrevented || isEditableTarget(e.target) || this.#host.world()) return;
     const id = commandForEvent(e);
     if (!id) return;
-    const gesture = this.#host.tools.gesture !== null || this.#pan !== null;
+    const gesture = this.#host.tools.gesture !== null || this.#host.pixel?.busy === true || this.#pan !== null;
     if (suppressedCommandKey(id, useEditorStore.getState().tool, gesture)) e.preventDefault();
   }
 
@@ -395,6 +406,11 @@ export class PointerInput {
       const pan = e.button === 1 || (e.button === 0 && (this.#spaceDown || this.#handTool() || !world.pointerDown(e, this.pointer)));
       if (pan) this.#startPan(e);
       this.updateCursor();
+      return;
+    }
+    if (this.#host.pixel?.enabled()) {
+      if (e.button === 1 || (e.button === 0 && this.#spaceDown)) this.#startPan(e);
+      else this.#host.pixel.down(e);
       return;
     }
     if (e.button === 2 && tools.isCancelable()) {
@@ -448,7 +464,8 @@ export class PointerInput {
       if (world) {
         world.pointerMove(e, this.pointer);
         this.updateCursor();
-      } else this.#host.tools.pointerMove(e);
+      } else if (this.#host.pixel?.enabled()) this.#host.pixel.move(e);
+      else this.#host.tools.pointerMove(e);
     }
     this.#host.requestRender();
   }
@@ -459,12 +476,14 @@ export class PointerInput {
     else if (world) {
       world.pointerUp(e, this.toLocal(e));
       this.updateCursor();
-    } else this.#host.tools.pointerUp(e);
+    } else if (this.#host.pixel?.busy) this.#host.pixel.up(e);
+    else this.#host.tools.pointerUp(e);
     this.release(e.pointerId);
     this.#host.requestRender();
   }
 
   #onPointerEnd(e: PointerEvent): void {
+    if (this.#host.pixel?.busy) this.#host.pixel.cancel();
     if (this.#pan && e.pointerId === this.#pan.pointerId) this.#endPan();
     if (this.#host.world()?.busy) this.#host.world()?.cancel();
     const g = this.#host.tools.gesture;

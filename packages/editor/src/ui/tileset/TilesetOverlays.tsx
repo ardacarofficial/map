@@ -1,3 +1,4 @@
+import type { TilesetBitmap } from "../../state/tilesetImages";
 
 import { tileRect, type Tileset } from "@smap/core";
 import { useMemo } from "react";
@@ -53,7 +54,7 @@ export function drawMarks(
 }
 
 /** The tileset's tiles side by side at 1 tile pixel = 1 canvas pixel (margin and spacing cut away); CSS scales it up crisply. */
-export function drawTiles(canvas: HTMLCanvasElement, tileset: Tileset, bitmap: ImageBitmap, sourcePixels = false): void {
+export function drawTiles(canvas: HTMLCanvasElement, tileset: Tileset, bitmap: TilesetBitmap, sourcePixels = false): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const { tileWidth: tw, tileHeight: th, columns, rows } = tileset;

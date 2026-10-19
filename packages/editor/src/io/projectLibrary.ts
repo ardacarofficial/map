@@ -1,3 +1,4 @@
+import type { ColorPalette } from "@smap/core";
 import type { GeneratedRecipe } from "./smartStampRecipes";
 /**
  * Project-level data that is not part of a level's `MapStore`: the stamp
@@ -13,6 +14,7 @@ import { create } from "zustand";
 import { sortStamps } from "./stampsIo";
 
 export interface ProjectLibraryState {
+  colorPalettes: readonly ColorPalette[];
   stamps: Stamp[];
   generatedRecipes: readonly GeneratedRecipe[];
   rememberGeneratedRecipes(recipes: readonly GeneratedRecipe[]): void;
@@ -27,7 +29,7 @@ export interface ProjectLibraryState {
   revision: number;
 
   /** Replaces everything (project opened / created). Not an edit. */
-  load(data: { stamps: Stamp[]; generatedRecipes?: readonly GeneratedRecipe[]; brokenStampFiles?: string[]; levels: ProjectLevel[]; settings?: ProjectSettings }): void;
+  load(data: { colorPalettes?: readonly ColorPalette[]; stamps: Stamp[]; generatedRecipes?: readonly GeneratedRecipe[]; brokenStampFiles?: string[]; levels: ProjectLevel[]; settings?: ProjectSettings }): void;
   /** Replaces the project settings: an edit, saved with the project (not undoable, like the level list). */
   setSettings(settings: ProjectSettings): void;
   addStamp(stamp: Stamp): void;
@@ -40,6 +42,7 @@ export interface ProjectLibraryState {
 }
 
 export const useProjectLibrary = create<ProjectLibraryState>()((set, get) => ({
+  colorPalettes: [],
   stamps: [],
   generatedRecipes: [],
   rememberGeneratedRecipes: recipes => set(s => ({ generatedRecipes: [...s.generatedRecipes.filter(r => !recipes.some(next => next.tilesetId === r.tilesetId)), ...recipes], revision: s.revision + 1 })),
@@ -49,8 +52,8 @@ export const useProjectLibrary = create<ProjectLibraryState>()((set, get) => ({
   dirtyLevelIds: [],
   revision: 0,
 
-  load: ({ stamps, generatedRecipes = [], brokenStampFiles = [], levels, settings = DEFAULT_PROJECT_SETTINGS }) =>
-    set({ stamps: sortStamps(stamps), generatedRecipes, brokenStampFiles, levels, settings, dirtyLevelIds: [] }),
+  load: ({ colorPalettes = [], stamps, generatedRecipes = [], brokenStampFiles = [], levels, settings = DEFAULT_PROJECT_SETTINGS }) =>
+    set({ colorPalettes, stamps: sortStamps(stamps), generatedRecipes, brokenStampFiles, levels, settings, dirtyLevelIds: [] }),
   setSettings: (settings) => set((s) => (s.settings === settings ? s : { settings, revision: s.revision + 1 })),
   setLevels: (levels) => set((s) => ({ levels: [...levels], revision: s.revision + 1 })),
   setDirtyLevels: (ids) =>

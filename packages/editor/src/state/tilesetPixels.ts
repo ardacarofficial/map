@@ -1,8 +1,9 @@
+import type { TilesetBitmap } from "./tilesetImages";
 /** Decoded selected rectangles live outside UI state, keyed by immutable image snapshots. */
 import type { NineSliceSelectionInput } from "@smap/core";
 type Pixels=NonNullable<NineSliceSelectionInput["pixels"]>;
-const cache=new WeakMap<ImageBitmap,Map<string,Pixels>>();
-export function tilesetPixels(bitmap:ImageBitmap,rect:{x:number;y:number;width:number;height:number}):Pixels {
+const cache=new WeakMap<TilesetBitmap,Map<string,Pixels>>();
+export function tilesetPixels(bitmap:TilesetBitmap,rect:{x:number;y:number;width:number;height:number}):Pixels {
   const key=JSON.stringify(rect);let byRect=cache.get(bitmap);const hit=byRect?.get(key);if(hit)return hit;
   const canvas=document.createElement("canvas");canvas.width=rect.width;canvas.height=rect.height;
   const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)throw new Error("Canvas unavailable");

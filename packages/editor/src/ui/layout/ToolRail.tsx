@@ -1,3 +1,4 @@
+import { usePixelUi } from "../../state/pixelUi";
 import type { Ref } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Fragment } from "react";
@@ -13,7 +14,7 @@ import { Icon } from "../primitives/Icon";
 import { KbdText } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuShortcutClass } from "../primitives/menuStyles";
 import { Tooltip } from "../primitives/Tooltip";
-import { TOOLS } from "./tools";
+import { TOOLS, PIXEL_TOOLS } from "./tools";
 
 const SETTINGS: readonly { command: CommandId; fallback: MessageKey }[] = [
   { command: "project.settings", fallback: "commands.project.settings" },
@@ -67,15 +68,16 @@ function SettingsMenu() {
 
 /** Editing tools, with settings anchored at the bottom. */
 export function ToolRail() {
+  const pixelMode = usePixelUi(s => s.mode === "pixel");
   const tool = useEditorStore((s) => s.tool);
   const world = useWorldView((s) => s.view === "world");
   return (
     <nav role="toolbar" aria-label={t("layout.toolRail")} aria-orientation="vertical" className="flex w-rail shrink-0 flex-col items-center gap-1 border-r border-line bg-bg py-1">
-      {TOOLS.map(({ id, icon, command, group }) => (
+      {(pixelMode ? PIXEL_TOOLS : TOOLS).map(({ id, icon, command, group }) => (
         <Fragment key={id}>
           {group && <div className="my-1 w-4"><Divider /></div>}
-          <Tooltip label={world ? t("world.toolsDisabled") : t(`tools.${id}`)} command={command} side="right">
-            <span className="flex"><IconButton size="rail" aria-label={t(`tools.${id}`)} aria-pressed={!world && tool === id} active={!world && tool === id} disabled={world} data-tool-button={id} onClick={() => runCommand(command)}>
+          <Tooltip label={world ? t("world.toolsDisabled") : (id === "line" ? t("pixel.line") : t(`tools.${id}`))} command={command} side="right">
+            <span className="flex"><IconButton size="rail" aria-label={(id === "line" ? t("pixel.line") : t(`tools.${id}`))} aria-pressed={!world && tool === id} active={!world && tool === id} disabled={world} data-tool-button={id} onClick={() => runCommand(command)}>
               <Icon name={icon} size={20} />
             </IconButton></span>
           </Tooltip>

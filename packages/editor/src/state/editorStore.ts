@@ -9,7 +9,7 @@ import { pushRecent, type RecentItem } from "./recentItems";
  * `MapStore`. Canvas (`src/canvas`) and panels (`src/ui`) both read this store.
  */
 
-export type ToolId = "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity" | "hand";
+export type ToolId = "line" | "brush" | "eraser" | "fill" | "rect" | "select" | "eyedropper" | "entity" | "hand";
 
 /** Selection bounds in cells (width/height ≥ 1), optionally with a membership mask. */
 export interface CellRegion {

@@ -78,3 +78,16 @@ describe("tileUV", () => {
     expect(tileUV(l, 4)).toBeUndefined();
   });
 });
+
+describe('dirtyTileBlits', () => {
+  it('copies only an interior dirty pixel without rewriting extrusion', async () => {
+    const { dirtyTileBlits } = await import('./atlas');
+    expect(dirtyTileBlits(32, 64, 16, 16, 2, 2, 2, { x: 3, y: 4, width: 1, height: 1 })).toEqual([{ sx: 35, sy: 68, sw: 1, sh: 1, dx: 5, dy: 6, dw: 1, dh: 1 }]);
+  });
+  it('updates affected edge/corner extrusion and retains full-tile blits for allocations', async () => {
+    const { dirtyTileBlits } = await import('./atlas');
+    expect(dirtyTileBlits(0, 0, 16, 16, 2, 2, 2, { x: 0, y: 0, width: 1, height: 1 })).toHaveLength(4);
+    expect(dirtyTileBlits(0, 0, 16, 16, 2, 2, 2, { x: 0, y: 4, width: 1, height: 1 })).toHaveLength(2);
+    expect(dirtyTileBlits(0, 0, 16, 16, 2, 2, 2, { x: 0, y: 0, width: 16, height: 16 })).toEqual(tileBlits(0, 0, 16, 16, 2, 2, 2));
+  });
+});

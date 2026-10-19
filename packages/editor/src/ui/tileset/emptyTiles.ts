@@ -1,16 +1,17 @@
+import type { TilesetBitmap } from "../../state/tilesetImages";
 import { emptyTileIds, type Tileset } from "@smap/core";
 import { useMemo } from "react";
 
 import { readAlpha } from "../tilesetImport/imageAlpha";
 
 const NONE: ReadonlySet<number> = new Set();
-const cache = new WeakMap<ImageBitmap, Map<string, ReadonlySet<number>>>();
+const cache = new WeakMap<TilesetBitmap, Map<string, ReadonlySet<number>>>();
 
 /**
  * Fully transparent tiles of `tileset` in `bitmap` (core `emptyTileIds`),
  * cached per image and grid. The panel dims them and multi-tile picks skip them.
  */
-export function emptyTilesOf(tileset: Tileset, bitmap: ImageBitmap): ReadonlySet<number> {
+export function emptyTilesOf(tileset: Tileset, bitmap: TilesetBitmap): ReadonlySet<number> {
   const key = `${tileset.tileWidth}x${tileset.tileHeight}:${tileset.margin}:${tileset.spacing}:${tileset.columns}x${tileset.rows}`;
   let byGrid = cache.get(bitmap);
   const hit = byGrid?.get(key);
@@ -33,7 +34,7 @@ export function emptyTilesOf(tileset: Tileset, bitmap: ImageBitmap): ReadonlySet
   return result;
 }
 
-export function useEmptyTiles(tileset: Tileset, bitmap: ImageBitmap | undefined): ReadonlySet<number> {
+export function useEmptyTiles(tileset: Tileset, bitmap: TilesetBitmap | undefined): ReadonlySet<number> {
   const { tileWidth, tileHeight, margin, spacing, columns, rows } = tileset;
   return useMemo(
     () => (bitmap ? emptyTilesOf({ ...tileset, tileWidth, tileHeight, margin, spacing, columns, rows }, bitmap) : NONE),

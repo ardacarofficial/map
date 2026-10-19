@@ -1,3 +1,4 @@
+import { parsePixelColors, type PixelColorSettings } from "../state/pixelColors";
 /**
  * The user's settings file. Pure parsing / validation / merging;
  * `appSettings.ts` applies the result.
@@ -23,6 +24,7 @@ export const LOCALES: readonly Locale[] = availableLocales().map(locale => local
 
 export interface AppSettings {
   locale: Locale;
+  pixelColors?: PixelColorSettings;
   /** Optional versioned dock layout, validated and repaired. */
   layout?: DockLayout;
   /** Validated overrides only. */
@@ -90,7 +92,7 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
   }
   const record = raw as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "locale" && key !== "shortcuts" && key !== "layout" && !key.startsWith("$")) {
+    if (key !== "locale" && key !== "shortcuts" && key !== "layout" && key !== "pixelColors" && !key.startsWith("$")) {
       problems.push({ entry: key, reason: "unknownField", detail: key });
     }
   }
@@ -106,6 +108,8 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
     if (layout) settings.layout = layout;
     else problems.push({ entry: "layout", reason: "layout", detail: "expected layout version 2" });
   }
+
+  if ("pixelColors" in record) { const colors = parsePixelColors(record.pixelColors); if (colors) settings.pixelColors = colors; }
 
   const known = new Set<string>(defaults.map((d) => d.command));
   const shortcuts = record.shortcuts;

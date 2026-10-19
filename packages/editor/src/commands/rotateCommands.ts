@@ -1,3 +1,4 @@
+import { usePixelUi } from "../state/pixelUi";
 import { FLIP_H, FLIP_V, flipRegion } from "@smap/core";
 import { brushCandidate, attachPreparedBrush } from "./smartBrushActions";
 import { useSmartStampSession } from "../ui/stamps/smartStampSession";
@@ -148,11 +149,11 @@ export function registerRotateCommands(): void {
   registered = true;
   const enabled = () => {
     const s = useEditorStore.getState();
-    return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
+    return usePixelUi.getState().mode === "tile" && s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
   };
   const flipEnabled = () => {
     const s = useEditorStore.getState();
-    return s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
+    return usePixelUi.getState().mode === "tile" && s.project !== null && !isWorldView() && (canFlip(contextOf(s)) || isRandomBrush(s.randomSet) || rotatesSelection(s));
   };
   registerCommands([
     { id: "edit.rotateCW", title: "inspector.rotateCW", category: "edit", enabled, run: () => void rotateBrush("cw") },

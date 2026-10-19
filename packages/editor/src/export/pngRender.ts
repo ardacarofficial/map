@@ -57,7 +57,7 @@ export interface RenderedPng {
 export async function renderMapPng(
   doc: MapDocument,
   scale: number,
-  image: (tilesetId: string) => ImageBitmap | undefined,
+  image: (tilesetId: string) => CanvasImageSource | undefined,
   options: ExportLayerOptions = {},
 ): Promise<RenderedPng> {
   const list = layerDrawList(doc, options);

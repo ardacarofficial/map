@@ -181,6 +181,8 @@ test("stamp editor: Düzenle opens a tab, edits are saved cropped, existing plac
   await expect(page.locator("[data-stamp-banner]")).toBeVisible();
   await expect(page.locator("[data-stamp-tab]")).toHaveAttribute("aria-selected", "true");
   expect(await levelId(page)).toBe(`stamp:${id}`);
+  await expect(page.getByRole("radio", { name: "Tile", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radio", { name: "Piksel", exact: true })).toBeDisabled();
   // The temporary document is not a map of the project.
   await page.locator("[data-library-tab-button='project']").click();
   await expect(maps).toHaveCount(1);

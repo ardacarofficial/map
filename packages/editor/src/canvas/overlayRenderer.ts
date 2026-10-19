@@ -1,3 +1,4 @@
+import { usePixelUi } from "../state/pixelUi";
 import { majorGridLayout } from "./majorGrid";
 import { useMajorGrid } from "../state/majorGridSettings";
 import { drawMapBorderPreview } from "./mapBorderPreview";
@@ -304,6 +305,7 @@ export class OverlayRenderer {
     if (host.showCollision) this.#drawCollisionOutline();
 
     if (drawMapBorderPreview(host)) return;
+    if (usePixelUi.getState().mode === "pixel" && state.tool !== "select") return;
 
     const gesture = host.gesture;
     const smart = activeSmartStamp(), session = useSmartStampSession.getState();
@@ -416,6 +418,7 @@ export class OverlayRenderer {
       if (host.hoverEntityId() === null) this.#drawCellCursor(one);
       return;
     }
+    if (usePixelUi.getState().mode === "pixel") return;
     if (gridActive) return this.#drawGridCursor(state.tool, cell, one);
     const editable = isEditable(activeInfo(host.scene?.store));
     switch (state.tool) {

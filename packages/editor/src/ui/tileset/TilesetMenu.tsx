@@ -29,11 +29,11 @@ export function TilesetMenuItems({ tileset }: { tileset: Tileset }) {
         <Icon name="pencilLine" size={16} className="text-muted" />
         {t("tilesetEditing.rename")}
       </Menu.Item>
-      <Menu.Item className={menuItemClass} data-tileset-menu-item="settings" onClick={() => void openTilesetSettings(tileset.id)}>
+      <Menu.Item className={menuItemClass} disabled={!!tileset.edited} data-tileset-menu-item="settings" onClick={() => void openTilesetSettings(tileset.id)}>
         <Icon name="grid" size={16} className="text-muted" />
         {t("tilesetPanel.settings")}
       </Menu.Item>
-      <Menu.Item className={menuItemClass} data-tileset-menu-item="image" onClick={() => void replaceTilesetImage(tileset.id)}>
+      <Menu.Item className={menuItemClass} disabled={!!tileset.edited} data-tileset-menu-item="image" onClick={() => void replaceTilesetImage(tileset.id)}>
         <Icon name="image" size={16} className="text-muted" />
         {t("tilesetPanel.replaceImage")}
       </Menu.Item>

@@ -1,3 +1,6 @@
+import { decodeEditedPng, EditedAssetError } from "./editedPng";
+import { rasterContentHash } from "@smap/core";
+import type { ColorPalette } from "@smap/core";
 import { generatedRecipePath, loadGeneratedRecipes, type GeneratedRecipe } from "./smartStampRecipes";
 /**
  * Project save / open over a `ProjectFileSystem`. No UI, no globals: the
@@ -37,6 +40,7 @@ export const PROJECT_DIRS = ["levels", "tilesets", "stamps", "backups"] as const
 
 export interface SaveProjectInput {
   name: string;
+  colorPalettes?: readonly ColorPalette[];
   document: MapDocument;
   levelPath: string;
   /** Original PNG bytes of a tileset; `undefined` keeps whatever file is on disk. */
@@ -113,6 +117,7 @@ export function projectFiles(input: SaveProjectInput): ProjectFile[] {
       entityTypes: doc.entityTypes,
       randomSets: doc.randomSets,
       collections: doc.collections,
+      colorPalettes: input.colorPalettes ?? [],
       ...(input.retiredLevelIds && input.retiredLevelIds.length > 0 ? { retiredLevelIds: input.retiredLevelIds } : {}),
       ...(input.settings ? { settings: input.settings } : {}),
     }),
@@ -203,6 +208,7 @@ export class ProjectOpenError extends Error {
 
 export interface LoadedProject {
   name: string;
+  colorPalettes?: readonly ColorPalette[];
   document: MapDocument;
   levelPath: string;
   /** The level file exactly as read (for external change detection). */
@@ -258,16 +264,22 @@ export async function loadProject(
 
   const images: TilesetImage[] = [];
   const missingImages: string[] = [];
+  const invalidEdited: string[] = [];
   await Promise.all(
     project.tilesets.map(async (tileset) => {
       try {
         const bytes = await fs.readBytes(tileset.imagePath);
+        if (tileset.edited) {
+          const raster = decodeEditedPng(bytes);
+          if (raster.width !== tileset.columns * tileset.tileWidth || raster.height !== tileset.rows * tileset.tileHeight || rasterContentHash(raster.width, raster.height, raster.data) !== tileset.edited.contentHash) throw new EditedAssetError([tileset.imagePath]);
+        }
         images.push({ tilesetId: tileset.id, bitmap: await decode(bytes), bytes });
       } catch {
-        missingImages.push(tileset.imagePath);
+        (tileset.edited ? invalidEdited : missingImages).push(tileset.imagePath);
       }
     }),
   );
+  if (invalidEdited.length) { for (const image of images) image.bitmap.close(); throw new EditedAssetError(invalidEdited.sort()); }
   // Keep project order regardless of which read finished first.
   const order = new Map(project.tilesets.map((t, i) => [t.id, i]));
   images.sort((a, b) => (order.get(a.tilesetId) ?? 0) - (order.get(b.tilesetId) ?? 0));
@@ -276,6 +288,7 @@ export async function loadProject(
 
   return {
     name: project.name,
+    colorPalettes: project.colorPalettes ?? [],
     document,
     levelPath: level.path,
     levelText,

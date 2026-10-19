@@ -1,3 +1,6 @@
+import { locatePanel } from "../layout/dockModel";
+import { useDockStore } from "../layout/dockStore";
+import { useUiStore } from "../uiStore";
 import type { MapStore } from "@smap/core";
 import { useEffect, useLayoutEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
@@ -12,6 +15,8 @@ import { registerHistoryCommands } from "./historyCommands";
 import { applyJump, historyRows, jumpFor, verbForChanges, type HistoryRow } from "./historyModel";
 
 registerHistoryCommands();
+
+const NO_LEVELS: ReturnType<typeof useProjectLibrary.getState>['levels'] = [];
 
 const TOOL_ICON: Record<NonNullable<HistoryRow["tool"]>, IconName> = {
   brush: "pencil",
@@ -41,14 +46,14 @@ function rowIcon(row: HistoryRow): IconName {
 }
 
 /** Re-renders on every history change of `store` (undo, redo, commit, clear). */
-function useHistoryChanges(store: MapStore | undefined): void {
+function useHistoryChanges(store: MapStore | undefined, visible: boolean): void {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
-    if (!store) return;
+    if (!store || !visible) return;
     return store.subscribe((event) => {
       if (event.historyChanged) bump();
     });
-  }, [store]);
+  }, [store, visible]);
 }
 
 /**
@@ -57,14 +62,16 @@ function useHistoryChanges(store: MapStore | undefined): void {
  * branches or checkpoints: a new edit drops the undone rows.
  */
 export function HistoryPanel() {
+  const dockVisible = useDockStore(s => { const home = locatePanel(s.layout, 'history'); if (!home) return false; const zone = s.layout.zones[home.zone], group = zone.groups[home.group]!; return zone.state === 'expanded' && !group.collapsed && group.active === 'history'; });
+  const panelsHidden = useUiStore(s => s.panelsHidden), visible = dockVisible && !panelsHidden;
   const store = useEditorStore((s) => s.project?.store);
-  const levels = useProjectLibrary((s) => s.levels);
-  useHistoryChanges(store);
-  useSyncExternalStore(subscribeHistoryLabels, historyLabelsVersion);
+  const levels = useProjectLibrary((s) => visible ? s.levels : NO_LEVELS);
+  useHistoryChanges(store, visible);
+  useSyncExternalStore(listener => visible ? subscribeHistoryLabels(listener) : (() => {}), () => visible ? historyLabelsVersion() : 0);
   useEffect(() => bindHistoryLabels(store), [store]);
   const listRef = useRef<HTMLOListElement>(null);
   const world = activeWorldHistory();
-  useSyncExternalStore(listener => world?.subscribe(listener) ?? (() => {}), () => world?.version ?? 0);
+  useSyncExternalStore(listener => visible ? world?.subscribe(listener) ?? (() => {}) : (() => {}), () => visible ? world?.version ?? 0 : 0);
 
   const entries = world?.entries();
   const byId = new Map(entries?.map(entry => [entry.id, entry] as const));

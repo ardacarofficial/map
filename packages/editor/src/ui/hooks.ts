@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
+import { tilesetStructureKey } from "./structureKey";
 import type { MapStore } from "@smap/core";
 
 import { getTilesetImage, onTilesetImage, type TilesetImage } from "../state/tilesetImages";
@@ -14,8 +15,13 @@ export function useStructureVersion(store: MapStore | undefined): number {
   const subscribe = useCallback(
     (notify: () => void) => {
       if (!store) return () => undefined;
+      let tilesets = tilesetStructureKey(store.document.tilesets);
       return store.subscribe((event) => {
         if (event.structure.length === 0) return;
+        if (event.structure.includes('tilesets')) {
+          const next = tilesetStructureKey(store.document.tilesets), same = next === tilesets; tilesets = next;
+          if (same && event.structure.every(s => s === 'tilesets')) return;
+        }
         structureRevision.set(store, event.revision);
         notify();
       });

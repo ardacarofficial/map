@@ -1,5 +1,6 @@
+import { useSyncExternalStore } from "react";
 import { isEntityLayer } from "@smap/core";
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 
 import { useWorldView } from "../../commands/worldActions";
@@ -9,7 +10,6 @@ import { useUiStore } from "../uiStore";
 import { EntityPalette } from "../entities/EntityPalette";
 import { HistoryPanel } from "../history/HistoryPanel";
 import "../history/historyVerbs";
-import { useStructureVersion } from "../hooks";
 import { InspectorBody } from "../inspector/Inspector";
 import { WorldHint } from "../levels/WorldHint";
 import { ProjectTree } from "../levels/ProjectTree";
@@ -42,8 +42,8 @@ export function panelListed(id: PanelId, entity: boolean, world = false): boolea
 export function useEntityContext(): boolean {
   const store = useEditorStore(s => s.project?.store);
   const active = useEditorStore(s => s.activeLayerId);
-  useStructureVersion(store);
-  return isEntityLayer(active ? store?.document.getLayer(active) : undefined);
+  const subscribe = useCallback((notify: () => void) => store?.subscribe(notify) ?? (() => {}), [store]);
+  return useSyncExternalStore(subscribe, () => isEntityLayer(active ? store?.document.getLayer(active) : undefined));
 }
 /** Portal containers never change identity. Only their DOM parent changes on a committed move. */
 export function PanelHosts() {

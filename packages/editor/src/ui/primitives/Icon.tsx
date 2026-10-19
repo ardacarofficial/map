@@ -43,6 +43,7 @@ SOFTWARE.
 
 // Official Lucide 1.59.0 geometry (ISC): https://unpkg.com/lucide-static@1.59.0/icons/
 const PATHS = {
+  "arrow-left-right": <><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4" /></>,
   "move-vertical": <><path d="m8 18 4 4 4-4M12 2v20M8 6l4-4 4 4" /></>,
   "arrow-down": (
     <>

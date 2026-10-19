@@ -1,3 +1,7 @@
+import { pixelUploadMetrics } from "./pixelUpload";
+import { usePixelColors } from "../state/pixelColors";
+import { PixelController } from "./pixelController";
+import { beforePixelModeChange, usePixelUi } from "../state/pixelUi";
 import { useMajorGrid } from "../state/majorGridSettings";
 import { useMapBorder } from "../commands/mapBorder";
 import { smartBrushPreparationDebug } from "../commands/smartBrushActions";
@@ -59,7 +63,7 @@ import { Minimap } from "./minimap";
 import { nextLod } from "./minimapMath";
 import { OverlayRenderer, type OverlayHost } from "./overlayRenderer";
 import { PointerInput } from "./pointerInput";
-import { ToolController, type Gesture } from "./toolController";
+import { ToolController, type ToolHost, type Gesture } from "./toolController";
 import { Rulers } from "./rulers";
 import { INITIAL_TOOL_MEMORY, isPaintable, nextToolMemory, regionContains, toolForLayer, usesBrushSize, type ToolMemory } from "./tools";
 import { WorldView, type CanvasView, type LevelMovedEvent, type WorldDataSource } from "./worldView";
@@ -326,6 +330,7 @@ export class MapCanvas {
   );
   readonly #input: PointerInput;
   readonly #tools: ToolController;
+  readonly #pixel: PixelController;
   readonly #overlays: OverlayRenderer;
 
   #raf = 0;
@@ -372,7 +377,7 @@ export class MapCanvas {
       requestRender: () => this.#requestRender(),
     });
     this.#lodSprite.visible = false;
-    this.#tools = new ToolController({
+    const toolHost: ToolHost = {
       get scene() {
         return self.#scene;
       },
@@ -393,7 +398,10 @@ export class MapCanvas {
         this.#emit(this.#blockedListeners, action, "blocked action");
       },
       contextRequest: (request) => void this.#emit(this.#contextListeners, request, "context request"),
-    });
+    };
+    this.#tools = new ToolController(toolHost);
+    this.#pixel = new PixelController(toolHost);
+    this.#unsubs.push(beforePixelModeChange(() => this.#tools.cancel()));
     this.#worldView = new WorldView({
       camera: this.#camera,
       get colors() {
@@ -418,6 +426,7 @@ export class MapCanvas {
       camera: this.#camera,
       syncRect: () => this.#syncRect(),
       tools: this.#tools,
+      pixel: this.#pixel,
       map: () => this.#map(),
       paintable: () => {
         const s = useEditorStore.getState();
@@ -536,8 +545,8 @@ export class MapCanvas {
     this.#unsubs.push(useSmartStampSession.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useEditorStore.subscribe((s, prev) => this.#onEditorState(s, prev)));
     this.#unsubs.push(
-      onTilesetImage((id) => {
-        this.#scene?.imageChanged(id);
+      onTilesetImage((id, pixelRects) => {
+        this.#scene?.imageChanged(id, pixelRects);
         this.#thumb?.imageChanged(id);
         this.#worldView.imageChanged(id);
         this.#requestRender();
@@ -558,6 +567,10 @@ export class MapCanvas {
     const self = this;
     const hook = {
       editor: useEditorStore,
+      pixelUi: usePixelUi,
+      pixelColors: usePixelColors,
+      pixelUploadMetrics,
+      get pixelMetrics() { return { ...self.#pixel.metrics, ...self.#scene?.metrics }; },
       smartBrushPreparation: smartBrushPreparationDebug,
       get hintText() { return self.#overlays.hintLabel; },
       get smartPreview() { return self.#scene?.smartPreviewPlan ?? null; },
@@ -747,6 +760,7 @@ export class MapCanvas {
   // ------------------------------------------------------------------ views (v1.2)
 
   #setView(view: CanvasView): void {
+    this.#pixel.cancel();
     if (view === this.#view || this.#destroyed) return;
     const cam = this.#camera;
     this.#tools.end();
@@ -814,6 +828,7 @@ export class MapCanvas {
     for (const u of this.#unsubs) u();
     this.#unsubs = [];
     this.#destroySceneObjects();
+    this.#pixel.destroy();
     this.#overlays.destroy();
     this.#entities.destroy();
     this.#lodSprite.destroy();
@@ -884,6 +899,8 @@ export class MapCanvas {
   }
 
   #loadProject(project: OpenProject | null): void {
+    this.#pixel.cancel();
+    if (project?.levelId?.startsWith("stamp:")) usePixelUi.getState().setMode("tile");
     this.#tools.end();
     this.#overlays.reset();
     // Keep the outgoing level's picture for the world view (no reload needed there).
@@ -914,7 +931,7 @@ export class MapCanvas {
     this.#entities.setStore(project?.store ?? null);
     this.#hoverEntity = null;
     // Previews above the layers.
-    this.#world.addChild(this.#overlays.previews);
+    this.#world.addChild(this.#overlays.previews, this.#pixel.cursor);
     this.#worldView.activeChanged();
     // A level seen before this session comes back where it was left; a new
     // one opens centred. The world view keeps its camera; the level view
@@ -925,6 +942,7 @@ export class MapCanvas {
       if (remembered) this.#levelCamera = { camera: this.#camera.cameraFor(remembered), zoomLevel: remembered.zoom };
     } else if (remembered) this.#camera.restoreView(remembered);
     else this.#camera.requestInitialView();
+    if (project && usePixelUi.getState().mode === "pixel") void this.#pixel.warm();
     this.#requestRender();
   }
 
@@ -934,6 +952,7 @@ export class MapCanvas {
       return;
     }
     if ((this.#tools.gesture?.kind === "smart" || this.#tools.gesture?.kind === "pendingSmart") && (s.tool !== prev.tool || s.stamp !== prev.stamp || s.activeLayerId !== prev.activeLayerId)) this.#tools.cancel();
+    if ((s.tool !== prev.tool || s.activeLayerId !== prev.activeLayerId) && this.#pixel.busy) this.#pixel.cancel();
     if (s.tool !== prev.tool) this.#toolMemory = nextToolMemory(this.#toolMemory, prev.tool, s.tool);
     if (s.activeLayerId !== prev.activeLayerId) this.#matchToolToLayer(s);
     if (
@@ -966,7 +985,7 @@ export class MapCanvas {
    */
   #matchToolToLayer(s: EditorState): void {
     const layer = activeLayer(this.#scene?.store);
-    if (!layer) return;
+    if (!layer || usePixelUi.getState().mode === "pixel") return;
     const next = toolForLayer(s.tool, isEntityLayer(layer), this.#toolMemory.lastTileTool);
     if (next !== s.tool) s.setTool(next);
   }
@@ -1064,6 +1083,7 @@ export class MapCanvas {
       this.#scene.updateVisibility(visible.x, visible.y, visible.x + visible.width, visible.y + visible.height);
       this.#visible = visible;
     }
+    this.#pixel.flush();
     this.#updateLod();
     // After visibility and LOD: builds only the dirty chunks that are on screen.
     this.#scene?.flush();
@@ -1072,6 +1092,10 @@ export class MapCanvas {
     this.#updateHoverEntity();
     this.#input.updateCursor(); // layer lock/visibility may have changed
     this.#overlays.draw();
+    const pixelMode = usePixelUi.getState().mode === "pixel";
+    this.#overlays.previews.visible = !pixelMode;
+    if (pixelMode) this.#pixel.draw(this.#input.cursorCell() ? usePixelUi.getState().hover : null);
+    else this.#pixel.cursor.visible = false;
     this.#scene?.flush();
     this.#entities.draw();
     this.#drawRulers();
@@ -1240,7 +1264,7 @@ export class MapCanvas {
     if (!map || !scene || !thumb) return;
     const cam = this.#camera;
     const cellDevicePx = Math.min(map.tileWidth, map.tileHeight) * cam.camera.zoom * cam.resolution;
-    const lod = !activeSmartStamp() && useMapBorder.getState().draft?.store !== scene.store && nextLod(this.#lod, cellDevicePx);
+    const lod = usePixelUi.getState().mode !== "pixel" && !activeSmartStamp() && useMapBorder.getState().draft?.store !== scene.store && nextLod(this.#lod, cellDevicePx);
     if (lod) {
       // Keep the picture current while it is on screen (edits show on the next frame).
       if (thumb.pending) {

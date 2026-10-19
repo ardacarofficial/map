@@ -1,3 +1,5 @@
+import { ModeSelector, PixelOptions } from "../pixel/PixelOptions";
+import { usePixelUi } from "../../state/pixelUi";
 import { GridControl, GridSettings } from "../toolOptions/GridControl";
 import type { Ref } from "react";
 import { Menu } from "@base-ui/react/menu";
@@ -23,6 +25,7 @@ registerRulerCommands();
 
 /** Options follow the active tool; view controls fold based on this bar's own width. */
 export function OptionsBar() {
+  const pixelMode = usePixelUi(s => s.mode === "pixel");
   const tool = useEditorStore((s) => s.tool);
   const grid = useEditorStore((s) => s.gridVisible);
   const collision = useEditorStore((s) => s.collisionOverlay);
@@ -54,11 +57,12 @@ export function OptionsBar() {
   ];
   return (
     <div ref={bar} role="toolbar" aria-label={t("toolOptions.bar")} className="flex h-optionsbar min-w-0 shrink-0 items-center gap-2 border-b border-line bg-panel px-2">
+      <ModeSelector disabled={world} />
       <div className="flex shrink-0 items-center gap-2 text-sm font-medium text-text">
         <Icon name={world ? "map" : toolIcon(tool)} size={16} className="text-muted" />
-        <span>{world ? t("world.world") : t(`tools.${tool}`)}</span>
+        <span>{world ? t("world.world") : tool === "line" ? t("pixel.line") : t(`tools.${tool}`)}</span>
       </div>
-      {!world && <><Divider orientation="vertical" length={16} tone="line" /><div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]"><ToolOptions /></div></>}
+      {!world && <><Divider orientation="vertical" length={16} tone="line" /><div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">{pixelMode ? <PixelOptions /> : <ToolOptions />}</div></>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {compact ? (
           <Menu.Root>
