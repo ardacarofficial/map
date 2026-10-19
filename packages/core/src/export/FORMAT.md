@@ -300,3 +300,68 @@ Area uses free tile coordinates; short axes splice the outer bands at
 ceil(targetPixels/2), with no resampling. Map borders use area artwork clipped
 to the requested tile band and gaps. Game/Unity export schemas are unchanged;
 generated tiles export as ordinary tile references and PNGs.
+
+## Godot 4 export
+
+`exportGodot(maps, pngBytes, options)` is a pure file planner for Godot 4.3+
+`TileMapLayer`, verified with **4.5-stable**. It returns `{ files, scenes }`;
+files contain `{ path, text }` or `{ path, bytes }`. `preflightGodot` returns
+blocking `{ key: "godotExport.…", params }` diagnostics. The planner repeats
+validation and throws `GodotPreflightError` before returning files on failure.
+No document or source PNG is modified.
+
+Write the result beneath the **Godot project root**. `resourceRoot` selects a
+portable relative subfolder (default `smap`, empty string for the root); all
+engine dependencies use `res://<resourceRoot>/…`. A shared `tileset.tres`
+contains one `TileSetAtlasSource` per used tileset, including generated road
+artwork. Sources are numbered in stable tileset-id order, used tile entries
+are sorted, and source margins/spacing/native region sizes are retained.
+Each map produces `<name>.tscn` and `<name>.json`, plus its referenced PNGs.
+The JSON is exactly `exportGameJson` with the same layer/collision options:
+entities, portal targets and spawn keep the existing game format and Y down.
+PNG basenames retain the game's naming convention. Conflicting names across
+maps or differing definitions of a shared tileset are blocking problems;
+export those maps separately or rename their assets. Treat each resource
+root as one batch: plan all maps sharing it together. Separate per-map
+exports need separate roots so they do not replace another batch’s TileSet.
+
+Both text formats use `format=3`. The scene root is `Node2D`; tile layers
+remain in document order with visibility, opacity and nearest filtering.
+Original names and layer ids are retained in `smap_*` metadata. Characters
+Godot prohibits in node names are encoded as `_u<hex>_`; collisions between
+encoded names receive a numeric suffix. TileSet resource names are escaped.
+
+`tile_map_data = PackedByteArray(…)` contains version **0**, a two-byte
+little-endian header, followed by 12 bytes per occupied cell, sorted Y/X:
+signed int16 X/Y, then source id, atlas X/Y and alternative/transform word.
+Identifiers and atlas coordinates are limited to 0…32767. The alternative
+is base 0 with H=4096, V=8192, transpose=16384; transpose precedes mirrors.
+Empty layers use an empty array. Y is not flipped. Coordinates do not wrap.
+
+Collision is a separate enabled `TileMapLayer`, from `deriveCollision` over
+all manual Collision grids, including hidden grids and independent of the
+visual layer selection. Topmost explicit pass/solid decisions win. A shared
+transparent `GradientTexture2D` atlas tile carries a cell-centred rectangular
+`physics_layer_0/polygon_0/points` polygon; physics layer and mask are 1.
+Visual layers have collision disabled. Collision on empty visual cells is
+preserved. `collision: false` omits this source/layer and uses the existing
+all-passable game JSON representation.
+
+This target **rejects native tile sizes different from the map cell size**
+before writing; it never resamples PNGs. Maps sharing one TileSet must use
+the same cell size. Rectangular cells are supported without transpose;
+transposed rectangular tiles are rejected because their bottom-left anchor
+cannot be preserved by the base alternative encoding used here. Cell texture
+dimensions must be 1…16384 px. Missing PNGs, invalid PNG headers, undersized
+atlas images, invalid tile references, unsafe resource paths, name conflicts
+and int16 overflow are blocking preflight diagnostics.
+
+The self-contained editor contribution is `export/targets/godot.ts`:
+`{ id, labelKey, options, snapshot, preflight, planFiles }`. Its snapshot copies
+map data before deferred generated PNG encoding and materializes every image
+before returning an `ExportFileSet` to the common host writer. Registry and
+dialog integration belongs to the common export target host.
+
+Pinned fixtures, an independent byte/text decoder, engine loading/physics
+checks, and an exhaustive rendered golden are documented in
+[`../../test/fixtures/godot/README.md`](../../test/fixtures/godot/README.md).

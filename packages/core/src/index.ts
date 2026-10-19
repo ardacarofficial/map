@@ -490,3 +490,5 @@ export { NINE_SLICE_DETECTOR_VERSION, NINE_SLICE_DETECTION_THRESHOLDS, detectNin
 export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorderOptions, type MapBorder } from "./mapBorder";
 export { connectedSelection, selectionContains, selectionHasContent, combineSelections, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
 export { flipRegion } from "./clip";
+
+export { exportGodot, preflightGodot, GodotPreflightError, encodeGodotCells, type GodotCell, type GodotMapInput, type GodotOptions, type GodotImageBytes, type GodotFile, type GodotPlan, type GodotProblem, type GodotProblemKey } from "./export/godot";

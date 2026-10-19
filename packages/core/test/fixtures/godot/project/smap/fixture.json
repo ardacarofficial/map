@@ -1,0 +1,71 @@
+{
+  "smapExport": 1,
+  "width": 16,
+  "height": 4,
+  "tileWidth": 16,
+  "tileHeight": 16,
+  "yUp": false,
+  "tilesets": [
+    {
+      "name": "Atlas \"road\"\n\\",
+      "image": "road.png",
+      "tileWidth": 16,
+      "tileHeight": 16,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    },
+    {
+      "name": "Items",
+      "image": "items.png",
+      "tileWidth": 16,
+      "tileHeight": 16,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    }
+  ],
+  "layers": [
+    {
+      "id": "ground",
+      "name": "Ground \"road\"\n\\",
+      "visible": true,
+      "opacity": 1,
+      "cells": [
+        0, 0, 0, 3, 0,
+        2, 0, 0, 3, 1,
+        4, 0, 0, 3, 2,
+        6, 0, 0, 3, 3,
+        8, 0, 0, 3, 4,
+        10, 0, 0, 3, 5,
+        12, 0, 0, 3, 6,
+        14, 0, 0, 3, 7
+      ]
+    },
+    {
+      "id": "deco",
+      "name": "Deco",
+      "visible": false,
+      "opacity": 0.25,
+      "cells": [
+        3, 2, 1, 2, 0
+      ]
+    },
+    {
+      "id": "empty",
+      "name": "Empty (2) + 🌲",
+      "visible": true,
+      "opacity": 1,
+      "cells": []
+    }
+  ],
+  "collision": {
+    "solid": [
+      50, 1, 13
+    ]
+  },
+  "entities": [],
+  "spawn": null
+}
