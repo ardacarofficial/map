@@ -490,3 +490,12 @@ export { NINE_SLICE_DETECTOR_VERSION, NINE_SLICE_DETECTION_THRESHOLDS, detectNin
 export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorderOptions, type MapBorder } from "./mapBorder";
 export { connectedSelection, selectionContains, selectionHasContent, combineSelections, clipSelection, transformSelection, type SelectionRect } from "./selectionMask";
 export { flipRegion } from "./clip";
+
+export * from "./pixel/assets";
+export * from "./pixel/ops";
+export * from "./pixel/metadata";
+export * from "./pixel/png";
+export * from "./pixel/palettes";
+export { migrateV6 } from "./migrations/v6";
+export { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY } from "./collection";
+export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistoryChange } from "./store";

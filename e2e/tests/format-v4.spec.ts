@@ -43,5 +43,5 @@ test("opens frozen v3 terrain/solid project with zero PNG pixel difference and n
   // No eager rewrite of the old file; ordinary save writes format 4 and keeps source atlas bytes.
   expect(JSON.parse((await readOpfsText(page,"project.smap"))!).documentFormatVersion).toBe(3);
   await canvas.focus();await page.keyboard.press("Control+s");
-  await expect.poll(async()=>JSON.parse((await readOpfsText(page,"project.smap"))!).documentFormatVersion).toBe(5);
+  await expect.poll(async()=>JSON.parse((await readOpfsText(page,"project.smap"))!).documentFormatVersion).toBe(6);
 });

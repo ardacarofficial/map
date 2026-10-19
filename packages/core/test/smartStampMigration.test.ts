@@ -16,21 +16,21 @@ const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 
 describe("smart stamp format 3 migration", () => {
   for (const [version, project, level, stamp, clip] of [[1, p1, l1, s1, c1], [2, p2, l2, s2, c2]] as const) {
-    it(`reads v${version} project/level/stamp/clip and writes stable v5 without inferring smart metadata`, () => {
+    it(`reads v${version} project/level/stamp/clip and writes stable v6 without inferring smart metadata`, () => {
       const p = parseProject(json(project)), doc = parseLevel(json(level), p.tilesets);
       expect(doc.seed).toBe(0xffff_ffff); expect(doc.getLayer("tiles")!.getCell(0, 0)).toBe(0xe0000001);
       expect(doc.getLayer("tiles")).toMatchObject({ visible: false, locked: true, opacity: 0.5 });
       const old = parseStamp(json(stamp)); expect(old.nineSlice).toBeUndefined();
       expect(old.layers[0]!.cells[0]).toBe(0xe0000001);
       const texts = [serializeProject(p), serializeLevel(doc), serializeStamp(old), serializeClip(parseClip(json(clip)))];
-      for (const text of texts) { expect(fileFormatVersion(text)).toBe(5); expect(text.endsWith("\n")).toBe(true); expect(text.includes("\r")).toBe(false); }
+      for (const text of texts) { expect(fileFormatVersion(text)).toBe(6); expect(text.endsWith("\n")).toBe(true); expect(text.includes("\r")).toBe(false); }
       expect(serializeProject(parseProject(texts[0]!))).toBe(texts[0]);
       expect(serializeLevel(parseLevel(texts[1]!, p.tilesets))).toBe(texts[1]);
       expect(serializeStamp(parseStamp(texts[2]!))).toBe(texts[2]);
       expect(serializeClip(parseClip(texts[3]!))).toBe(texts[3]);
       // Fixed golden layout: the legacy stamp/clip body changes only its version header.
-      expect(texts[2]).toBe(json({ ...stamp, documentFormatVersion: 5 }));
-      expect(texts[3]).toBe(json({ ...clip, documentFormatVersion: 5 }));
+      expect(texts[2]).toBe(json({ ...stamp, documentFormatVersion: 6 }));
+      expect(texts[3]).toBe(json({ ...clip, documentFormatVersion: 6 }));
       expect(parseStamp(json({ ...stamp, nineSlice: { border: 1 } })).nineSlice).toBeUndefined();
     });
   }
@@ -53,6 +53,6 @@ describe("smart stamp format 3 migration", () => {
       expect(() => parseStamp(json({ ...s1, documentFormatVersion: 5, nineSlice: value }))).toThrow(/nineSlice/);
     }
     expect(stampNineSliceProblem({ ...s, width: 2 }, valid)).toMatch(/3/);
-    for (const [fixture, parse] of [[p1, parseProject], [l1, parseLevel], [s1, parseStamp], [c1, parseClip]] as const) expect(() => parse(json({ ...fixture, documentFormatVersion: 6 }))).toThrow(/newer/);
+    for (const [fixture, parse] of [[p1, parseProject], [l1, parseLevel], [s1, parseStamp], [c1, parseClip]] as const) expect(() => parse(json({ ...fixture, documentFormatVersion: 7 }))).toThrow(/newer/);
   });
 });

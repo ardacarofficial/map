@@ -300,3 +300,56 @@ Area uses free tile coordinates; short axes splice the outer bands at
 ceil(targetPixels/2), with no resampling. Map borders use area artwork clipped
 to the requested tile band and gaps. Game/Unity export schemas are unchanged;
 generated tiles export as ordinary tile references and PNGs.
+
+## Editor authoring format 6
+
+The authoring formats (`smap-project`, `smap-level`, `smap-stamp`, `smap-clip`)
+now write `documentFormatVersion: 6`. This does **not** change `smapExport: 1`,
+Unity cells, TMJ GIDs, cell flags, or source PNG paths. Migrations run v4 → v5
+→ v6; v6 only supplies collection rows and advances embedded recipe headers.
+It never derives cells, replaces PNGs, or reclassifies old smart recipes.
+
+Project collections persist `{id,name,columns,rows,cells}`. Both dimensions
+normally range from 1 to 256, with capacity at most 65536. Migration sets
+`rows = max(2,maxOccupiedY+2)` (empty collections get 2); oversized legacy
+layouts are retained rather than truncated. Mutation refuses a shrink past
+occupied bounds and refuses growth of an oversized legacy layout.
+
+Optional project `colorPalettes` contains ordered `{name,colors}` records;
+colors are canonical lowercase `#rrggbbaa`. Standalone `.smap-colors.json` is
+`{version:1,name,colors}` with the same ordered colours. These are separate
+from collections of tile references. Absent lists do not add raster payloads.
+
+An edited tileset is an ordinary PNG-backed tileset with optional metadata:
+
+```jsonc
+"edited": {
+  "kind": "pixel",
+  "layoutVersion": 1,
+  "nextTileId": 2,
+  "contentHash": "<64 lowercase SHA-256 hex digits>",
+  "origins": [
+    {"tileId":0,"sourceTilesetId":"grass","sourceTileId":5,"sourcePixelHash":"<captured pixel hash>"}
+  ]
+}
+```
+
+Origins are sorted by tile id, unique, and may reference removed sources.
+Empty-cell clones have no origin. `generated` retains its road-specific meaning;
+`isGeneratedAsset` recognizes either marker. They cannot both be present.
+Logical ids are stable (`edited-16x16-1`); the atlas has 16 fixed columns,
+zero margin/spacing and append-only tile slots. Rows grow; full atlases allocate
+the next id. Source geometry and tile ids are never renumbered by a pixel edit.
+
+Decoded RGBA8 belongs to core's raster store, not JSON. Persisted PNG paths are
+content-addressed revisions (`tilesets/edited-16x16-1-<hash>.png`). The hash is
+SHA-256 over big-endian uint32 pixel width and height, then tightly packed
+straight RGBA8 with zero RGB at alpha 0. The deterministic encoder writes
+noninterlaced RGBA8, filter 0, stored DEFLATE blocks, CRC32 and Adler32. External
+IO saves new PNG revisions before publishing the project manifest and retains
+revisions needed by backups. Core performs no file IO or PNG decoding.
+
+Unity/JSON/TMJ exporters and PNG draw lists treat an edited tileset exactly
+like any other grid: normal tile ids, source rectangles, flags and PNG path.
+Generated recipes and authoring provenance do not enter engine-facing schemas.
+See [the raster API](../pixel/README.md) for transaction and reader contracts.
