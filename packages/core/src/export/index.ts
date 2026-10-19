@@ -28,3 +28,4 @@ export {
 export { TMJ_VERSION, TMJ_TILED_VERSION, type TmjOptions, type TmjResult, tmjFirstGids, exportTmj } from "./tmj";
 export { type DrawItem, type DrawLayer, type DrawList, layerDrawList } from "./drawList";
 export { encodeRle, decodeRle } from "./rle";
+export * from "./defold";

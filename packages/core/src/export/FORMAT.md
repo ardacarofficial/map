@@ -300,3 +300,62 @@ Area uses free tile coordinates; short axes splice the outer bands at
 ceil(targetPixels/2), with no resampling. Map borders use area artwork clipped
 to the requested tile band and gaps. Game/Unity export schemas are unchanged;
 generated tiles export as ordinary tile references and PNGs.
+
+## Defold
+
+`exportDefold(doc, levelName, imageBytes, options)` plans pure `{path,text}` /
+`{path,bytes}` files for Defold 1.9.8 (commit
+`67542769598a1b794877c96f740f3f527f63f491`). The editor adapter is
+`export/targets/defold.ts`; folder picking, persistence and writing belong to
+the common export dialog. No import or live link is involved.
+
+Choose the Defold **project root** as the destination. `projectSubfolder`
+defaults to `exported`; the map name is appended. For map `forest`, add
+`/exported/forest/map.collection` to the game's collection. Each used tileset
+has a PNG and `.tilesource` retaining tile dimensions and spacing. Defold's
+margin surrounds **every tile**, while the editor's margin surrounds the whole
+image. A nonzero outer margin is therefore cropped from the exported PNG copy;
+native `tile_margin` and companion JSON `margin` become 0. Tile samples, channel
+depth, palettes, transparency and colour profiles are preserved losslessly;
+source/project PNGs remain unchanged. Zero-margin PNGs are copied byte for byte.
+Resource references start with `/` relative to the Defold project, while file
+paths are relative without `/`. Windows separators in the subfolder normalize
+to `/`; OS drive/UNC paths and traversal are preflight errors. Generated numeric
+resource names avoid basename collisions, reserved filenames and string escaping.
+
+A tile layer is split into one `.tilemap` component per used tileset, in source
+order. Layer z values increase in document/source order within `[0,1)`. Visibility
+is preserved. File tile IDs are **zero-based**, including visible tile 0; empty
+cells are omitted. File cell coordinates are `(x, -editorY-1)`. Thus the map's
+top-left pixel is the native origin and the map extends toward negative Y.
+Lua `set_tile`/`get_tile` use one-based coordinates and tile numbers instead.
+H/V/diagonal flags map through the pinned renderer's corner permutations, with
+editor flags 0..7 becoming native H/V/rotate90 masks `[0,1,2,3,6,4,7,5]`.
+
+Collision uses **all resolved manual Collision grids**, including hidden grids
+and passable overrides, independently of visual selection or empty artwork.
+Identical horizontal runs merge across adjacent rows into static boxes. Box data
+is half extents `(widthPx/2,heightPx/2,0.5)` with identity rotation, mass 0,
+friction 0.1, restitution 0, group `map`, mask `default`. Batches of at most 16
+boxes each get a separate collision component/GO; no excess rectangles are dropped.
+Visual GOs also batch at 16 components. Large packages can require increasing
+the host project's `physics.max_collision_objects`, `collection.max_instances`,
+`tilemap.max_count` and `tilemap.max_tile_count` settings to the exported counts.
+
+`game.json` retains the existing `smapExport:1` schema, entities (including
+portal fields), spawn and collision RLE. Its image names reference the packaged
+PNGs, with their normalized margin. Its coordinates remain **Y down**; consumers convert entity box origins
+with `nativeY=-y-height` and point/spawn/portal positions with `nativeY=-y`.
+Entities are companion data for game code, not automatically instantiated GOs.
+Include the JSON path in the host project's `[resource] custom_resources` when
+loading it with `sys.load_resource`; referencing the collection alone does not
+bundle companion data. The engine-verification fixture demonstrates this setting.
+
+`layers` and `collision` follow the existing exporter options. Preflight blocks
+non-unit tile-layer opacity, mismatched tile/cell dimensions, rotated nonsquare
+footprints, overlapping oversized art, missing PNGs or invalid tile references.
+Native tile IDs must be below 65535 (the runtime's empty-cell sentinel). The
+entire package fails together, with translated editor errors. Output order,
+numeric names and LF text are deterministic. Official pinned schema snapshots,
+strict protobuf-text tests and the engine verification provenance are in
+`packages/core/test/fixtures/defold/README.md`.
