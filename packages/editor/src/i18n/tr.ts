@@ -5,6 +5,29 @@
  * Placeholders: `{name}` is replaced by `t(key, { name: ... })`.
  */
 export const tr = {
+  tilesetEditing: {
+      "rename": "Yeniden adlandır…",
+      "renameTitle": "Tileset adını değiştir",
+      "name": "Ad",
+      "renameConfirm": "Yeniden adlandır",
+      "copy": "Referansları kopyala",
+      "cut": "Referansları kes",
+      "paste": "Referansları yapıştır",
+      "pasteToPalette": "Palete yapıştır…",
+      "pasteHint": "PNG görünümüne yapıştırılamaz. Bir hedef palet seçin.",
+      "rows": "Satır",
+      "columns": "Sütun",
+      "occupied": "Dolu referanslar bu satırlara sığmıyor.",
+      "trim": "Sığmayan referansları kaldır",
+      "trimTitle": "Sığmayan referanslar kaldırılsın mı?",
+      "trimDetail": "{name} paletinde {rows}. satırdan sonraki referanslar kaldırılacak. Geri alabilirsiniz.",
+      "capacity": "Referanslar palet sınırlarına sığmıyor. Sütun veya satır sayısını artırın.",
+      "fit": "Sığdır",
+      "zoom": "Zoom",
+      "trimCommand": "Palet satırlarını küçült…",
+      "trimRows": "Hedef satır sayısı"
+  },
+
   defoldExport: {
     label: "Defold",
     projectSubfolderLabel: "Proje alt klasörü",

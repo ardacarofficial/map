@@ -120,14 +120,6 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
       clearPaletteSlots(palette.id, mine.ids);
       return true;
     }
-    if (ctrl && event.key.toLowerCase() === "c" && !event.shiftKey && !event.altKey) {
-      return mine ? copyPaletteSlots(palette, mine.ids) : false;
-    }
-    if (ctrl && event.key.toLowerCase() === "v" && !event.shiftKey && !event.altKey) {
-      const b = mine ? boundsOf(grid, mine.ids) : null;
-      pasteIntoPalette(palette.id, b ? { col: b.col, row: b.row } : null);
-      return true;
-    }
     const d = arrowDelta(event.key);
     if (!d || ctrl || event.altKey) return false;
     const next = arrowSelect(grid, mine ? { anchor: mine.anchor, focus: mine.focus } : null, d, event.shiftKey);
@@ -160,14 +152,14 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
     if (e.button !== 0 || host.panning()) return;
     const cell = cellAt(e.clientX, e.clientY);
     if (!cell) return;
-    host.focus();
+    host.focus(paletteKey(palette.id));
     e.currentTarget.setPointerCapture(e.pointerId);
     const ctrl = e.ctrlKey || e.metaKey;
     const id = idOf(grid, cell);
     let carry: PendingTileDrag | null = null;
     if (!ctrl && !e.shiftKey && !e.altKey && highlighted.includes(id) && slotAt(palette, cell.col, cell.row)) {
       const items = itemsOfSlots(palette, highlighted);
-      const b = boundsOf(grid, highlighted.filter((i) => slotAt(palette, i % grid.columns, Math.floor(i / grid.columns))));
+      const b = boundsOf(grid, highlighted);
       if (items.length > 0 && b) {
         carry = new PendingTileDrag({ kind: "palette", paletteId: palette.id, ids: highlighted }, items, { col: cell.col - b.col, row: cell.row - b.row }, e.clientX, e.clientY);
       }
@@ -238,6 +230,7 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
+            onLostPointerCapture={e => { if (dragRef.current?.pointerId === e.pointerId) onPointerCancel(); }}
             onPointerLeave={() => setHover(null)}
             onContextMenu={(e) => e.preventDefault()}
           />
@@ -257,7 +250,7 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
         {palette.cells.map((c) => (
           <div key={`${c.x},${c.y}`} aria-hidden className="checker pointer-events-none absolute" style={{ left: c.x * cellW, top: c.y * cellH, width: cellW, height: cellH }} />
         ))}
-        <canvas ref={canvasRef} aria-label={palette.name} role="img" className={`pointer-events-none absolute inset-0 block size-full ${scale >= 1 ? "pixelated" : ""}`} />
+        <canvas ref={canvasRef} aria-label={palette.name} role="img" className="pointer-events-none absolute inset-0 block size-full pixelated" />
         {hover && !drag && !shown.includes(idOf(grid, hover)) && (
           <div
             aria-hidden
@@ -272,7 +265,7 @@ export function PaletteGrid({ palette, scale }: { palette: Collection; scale: nu
           drop.items.map((it) => {
             const col = drop.target!.slot!.col + it.dx;
             const row = drop.target!.slot!.row + it.dy;
-            const out = col >= palette.columns;
+            const out = col >= palette.columns || row >= Math.max(256, rows);
             return (
               <div
                 key={`${it.dx},${it.dy}`}
@@ -323,12 +316,15 @@ function SlotMenuItems({ palette, cell, selected }: { palette: Collection; cell:
   const id = slotIndex(palette.columns, cell.col, cell.row);
   const ids = selected.includes(id) ? selected : [id];
   const filled = ids.some((i) => slotAt(palette, i % palette.columns, Math.floor(i / palette.columns)));
-  const canPaste = (usePaletteStore.getState().clipboard?.length ?? 0) > 0;
+  const canPaste = usePaletteStore.getState().clipboard !== null;
   return (
     <>
       <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="copy" onClick={() => copyPaletteSlots(palette, ids)}>
         <Icon name="copy" size={16} className="text-muted" />
         {t("palettes.copy")}
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="cut" onClick={() => { copyPaletteSlots(palette, ids); clearPaletteSlots(palette.id, ids); }}>
+        <Icon name="copy" size={16} className="text-muted" />{t("tilesetEditing.cut")}
       </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} disabled={!canPaste} data-palette-menu-item="paste" onClick={() => pasteIntoPalette(palette.id, cell)}>
         <Icon name="clipboard" size={16} className="text-muted" />

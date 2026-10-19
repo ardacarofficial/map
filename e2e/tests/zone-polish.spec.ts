@@ -43,9 +43,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       const { useDockStore } = await import(/* @vite-ignore */ String("/src/ui/layout/dockStore.ts"));
       useDockStore.getState().move("tileset", { zone: "left" }); useDockStore.getState().setSize("left", 220, true);
     });
-    await page.locator("[data-tileset-zoom-label]").click(); await page.getByRole("menuitem", { name: "%200", exact: true }).click();
+    // Single PNG navigation exposes a continuous readout and Fit.
     const grid = page.locator("[data-tileset-grid]").first(); await grid.hover(); await page.mouse.wheel(0, -100);
-    await expect(page.locator("[data-tileset-zoom-override]")).toBeVisible(); await headerFits(page);
+    await expect.poll(async () => Number(await grid.getAttribute("data-tileset-scale"))).toBeGreaterThan(1); await headerFits(page);
     await page.locator("[data-palette-new]").click();
     await page.locator("[data-dialog=text-prompt]").getByRole("button", { name: "Oluştur", exact: true }).click();
     await expect(page.locator("[data-palette-columns]")).toBeVisible(); await headerFits(page);

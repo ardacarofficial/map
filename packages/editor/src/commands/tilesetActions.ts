@@ -54,6 +54,7 @@ import { draftFromSpec } from "../ui/tilesetImport/importModel";
 import { openTilesetCard } from "../ui/tilesetImport/importStore";
 import { useTilesetView } from "../ui/tileset/tilesetViewStore";
 import { showDockTab } from "../ui/layout/dock/dockActions";
+import { shapeOfItems, withReferenceShape } from "../ui/palettes/paletteModel";
 import { usePaletteStore } from "../ui/palettes/paletteStore";
 import { readAlpha } from "../ui/tilesetImport/imageAlpha";
 import { groupNames, planTilesetMove, summarizeUsage, uniqueGroupName, type DropTarget, type LevelUsage } from "../ui/tileset/libraryModel";
@@ -61,6 +62,7 @@ import { askRemoveTileset } from "../ui/tileset/RemoveTilesetDialog";
 import { askText } from "../ui/tileset/TextPrompt";
 import { registerCommands, registerPaletteProvider, type Command } from "./registry";
 import { dropMemoryClipUnless } from "./clipboard";
+import { installTilesetEditingCommands } from "./tilesetEditing";
 import { undoStepAction } from "./undoStepAction";
 
 const activeStore = (): MapStore | null => useEditorStore.getState().project?.store ?? null;
@@ -368,7 +370,7 @@ function followBrush(tilesetId: string, before: TileGrid, after: TileGrid): void
   const palettes = usePaletteStore.getState();
   if (palettes.clipboard) {
     const next = remapTileRefs(palettes.clipboard, tilesetId, before, after);
-    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? next : null);
+    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? withReferenceShape(next, shapeOfItems(palettes.clipboard)) : null);
   }
   if (palettes.selection?.clip) palettes.setSelection(null);
 }
@@ -385,7 +387,7 @@ function dropMissingTilesets(doc: MapDocument): void {
   const palettes = usePaletteStore.getState();
   if (palettes.clipboard) {
     const next = dropTileRefs(palettes.clipboard, exists);
-    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? next : null);
+    if (next !== palettes.clipboard) palettes.setClipboard(next.length > 0 ? withReferenceShape(next, shapeOfItems(palettes.clipboard)) : null);
   }
   if (palettes.activePaletteId !== null && !doc.getCollection(palettes.activePaletteId)) palettes.setActivePalette(null);
   const ui = useUiStore.getState();
@@ -473,6 +475,15 @@ export function renameTileset(tilesetId: string, name: string): void {
   const tileset = activeStore()?.document.getTileset(tilesetId);
   if (!tileset || trimmed === "" || trimmed === tileset.name) return;
   listStep((store) => store.dispatch({ type: "setTilesetMeta", tilesetId, name: trimmed }));
+}
+
+/** Display-name prompt: source file, ids and generated recipes stay independent. */
+export async function promptRenameTileset(tilesetId: string | null = currentTilesetId()): Promise<void> {
+  const store = activeStore();
+  const tileset = tilesetId ? store?.document.getTileset(tilesetId) : undefined;
+  if (!tileset) return;
+  const name = await askText({ title: t("tilesetEditing.renameTitle"), label: t("tilesetEditing.name"), initial: tileset.name, confirm: t("tilesetEditing.renameConfirm") });
+  if (name && activeStore() === store) renameTileset(tileset.id, name);
 }
 
 /** Moves a tileset into `group` (null = ungrouped), at the group's end. */
@@ -623,6 +634,7 @@ const COMMANDS: Command[] = [
  */
 export function installTilesetActions(): () => void {
   registerCommands(COMMANDS);
+  installTilesetEditingCommands();
   // With several tilesets: "Tileset ayarları: Zindan" for each.
   const unregisterPalette = registerPaletteProvider(() => {
     const tilesets = activeStore()?.document.tilesets ?? [];

@@ -12,7 +12,7 @@ describe("dock commands and shortcuts", () => {
     expect(keysFor("view.toggleBottom")).toEqual(["Ctrl+Shift+B"]);
     const owners = new Map<string, string>();
     for (const def of SHORTCUTS) for (const key of def.keys) {
-      const chord = JSON.stringify(parseChord(key));
+      const chord = JSON.stringify([def.scope ?? "global", parseChord(key)]);
       expect(owners.get(chord) ?? def.command, key).toBe(def.command);
       owners.set(chord, def.command);
     }

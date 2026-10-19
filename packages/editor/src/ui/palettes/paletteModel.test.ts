@@ -33,11 +33,11 @@ describe("palette model", () => {
     expect(itemsOfTiles("ts", 8, [10], new Set([10]))).toHaveLength(1);
   });
 
-  it("drop from a tileset copies into the slot, overwriting and clipping at the last column", () => {
+  it("drop refuses a rectangle that exceeds the last column without losing references", () => {
     const p = placeItems(empty("p"), [{ dx: 0, dy: 0, tilesetId: "ts", tileId: 7 }], 3, 0);
     const items = itemsOfTiles("ts", 8, [1, 2]);
-    const [next] = dropOnPalette([p], "p", items, { x: 3, y: 0 }, { kind: "tileset", tilesetId: "ts" }, false);
-    expect(next!.cells).toEqual([{ x: 3, y: 0, tilesetId: "ts", tileId: 1 }]);
+    expect(() => dropOnPalette([p], "p", items, { x: 3, y: 0 }, { kind: "tileset", tilesetId: "ts" }, false)).toThrow();
+    expect(p.cells).toEqual([{ x: 3, y: 0, tilesetId: "ts", tileId: 7 }]);
   });
 
   it("copy between palettes leaves the source; Shift = move empties it", () => {
@@ -67,20 +67,16 @@ describe("palette model", () => {
     expect(dropOnPalette([a], "a", itemsOfSlots(a, ids), { x: 0, y: 0 }, { kind: "palette", paletteId: "a", ids }, false)).toEqual([]);
   });
 
-  it("append fills the first free slots in reading order", () => {
-    const p = placeItems(empty("p", 2), [{ dx: 0, dy: 0, tilesetId: "ts", tileId: 9 }], 0, 0);
+  it("append preserves a reference rectangle and refuses a palette that is too narrow", () => {
+    const p = placeItems(empty("p", 3), [{ dx: 0, dy: 0, tilesetId: "ts", tileId: 9 }], 0, 0);
     const next = appendItems(p, itemsOfTiles("ts", 8, [1, 2, 3]));
-    expect(next.cells.map((c) => [c.x, c.y, c.tileId])).toEqual([
-      [0, 0, 9],
-      [1, 0, 1],
-      [0, 1, 2],
-      [1, 1, 3],
-    ]);
+    expect(next.cells.map(c => [c.x, c.y, c.tileId])).toEqual([[0, 0, 9], [0, 1, 1], [1, 1, 2], [2, 1, 3]]);
+    expect(() => appendItems(empty("small", 2), itemsOfTiles("ts", 8, [1, 2, 3]))).toThrow();
   });
 
   it("clear, rows, and stable sort order", () => {
     const p = placeItems(empty("p"), itemsOfTiles("ts", 8, [0, 8, 16]), 1, 0);
-    expect(paletteRows(p)).toBe(4);
+    expect(paletteRows(p)).toBe(3);
     expect(paletteRows(empty("x"))).toBe(2);
     const cleared = clearSlots(p, [slotIndex(4, 1, 1)]);
     expect(cleared.cells.map((c) => c.y)).toEqual([0, 2]);
@@ -125,7 +121,9 @@ describe("palette model", () => {
           cells: [...indices].sort((x, y) => x - y).map((i) => ({ x: i % 8, y: Math.floor(i / 8), tilesetId: "ts", tileId: i })),
         };
         const back = setPaletteColumns(setPaletteColumns(p, cols), 8);
-        expect(back).toEqual(p);
+        expect(back.cells).toEqual(p.cells);
+        expect(back.columns).toBe(p.columns);
+        expect(paletteRows(back)).toBeGreaterThanOrEqual(paletteRows(p));
       }),
     );
   });

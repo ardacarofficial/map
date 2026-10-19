@@ -36,6 +36,7 @@ import {
   type GridSummary,
 } from "./importModel";
 import { RemoveTilesetDialog } from "../tileset/RemoveTilesetDialog";
+import { PaletteDialogs } from "../palettes/PaletteDialogs";
 import { TextPromptDialog } from "../tileset/TextPrompt";
 import { accumulateWheelZoom, PAN_GESTURE_MS, tilesetWheel } from "../tileset/zoomModel";
 import { BulkImportDialog } from "./BulkImportCard";
@@ -50,6 +51,7 @@ export function TilesetImportDialog() {
       <BulkImportDialog />
       <RemoveTilesetDialog />
       <TextPromptDialog />
+      <PaletteDialogs />
     </>
   );
 }

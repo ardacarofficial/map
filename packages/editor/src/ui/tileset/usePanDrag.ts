@@ -35,7 +35,7 @@ export interface PanDrag {
   active(): boolean;
 }
 
-export function usePanDrag(ref: RefObject<HTMLElement | null>): PanDrag {
+export function usePanDrag(ref: RefObject<HTMLElement | null>, onPan?: (dx: number, dy: number) => void): PanDrag {
   const [space, setSpace] = useState(false);
   const [dragging, setDragging] = useState(false);
   const spaceRef = useRef(false);
@@ -57,7 +57,12 @@ export function usePanDrag(ref: RefObject<HTMLElement | null>): PanDrag {
     const onUp = (e: KeyboardEvent) => {
       if (e.code === "Space" && spaceRef.current) set(false);
     };
-    const onBlur = () => set(false);
+    const onBlur = () => {
+      set(false);
+      const pointer = drag.current?.pointerId;
+      drag.current = null; setDragging(false);
+      if (pointer !== undefined && ref.current?.hasPointerCapture(pointer)) ref.current.releasePointerCapture(pointer);
+    };
     window.addEventListener("keydown", onDown, true);
     window.addEventListener("keyup", onUp, true);
     window.addEventListener("blur", onBlur);
@@ -66,7 +71,7 @@ export function usePanDrag(ref: RefObject<HTMLElement | null>): PanDrag {
       window.removeEventListener("keyup", onUp, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [ref]);
 
   const end = (e: ReactPointerEvent<HTMLElement>) => {
     if (drag.current?.pointerId !== e.pointerId) return;
@@ -85,8 +90,10 @@ export function usePanDrag(ref: RefObject<HTMLElement | null>): PanDrag {
       onPointerDownCapture: (e) => {
         const el = ref.current;
         if (!el || !(e.button === 1 || (e.button === 0 && spaceRef.current))) return;
+        if (e.button === 0 && e.target instanceof Element && e.target.hasPointerCapture(e.pointerId)) return;
         e.preventDefault();
         e.stopPropagation();
+        el.focus({ preventScroll: true });
         el.setPointerCapture(e.pointerId);
         drag.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
         setDragging(true);
@@ -95,8 +102,13 @@ export function usePanDrag(ref: RefObject<HTMLElement | null>): PanDrag {
         const d = drag.current;
         const el = ref.current;
         if (!d || !el || d.pointerId !== e.pointerId) return;
-        el.scrollLeft = d.left - (e.clientX - d.x);
-        el.scrollTop = d.top - (e.clientY - d.y);
+        if (onPan) {
+          onPan(e.clientX - d.x, e.clientY - d.y);
+          d.x = e.clientX; d.y = e.clientY;
+        } else {
+          el.scrollLeft = d.left - (e.clientX - d.x);
+          el.scrollTop = d.top - (e.clientY - d.y);
+        }
       },
       onPointerUp: end,
       onPointerCancel: end,

@@ -2,6 +2,29 @@ import type { Messages } from "./types";
 
 /** English UI strings. Same keys as `tr.ts` (the type enforces it). */
 export const en: Messages = {
+  tilesetEditing: {
+      "rename": "Rename…",
+      "renameTitle": "Rename tileset",
+      "name": "Name",
+      "renameConfirm": "Rename",
+      "copy": "Copy references",
+      "cut": "Cut references",
+      "paste": "Paste references",
+      "pasteToPalette": "Paste into palette…",
+      "pasteHint": "Cannot paste into a PNG view. Choose a destination palette.",
+      "rows": "Rows",
+      "columns": "Columns",
+      "occupied": "Occupied references do not fit in these rows.",
+      "trim": "Remove references that do not fit",
+      "trimTitle": "Remove references that do not fit?",
+      "trimDetail": "References after row {rows} in {name} will be removed. You can undo this.",
+      "capacity": "References exceed the palette bounds. Increase the column or row count.",
+      "fit": "Fit",
+      "zoom": "Zoom",
+      "trimCommand": "Shrink palette rows…",
+      "trimRows": "Target row count"
+  },
+
   defoldExport: {
     label: "Defold",
     projectSubfolderLabel: "Project subfolder",

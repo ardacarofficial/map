@@ -27,6 +27,8 @@ export function editorCodeSplitting() {
       { name: "pixi", test: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:pixi\.js|@pixi)[\\/]/, priority: 20 },
       { name: "react", test: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react|react-dom|scheduler)[\\/]/, priority: 20 },
       { name: "vendor", test: /[\\/]node_modules[\\/]/, priority: 10 }, // base-ui, zustand, …
+      // Grid helpers and stateless overlays share no app/store initialization.
+      { name: "grid-models", test: /[\\/]packages[\\/]editor[\\/]src[\\/](?:ui[\\/]tileset[\\/](?:libraryModel|selectionModel|zoomModel|viewportModel|TilesetOverlays|cssColor|emptyTiles)|ui[\\/]palettes[\\/](?:paletteModel|paletteDraw)|canvas[\\/](?:brush|camera))\.tsx?$/, priority: 10 },
       // Raster helpers have no UI/store dependencies; keep their growing pixel code independently cached.
       { name: "stamp-raster", test: /[\\/]packages[\\/]editor[\\/]src[\\/](?:state[\\/](?:tilesetImages|tilesetPixels|pngHash|smartBrushProfile)|ui[\\/]stamps[\\/](?:smartStampBake|stampThumb)|export[\\/](?:pngComposite|pngRender))\.ts$/, priority: 10 },
       { name: "stamp-recipes", test: /[\\/]packages[\\/]editor[\\/]src[\\/]io[\\/](?:smartStampRecipes|fs|fileData)\.ts$/, priority: 10 },

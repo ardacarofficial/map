@@ -1,11 +1,14 @@
 import type { Collection, Tileset } from "@smap/core";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { runCommand } from "../../../commands/registry";
+import { requestPaletteTrim } from "../../palettes/paletteDialogsStore";
 import { gotoTileset } from "../../../commands/tilesetActions";
 import { t } from "../../../i18n";
-import { createPalette, setPaletteColumnCount, showPalette } from "../../palettes/paletteActions";
-import { MAX_PALETTE_COLUMNS, MIN_PALETTE_COLUMNS } from "../../palettes/paletteModel";
-import { IconButton } from "../../primitives/Button";
+import { createPalette, setPaletteRowCount, setPaletteColumnCount, showPalette } from "../../palettes/paletteActions";
+import { MAX_PALETTE_COLUMNS, MIN_PALETTE_COLUMNS, paletteRows } from "../../palettes/paletteModel";
+import { useEditorStore } from "../../../state/editorStore";
+import { Button, IconButton } from "../../primitives/Button";
 import { Icon } from "../../primitives/Icon";
 import { Segmented } from "../../primitives/Segmented";
 import { TextField } from "../../primitives/TextField";
@@ -33,11 +36,37 @@ function LibrarySearch({ tilesets }: { tilesets: readonly Tileset[] }) {
 }
 
 function PaletteColumns({ palette }: { palette: Collection }) {
-  return <div className="flex shrink-0 items-center gap-1 text-sm text-muted" data-palette-columns>
-    <span>{t("palettes.columns")}</span>
-    <IconButton size="sm" aria-label={t("palettes.columnsLess")} disabled={palette.columns <= MIN_PALETTE_COLUMNS} onClick={() => setPaletteColumnCount(palette.id, palette.columns - 1)}><Icon name="minus" /></IconButton>
-    <span className="font-mono text-text">{palette.columns}</span>
-    <IconButton size="sm" aria-label={t("palettes.columnsMore")} disabled={palette.columns >= MAX_PALETTE_COLUMNS} onClick={() => setPaletteColumnCount(palette.id, palette.columns + 1)}><Icon name="plus" /></IconButton>
+  const [refused, setRefused] = useState<number | null>(null);
+  const [rows, setRows] = useState(String(paletteRows(palette)));
+  const [columns, setColumns] = useState(String(palette.columns));
+  useEffect(() => { setRows(String(paletteRows(palette))); setColumns(String(palette.columns)); setRefused(null); }, [palette]);
+  const commitRows = () => {
+    const value = Number(rows);
+    if (value === paletteRows(palette)) return;
+    if (!setPaletteRowCount(palette.id, value)) { setRefused(value); return; }
+    setRefused(null);
+    setRows(String(paletteRows(useEditorStore.getState().project?.store.document.getCollection(palette.id) ?? palette)));
+  };
+  const commitColumns = () => {
+    const value = Number(columns);
+    if (Number.isFinite(value)) setPaletteColumnCount(palette.id, value);
+    setColumns(String(useEditorStore.getState().project?.store.document.getCollection(palette.id)?.columns ?? palette.columns));
+  };
+  return <div className="flex min-w-0 flex-col gap-1" data-palette-columns>
+    <div className="flex flex-wrap items-center gap-1 text-sm text-muted">
+      <label className="flex items-center gap-1">{t("tilesetEditing.columns")}
+        <TextField size="sm" type="number" className="w-14" aria-label={t("tilesetEditing.columns")} data-palette-columns-input min={MIN_PALETTE_COLUMNS} max={MAX_PALETTE_COLUMNS} value={columns}
+          onChange={e => setColumns(e.target.value)} onBlur={commitColumns} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commitColumns(); } }} />
+      </label>
+      <label className="flex items-center gap-1">{t("tilesetEditing.rows")}
+        <TextField size="sm" type="number" className="w-14" aria-label={t("tilesetEditing.rows")} data-palette-rows-input aria-invalid={refused !== null} min={1} max={Math.max(256, paletteRows(palette))} value={rows}
+          onChange={e => { setRows(e.target.value); setRefused(null); }} onBlur={commitRows} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commitRows(); } }} />
+      </label>
+    </div>
+    {refused !== null && Number.isInteger(refused) && refused >= 1 && palette.cells.some(c => c.y >= refused) && <div className="flex flex-wrap items-center gap-1 text-sm text-muted">
+      <span role="status">{t("tilesetEditing.occupied")}</span>
+      <Button size="sm" className="h-auto min-h-control-sm max-w-full whitespace-normal text-left" onClick={() => requestPaletteTrim(palette, refused)}>{t("tilesetEditing.trim")}</Button>
+    </div>}
   </div>;
 }
 
@@ -61,9 +90,9 @@ export function DockHeader({ tilesets, palettes, active, palette, onSelect, ...z
         { value: "all", icon: "layers", label: label(t("tilesetLib.viewAll"), viewLabels), tooltip: t("tilesetLib.viewAllTitle"), attrs: { "data-library-view": "all", className: "tileset-header-view" } },
       ]} />
       <div className="ml-auto" />
-      <ZoomControl {...zoom} stack={view === "all"} />
+      <ZoomControl {...zoom} onZoom={value => view === "single" && value === null ? runCommand("tileset.fit") : zoom.onZoom(value)} stack={view === "all"} />
     </div>
-    {palette && <div className="tileset-header-columns flex h-8 shrink-0 items-center"><PaletteColumns palette={palette} /></div>}
+    {palette && <div className="tileset-header-columns flex min-h-8 shrink-0 items-center py-1"><PaletteColumns palette={palette} /></div>}
     <div data-dock-palette-targets className={dragging ? "flex h-8 min-w-0 items-center" : "hidden"}><PaletteDropChips palettes={palettes} /></div>
   </div>;
 }

@@ -150,19 +150,20 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
  */
 function dropConflicts(overrides: Map<CommandId, string[]>, defaults: readonly ShortcutDef[], problems: SettingsProblem[]): void {
   const owner = new Map<string, CommandId>();
+  const scopedChord = (command: CommandId, keys: string) => JSON.stringify([defaults.find(d => d.command === command)?.scope ?? "global", chordId(keys)]);
   for (const def of defaults) {
     if (overrides.has(def.command)) continue;
-    for (const k of def.keys) if (!owner.has(chordId(k))) owner.set(chordId(k), def.command);
+    for (const k of def.keys) if (!owner.has(scopedChord(def.command, k))) owner.set(scopedChord(def.command, k), def.command);
   }
   for (const [command, keys] of overrides) {
     const kept: string[] = [];
     for (const k of keys) {
-      const other = owner.get(chordId(k));
+      const other = owner.get(scopedChord(command, k));
       if (other && other !== command) {
         problems.push({ entry: `shortcuts.${command}`, reason: "conflict", detail: `${k} → ${other}` });
         continue;
       }
-      owner.set(chordId(k), command);
+      owner.set(scopedChord(command, k), command);
       kept.push(k);
     }
     overrides.set(command, kept);
@@ -173,7 +174,7 @@ function dropConflicts(overrides: Map<CommandId, string[]>, defaults: readonly S
 export function mergeShortcuts(defaults: readonly ShortcutDef[], overrides: ReadonlyMap<CommandId, readonly string[]>): ShortcutDef[] {
   return defaults.map((d) => {
     const keys = overrides.get(d.command);
-    return keys ? { command: d.command, keys: [...keys] } : d;
+    return keys ? { ...d, keys: [...keys] } : d;
   });
 }
 

@@ -40,6 +40,9 @@ const REPEATABLE = new Set<CommandId>(["view.zoomIn", "view.zoomOut", "edit.undo
 
 /** Commands that a focused text field handles itself (native undo, copy, select all...). */
 const TEXT_COMMANDS = new Set<CommandId>([
+  "tileset.copy",
+  "tileset.cut",
+  "tileset.paste",
   "edit.undo",
   "edit.redo",
   "edit.cut",

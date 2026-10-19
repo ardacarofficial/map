@@ -13,7 +13,7 @@ import { t } from "../../i18n";
 import { useEditorStore, type ToolId } from "../../state/editorStore";
 import { toast, useToastStore } from "../toast/toastStore";
 import { askText } from "../tileset/TextPrompt";
-import { cellOf, type Cell } from "../tileset/selectionModel";
+import { type Cell } from "../tileset/selectionModel";
 import { useTilesetView } from "../tileset/tilesetViewStore";
 import {
   clearSlots,
@@ -21,9 +21,12 @@ import {
   dropOnPalette,
   itemsOfSlots,
   itemsOfTiles,
-  appendItems,
+  appendOrigin,
   placeItems,
   setPaletteColumns,
+  setPaletteRows,
+  shapeOfItems,
+  withReferenceShape,
   slotIndex,
   uniquePaletteId,
   uniquePaletteName,
@@ -82,7 +85,7 @@ export async function createPalette(): Promise<string | null> {
   });
   if (!name || activeStore() !== store) return null;
   const id = uniquePaletteId(store.document.collections);
-  if (!applyPalettes([{ id, name, columns: DEFAULT_PALETTE_COLUMNS, cells: [] }])) return null;
+  if (!applyPalettes([{ id, name, columns: DEFAULT_PALETTE_COLUMNS, rows: 2, cells: [] }])) return null;
   showPalette(id);
   return id;
 }
@@ -120,10 +123,27 @@ export function deletePalette(id: string): boolean {
 export function setPaletteColumnCount(id: string, columns: number): void {
   const palette = activeStore()?.document.getCollection(id);
   if (!palette) return;
-  const next = setPaletteColumns(palette, columns);
+  let next: Collection;
+  try { next = setPaletteColumns(palette, columns); } catch { toast.info(t("tilesetEditing.capacity")); return; }
   if (next !== palette) {
     usePaletteStore.getState().setSelection(null);
     applyPalettes([next]);
+  }
+}
+
+/** Resize never drops occupied slots unless the separate confirmation supplied trim=true. */
+export function setPaletteRowCount(id: string, rows: number, trim = false): boolean {
+  const palette = activeStore()?.document.getCollection(id);
+  if (!palette) return false;
+  try {
+    const next = setPaletteRows(palette, rows, trim);
+    if (next === palette) return true;
+    if (!applyPalettes([next])) return false;
+    usePaletteStore.getState().setSelection(null);
+    return true;
+  } catch (error) {
+    toast.info(t(error instanceof RangeError && error.message === "occupied" ? "tilesetEditing.occupied" : "tilesetEditing.capacity"));
+    return false;
   }
 }
 
@@ -140,17 +160,21 @@ export function clearPaletteSlots(id: string, ids: readonly number[]): void {
 
 /** Selects slots of `palette` (no brush change): after a drop / paste, the new tiles are selected. */
 function selectSlots(palette: PaletteData, at: Cell, items: readonly PaletteItem[]): void {
-  const ids = items.filter((it) => at.col + it.dx < palette.columns).map((it) => slotIndex(palette.columns, at.col + it.dx, at.row + it.dy));
+  const { width, height } = shapeOfItems(items);
+  const ids: number[] = [];
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) ids.push(slotIndex(palette.columns, at.col + x, at.row + y));
   if (ids.length === 0) return;
-  const focus = cellOf({ columns: palette.columns, rows: Infinity }, Math.max(...ids));
-  usePaletteStore.getState().setSelection({ paletteId: palette.id, ids: [...ids].sort((a, b) => a - b), anchor: at, focus, clip: null });
+  const focus = { col: at.col + width - 1, row: at.row + height - 1 };
+  commitPaletteSelection(palette, ids, { anchor: at, focus });
 }
 
 /** Drops dragged tiles on palette `targetId` (at a slot, or appended); copy, or move with Shift. */
 export function dropTiles(targetId: string, items: readonly PaletteItem[], slot: Cell | null, source: DragSource, move: boolean): boolean {
   const doc = activeStore()?.document;
   if (!doc) return false;
-  const changed = dropOnPalette(doc.collections, targetId, items, slot ? { x: slot.col, y: slot.row } : null, source, move);
+  let changed: PaletteData[];
+  try { changed = dropOnPalette(doc.collections, targetId, items, slot ? { x: slot.col, y: slot.row } : null, source, move); }
+  catch { toast.info(t("tilesetEditing.capacity")); return false; }
   if (changed.length === 0) return false;
   if (!applyPalettes(changed)) return false;
   const target = activeStore()?.document.getCollection(targetId);
@@ -164,7 +188,7 @@ export function dropTiles(targetId: string, items: readonly PaletteItem[], slot:
 /** Ctrl+C in the tileset: copies the selected tiles (layout kept) for a paste into a palette. */
 export function copyTilesetTiles(tileset: Tileset, ids: readonly number[], empty: ReadonlySet<number>): boolean {
   const items = itemsOfTiles(tileset.id, tileset.columns, ids, empty);
-  if (items.length === 0) return false;
+  if (shapeOfItems(items).width === 0) return false;
   usePaletteStore.getState().setClipboard(items);
   toast.info(t("palettes.copied", { count: items.length }));
   return true;
@@ -173,7 +197,7 @@ export function copyTilesetTiles(tileset: Tileset, ids: readonly number[], empty
 /** Ctrl+C in a palette. */
 export function copyPaletteSlots(palette: PaletteData, ids: readonly number[]): boolean {
   const items = itemsOfSlots(palette, ids);
-  if (items.length === 0) return false;
+  if (shapeOfItems(items).width === 0) return false;
   usePaletteStore.getState().setClipboard(items);
   toast.info(t("palettes.copied", { count: items.length }));
   return true;
@@ -184,17 +208,24 @@ export function pasteIntoPalette(paletteId: string, at: Cell | null): boolean {
   const items = usePaletteStore.getState().clipboard;
   const palette = activeStore()?.document.getCollection(paletteId);
   if (!palette) return false;
-  if (!items || items.length === 0) {
+  if (!items || shapeOfItems(items).width === 0) {
     toast.info(t("palettes.nothingToPaste"));
     return false;
   }
   const exists = (id: string) => !!activeStore()?.document.getTileset(id);
-  const usable = items.filter((it) => exists(it.tilesetId));
-  if (usable.length === 0) return false;
-  const next = at ? placeItems(palette, usable, at.col, at.row) : appendItems(palette, usable);
+  const usable = withReferenceShape(items.filter((it) => exists(it.tilesetId)), shapeOfItems(items));
+  if (usable.length === 0 && items.length > 0) return false;
+  let next: Collection;
+  let target: Cell;
+  try {
+    const origin = at ? { x: at.col, y: at.row } : appendOrigin(palette, usable);
+    target = { col: origin.x, row: origin.y };
+    next = placeItems(palette, usable, origin.x, origin.y);
+  }
+  catch { toast.info(t("tilesetEditing.capacity")); return false; }
   if (!applyPalettes([next])) return false;
   const now = activeStore()?.document.getCollection(paletteId);
-  if (now && at) selectSlots(now, at, usable);
+  if (now) selectSlots(now, target, usable);
   return true;
 }
 
@@ -213,7 +244,7 @@ export function commitPaletteSelection(palette: Collection, ids: readonly number
   const wanted = new Set(ids);
   const picked = palette.cells.filter((c) => wanted.has(slotIndex(palette.columns, c.x, c.y)) && doc?.getTileset(c.tilesetId));
   if (picked.length === 0) {
-    usePaletteStore.getState().setSelection({ paletteId: palette.id, ids: [...ids], anchor: corners.anchor, focus: corners.focus, clip: null });
+    usePaletteStore.getState().setSelection({ paletteId: palette.id, ids: [...ids], anchor: corners.anchor, focus: corners.focus, clip: s.stamp });
     return false;
   }
   s.setRandomSet([]);
@@ -260,7 +291,7 @@ export async function addToNewPalette(items: readonly PaletteItem[]): Promise<vo
   const id = await createPalette();
   const palette = id ? activeStore()?.document.getCollection(id) : undefined;
   if (!palette || items.length === 0) return;
-  const width = Math.max(...items.map((i) => i.dx)) + 1;
+  const width = shapeOfItems(items).width;
   const sized = width > palette.columns ? setPaletteColumns(palette, width) : palette;
-  applyPalettes([placeItems(sized, items, 0, 0)]);
+  try { applyPalettes([placeItems(sized, items, 0, 0)]); } catch { toast.info(t("tilesetEditing.capacity")); }
 }

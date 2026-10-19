@@ -53,15 +53,15 @@ export function drawMarks(
 }
 
 /** The tileset's tiles side by side at 1 tile pixel = 1 canvas pixel (margin and spacing cut away); CSS scales it up crisply. */
-export function drawTiles(canvas: HTMLCanvasElement, tileset: Tileset, bitmap: ImageBitmap): void {
+export function drawTiles(canvas: HTMLCanvasElement, tileset: Tileset, bitmap: ImageBitmap, sourcePixels = false): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const { tileWidth: tw, tileHeight: th, columns, rows } = tileset;
-  canvas.width = Math.max(1, columns * tw);
-  canvas.height = Math.max(1, rows * th);
+  canvas.width = Math.max(1, sourcePixels ? bitmap.width : columns * tw);
+  canvas.height = Math.max(1, sourcePixels ? bitmap.height : rows * th);
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (tileset.margin === 0 && tileset.spacing === 0) {
+  if (sourcePixels || (tileset.margin === 0 && tileset.spacing === 0)) {
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     return;
   }
@@ -85,6 +85,8 @@ export function SelectionOverlay({
   width,
   height,
   live,
+  gapX = 0,
+  gapY = 0,
 }: {
   /** The grid (a tileset, or a palette's columns × rows). */
   tileset: GridSize;
@@ -95,6 +97,8 @@ export function SelectionOverlay({
   width: number;
   height: number;
   live: boolean;
+  gapX?: number;
+  gapY?: number;
 }) {
   const skipEmpty = ids.length > 1;
   const fill = useMemo(() => {
@@ -104,11 +108,14 @@ export function SelectionOverlay({
       const { col, row } = cellOf(tileset, id);
       const x0 = Math.round(col * cellW);
       const y0 = Math.round(row * cellH);
-      parts.push(`M${x0} ${y0}H${Math.round((col + 1) * cellW)}V${Math.round((row + 1) * cellH)}H${x0}Z`);
+      parts.push(`M${x0} ${y0}H${Math.round((col + 1) * cellW - gapX)}V${Math.round((row + 1) * cellH - gapY)}H${x0}Z`);
     }
     return parts.join("");
-  }, [ids, empty, skipEmpty, tileset, cellW, cellH]);
-  const outline = useMemo(() => outlinePath(tileset, ids, cellW, cellH), [tileset, ids, cellW, cellH]);
+  }, [ids, empty, skipEmpty, tileset, cellW, cellH, gapX, gapY]);
+  const outline = useMemo(() => gapX || gapY ? ids.map(id => {
+    const { col, row } = cellOf(tileset, id);
+    return `M${col * cellW} ${row * cellH}h${cellW - gapX}v${cellH - gapY}h${-(cellW - gapX)}Z`;
+  }).join("") : outlinePath(tileset, ids, cellW, cellH), [tileset, ids, cellW, cellH, gapX, gapY]);
   return (
     <svg
       aria-hidden

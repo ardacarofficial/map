@@ -97,10 +97,19 @@ describe("parseSettings", () => {
     }
   });
 
+  it("keeps panel scopes through overrides and detects conflicts within their scope", () => {
+    const { settings, problems } = parseSettings('{"shortcuts":{"tileset.copy":["Ctrl+X"],"tileset.cut":["Ctrl+X"]}}', SHORTCUTS);
+    expect(problems).toMatchObject([{ entry: "shortcuts.tileset.cut", reason: "conflict" }]);
+    const merged = mergeShortcuts(SHORTCUTS, settings.shortcuts);
+    expect(merged.find(d => d.command === "tileset.copy")).toMatchObject({ keys: ["Ctrl+X"], scope: "tileset" });
+    expect(keysOf(merged, "tileset.cut")).toEqual([]);
+    expect(keysOf(merged, "edit.cut")).toEqual(["Ctrl+X"]);
+  });
+
   it("leaves no chord on two commands", () => {
     const { settings } = parseSettings('{"shortcuts":{"file.close":["Ctrl+S"],"file.export":["Ctrl+G"],"map.resize":["Ctrl+R"]}}', SHORTCUTS);
     const merged = mergeShortcuts(SHORTCUTS, settings.shortcuts);
-    const all = merged.flatMap((s) => s.keys.map((k) => JSON.stringify(parseChord(k))));
+    const all = merged.flatMap((s) => s.keys.map((k) => JSON.stringify([s.scope ?? "global", parseChord(k)])));
     expect(new Set(all).size).toBe(all.length);
     expect(keysOf(merged, "map.resize")).toEqual(["Ctrl+R"]);
   });
