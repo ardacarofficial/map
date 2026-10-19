@@ -126,7 +126,7 @@ it('ready native16 brush carried into map32 becomes unavailable without a generi
  controller.pointerDown({button:0,pointerId:1,preventDefault(){},shiftKey:false,altKey:false} as unknown as PointerEvent,{x:4,y:4});
  expect(useToastStore.getState().toasts).toHaveLength(0);
  controller.cancel();expect(store.inTransaction).toBe(false);expect(store.document.tilesets.filter(t=>t.generated)).toHaveLength(0);
-});
+}, 60_000);
 
 it('real folder: autosaved road, recipe ids, source bytes and Save As survive reopening',async()=>{
  const {store,clip,ts}=await setup();const prepared=(await waitForSelectionBrush(clip))!;

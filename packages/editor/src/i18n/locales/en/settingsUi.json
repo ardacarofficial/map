@@ -48,5 +48,8 @@
   "unityCollision": "Unity collision",
   "copyTextures": "Tileset PNG files",
   "brushAlias": "Brush",
+  "tilesetScope": "Tileset panel",
+  "globalScope": "Global",
+  "exportTarget": "Default target",
   "pan": "Pan"
 }

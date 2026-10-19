@@ -111,8 +111,19 @@ test("F6 follows physical groups, restores panels, expands rails and stays insid
 test("1366×768: Fit shows the whole 256px tileset in its left panel", async ({ page }) => {
   await openMap(page);
   await page.locator("[data-tileset-zoom-fit]").click();
-  await expect.poll(() => page.locator("[data-tileset-viewport]").evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true);
-  await expect(page.locator("[data-tileset-grid]")).toHaveAttribute("data-tileset-scale", "0.75");
+  // The source viewport keeps scrollable panning space even after Fit and uses continuous zoom.
+  // Check the visible sheet rather than the virtual scroll area or a legacy discrete zoom step.
+  const geometry = () => page.locator("[data-tileset-viewport]").evaluate(el => {
+    const viewport = el.getBoundingClientRect();
+    const sheet = el.querySelector<HTMLElement>("[data-tileset-grid]")!.getBoundingClientRect();
+    return {
+      fits: sheet.left >= viewport.left - 1 && sheet.top >= viewport.top - 1
+        && sheet.right <= viewport.left + el.clientWidth + 1 && sheet.bottom <= viewport.top + el.clientHeight + 1,
+      fill: Math.max(sheet.width / el.clientWidth, sheet.height / el.clientHeight),
+    };
+  });
+  await expect.poll(async () => (await geometry()).fits).toBe(true);
+  expect((await geometry()).fill).toBeGreaterThan(0.9);
 });
 
 test("right split preserves its ratio while layer list keys select and reveal rows", async ({ page }) => {

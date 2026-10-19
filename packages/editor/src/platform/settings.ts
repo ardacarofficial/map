@@ -14,9 +14,10 @@
  * reported and ignored, never fatal.
  */
 import { normalizeLayout, type DockLayout } from "../ui/layout/dockModel";
-import { chordIdentity, chordsOverlap } from "../commands/keymap";
+import { chordIdentity } from "../commands/keymap";
 import { availableLocales, isAvailableLocale, type Locale } from "../i18n";
 import type { CommandId, ShortcutDef } from "../shortcuts/shortcuts";
+import { shortcutChordsConflict } from "../shortcuts/conflicts";
 
 export const LOCALES: readonly Locale[] = availableLocales().map(locale => locale.id);
 
@@ -149,8 +150,8 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
  * over an override; between two overrides the one listed first wins.
  */
 function dropConflicts(overrides: Map<CommandId, string[]>, defaults: readonly ShortcutDef[], problems: SettingsProblem[]): void {
-  const scopeOf = (command: CommandId) => defaults.find(d => d.command === command)?.scope ?? "global";
-  const owner: { key: string; command: CommandId; scope: string }[] = [];
+  const scopeOf = (command: CommandId) => defaults.find(d => d.command === command)?.scope;
+  const owner: { key: string; command: CommandId; scope: ShortcutDef["scope"] }[] = [];
   for (const def of defaults) {
     if (overrides.has(def.command)) continue;
     for (const key of def.keys) owner.push({ key, command: def.command, scope: scopeOf(def.command) });
@@ -158,7 +159,7 @@ function dropConflicts(overrides: Map<CommandId, string[]>, defaults: readonly S
   for (const [command, keys] of overrides) {
     const kept: string[] = [];
     for (const k of keys) {
-      const other = owner.find(entry => entry.command !== command && entry.scope === scopeOf(command) && chordsOverlap(entry.key, k))?.command;
+      const other = owner.find(entry => entry.command !== command && shortcutChordsConflict(scopeOf(command), k, entry.scope, entry.key))?.command;
       if (other && other !== command) {
         problems.push({ entry: `shortcuts.${command}`, reason: "conflict", detail: `${k} → ${other}` });
         continue;

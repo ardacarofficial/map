@@ -1,16 +1,19 @@
-import { chordsOverlap, eventModifiers, matchesChord, parseChord, type KeyEventLike } from "../../commands/keymap";
+import { eventModifiers, parseChord, type KeyEventLike } from "../../commands/keymap";
+import { shortcutChordsConflict } from "../../shortcuts/conflicts";
 import { SHORTCUTS, type CommandId } from "../../shortcuts/shortcuts";
 import { isValidKeyString, mergeShortcuts } from "../settings";
 
 export type Overrides = ReadonlyMap<CommandId, readonly string[]>;
 export function conflictsFor(draft: Overrides, command: CommandId, keys: readonly string[], recorded?: KeyEventLike): CommandId[] {
-  return mergeShortcuts(SHORTCUTS, draft).filter(row => row.command !== command && row.keys.some(key => keys.some(candidate => chordsOverlap(candidate, key)) || !!recorded && keys.length > 0 && matchesChord(recorded, parseChord(key)))).map(row => row.command);
+  const scope = SHORTCUTS.find(row => row.command === command)?.scope;
+  return mergeShortcuts(SHORTCUTS, draft).filter(row => row.command !== command && row.keys.some(key => keys.some(candidate => shortcutChordsConflict(scope, candidate, row.scope, key, recorded)))).map(row => row.command);
 }
 export function assignKeys(draft: Overrides, command: CommandId, keys: string[], replace = false, recorded?: KeyEventLike): Map<CommandId, string[]> {
   const next = new Map([...draft].map(([id, keys]) => [id, [...keys]]));
   const conflicts = conflictsFor(draft, command, keys, recorded);
   if (conflicts.length && !replace) return next;
-  for (const row of mergeShortcuts(SHORTCUTS, draft)) if (conflicts.includes(row.command)) next.set(row.command, row.keys.filter(key => !keys.some(candidate => chordsOverlap(candidate, key)) && !(recorded && keys.length > 0 && matchesChord(recorded, parseChord(key)))));
+  const scope = SHORTCUTS.find(row => row.command === command)?.scope;
+  for (const row of mergeShortcuts(SHORTCUTS, draft)) if (conflicts.includes(row.command)) next.set(row.command, row.keys.filter(key => !keys.some(candidate => shortcutChordsConflict(scope, candidate, row.scope, key, recorded))));
   next.set(command, keys);
   return next;
 }

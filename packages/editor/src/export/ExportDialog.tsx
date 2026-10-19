@@ -301,15 +301,11 @@ function ExportForm({
 
               <Section label={t("export.options")}>
                 <div className="grid grid-cols-2 gap-x-3">
-                <CheckRow checked={current.unityTiles} onChange={(unityTiles) => patch({ unityTiles })} label={t("export.optTiles")} />
-                <CheckRow
-                  checked={current.unityCollision}
-                  onChange={(unityCollision) => patch({ unityCollision })}
-                  label={t("export.optCollision")}
-                  meta={t("export.optCollisionCount", { count: derived.solidCells })}
-                />
+                {EXPORT_TARGETS.find(target => target.id === chosen)!.preferences.map(option => option.type === "boolean" && option.key !== "autoUnity" && (
+                  <div key={option.key} className={option.key === "copyTextures" ? "col-span-2" : ""}><CheckRow checked={current[option.key]} onChange={value => patch({ [option.key]: value })} label={t(option.labelKey)}
+                    {...(option.key === "unityCollision" ? { meta: t("export.optCollisionCount", { count: derived.solidCells }) } : {})} /></div>
+                ))}
                 </div>
-                <CheckRow checked={current.copyTextures} onChange={(copyTextures) => patch({ copyTextures })} label={t("export.optTextures")} />
               </Section>
 
               <div className="flex items-center gap-2 text-sm text-muted">

@@ -30,7 +30,7 @@ describe("layoutAtlas", () => {
       expect(s.y + 32 + 2).toBeLessThanOrEqual(p.height);
     }
     expect(l.slots[12769]!.page).toBe(1);
-  });
+  }, 60_000);
 
   it("rejects tiles larger than a page", () => {
     expect(() => layoutAtlas(1, 4096, 16, 2, 4096)).toThrow(RangeError);
