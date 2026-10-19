@@ -5,7 +5,8 @@ import {
   createDocument,
   isEntityLayer,
   isValidTileId,
-  MapStore,
+  type MapStore,
+  WorldHistory,
   moveLevel,
   parseLevel,
   portalTarget,
@@ -119,11 +120,6 @@ export function paletteProblems(doc: MapDocument): PaletteProblems {
   return { missingTilesets: [...missing].sort(), outOfRange };
 }
 
-/** True when two project-data values are the same (plain frozen data). */
-function same(a: unknown, b: unknown): boolean {
-  return a === b || JSON.stringify(a) === JSON.stringify(b);
-}
-
 function portalsIn(doc: MapDocument, targetId: string): number {
   let n = 0;
   for (const layer of doc.layers) {
@@ -135,6 +131,7 @@ function portalsIn(doc: MapDocument, targetId: string): number {
 
 export class LevelWorkspace {
   name: string;
+  readonly history = new WorldHistory();
   #levels: readonly ProjectLevel[];
   #retired: readonly string[];
   readonly #entries = new Map<string, LevelEntry>();
@@ -150,13 +147,24 @@ export class LevelWorkspace {
     this.#levels = init.levels;
     this.#retired = init.retiredLevelIds ?? [];
     this.#activeId = init.active.id;
-    this.#entries.set(init.active.id, {
+    this.#cache({
       id: init.active.id,
       store: init.active.store,
       knownText: init.active.knownText,
       dirty: init.active.dirty ?? false,
     });
   }
+
+  #cache(entry: LevelEntry): void {
+    this.#entries.set(entry.id, entry);
+    this.history.register(entry.id, entry.store);
+    entry.store.subscribe(event => {
+      if (event.cells.length || event.structure.length || event.pixelRects.length) this.markDirty(entry.id);
+    });
+  }
+
+  /** End this world's session; stamp editor stores are never registered here. */
+  dispose(): void { this.history.dispose(); }
 
   /** Ordered level list. */
   get levels(): readonly ProjectLevel[] {
@@ -220,8 +228,8 @@ export class LevelWorkspace {
   /** Replaces the active level's store (a backup was opened). The level becomes dirty. */
   replaceActiveStore(store: MapStore): void {
     const entry = this.active;
-    entry.store = store;
-    entry.dirty = true;
+    this.history.reset();
+    this.#cache({ ...entry, store, dirty: true });
   }
 
   /**
@@ -242,13 +250,13 @@ export class LevelWorkspace {
       if (!fs) throw new FileNotFoundError(level.path);
       const text = await fs.readText(level.path);
       // The active level may have changed project data while we read.
-      entry = { id, store: new MapStore(this.#parse(text)), dirty: false, knownText: text };
+      entry = { id, store: this.active.store.createSibling(this.#parse(text)), dirty: false, knownText: text };
       if (!this.level(id)) throw new Error(`activate: level "${id}" was removed`);
-      this.#entries.set(id, entry);
+      this.#cache(entry);
     }
     const previous = this.active;
     this.#activeId = id;
-    if (this.#droppable(previous)) this.#entries.delete(previous.id);
+    if (this.#droppable(previous)) { this.history.remove(previous.id); this.#entries.delete(previous.id); }
     return entry;
   }
 
@@ -300,8 +308,8 @@ export class LevelWorkspace {
     const again = this.#entries.get(id);
     if (again) return again;
     if (!this.level(id)) throw new Error(`load: level "${id}" was removed`);
-    const entry: LevelEntry = { id, store: new MapStore(this.#parse(text)), dirty: false, knownText: text };
-    this.#entries.set(id, entry);
+    const entry: LevelEntry = { id, store: this.active.store.createSibling(this.#parse(text)), dirty: false, knownText: text };
+    this.#cache(entry);
     return entry;
   }
 
@@ -321,7 +329,7 @@ export class LevelWorkspace {
       entityTypes: source.entityTypes,
       ...projectDataOf(source),
     });
-    const store = new MapStore(document);
+    const store = this.active.store.createSibling(document);
     const layers = options.layers && options.layers.length > 0 ? options.layers : [{ name: options.layerName }];
     for (const layer of layers) store.dispatch({ type: "addLayer", layer });
     store.clearHistory();
@@ -341,7 +349,7 @@ export class LevelWorkspace {
     else if (fs) text = await fs.readText(level.path);
     else throw new FileNotFoundError(level.path);
     const source = this.active.store.document;
-    const store = new MapStore(parseLevel(text, source.tilesets, source.entityTypes, projectDataOf(source)));
+    const store = this.active.store.createSibling(parseLevel(text, source.tilesets, source.entityTypes, projectDataOf(source)));
     const index = this.#levels.findIndex((l) => l.id === id);
     if (index < 0) throw new Error(`duplicate: level "${id}" was removed`);
     return this.#insert(name, store, index + 1, diskFiles);
@@ -353,7 +361,7 @@ export class LevelWorkspace {
     const project = addLevel(this.#data(), { name, path, world }, index);
     this.#apply(project);
     const level = project.levels.find((l) => l.path === path)!;
-    this.#entries.set(level.id, { id: level.id, store, dirty: true, knownText: null });
+    this.#cache({ id: level.id, store, dirty: true, knownText: null });
     return level;
   }
 
@@ -406,6 +414,7 @@ export class LevelWorkspace {
     if (id === this.#activeId) throw new Error("remove: the active level cannot be removed");
     if (this.#levels.length <= 1) throw new Error("remove: a project keeps at least one level");
     const entry = this.#entries.get(id);
+    this.history.remove(id);
     this.#apply(removeLevel(this.#data(), id));
     this.#entries.delete(id);
     this.#pinned.delete(id);
@@ -542,20 +551,8 @@ export class LevelWorkspace {
 
 /** `store` with the project data of `source` (see module doc). */
 export function withProjectData(store: MapStore, source: MapDocument): MapStore {
-  const doc = store.document;
-  if (doc === source) return store;
-  if (same(doc.entityTypes, source.entityTypes) && same(doc.randomSets, source.randomSets) && same(doc.collections, source.collections)) {
-    const have = doc.tilesets;
-    const want = source.tilesets;
-    if (have.length <= want.length && have.every((ts, i) => same({ ...ts, generated: undefined }, { ...want[i], generated: undefined }) && !!ts.generated === !!want[i]?.generated)) {
-      for (const tileset of want.slice(0, have.length)) if (tileset.generated) {
-        store.dispatch({ type: "setTilesetMeta", tilesetId: tileset.id, generated: tileset.generated, undoable: false });
-      }
-      for (const tileset of want.slice(have.length)) store.dispatch({ type: "addTileset", tileset, undoable: false });
-      return store;
-    }
-  }
-  return new MapStore(parseLevel(serializeLevel(doc), source.tilesets, source.entityTypes, projectDataOf(source)));
+  if (store.document !== source) store.syncProjectData(source);
+  return store;
 }
 
 /** Round 4 project data a level document carries besides tilesets / entity types (random sets, collections). */

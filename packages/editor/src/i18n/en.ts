@@ -2,6 +2,11 @@ import type { Messages } from "./types";
 
 /** English UI strings. Same keys as `tr.ts` (the type enforces it). */
 export const en: Messages = {
+  worldHistory: {
+    deleteReset: "Deleting this map clears all undo and redo history for this world.",
+    invalid: "History no longer matches the map changes. Nothing was applied.",
+    entry: "{map} · {action}",
+  },
   defoldExport: {
     label: "Defold",
     projectSubfolderLabel: "Project subfolder",

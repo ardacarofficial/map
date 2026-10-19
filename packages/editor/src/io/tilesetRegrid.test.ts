@@ -212,9 +212,11 @@ function allTiles(store: MapStore): ([number, number] | null)[] {
 /** The active level's edit as the app runs it: dispatch, record, sync. */
 function editActive(ws: LevelWorkspace) {
   const before = { ...ws.active.store.document.getTileset("dungeon")! };
-  ws.active.store.dispatch(to32);
-  recordRegrid(ws.active.store, "dungeon", before);
-  return syncLevelGrids(ws);
+  return ws.history.compound(ws.activeId, () => {
+    ws.active.store.dispatch(to32);
+    recordRegrid(ws.active.store, "dungeon", before);
+    return syncLevelGrids(ws);
+  });
 }
 
 // Bug: after a grid edit in level A, painting in level B and then undoing the edit in A,
@@ -234,94 +236,63 @@ describe("undo of a project-wide grid edit is lossless in the other levels", () 
     return { ...p, o, sync };
   }
 
-  it("restores the cleared cells exactly, keeps cells painted since, and redo follows", async () => {
+  it("undoes later paint before the compound grid edit, then redoes each chronological action exactly", async () => {
     const { ws, o, sync } = await edited();
     expect(sync.clearedCells).toBe(3);
-    expect(tileAt(o, 5, 4)).toBeNull();
-    expect(tileAt(o, 2, 2)).toBeNull();
-    // Paint in B after the edit (32 px ids): over a cleared cell, and a new one.
-    paint(o, 6, 4, 2); // 32 px tile 2 = x 64 = 16 px tile 4
-    paint(o, 0, 7, 4); // 32 px tile 4 = (32, 32) = 16 px tile 14
+    paint(o, 6, 4, 2); paint(o, 0, 7, 4);
     const painted = allTiles(o);
-
-    ws.active.store.undo();
-    const undo = syncLevelGrids(ws);
-    expect(undo.restoredCells).toBe(2);
-    expect(undo.keptCells).toBe(1);
+    expect(ws.history.undo()!.originMapId).not.toBe(ws.activeId);
+    expect(tileAt(o, 0, 7)).toBeNull();
+    ws.history.undo();
+    expect(tileAt(o, 6, 4)).toBeNull();
+    expect(ws.history.undo()!.originMapId).toBe(ws.activeId);
     expect(sameGrid(o.document.getTileset("dungeon")!, dungeon)).toBe(true);
-    // Untouched cleared cells: back exactly (tile and flip flags).
     expect(tileWithFlags(o, 5, 4)).toEqual([3, 0]);
     expect(tileWithFlags(o, 2, 2)).toEqual([7, FLIP_H >>> 29]);
-    expect(tileAt(o, 4, 4)).toBe(2);
-    // Painted since: the new paint stays (same pixels in the old grid).
-    expect(tileAt(o, 6, 4)).toBe(4);
-    expect(tileAt(o, 0, 7)).toBe(14);
-    // B's tileset is the active level's again (no rebuild when it opens).
-    expect(o.document.getTileset("dungeon")).toEqual(ws.active.store.document.getTileset("dungeon"));
-
-    // Redo in A: B goes back to exactly what it was before the undo (its own undo of the restore step).
-    const canRedoBefore = o.redoDepth;
-    ws.active.store.redo();
-    expect(syncLevelGrids(ws).levels).toHaveLength(1);
-    expect(o.redoDepth).toBe(canRedoBefore + 1);
+    expect(tileAt(o, 6, 4)).toBe(9);
+    ws.history.redo(); ws.history.redo(); ws.history.redo();
     expect(allTiles(o)).toEqual(painted);
     expect(sameGrid(o.document.getTileset("dungeon")!, as32)).toBe(true);
-    // And undo again restores again.
-    ws.active.store.undo();
-    syncLevelGrids(ws);
-    expect(tileWithFlags(o, 5, 4)).toEqual([3, 0]);
-    expect(tileWithFlags(o, 2, 2)).toEqual([7, FLIP_H >>> 29]);
-    expect(tileAt(o, 6, 4)).toBe(4);
   });
 
-  it("restoring is one undo step in B; painting after the undo still allows the redo", async () => {
+  it("clears world and participant redo after a new paint in another map", async () => {
     const { ws, o } = await edited();
-    paint(o, 0, 7, 4);
-    ws.active.store.undo();
-    syncLevelGrids(ws);
-    paint(o, 1, 7, 5); // 16 px tile 5 = x 80: no 32 px tile starts there
-    ws.active.store.redo();
-    const redo = syncLevelGrids(ws);
-    expect(sameGrid(o.document.getTileset("dungeon")!, as32)).toBe(true);
-    // The redo is the edit again: tiles without a place are cleared, the rest moves by pixel position.
-    expect(tileAt(o, 5, 4)).toBeNull();
-    expect(tileAt(o, 1, 7)).toBeNull();
-    expect(redo.clearedCells).toBeGreaterThan(0);
-    expect(tileAt(o, 0, 7)).toBe(4);
-    // Undo again: everything the redo cleared that is untouched comes back.
-    ws.active.store.undo();
-    syncLevelGrids(ws);
-    expect(tileAt(o, 5, 4)).toBe(3);
+    ws.history.undo();
+    expect(sameGrid(o.document.getTileset("dungeon")!, dungeon)).toBe(true);
+    paint(o, 1, 7, 5);
+    expect(ws.history.redoDepth).toBe(0);
+    expect(ws.active.store.canRedo).toBe(false);
+    expect(o.canRedo).toBe(false);
+    expect(ws.history.redo()).toBeNull();
     expect(tileAt(o, 1, 7)).toBe(5);
-    expect(tileAt(o, 0, 7)).toBe(14);
+    expect(tileAt(o, 5, 4)).toBe(3);
   });
 
-  it("writes into a layer locked since, and leaves it locked", async () => {
+  it("undoes a later lock before restoring the compound grid edit", async () => {
     const { ws, o } = await edited();
     const layer = o.document.layers.find((l) => l.type === "tile")!;
     o.dispatch({ type: "setLayerProps", layerId: layer.id, props: { locked: true } });
-    ws.active.store.undo();
-    syncLevelGrids(ws);
+    ws.history.undo();
+    expect(o.document.getLayer(layer.id)!.locked).toBe(false);
+    ws.history.undo();
     expect(tileAt(o, 5, 4)).toBe(3);
-    expect(o.document.getLayer(layer.id)!.locked).toBe(true);
+    expect(o.document.getLayer(layer.id)!.locked).toBe(false);
   });
 
-  it("the other level made the edit itself: the active one follows its undo losslessly too", async () => {
+  it("keeps chronological order when the grid edit originates in the other map", async () => {
     const { fs, ws, main, other } = await project();
     await loadAllLevels(ws, fs);
     await ws.activate(other, fs);
     const a = ws.entry(main)!.store;
     editActive(ws);
-    expect(tileAt(a, 1, 0)).toBeNull(); // 16 px tile 3 has no place
+    expect(tileAt(a, 1, 0)).toBeNull();
     paint(a, 3, 3, 1);
     await ws.activate(main, fs);
-    // Undo the edit from B's history while A is open (B is not active: undo it directly, then sync from B).
-    await ws.activate(other, fs);
-    ws.active.store.undo();
-    syncLevelGrids(ws);
+    expect(ws.history.undo()!.originMapId).toBe(main);
+    expect(tileAt(a, 3, 3)).toBeNull();
+    expect(ws.history.undo()!.originMapId).toBe(other);
     expect(tileAt(a, 1, 0)).toBe(3);
     expect(tileAt(a, 0, 0)).toBe(2);
-    expect(tileAt(a, 3, 3)).toBe(2); // painted since: 32 px tile 1 = 16 px tile 2
   });
 });
 

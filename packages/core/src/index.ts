@@ -506,3 +506,8 @@ export * from "./pixel/palettes";
 export { migrateV6 } from "./migrations/v6";
 export { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY } from "./collection";
 export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistoryChange } from "./store";
+
+export { WorldHistory } from "./pixel/worldHistory";
+export type { WorldHistoryEntry, WorldHistoryRow, WorldParticipant } from "./pixel/worldHistory";
+export { prepareWorldEdit, applyWorldEdit, WorldEditError } from "./pixel/worldEdit";
+export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEditPlan, WorldEditBlocker } from "./pixel/worldEdit";

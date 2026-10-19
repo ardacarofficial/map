@@ -269,11 +269,16 @@ async function runProjectRegrid(tilesetId: string, edit: (store: MapStore) => Ti
   if (getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tilesetId)) return null;
   const before = store.revision;
   const grid = gridCopy(store.document.getTileset(tilesetId)!);
-  let result: TilesetRemapResult;
+  let result!: TilesetRemapResult;
+  let sync!: SyncStats;
   suspended = true;
   try {
-    result = edit(store);
-    if (store.revision !== before) recordRegrid(store, tilesetId, grid);
+    ws.history.compound(ws.activeId, () => {
+      result = edit(store);
+      if (store.revision !== before) recordRegrid(store, tilesetId, grid);
+      suspended = false;
+      sync = syncProject();
+    });
   } catch (error) {
     console.error(error);
     toast.error(t("tilesetImport.failed", { detail: describeError(error) }));
@@ -282,7 +287,6 @@ async function runProjectRegrid(tilesetId: string, edit: (store: MapStore) => Ti
     suspended = false;
   }
   const undo = undoStepAction(store, undefined, () => activeStore() === store);
-  const sync = syncProject();
   return { changed: store.revision !== before, result, store, undo, sync };
 }
 
@@ -324,7 +328,7 @@ export function syncProject(): SyncStats {
   const stats: SyncStats = { levels: 0, clearedCells: 0, keptCells: 0, stamps: 0 };
   const ws = getLevelWorkspace();
   const store = activeStore();
-  if (!ws || !store || suspended) return stats;
+  if (!ws || !store || suspended || ws.history.applyingPlan) return stats;
   const doc = store.document;
   const regridded: { tilesetId: string; before: TileGrid; after: TileGrid }[] = [];
   for (const tileset of doc.tilesets) {
@@ -336,8 +340,8 @@ export function syncProject(): SyncStats {
     }
     seenGrids.set(tileset.id, gridCopy(tileset));
   }
-  const lists = syncLevelLists(ws);
-  const levels = syncLevelGrids(ws);
+  const lists = ws.history.replaying ? { levels: [] } : syncLevelLists(ws);
+  const levels = ws.history.replaying ? { levels: [], clearedCells: 0, keptCells: 0 } : syncLevelGrids(ws);
   stats.levels = new Set([...lists.levels, ...levels.levels]).size;
   stats.clearedCells = levels.clearedCells;
   const stamps = syncStamps(doc);
@@ -443,7 +447,9 @@ function watchTilesets(store: MapStore): () => void {
     // A new step (not undo / redo of an old one): remember what it did to the list.
     if (event.cause === "dispatch" || event.cause === "commit") recordListChange(store, key);
     key = tilesetListKey(store.document.tilesets);
-    syncProject();
+    const ws = getLevelWorkspace();
+    if (ws && ws.active.store === store) ws.history.includeFollowers(ws.activeId, syncProject);
+    else syncProject();
   });
 }
 
@@ -454,12 +460,16 @@ function listStep(edit: (store: MapStore) => void): boolean {
   const store = activeStore();
   if (!store || store.inTransaction) return false;
   const before = store.revision;
-  store.beginTransaction();
+  const ws = getLevelWorkspace();
+  const apply = () => {
+    store.beginTransaction();
+    try { edit(store); store.commit(); }
+    catch (error) { if (store.inTransaction) store.rollback(); throw error; }
+  };
   try {
-    edit(store);
-    store.commit();
+    if (ws && ws.active.store === store) ws.history.compound(ws.activeId, apply);
+    else apply();
   } catch (error) {
-    store.rollback();
     console.error(error);
     toast.error(t("tilesetImport.failed", { detail: describeError(error) }));
     return false;

@@ -5,6 +5,11 @@
  * Placeholders: `{name}` is replaced by `t(key, { name: ... })`.
  */
 export const tr = {
+  worldHistory: {
+    deleteReset: "Harita silinince bu dünyanın tüm geri alma ve yineleme geçmişi temizlenir.",
+    invalid: "Geçmiş, harita değişiklikleriyle eşleşmiyor. Hiçbir işlem uygulanmadı.",
+    entry: "{map} · {action}",
+  },
   defoldExport: {
     label: "Defold",
     projectSubfolderLabel: "Proje alt klasörü",

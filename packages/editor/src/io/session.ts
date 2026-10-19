@@ -167,6 +167,7 @@ function activate(
   if (!level) throw new Error(`activate: level ${project.levelPath} is not in the project`);
   recentThumbnails.cancel();
   project = { ...project, levelId: level.id, levelPath: level.path };
+  workspace?.dispose();
   workspace = new LevelWorkspace({
     name: project.name,
     levels: library.levels,
@@ -345,6 +346,7 @@ export function closeProject(): void {
   recentThumbnails.cancel();
   setFolder(null);
   selectMajorGridProject(null);
+  workspace?.dispose();
   workspace = null;
   activeLayerMemory.clear();
   clearLevelViews();
@@ -889,7 +891,7 @@ export async function openBackup(entry: BackupEntry): Promise<boolean> {
   try {
     const text = await target.fs.readText(entry.path);
     const document = parseLevel(text, project.store.document.tilesets, project.store.document.entityTypes, projectDataOf(project.store.document));
-    const store = new MapStore(document);
+    const store = project.store.createSibling(document);
     store.clearHistory();
     workspace?.replaceActiveStore(store);
     useEditorStore.getState().switchLevel({ ...project, store }, useEditorStore.getState().activeLayerId);

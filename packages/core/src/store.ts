@@ -95,6 +95,8 @@ export interface StoreChangeEvent {
   readonly structure: readonly StructureChange[];
   /** True when `canUndo` / `canRedo` may have changed. */
   readonly historyChanged: boolean;
+  /** Explicit history barriers; distinguishes a redo-tail drop from a complete reset. */
+  readonly historyReset?: "all" | "redo";
 }
 
 export type StoreListener = (event: StoreChangeEvent) => void;
@@ -782,12 +784,40 @@ export class MapStore {
     return true;
   }
 
+  /** Drop the linear redo tail without disturbing committed undo entries (world coordinator). */
+  clearRedo(): void {
+    if (!this.#redo.length) return;
+    this.#redo.length = 0;
+    this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true, historyReset: "redo" });
+  }
+
+  /** A map in the same world uses exactly the same raster backing store. */
+  createSibling(document: MapDocument): MapStore {
+    return new MapStore(document, { rasterAssets: this.#rasters, historyLimit: this.#historyLimit });
+  }
+
+  /** Synchronize validated project metadata in place; this is not a new user action. */
+  syncProjectData(source: MapDocument): void {
+    if (this.inTransaction) throw new Error("project metadata cannot be synchronized during a transaction");
+    const structure: StructureChange[] = [];
+    const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+    if (!same(this.#doc.tilesets, source.tilesets)) {
+      this.#doc._setTilesets(source.tilesets);
+      for (const ts of source.tilesets) if (ts.generated) this.#generatedProvenance.set(ts.id, ts.generated);
+      structure.push("tilesets");
+    }
+    if (!same(this.#doc.entityTypes, source.entityTypes)) { this.#doc._setEntityTypes(source.entityTypes); structure.push("entityTypes"); }
+    if (!same(this.#doc.randomSets, source.randomSets)) { this.#doc._setRandomSets(source.randomSets); structure.push("randomSets"); }
+    if (!same(this.#doc.collections, source.collections)) { this.#doc._setCollections(source.collections); structure.push("collections"); }
+    if (structure.length) this.#emit({ cause: "dispatch", cells: [], structure, historyChanged: false });
+  }
+
   /** Drops all undo/redo steps (e.g. after opening a file or setting up a new document). */
   clearHistory(): void {
     if (this.#undo.length === 0 && this.#redo.length === 0) return;
     this.#undo.length = 0;
     this.#redo.length = 0;
-    this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true });
+    this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true, historyReset: "all" });
   }
 
   // ---------------------------------------------------------------- ops
@@ -1472,7 +1502,7 @@ export class MapStore {
     // indices can claim those slots. Cell-only redo keeps legacy semantics.
     const historyChanged = this.#redo.some(entry => entry.changes.some(change => change.kind === "paletteAppend"));
     if (historyChanged) this.#redo.length = 0;
-    this.#emit({ cause: "dispatch", cells: [], structure: ["palette"], historyChanged });
+    this.#emit({ cause: "dispatch", cells: [], structure: ["palette"], historyChanged, ...(historyChanged ? { historyReset: "redo" as const } : {}) });
     return index;
   }
 
