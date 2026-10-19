@@ -1,0 +1,14 @@
+{
+  "saving": "Kaydediliyor…",
+  "savedAt": "Kaydedildi · {time}",
+  "saveFailed": "Kaydedilemedi",
+  "map": "Harita",
+  "noCell": "—",
+  "mapSize": "{width} × {height} tile",
+  "tileSize": "{width}×{height} px",
+  "x": "X",
+  "y": "Y",
+  "tileId": "Tile {id}",
+  "layerName": "Katman: {name}",
+  "canvasView": "Tuval görünümü"
+}

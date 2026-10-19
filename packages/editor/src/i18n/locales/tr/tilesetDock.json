@@ -1,0 +1,11 @@
+{
+  "side": "Tileset bilgisi",
+  "tileSize": "{width} × {height} px",
+  "tilesets": "Tileset''ler",
+  "title": "Tileset",
+  "collapse": "Dock’u daralt",
+  "expand": "Dock’u genişlet",
+  "empty": "Henüz tileset yok",
+  "tilePixels": "{value} px",
+  "zoomPercent": "%{value}"
+}

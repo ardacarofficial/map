@@ -1,0 +1,9 @@
+{
+  "label": "Tileset''ler",
+  "empty": "Henüz tileset yok",
+  "add": "Tileset ekle…",
+  "meta": "{columns, plural, one {#} other {#}}×{rows} · {size} px",
+  "palettes": "Paletler",
+  "shown": "Altta gösteriliyor",
+  "show": "Altta göster"
+}

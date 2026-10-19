@@ -1,0 +1,22 @@
+{
+  "needTwo": "Rastgele fırça için en az iki tile (ya da stamp) gerekir",
+  "rectLabel": "+{count, plural, one {#} other {#}} rastgele",
+  "stampAdded": "Stamp rastgele fırçaya eklendi · {count, plural, one {#} other {#}} aday",
+  "addStamp": "Rastgele sete ekle",
+  "defaultName": "Rastgele set",
+  "save": "Seti kaydet",
+  "saveAs": "Yeni set olarak kaydet…",
+  "saveTitle": "Rastgele seti kaydet",
+  "saveName": "Set adı",
+  "saved": "Kayıtlı setler",
+  "none": "Kayıtlı set yok",
+  "rename": "Yeniden adlandır…",
+  "delete": "Seti sil",
+  "scatter": "Seyrek",
+  "scatterTitle": "Hücrelerin bu kadarı boş kalır",
+  "flip": "Rastgele çevir",
+  "flipTitle": "Her tile X / Y yönünde rastgele çevrilir",
+  "stamps": "Stamp adayları",
+  "failed": "Rastgele set kaydedilemedi: {detail}",
+  "confirmRename": "Yeniden adlandır"
+}

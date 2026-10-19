@@ -1,0 +1,18 @@
+{
+  "saveDisabled": "First select an area on the map with the Select tool (S)",
+  "empty": "No stamps yet",
+  "emptyHint": "Select an area, right-click → Save as stamp",
+  "size": "{width} × {height}",
+  "layers": "{count, plural, one {# layer} other {# layers}}",
+  "rename": "Rename",
+  "delete": "Delete",
+  "use": "Use as brush",
+  "active": "On brush",
+  "dialogTitle": "Save as stamp",
+  "dialogDescription": "{width} × {height} cells · {count, plural, one {# layer} other {# layers}}",
+  "name": "Name",
+  "defaultName": "Stamp {n}",
+  "errName": "Enter a name",
+  "nameLabel": "Stamp name",
+  "list": "Stamp list"
+}

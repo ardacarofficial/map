@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { availableLocales } from "../i18n";
 import { parseChord } from "../commands/keymap";
 import { SHORTCUTS, type CommandId } from "../shortcuts/shortcuts";
 import { classifyChange, sameBytes } from "./fileChanges";
@@ -22,6 +23,14 @@ describe("isValidKeyString", () => {
 });
 
 describe("parseSettings", () => {
+  it("accepts every advertised locale id", () => {
+    for (const { id } of availableLocales()) {
+      const { settings, problems } = parseSettings(JSON.stringify({ locale: id }), SHORTCUTS);
+      expect(settings.locale).toBe(id);
+      expect(problems).toEqual([]);
+    }
+  });
+
   it("applies locale and per-command overrides over the defaults", () => {
     const { settings, problems } = parseSettings(
       JSON.stringify({ locale: "en", shortcuts: { "tool.brush": ["P"], "file.close": ["Ctrl+W"], "edit.redo": "Ctrl+Shift+Z" } }),
@@ -52,7 +61,7 @@ describe("parseSettings", () => {
 
   it("reports and ignores invalid entries, keeping the rest", () => {
     const text = JSON.stringify({
-      locale: "de",
+      locale: "not_a_locale",
       color: "blue",
       shortcuts: {
         "tool.nope": ["N"],

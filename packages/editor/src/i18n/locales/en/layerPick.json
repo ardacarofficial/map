@@ -1,0 +1,7 @@
+{
+  "layer": "Layer",
+  "active": "Active",
+  "all": "All",
+  "hint": "Active: only the active layer; on Collision it picks the cell value. All: picks the topmost visible tile and activates its source layer, including locked layers. Area picks use the active layer.",
+  "toggle": "Toggle eyedropper layer scope"
+}

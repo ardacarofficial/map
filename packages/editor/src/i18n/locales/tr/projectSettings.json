@@ -1,0 +1,20 @@
+{
+  "title": "Proje ayarları",
+  "description": "project.smap içinde saklanır; yeni haritalar bu değerlerle açılır.",
+  "tabGeneral": "Genel",
+  "tabUnity": "Unity",
+  "tabMore": "Diğer",
+  "name": "Proje adı",
+  "newMapDefaults": "Yeni harita varsayılanları",
+  "backgroundHint": "Kendi rengi olmayan haritaların tuval rengi.",
+  "unityFolderHint": "Unity projesinde haritaların yazılacağı yer; aktarma penceresinde hatırlatılır.",
+  "ppu": "Pixels per unit",
+  "openExport": "Unity''ye aktar…",
+  "entityTypes": "Entity türleri",
+  "entityTypesHint": "NPC, kapı, sandık gibi türler ve alanları",
+  "tilesets": "Tileset''ler",
+  "tilesetsHint": "Projedeki tileset''leri bul ve düzenle",
+  "appSettings": "Uygulama ayarları",
+  "appSettingsHint": "Dil ve kısayollar (tüm projeler için)",
+  "saved": "Proje ayarları kaydedildi"
+}

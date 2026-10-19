@@ -1,0 +1,10 @@
+{
+  "undo": "Undo",
+  "cancel": "Cancel",
+  "create": "Create",
+  "close": "Close",
+  "save": "Save",
+  "dontSave": "Don''t save",
+  "px": "{value} px",
+  "cells": "{width} × {height}"
+}

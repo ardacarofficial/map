@@ -1,0 +1,17 @@
+{
+  "topdown": "Top-down",
+  "topdownHint": "32 px · 64 × 48 · 5 layers",
+  "dungeon": "Dungeon",
+  "dungeonHint": "16 px · 40 × 30 · 4 layers",
+  "empty": "Empty",
+  "emptyHint": "32 px · 64 × 48 · one layer",
+  "layerGround": "Ground",
+  "layerPaths": "Paths",
+  "layerBuildings": "Buildings",
+  "layerDetails": "Details",
+  "layerWalls": "Walls",
+  "layerCollision": "Collision",
+  "kindTile": "Tile",
+  "kindCollision": "Collision",
+  "kindEntity": "Entity"
+}

@@ -1,0 +1,10 @@
+{
+  "title": "Major grid guides",
+  "interval": "Major line interval",
+  "off": "Off",
+  "origin": "Origin",
+  "x": "X",
+  "y": "Y",
+  "hint": "In tiles; origin is relative to the map’s top-left corner.",
+  "visible": "Grid"
+}

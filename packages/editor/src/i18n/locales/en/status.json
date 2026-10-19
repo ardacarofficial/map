@@ -1,0 +1,14 @@
+{
+  "saving": "Saving…",
+  "savedAt": "Saved · {time}",
+  "saveFailed": "Save failed",
+  "map": "Map",
+  "noCell": "—",
+  "mapSize": "{width} × {height} tiles",
+  "tileSize": "{width}×{height} px",
+  "x": "X",
+  "y": "Y",
+  "tileId": "Tile {id}",
+  "layerName": "Layer: {name}",
+  "canvasView": "Canvas view"
+}

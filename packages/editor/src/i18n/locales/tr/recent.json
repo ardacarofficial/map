@@ -1,0 +1,8 @@
+{
+  "title": "Son kullanılanlar",
+  "empty": "Boyadığın tile ve stamp''ler burada görünür",
+  "tile": "{tileset} · {id}",
+  "stamp": "Stamp · {width}×{height} · #{hash}",
+  "stampFrom": "{tileset} · {width}×{height} @ {id} · #{hash}",
+  "savedStamp": "{name} · {width}×{height}"
+}

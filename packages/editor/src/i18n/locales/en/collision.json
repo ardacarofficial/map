@@ -1,0 +1,7 @@
+{
+  "blocked": "Blocked",
+  "blockedHint": "This cell blocks movement",
+  "brush": "Collision brush",
+  "passable": "Passable",
+  "passableHint": "Movement is allowed through this cell"
+}

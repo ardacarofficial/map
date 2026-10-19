@@ -55,6 +55,7 @@ export function CommandPalette() {
 }
 
 function PaletteBody({ onClose }: { onClose(): void }) {
+  const locale = getLocale();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -67,7 +68,9 @@ function PaletteBody({ onClose }: { onClose(): void }) {
         .map(commandItem),
       ...paletteEntries().map((e) => ({ id: e.key, label: `${e.prefix}: ${e.title}`, split: e.prefix.length + 2, run: e.run })),
     ],
-    [],
+    // commandItem/paletteEntries translate through t(), which reads the external locale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale],
   );
   const [recents] = useState(readPaletteRecents);
   const results = useMemo(() => {

@@ -14,8 +14,21 @@ export function parseZoomPercent(text: string): number | null {
 }
 
 /** "12,5" / "33" / "150": a zoom factor as the field shows it (no % sign; one decimal at most, locale comma in Turkish). */
-export function formatZoomPercent(zoom: number, locale: "tr" | "en"): string {
+export function formatZoomPercent(zoom: number, locale: string): string {
   const percent = Math.round(zoom * 1000) / 10;
-  const text = Number.isInteger(percent) ? String(percent) : percent.toFixed(1);
-  return locale === "tr" ? text.replace(".", ",") : text;
+  return new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 1 }).format(percent);
+}
+
+export function formatZoomLabel(zoom: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { style: "percent", useGrouping: false, maximumFractionDigits: 1 }).format(zoom);
+}
+
+/** Keep the editable number separate from the locale's percent sign and spacing. */
+export function zoomPercentAffixes(locale: string): { prefix: string; suffix: string } {
+  const parts = new Intl.NumberFormat(locale, { style: "percent" }).formatToParts(1);
+  const number = parts.findIndex(part => part.type === "integer");
+  return {
+    prefix: parts.slice(0, number).map(part => part.value).join(""),
+    suffix: parts.slice(number + 1).map(part => part.value).join(""),
+  };
 }

@@ -1,0 +1,15 @@
+{
+  "title": "Replace tile…",
+  "history": "Replace tile",
+  "from": "From",
+  "to": "To",
+  "scope": "Scope",
+  "selection": "Selection",
+  "active": "Active layer",
+  "visible": "Visible layers",
+  "count": "{count, plural, one {# cell} other {# cells}} will change",
+  "apply": "Replace",
+  "empty": "Choose tile",
+  "pickHint": "Pick a tile in the tileset dock or with the canvas eyedropper",
+  "picking": "{target}: pick a tile in the tileset dock or on the canvas"
+}

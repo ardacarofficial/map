@@ -1,0 +1,11 @@
+{
+  "projectName": "Proje adı",
+  "renameHint": "Çift tıkla: proje adını değiştir",
+  "recentProjects": "Son projeler",
+  "recentEmpty": "Henüz yok",
+  "rename": "Yeniden adlandır",
+  "savedShort": "Kaydedildi",
+  "unsavedShort": "Kaydedilmemiş",
+  "savingShort": "Kaydediliyor…",
+  "failedShort": "Kaydedilemedi"
+}

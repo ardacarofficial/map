@@ -1,0 +1,9 @@
+{
+  "label": "Tilesets",
+  "empty": "No tilesets yet",
+  "add": "Add tileset…",
+  "meta": "{columns}×{rows} · {size} px",
+  "palettes": "Palettes",
+  "shown": "Shown below",
+  "show": "Show below"
+}

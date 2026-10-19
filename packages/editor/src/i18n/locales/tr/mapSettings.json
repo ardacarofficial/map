@@ -1,0 +1,23 @@
+{
+  "title": "Harita ayarları",
+  "name": "Ad",
+  "tile": "Tile",
+  "tileReadOnly": "Tile boyutu proje ayarıdır",
+  "background": "Arka plan",
+  "backgroundNone": "Yok",
+  "backgroundClear": "Arka planı kaldır",
+  "backgroundInvalid": "#rrggbb biçiminde bir renk yaz",
+  "spawn": "Başlangıç noktası",
+  "spawnSet": "Hücre {x}, {y}",
+  "spawnNone": "Henüz yok",
+  "spawnPlace": "Yerleştir",
+  "spawnGo": "Git",
+  "world": "Dünya konumu",
+  "advanced": "Gelişmiş",
+  "seed": "Varyant tohumu",
+  "apply": "Uygula",
+  "applied": "Harita ayarları uygulandı",
+  "unchanged": "Değişiklik yok",
+  "x": "X",
+  "y": "Y"
+}

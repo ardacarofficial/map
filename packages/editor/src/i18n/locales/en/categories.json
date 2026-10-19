@@ -1,0 +1,12 @@
+{
+  "level": "Level",
+  "entity": "Entity",
+  "edit": "Edit",
+  "layer": "Layer",
+  "map": "Map",
+  "file": "File",
+  "view": "View",
+  "tool": "Tool",
+  "tileset": "Tileset",
+  "general": "General"
+}

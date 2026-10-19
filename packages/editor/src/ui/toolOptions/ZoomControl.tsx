@@ -9,7 +9,7 @@ import { Icon, type IconName } from "../primitives/Icon";
 import { KbdText } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass, menuShortcutClass } from "../primitives/menuStyles";
 import { getCanvasHandle, watchCanvasHandle } from "../canvas/canvasHandle";
-import { formatZoomPercent, parseZoomPercent } from "./zoomInput";
+import { formatZoomLabel, formatZoomPercent, parseZoomPercent, zoomPercentAffixes } from "./zoomInput";
 
 const ZOOM_ITEMS: { command: "view.zoomIn" | "view.zoomOut"; icon: IconName }[] = [
   { command: "view.zoomIn", icon: "zoomIn" },
@@ -28,6 +28,7 @@ export function ZoomControl() {
   const zoom = useEditorStore((s) => s.zoom);
   const locale = getLocale();
   const shown = formatZoomPercent(zoom, locale);
+  const { prefix, suffix } = zoomPercentAffixes(locale);
   const [draft, setDraft] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelled = useRef(false);
@@ -36,7 +37,7 @@ export function ZoomControl() {
   const presets = [...new Set(MENU_PRESETS.map((p) => handle?.effectiveZoom(p) ?? p))];
   const resetKeys = keysFor("view.zoomReset")[0];
   const fitKeys = keysFor("view.frameMap")[0];
-  const percent = (value: number) => (locale === "tr" ? `%${formatZoomPercent(value, locale)}` : `${formatZoomPercent(value, locale)}%`);
+  const percent = (value: number) => formatZoomLabel(value, locale);
 
   const apply = () => {
     const value = cancelled.current || draft === null ? null : parseZoomPercent(draft);
@@ -49,7 +50,7 @@ export function ZoomControl() {
     <div className="flex h-5 items-center rounded-sm border border-transparent hover:border-line hover:bg-field focus-within:border-line focus-within:bg-field" data-zoom-control>
       <div className="flex h-full items-center">
         <label className="flex h-full items-center px-1 text-xs text-text tabular">
-          {locale === "tr" && <span className="text-faint">%</span>}
+          {prefix && <span className="text-faint">{prefix}</span>}
           <input
             ref={inputRef}
             aria-label={t("zoomMenu.input")}
@@ -79,9 +80,9 @@ export function ZoomControl() {
             spellCheck={false}
             autoComplete="off"
             maxLength={7}
-            className={`h-full w-10 min-h-0 border-0 bg-transparent py-0 text-xs leading-none outline-none ${locale === "tr" ? "text-left" : "text-right"}`}
+            className={`h-full w-10 min-h-0 border-0 bg-transparent py-0 text-xs leading-none outline-none ${prefix ? "text-left" : "text-right"}`}
           />
-          {locale === "en" && <span className="text-faint">%</span>}
+          {suffix && <span className="text-faint">{suffix}</span>}
         </label>
         <Menu.Root>
           <Menu.Trigger

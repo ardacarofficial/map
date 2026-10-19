@@ -11,7 +11,7 @@ const SHOW_MS = 1400;
 
 interface Shown {
   move: HistoryMove;
-  message: string;
+  message: () => string;
   token: number;
 }
 
@@ -41,8 +41,8 @@ export function UndoHud() {
       const b = nextBurst(burst.current, feedback.move, performance.now());
       burst.current = b;
       // The step just moved: undone → top of redo, redone → top of undo.
-      const fallback = feedback.summary ? null : describeEntry(feedback.move === "undo" ? store.peekRedo() : store.peekUndo());
-      setShown({ move: feedback.move, message: historyMessage(feedback.move, feedback.summary, b.count, fallback), token: ++token });
+      const entry = feedback.move === "undo" ? store.peekRedo() : store.peekUndo();
+      setShown({ move: feedback.move, message: () => historyMessage(feedback.move, feedback.summary, b.count, feedback.summary ? null : describeEntry(entry)), token: ++token });
       setVisible(true);
     });
   }, [store]);
@@ -77,7 +77,7 @@ export function UndoHud() {
           }`}
         >
           <Icon name={shown.move === "undo" ? "undo-2" : "redo-2"} size={16} className="shrink-0 text-muted" />
-          <span className="truncate">{shown.message}</span>
+          <span className="truncate">{shown.message()}</span>
         </div>
       )}
     </div>

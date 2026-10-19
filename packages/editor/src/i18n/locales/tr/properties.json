@@ -1,0 +1,8 @@
+{
+  "addSpawn": "Yerleştir",
+  "tileset": "Tileset",
+  "tileId": "Tile",
+  "position": "Konum",
+  "mapSize": "Boyut",
+  "tileSize": "Tile"
+}

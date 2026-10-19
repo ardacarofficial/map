@@ -1,0 +1,7 @@
+{
+  "layer": "Katman",
+  "active": "Etkin",
+  "all": "Tümü",
+  "hint": "Etkin: yalnız etkin katman; Collision katmanında hücre değeri alınır. Tümü: en üstteki görünür tile alınır ve kaynak katman etkinleşir. Kilitli katmandan da tile alınabilir. Alan alma etkin katmanı kullanır.",
+  "toggle": "Damlalığın katman kapsamını değiştir"
+}

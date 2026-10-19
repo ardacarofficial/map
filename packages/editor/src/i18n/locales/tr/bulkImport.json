@@ -1,0 +1,18 @@
+{
+  "title": "{count, plural, one {#} other {#}} tileset ekle",
+  "titleNew": "Yeni proje: {count, plural, one {#} other {#}} tileset",
+  "description": "Tahminler aşağıda. Boyutu satırda düzelt; ayrıntı için satıra tıkla.",
+  "files": "Dosyalar",
+  "sizeLabel": "{name} tile boyutu",
+  "removeRow": "Listeden çıkar",
+  "group": "Grup",
+  "autoAdd": "Tahmin güvenliyse sormadan ekle",
+  "addAll": "Hepsini ekle ({count, plural, one {#} other {#}})",
+  "create": "Projeyi oluştur ({count, plural, one {#} other {#}})",
+  "detailApply": "Uygula",
+  "badSize": "Geçersiz boyut",
+  "noTile": "Tek tile bile sığmıyor",
+  "leftover": "{x}/{y} px artıyor",
+  "otherSize": "Harita tile''ı {map} px",
+  "manual": "elle girildi"
+}

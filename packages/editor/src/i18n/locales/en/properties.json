@@ -1,0 +1,8 @@
+{
+  "addSpawn": "Place",
+  "tileset": "Tileset",
+  "tileId": "Tile",
+  "position": "Position",
+  "mapSize": "Size",
+  "tileSize": "Tile"
+}

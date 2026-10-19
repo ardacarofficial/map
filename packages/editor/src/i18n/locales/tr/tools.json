@@ -1,0 +1,10 @@
+{
+  "entity": "Entity",
+  "fill": "Doldur",
+  "rect": "Dikdörtgen",
+  "select": "Seçim",
+  "eyedropper": "Damlalık",
+  "hand": "El",
+  "brush": "Kalem",
+  "eraser": "Silgi"
+}

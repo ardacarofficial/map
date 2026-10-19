@@ -1,0 +1,17 @@
+{
+  "width": "Width",
+  "height": "Height",
+  "anchor": "Anchor",
+  "summary": "{fromWidth} × {fromHeight} → {toWidth} × {toHeight}",
+  "cropWarning": "Cells on the cropped edge are removed (undoable).",
+  "anchorCell": "Anchor: {position}",
+  "pos0": "top left",
+  "pos1": "top",
+  "pos2": "top right",
+  "pos3": "left",
+  "pos4": "center",
+  "pos5": "right",
+  "pos6": "bottom left",
+  "pos7": "bottom",
+  "pos8": "bottom right"
+}

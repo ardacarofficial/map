@@ -1,0 +1,10 @@
+{
+  "title": "Kılavuz ızgara",
+  "interval": "Ana çizgi aralığı",
+  "off": "Kapalı",
+  "origin": "Başlangıç",
+  "x": "X",
+  "y": "Y",
+  "hint": "Tile cinsinden; başlangıç haritanın sol üst köşesine göredir.",
+  "visible": "Izgara"
+}

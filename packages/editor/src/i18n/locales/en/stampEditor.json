@@ -1,0 +1,17 @@
+{
+  "tab": "Stamp: {name}",
+  "close": "Close stamp tab: {name}",
+  "banner": "Editing stamp",
+  "note": "Existing placements on maps do not change (stamps are flat copies)",
+  "save": "Save",
+  "done": "Done",
+  "saveHint": "Crop the stamp to its content, save it and close the tab",
+  "discard": "Discard",
+  "discardHint": "Throw away the changes and close the tab",
+  "closeTitle": "Save changes to the stamp?",
+  "closeDescription": "The stamp “{name}” has unsaved changes.",
+  "openFailed": "Could not open “{name}”: {detail}",
+  "gone": "This stamp was deleted from the library; nothing saved",
+  "empty": "The stamp is empty; draw at least one tile to save it",
+  "saved": "“{name}” saved"
+}

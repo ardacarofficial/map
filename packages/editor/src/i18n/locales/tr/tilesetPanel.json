@@ -1,0 +1,12 @@
+{
+  "hover": "id {id} · ({col}, {row})",
+  "hoverEmpty": "id {id} · ({col}, {row}) · boş",
+  "dragSize": "{width} × {height}",
+  "zoomFitTitle": "Panel genişliğine sığdır",
+  "switcher": "Tileset seç",
+  "menu": "Tileset işlemleri",
+  "settings": "Ayarlar…",
+  "replaceImage": "Görseli değiştir…",
+  "add": "Tileset ekle…",
+  "tilesetMeta": "{size}px · {columns, plural, one {#} other {#}}×{rows}"
+}

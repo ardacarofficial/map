@@ -85,7 +85,7 @@ function apply(transform: BrushTransform): boolean {
   const state = useEditorStore.getState();
   switch (transform.kind) {
     case "nonSquare":
-      getCanvasHandle()?.showHint(t("canvas.rotateNonSquare"));
+      getCanvasHandle()?.showHint(() => t("canvas.rotateNonSquare"));
       return false;
     case "stamp":
       state.setStamp(transform.stamp);

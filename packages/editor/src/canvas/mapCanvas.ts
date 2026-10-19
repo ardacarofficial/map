@@ -42,7 +42,7 @@ import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
 import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
-import { t, type MessageKey } from "../i18n";
+import { subscribeLocale, t, type MessageKey } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { useUiStore } from "../ui/uiStore";
 import { useDockStore } from "../ui/layout/dockStore";
@@ -203,7 +203,7 @@ export interface CanvasHandle {
    * Shows `text` briefly next to the pointer (the same hint a blocked press
    * shows), e.g. why a command did nothing ("Kare olmayan tile döndürülemez").
    */
-  showHint(text: string): void;
+  showHint(text: string | (() => string)): void;
   /**
    * Shows / hides the tile-coordinate rulers (20 px, top and left edge of
    * the canvas; the map view shrinks by that much). Visible by default.
@@ -384,7 +384,7 @@ export class MapCanvas {
       strokeCommitted: (summary) => void this.#emit(this.#strokeListeners, summary, "stroke"),
       flash: (region) => this.#overlays.flash(region),
       blocked: (action) => {
-        this.#overlays.showHint(t(BLOCKED_HINT[action.reason]));
+        this.#overlays.showHint(() => t(BLOCKED_HINT[action.reason]));
         this.#emit(this.#blockedListeners, action, "blocked action");
       },
       contextRequest: (request) => void this.#emit(this.#contextListeners, request, "context request"),
@@ -525,6 +525,7 @@ export class MapCanvas {
     this.#unsubs.push(useUiStore.subscribe((s, prev) => {
       if (s.panelsHidden !== prev.panelsHidden) { this.#camera.keepView(); this.#input.invalidateRect(); }
     }));
+    this.#unsubs.push(subscribeLocale(() => this.#overlays.refreshLocale()));
     this.#unsubs.push(useMajorGrid.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useMapBorder.subscribe(() => this.#requestRender()));
     this.#unsubs.push(useSmartStampSession.subscribe(() => this.#requestRender()));
@@ -553,6 +554,7 @@ export class MapCanvas {
     const hook = {
       editor: useEditorStore,
       smartBrushPreparation: smartBrushPreparationDebug,
+      get hintText() { return self.#overlays.hintLabel; },
       get smartPreview() { return self.#scene?.smartPreviewPlan ?? null; },
       get store() {
         return useEditorStore.getState().project?.store ?? null;

@@ -1,0 +1,22 @@
+{
+  "needTwo": "A random brush needs at least two tiles (or stamps)",
+  "rectLabel": "+{count, number} random",
+  "stampAdded": "Stamp added to the random brush · {count, plural, one {# candidate} other {# candidates}}",
+  "addStamp": "Add to random set",
+  "defaultName": "Random set",
+  "save": "Save set",
+  "saveAs": "Save as new set…",
+  "saveTitle": "Save random set",
+  "saveName": "Set name",
+  "saved": "Saved sets",
+  "none": "No saved sets",
+  "rename": "Rename…",
+  "delete": "Delete set",
+  "scatter": "Scatter",
+  "scatterTitle": "This share of cells stays empty",
+  "flip": "Random flip",
+  "flipTitle": "Each tile is flipped on X / Y at random",
+  "stamps": "Stamp candidates",
+  "failed": "Could not save the random set: {detail}",
+  "confirmRename": "Rename"
+}

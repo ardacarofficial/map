@@ -1,41 +1,41 @@
-/**
- * Translation helper. Every visible string goes through `t()`.
- * Turkish is the default; v0.5 adds a language switcher on top of `setLocale`.
- */
-import { en } from "./en";
-import { tr } from "./tr";
-import type { MessageKey, MessageParams, Messages } from "./types";
+/** Stable translation facade. Turkish is the primary per-message fallback. */
+import { createCatalog } from "./catalog";
+import { localeResources } from "./resources";
+import type { MessageKey, MessageParams } from "./types";
 
 export type { MessageKey, MessageParams, Messages } from "./types";
+export type { MessageArguments } from "./messages.generated";
+export type { LocaleInfo } from "./catalog";
 
-export type Locale = "tr" | "en";
-
-const LOCALES: Record<Locale, Messages> = { tr, en };
-
-let current: Messages = tr;
+/** Discovered resource ids; adding a locale never requires editing a union. */
+export type Locale = string;
+const catalog = createCatalog(localeResources, message => console.warn(message));
+export const availableLocales = catalog.availableLocales;
+export const isAvailableLocale = catalog.hasLocale;
 let currentLocale: Locale = "tr";
+const listeners = new Set<() => void>();
+
+export function subscribeLocale(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
 
 export function setLocale(locale: Locale): void {
-  current = LOCALES[locale];
-  currentLocale = locale;
-  document.documentElement.lang = locale;
+  const next = isAvailableLocale(locale) ? locale : "tr";
+  if (next !== locale) console.warn(`i18n: unknown locale ${locale}; falling back to tr`);
+  if (typeof document !== "undefined") document.documentElement.lang = next;
+  if (currentLocale === next) return;
+  currentLocale = next;
+  for (const listener of listeners) listener();
 }
 
-export function getLocale(): Locale {
-  return currentLocale;
-}
+export function getLocale(): Locale { return currentLocale; }
 
-/** Looks up `section.key` and fills `{placeholders}` from `params`. */
+/** Params stay compatible with existing string/number call sites. See MessageArguments for stricter callers. */
 export function t(key: MessageKey, params?: MessageParams): string {
-  const dot = key.indexOf(".");
-  const section = key.slice(0, dot) as keyof Messages;
-  const name = key.slice(dot + 1);
-  const text = (current[section] as Record<string, string> | undefined)?.[name] ?? key;
-  if (!params) return text;
-  return text.replace(/\{(\w+)\}/g, (match, p: string) => (p in params ? String(params[p]) : match));
+  return catalog.format(currentLocale, key, params);
 }
 
-/** Locale-aware number formatting for the status bar etc. */
 export function formatNumber(value: number): string {
-  return value.toLocaleString(currentLocale === "tr" ? "tr-TR" : "en-US");
+  return value.toLocaleString(currentLocale);
 }

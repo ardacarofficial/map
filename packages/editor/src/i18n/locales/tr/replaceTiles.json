@@ -1,0 +1,15 @@
+{
+  "title": "Tile değiştir…",
+  "history": "Tile değiştir",
+  "from": "Kaynak",
+  "to": "Hedef",
+  "scope": "Kapsam",
+  "selection": "Seçim",
+  "active": "Etkin katman",
+  "visible": "Görünür katmanlar",
+  "count": "{count, plural, one {#} other {#}} hücre değişecek",
+  "apply": "Değiştir",
+  "empty": "Tile seç",
+  "pickHint": "Tileset dock''undan veya tuvalde damlalıkla bir tile seç",
+  "picking": "{target}: tileset''ten veya tuvalden tile seç"
+}

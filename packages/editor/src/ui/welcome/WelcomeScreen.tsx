@@ -77,7 +77,7 @@ function TemplateCard({ template }: { template: ProjectTemplate }) {
 }
 
 function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(getLocale() === "tr" ? "tr-TR" : "en-US", {
+  return new Date(ms).toLocaleDateString(getLocale(), {
     day: "numeric",
     month: "short",
     hour: "2-digit",

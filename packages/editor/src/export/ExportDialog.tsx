@@ -20,7 +20,7 @@ import {
 } from "@smap/core";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 
-import { formatNumber, t, type MessageKey } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
@@ -306,7 +306,7 @@ function ExportForm({
                   checked={current.unityCollision}
                   onChange={(unityCollision) => patch({ unityCollision })}
                   label={t("export.optCollision")}
-                  meta={t("export.optCollisionCount", { count: formatNumber(derived.solidCells) })}
+                  meta={t("export.optCollisionCount", { count: derived.solidCells })}
                 />
                 </div>
                 <CheckRow checked={current.copyTextures} onChange={(copyTextures) => patch({ copyTextures })} label={t("export.optTextures")} />
@@ -479,7 +479,7 @@ function LayerList({
               disabled={disabled}
               onChange={(include) => onToggle(layer.id, include)}
               label={layer.visible ? layer.name : `${layer.name} · ${t("export.layerHidden")}`}
-              meta={t("export.layerTiles", { count: formatNumber(layer.tiles) })}
+              meta={t("export.layerTiles", { count: layer.tiles })}
             />
           ))}
         </div>

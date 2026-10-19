@@ -1,0 +1,11 @@
+{
+  "side": "Tileset info",
+  "tileSize": "{width} × {height} px",
+  "tilesets": "Tilesets",
+  "title": "Tileset",
+  "collapse": "Collapse dock",
+  "expand": "Expand dock",
+  "empty": "No tilesets yet",
+  "tilePixels": "{value} px",
+  "zoomPercent": "{value}%"
+}

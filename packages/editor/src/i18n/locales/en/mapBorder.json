@@ -1,0 +1,23 @@
+{
+  "invalid": "Valid whole numbers are required.",
+  "title": "Border…",
+  "thickness": "Thickness",
+  "inset": "Inset",
+  "sides": "Sides",
+  "top": "Top",
+  "right": "Right",
+  "bottom": "Bottom",
+  "left": "Left",
+  "gaps": "Gaps",
+  "side": "Side",
+  "start": "Start",
+  "length": "Length",
+  "addGap": "Add gap",
+  "removeGap": "Remove gap",
+  "gapHint": "Start is zero-based, measured from the left on top/bottom and from the top on left/right. Gaps cut through the full thickness.",
+  "apply": "Apply",
+  "history": "Paint map border",
+  "tileLayer": "An active tile layer is required.",
+  "clamped": "Narrow map: thickness clamped to {thickness}, inset to {inset} tiles.",
+  "count": "{count, plural, one {# cell} other {# cells}}"
+}

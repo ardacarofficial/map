@@ -1,0 +1,14 @@
+{
+  "showInspector": "Denetçiyi göster",
+  "resizeSectionHint": "Sürükle: yükseklik · çift tık: içeriğe göre",
+  "library": "Kütüphane",
+  "appBar": "Uygulama çubuğu",
+  "toolRail": "Araçlar",
+  "canvas": "Tuval",
+  "statusBar": "Durum çubuğu",
+  "resize": "Sütun genişliği",
+  "resizeHint": "Sürükle: genişlik · çift tık: varsayılana dön",
+  "showLibrary": "Kütüphaneyi göster",
+  "dock": "Alt panel",
+  "resizeDock": "Alt panel yüksekliği"
+}
