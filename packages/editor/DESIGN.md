@@ -41,6 +41,7 @@ Keep the token **names** the canvas reads (`--color-canvas`, `--color-line`, `--
 | `line` | `#323b45` | panel edges, field borders at rest |
 | `line-strong` | `#414b56` | popup borders, scrollbar thumb, field hover |
 | `control-border` | `#64707c` | checkbox/radio/slider track outlines (3:1) |
+| `grid-major` | `#64707c` | major canvas guides (`--color-grid-major`) |
 | `title` | `#f7fbff` | panel/dialog titles, selected names |
 | `text` | `#e6ebf0` | body, values, layer names (all layers, not only active) |
 | `muted` | `#a4adb7` | labels, inactive tabs, icons at rest |
@@ -95,6 +96,9 @@ Remove `text-title` (16 px): inspector titles use `text-md` 600 `title`. Only we
 | Dock splitter hit area / line | 6/1 px, `--dock-splitter-hit` / `--dock-line` |
 | Panel drag threshold | 4 px (`--spacing`), with pointer capture |
 | Drop edge / insertion caret | 24/2 px, `--dock-drop-edge` / `--dock-caret` |
+| Panel tab scroll arrows | 24×24 px (`--spacing-control-sm`); controls stay outside the scroller |
+| Tileset header rows | 32 px (`--spacing-control-rail`) + 1 px bottom divider (`--dock-line`); below 560 px, two rows, plus one for palette columns |
+| Bottom Tileset content minimum | 190 px = `--spacing-tabrow` + 5 × `--spacing-control-rail` + 2 × `--dock-line`; palette controls add 32 px (222 total) |
 | Recent swatches / content row | 32 px (`--spacing` ×8) / 40 px (`--spacing-recentstrip`); with the 28 px tab strip = `--dock-bottom-default` |
 | Icon button | `sm` 24×24 (icon 16) in panels/rows; `md` 28×28 (icon 16) in options bar/app bar |
 | Text button | 24 px high in panels (px 8), 28 px in dialogs/app bar (px 12) |
@@ -150,44 +154,51 @@ The panel switcher rail is removed. `data-rail` values move: `world` moves to th
 ### 4.3 Options bar (36, `panel`, bottom border `line`, spans canvas column only)
 - Left: active tool icon 16 + name (text-sm 500 `text`), 1 px divider, then **that tool's** options only (registry in `ui/toolOptions`): brush size chip "Boyut 1 ▾" (size/shape only when expanded), Rastgele toggle (dice icon + label; on = the multi-tile brush becomes a random set, off = back to the previous brush; disabled for a single tile with no saved sets) with saved-set picker when on, a single "Akıllı" switch (`data-smart-brush`) and "Alan | Yol" control (on an automatic smart source B/freehand/Shift-line = road, R = area; per-tool override resets on a new brush; F keeps pattern fill), flip/rotate icon buttons for brush/stamp (X, Y, Z), etc.
 - Right: view toggles that apply to all tools as `md` icon buttons with tooltips: Izgara (Ctrl+G), Çarpışma overlay, Cetvel. No undo/redo, no zoom, no search here (zoom lives in the status bar; palette is Ctrl+K and the Yardım menu).
-- When narrow, right-side toggles collapse into `⋯`.
+- Damlalık's "Katman" scope defaults to "Tümü": right-click, Alt or I picks the topmost visible nonempty tile and activates its source layer, including locked sources; painting locks still apply. "Etkin" reads only the active layer; area pick remains on the active layer. Picking creates no undo step.
+- Seç has "Dikdörtgen | Bağlı alan". Connected selection uses four-neighbour cells with the same tile and all flip bits; Shift adds, Ctrl/Alt subtracts. Move/copy/cut/delete/paste, X/Y, Z/Shift+Z, Tile değiştir and Stamp olarak kaydet use the same mask.
+- When narrow, right-side toggles collapse into `⋯`; the grid-settings disclosure remains available. Its "Kılavuz ızgara" popover has "Kapalı" or 2–64 tile intervals and an X/Y origin relative to the map's top-left. Settings persist per project in localStorage, outside the document format.
 
 ### 4.4 Three zones and panels
-- Three dock zones surround the canvas: left, right and bottom. Default left tabs: **Tileset | Stamp'ler | Proje**, Tileset active; the Entity palette appears in its own tab when relevant. Default right: **Denetçi | Geçmiş** above **Katmanlar**, split 60%/40%. Default bottom: **Son kullanılanlar** only. Each panel has one visible home.
+- Three dock zones surround the canvas: left, right and bottom. Default left tabs: **Tileset | Stamp'ler | Proje**, Tileset active; the Entity palette appears in its own tab when relevant. Default right: **Denetçi | Geçmiş** above **Katmanlar**, split 60%/40%. Default bottom: **Son kullanılanlar** only. Each panel has one visible home. World view reveals Proje at its current home, shows world context in Denetçi and hides Katmanlar in any zone; Tileset and Son kullanılanlar remain available.
 - Every panel can move to any zone. Drag a tab to reorder it or move it between zones; drop on a group body to add a tab, or on a zone edge to create a split group. Left/right groups stack vertically; bottom groups sit horizontally. No recursive split tree or floating windows. Dropping outside the window or in the canvas centre cancels.
 - Tab context menu: **Taşı → Sol / Sağ / Alt**, **Öne taşı**, **Arkaya taşı**, **Bölümü ayır**, **Sekme olarak birleştir**, **Gizle**. The same actions are available by keyboard and command palette; Shift+F10 / Ctrl+F10 or the context-menu key opens the menu. Tab arrow navigation stays intact. Selection, search and scroll survive a move; reveal commands open the panel at its current or remembered home.
 
 ### 4.5 Size and visibility
 - Each zone resizes from its outer edge and remembers its expanded size; dimensions and limits are the §3 `--dock-*` tokens. Viewport fitting never overwrites saved sizes. Group splitters adjust proportions within a zone.
 - Header chevron or outer-splitter double-click toggles expanded/collapsed. Collapsed left/right zones are 28 px tab rails; collapsed bottom is a 28 px tab strip. Hidden zones take 0 px; the Görünüm menu restores them. **Ctrl+B** toggles left, **Ctrl+Alt+B** right, **Ctrl+Shift+B** bottom; hidden/collapsed opens, expanded collapses.
-- On an outer splitter: arrows resize by 16 px, Shift+arrows by 48 px; Enter toggles collapse, Home resets size. Esc/pointercancel rolls back a resize. A tab drag commits only on a valid drop; Esc/cancel leaves the source in place.
+- On an outer splitter: arrows resize from the displayed edge by 16 px, Shift+arrows by 48 px; Enter toggles collapse, Home resets size. Esc/pointercancel rolls back a resize. A tab drag commits only on a valid drop; Esc/cancel leaves the source in place.
 - With canvas focus, Tab temporarily hides all three zones, the tool rail and minimap; Tab again restores their previous states. Text fields, menus and dialogs retain normal Tab navigation.
 - Layout v2 persists in desktop `settings.json` (`layout`) and the `smap.layout.v2` localStorage cache, with legacy migration. Startup priority: valid settings layout → local v2 → legacy → defaults. **Düzeni sıfırla** restores panel homes/order/groups, sizes, visibility, active tabs and rulers, and clears temporary Tab hiding.
 
 ### 4.6 Dock appearance and content
 - Tab strip 28 px, `tab-row`; active = `title` text + 2 px `accent` underline, inactive = `muted`. Splitter = `--dock-line` (1 px) `line` with `--dock-splitter-hit` (6 px) hit area; hover `accent-line`, keyboard focus `accent`.
 - Drop target = `accent-soft` fill + `--dock-line` `accent-line` border; tab insertion = `--dock-caret` (2 px) `accent` line. Empty/hidden zone targets appear only during tab drag. No extra accent colour, card shadows or floating windows.
+- Horizontal panel tab strips retain full labels and scroll on overflow, with 24 px previous/next arrow buttons (`--spacing-control-sm`). Selected and keyboard-focused tabs are revealed; collapse/close controls stay outside the scroller.
 - Tileset management, search, groups, Tek/Tümü, Palet and zoom stay in the panel header; painting selection comes directly from its grid. Content fits and scrolls in whichever zone hosts it.
-- Tileset header row 32 (no side column): tileset switcher (name ▾, 24 high, max 200, tooltip with full name + size; menu lists all tilesets grouped, search field at top, "Tileset ekle…", "Tümü" view entry, per-tileset ⋯ actions: Ayarlar, Görseli değiştir, Gruba taşı, Kaldır) · 1 px divider · Tek/Tümü view toggle (labelled icon buttons) · spacer · "+ Palet" text button · zoom field (%).
+- Smart detection accepts full nonempty 3×3 selections and conservatively verified larger n×m blocks with repeating, continuous one-cell edge/centre bands (b=1). Wider bands (b≥2), including 6×6 blocks with 2×2 corners, stay plain. Direct selection and saved stamps share the source; generated direct-selection names include size and zero-based sheet position, e.g. `<tileset> 3×3 @ col,row (yol)`.
+- Tileset header: below 560 px host width, two 32 px rows plus a 1 px bottom divider; source selector/search and palette-add action first, Tek/Tümü and zoom controls second. Palette columns add a third 32 px row. At 560 px and above the controls share one row. Use §3 tokens; palette-add, Fit and override-reset are icon buttons with tooltips.
+- Switcher: name ▾ (24 high, max 200, full name + size in tooltip); grouped tilesets and actions Ayarlar, Görseli değiştir, Gruba taşı, Kaldır. Tümü includes search; tileset section names keep full-name tooltips.
+- An expanded bottom zone hosting an active Tileset reserves at least 190 px, or 222 px with palette controls (§3); this presentation minimum never overwrites remembered size. Collapsed zones remain 28 px.
 - Grid uses the full panel width. Tile hover = 1 px white @20% + dark keyline; selection = 1 px accent + dark keyline + `accent-soft` 30% fill.
-- Son kullanılanlar: one row of 32 px swatches with labels in tooltips.
+- Son kullanılanlar: one row of 32 px swatches with labels in tooltips; the Görünüm and command-palette command uses the same "Son kullanılanlar" label.
 - Stamp'ler: search field (24) + filter row (category chips radius 4, 24 high; favourites star toggle monochrome, accent when on) + grid/list toggle + card size slider in a compact header; cards: thumbnail on checker, name text-sm, meta `faint` text-xs. Selected card = `accent-soft` + 1 px `accent-line`. No banner; "Seçimi stamp olarak kaydet" lives in the inspector region section and the canvas context menu.
 - Proje: tree (rows 24): Haritalar (levels, double-click opens, F2 rename), Stamp'ler count. Level row actions on hover.
 - Inspector = Figma-style property sections. Section = header row 28 (`text-xs` uppercase `muted`) + property rows 28: label column 72 px (`muted` text-sm) + value. Facts are plain text (`text`, numbers tabular, right part of the row). Editable numbers are 24 px fields with label scrubbing (drag on the label: 1 unit / 4 px, Shift ×10) if it can be done without core changes; arrows ±1, Shift ±10.
 - Inspector header: 16 px icon + title text-md 600 `title` + optional subtitle `faint`; no 40×40 icon tile.
 - Contexts (logic in `ui/inspector/mode.ts` stays): entity → entity fields; region → DÖNÜŞÜM (X, Y coordinates and horizontal/vertical size glyphs) + actions as a row of `sm` icon buttons with tooltips plus one secondary text button "Stamp olarak kaydet"; brush/stamp/random → FIRÇA İÇERİĞİ (80 px preview on checker, tileset name + tile id as facts, flip/rotate buttons, random list with weights; no "Rastgele yap" button — the "Rastgele" toggle lives in the options bar); manual Collision layer → "Engel" / "Geçilebilir"; nothing → HARİTA facts (size, tile, layers count is NOT repeated) + "Harita ayarları…" text button.
-- No tool selector in the inspector (tool lives on the rail only).
+- No tool selector in the inspector (tool lives on the rail only). Saved smart stamps show "Kaynak" / "1 hücre kenar" as facts; the options bar owns the single "Akıllı" switch. Disabling smart keeps the source and recipe; saved stamps persist `smartDisabled`.
 - **Katmanlar:** Header 28: "KATMANLAR" + add (menu) + delete icon buttons. Opacity slider for the selected layer as a compact row under the header. Rows 28: visibility eye (left, always visible), type glyph 16 `muted` for non-tile layers only (fixed column keeps names aligned), name `text` (selected `title`), lock shown only on hover or when locked, opacity % `faint` when <100. Selected row `accent-soft` + 1 px `accent-line`. Double-click renames.
 - Geçmiş: rows 24, newest at bottom, current row `accent-soft`, future rows `faint`. Labels are verbs ("Katman ekle", "Boya 12 hücre").
 
 ### 4.7 Status bar (24, `bg`, top border `line`, text-xs `muted`)
-Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile id, layer, map size, tile px. Right: Harita|Dünya segmented (20 high) and the **zoom field** (editable, "%100" Turkish format, ▾ presets: Sığdır Ctrl+0, %50, %100 Ctrl+1, %200, %400). This is the only zoom readout.
+Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile id, layer, map size, tile px. Right: Harita|Dünya segmented (20 high) and the **zoom field** (editable, "%100" Turkish format, ▾ presets: Sığdır Shift+1, %50, %100 Ctrl+0, %200, %400). This is the only canvas zoom readout; Tileset has its own zoom control.
 
 ### 4.8 Canvas & overlays
 - Map rectangle background `map-bg`; outside `canvas`.
 - Grid: 1 px; alpha fades with zoom (≤50%: hidden, 100%: 0.10, ≥200%: 0.14), colour from `line`-ish white.
+- Major grid: one device-pixel line using `grid-major` (`--color-grid-major`), clipped to the map. Hide when guide spacing falls below 6 CSS px; Ctrl+G hides it together with the base grid.
 - Hover cell / brush footprint: 2 px `accent` inner line at ≥100% zoom, 1 px below 100%, with a 1 px `rgba(0,0,0,.6)` outer keyline (visible on sand and grass). Brush ghost 50% opacity. Eraser footprint uses `danger`.
-- Selection: existing marching ants (keep), hover outline inside a selection uses the footprint style, not white.
+- Selection: 10% `accent` fill on selected cells only; marching ants and a dark keyline follow the actual mask boundary, including holes, without internal tile-edge lines. Rectangular selections retain their existing appearance. Cache mask geometry; ant animation updates only the eight-pixel texture. Hover outline inside a selection uses the footprint style, not white.
 - Rulers 20 px, `bg`, text-2xs `faint`, labels every 10 tiles, ticks every tile; horizontal labels for the vertical ruler (not rotated) when they fit.
 - Minimap 176×120 max, `popup` fill, 1 px `line-strong`, radius 6, 8 px inset bottom-right, viewport rect 1 px accent + dark keyline; hidden when the map fits, hidden by Tab.
 - Toasts: at most one visible; each new toast replaces the current one. Bottom-centre of the canvas, 12 px above the canvas bottom edge (above the dock), shifted left to clear the minimap by 8 px, `popup`, radius 6, one line, text-sm; 4 s, action toasts 8 s, errors stay until dismissed; never for saves.
@@ -195,11 +206,12 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Brush size HUD near cursor on `[`/`]`: "3 × 3", 120 ms fade, hides 600 ms after last change (only if not already present; do not add if risky).
 
 ### 4.9 Menus, tooltips, context menus, command palette
-- Menu: `popup`, radius 6, padding 4, items 24 high, px 8, text-sm, icon 16 column optional, shortcut right in `muted` mono text-xs (no boxed keycaps in menus), highlighted item `hover-popup`, separators 1 px `line-subtle` with 4 px margin, danger items `danger` text.
+- Menu: `popup`, radius 6, padding 4, items 24 high, px 8, text-sm, icon 16 column optional, shortcut right in `muted` mono text-xs (no boxed keycaps in menus), highlighted item `hover-popup`, separators 1 px `line-subtle` with 4 px margin, danger items `danger` text. App menus and the recent-project submenu fit the available viewport height and scroll vertically.
 - Tooltip: `popup`, radius 4, px 8 py 4, text-sm `text`, shortcut in a `kbd` chip (text-xs mono `muted`, 1 px `line-strong`, radius 2).
 - Command palette: width M 560, top 12vh, input 40 high text-md, rows 32: command name `text` + category `faint` + shortcut right; empty query shows recent commands first.
 
 ### 4.10 Dialogs & welcome
+- Harita → "Kenar…" (also in the command palette) opens an M dialog with live canvas preview: "Kalınlık", "İç boşluk", four side toggles, and gap rows (side/start/length). Gap starts are zero-based from the inset boundary, left→right or top→bottom, and cut through the full thickness without clearing existing cells. Use the current tile/pattern/random/smart brush on the active visible, unlocked tile layer; smart corners use the core planner. Report clamped dimensions on narrow maps and blocked-layer reasons. "Uygula" is one undo step; Esc/"Vazgeç" leaves the document unchanged.
 - Dialog: radius 8, header (title text-lg 600, optional one-line subtitle `muted`, close icon button), body padding 16, footer row: secondary "Vazgeç" (neutral `active` fill) + primary (accent) right-aligned; destructive primary uses danger.
 - Form rows: label above field in dialogs (text-sm `muted`), 12 px between rows; segmented controls for small enums (24/28 high, radius 4, selected = `active` fill + `title` text + 1 px `line-strong`, not accent).
 - Advanced sections: plain disclosure "› Gelişmiş" (no bordered card).
