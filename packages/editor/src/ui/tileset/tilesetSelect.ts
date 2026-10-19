@@ -12,6 +12,7 @@ import type { CanvasPickEvent } from "../../canvas/canvasEvents";
 import { tileLayerForPick } from "../../commands/tileLayerTarget";
 import { useEditorStore, type EditorState, type ToolId } from "../../state/editorStore";
 import { watchCanvasHandle } from "../canvas/canvasHandle";
+import { usePaletteStore } from "../palettes/paletteStore";
 import { useStampLibrary } from "../stamps/stampLibraryStore";
 import { useUiStore } from "../uiStore";
 import { brushFor, cellOf, clipSourceIds, type Cell } from "./selectionModel";
@@ -27,9 +28,14 @@ export function commitTilesetSelection(
   empty: ReadonlySet<number>,
 ): boolean {
   if (ids.length && consumeReplacementPick({ tilesetId: tileset.id, tileId: ids[0]! })) return true;
+  usePaletteStore.getState().setSelection(null);
   const s = useEditorStore.getState();
   const brush = brushFor(tileset, ids, empty, s.activeLayerId ?? "tiles");
-  if (!brush) return false;
+  if (!brush) {
+    s.setStamp(null); s.setSelection(null); s.setRandomSet([]);
+    useTilesetView.getState().setSelection({ tilesetId: tileset.id, ids: [...ids], referenceIds: [...ids], anchor: corners.anchor, focus: corners.focus, clip: null });
+    return false;
+  }
   useStampLibrary.getState().select(null);
   s.setRandomSet([]);
   const view = useTilesetView.getState();
@@ -37,13 +43,13 @@ export function commitTilesetSelection(
     s.setStamp(null);
     s.setSelection({ tilesetId: tileset.id, tileId: brush.tileId });
     const cell = ids.length === 1 ? corners.focus : cellOf(tileset, brush.tileId);
-    view.setSelection({ tilesetId: tileset.id, ids: [brush.tileId], anchor: ids.length === 1 ? corners.anchor : cell, focus: cell, clip: null });
+    view.setSelection({ tilesetId: tileset.id, ids: [brush.tileId], referenceIds: [...ids], anchor: ids.length === 1 ? corners.anchor : cell, focus: cell, clip: null });
   } else {
     // The single selection stays the top-left tile, so dropping the stamp (Esc) leaves a sensible brush.
     s.setSelection({ tilesetId: tileset.id, tileId: brush.ids[0]! });
     prepareSelectionBrush(tileset, ids, empty, brush.clip);
     s.setStamp(brush.clip);
-    view.setSelection({ tilesetId: tileset.id, ids: brush.ids, anchor: corners.anchor, focus: corners.focus, clip: brush.clip });
+    view.setSelection({ tilesetId: tileset.id, ids: brush.ids, referenceIds: [...ids], anchor: corners.anchor, focus: corners.focus, clip: brush.clip });
   }
   const doc = s.project?.store.document;
   const target = doc ? tileLayerForPick(doc, s.activeLayerId) : null;
@@ -60,6 +66,7 @@ export function highlightedIds(
 ): readonly number[] {
   if (editor.stamp) return panel && panel.tilesetId === tilesetId && panel.clip === editor.stamp ? panel.ids : [];
   if (editor.randomSet.length >= 2) return [];
+  if (!editor.selection && panel?.tilesetId === tilesetId && panel.clip === null) return panel.ids;
   if (editor.selection?.tilesetId === tilesetId) return [editor.selection.tileId];
   return [];
 }

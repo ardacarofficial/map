@@ -48,8 +48,17 @@ describe("keymap", () => {
     expect(commandForEvent(ev("KeyQ", { ctrl: true }))).toBeNull();
   });
 
+  it("scopes tileset clipboard and rename without stealing map bindings", () => {
+    for (const [key, id] of [["KeyC", "copy"], ["KeyX", "cut"], ["KeyV", "paste"]]) {
+      expect(commandForEvent(ev(key!, { ctrl: true }), "tileset")).toBe(`tileset.${id}`);
+      expect(commandForEvent(ev(key!, { ctrl: true }))).toBe(`edit.${id}`);
+    }
+    expect(commandForEvent(ev("F2"), "tileset")).toBe("tileset.rename");
+    expect(commandForEvent(ev("F2"))).toBe("layer.rename");
+  });
+
   it("has no duplicate bindings", () => {
-    const all = SHORTCUTS.flatMap((s) => s.keys.map((k) => JSON.stringify(parseChord(k))));
+    const all = SHORTCUTS.flatMap((s) => s.keys.map((k) => JSON.stringify([s.scope ?? "global", parseChord(k)])));
     expect(new Set(all).size).toBe(all.length);
   });
 });

@@ -57,6 +57,13 @@ export type CommandId =
   | "edit.invertSelection"
   | "level.next"
   | "level.previous"
+  | "tileset.rename"
+  | "tileset.copy"
+  | "tileset.cut"
+  | "tileset.paste"
+  | "tileset.pasteToPalette"
+  | "tileset.fit"
+  | "palette.trimRows"
   | "tileset.goto"
   | "tileset.remove"
   | "project.rename"
@@ -107,6 +114,8 @@ export type CommandId =
 export interface ShortcutDef {
   command: CommandId;
   keys: string[];
+  /** Bindings in this scope take priority only while the tileset panel has focus. */
+  scope?: "tileset";
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
@@ -189,6 +198,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "edit.invertSelection", keys: ["Ctrl+Shift+I"] },
   { command: "level.next", keys: ["Ctrl+Tab"] },
   { command: "level.previous", keys: ["Ctrl+Shift+Tab"] },
+  { command: "tileset.rename", keys: ["F2"], scope: "tileset" },
+  { command: "tileset.copy", keys: ["Ctrl+C"], scope: "tileset" },
+  { command: "tileset.cut", keys: ["Ctrl+X"], scope: "tileset" },
+  { command: "tileset.paste", keys: ["Ctrl+V"], scope: "tileset" },
+  { command: "tileset.pasteToPalette", keys: [] },
+  { command: "tileset.fit", keys: [] },
+  { command: "palette.trimRows", keys: [] },
   { command: "tileset.goto", keys: [] },
   { command: "tileset.remove", keys: [] },
   { command: "project.rename", keys: [] },
@@ -233,7 +249,7 @@ export function shortcutsRevision(): number {
 export function effectiveShortcuts(): ShortcutDef[] {
   return SHORTCUTS.map((s) => {
     const keys = overrides.get(s.command);
-    return keys ? { command: s.command, keys: [...keys] } : s;
+    return keys ? { ...s, keys: [...keys] } : s;
   });
 }
 

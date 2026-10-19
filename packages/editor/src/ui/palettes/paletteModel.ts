@@ -8,7 +8,7 @@
  *
  * Cells are kept sorted (y, x) so the saved JSON is byte-stable.
  */
-import { makeCell, type Collection, type CollectionCell, type PaletteEntry, type TileClip } from "@smap/core";
+import { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY, makeCell, type Collection, type CollectionCell, type PaletteEntry, type TileClip } from "@smap/core";
 
 /** One filled slot: core's `CollectionCell`. */
 export type PaletteSlot = CollectionCell;
@@ -44,8 +44,9 @@ function slot(x: number, y: number, item: Pick<PaletteItem, "tilesetId" | "tileI
   return item.flags ? { x, y, tilesetId: item.tilesetId, tileId: item.tileId, flags: item.flags } : { x, y, tilesetId: item.tilesetId, tileId: item.tileId };
 }
 
-/** Rows the grid shows: the filled rows plus a spare one (at least {@link MIN_ROWS}). */
-export function paletteRows(p: Pick<PaletteData, "cells">): number {
+/** Persisted rows; old API callers retain the v5 migration appearance. */
+export function paletteRows(p: Pick<PaletteData, "cells" | "rows">): number {
+  if (p.rows !== undefined) return p.rows;
   let last = -1;
   for (const c of p.cells) last = Math.max(last, c.y);
   return Math.max(MIN_ROWS, last + 1 + SPARE_ROWS);
@@ -58,51 +59,71 @@ export function slotAt(p: Pick<PaletteData, "cells">, x: number, y: number): Pal
 
 const key = (x: number, y: number) => `${x},${y}`;
 
-/** Items of the filled slots among `cells` (ids in reading order of the palette's grid), relative to their bounding box. */
+/** Rectangle metadata travels with the existing reference array, including empty border slots. */
+export interface ReferenceShape { readonly width: number; readonly height: number }
+export function shapeOfItems(items: readonly PaletteItem[]): ReferenceShape {
+  const shaped = items as readonly PaletteItem[] & Partial<ReferenceShape>;
+  return { width: shaped.width ?? Math.max(0, ...items.map(i => i.dx + 1)), height: shaped.height ?? Math.max(0, ...items.map(i => i.dy + 1)) };
+}
+export function withReferenceShape(items: readonly PaletteItem[], shape: ReferenceShape): PaletteItem[] {
+  return Object.defineProperties([...items], { width: { value: shape.width }, height: { value: shape.height } });
+}
+function selectionShape(columns: number, ids: readonly number[]) {
+  const xs = ids.map(id => id % columns);
+  const ys = ids.map(id => Math.floor(id / columns));
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x + 1, height: Math.max(...ys) - y + 1 };
+}
+
 export function itemsOfSlots(p: PaletteData, ids: readonly number[]): PaletteItem[] {
+  if (ids.length === 0) return [];
   const wanted = new Set(ids);
-  const picked = p.cells.filter((c) => wanted.has(slotIndex(p.columns, c.x, c.y)));
-  if (picked.length === 0) return [];
-  const x0 = Math.min(...picked.map((c) => c.x));
-  const y0 = Math.min(...picked.map((c) => c.y));
-  return picked.map((c) => ({ dx: c.x - x0, dy: c.y - y0, tilesetId: c.tilesetId, tileId: c.tileId, ...(c.flags ? { flags: c.flags } : {}) }));
+  const b = selectionShape(p.columns, ids);
+  return withReferenceShape(p.cells.filter(c => wanted.has(slotIndex(p.columns, c.x, c.y))).map(c => ({ dx: c.x - b.x, dy: c.y - b.y, tilesetId: c.tilesetId, tileId: c.tileId, ...(c.flags ? { flags: c.flags } : {}) })), b);
 }
 
-/** Items of tileset tiles `ids` (sorted ids of a grid with `columns`), keeping their layout; `skip` (e.g. transparent tiles) left out. */
 export function itemsOfTiles(tilesetId: string, columns: number, ids: readonly number[], skip: ReadonlySet<number> = new Set()): PaletteItem[] {
-  const kept = ids.length > 1 ? ids.filter((id) => !skip.has(id)) : [...ids];
-  if (kept.length === 0) return [];
-  const col = (id: number) => id % columns;
-  const row = (id: number) => Math.floor(id / columns);
-  const x0 = Math.min(...kept.map(col));
-  const y0 = Math.min(...kept.map(row));
-  return kept.map((id) => ({ dx: col(id) - x0, dy: row(id) - y0, tilesetId, tileId: id }));
+  if (ids.length === 0) return [];
+  const b = selectionShape(columns, ids);
+  const kept = ids.length > 1 ? ids.filter(id => !skip.has(id)) : ids;
+  return withReferenceShape(kept.map(id => ({ dx: id % columns - b.x, dy: Math.floor(id / columns) - b.y, tilesetId, tileId: id })), b);
 }
 
-/** Writes `items` with their top-left at (`x`, `y`); occupied slots are overwritten, items right of the last column are dropped. */
+/** A rejected edit is atomic, including moves between palettes. Legacy oversized palettes stay editable. */
+function grownRows(p: PaletteData, required: number, columns = p.columns): number {
+  const rows = Math.max(paletteRows(p), required);
+  if (rows > Math.max(MAX_COLLECTION_ROWS, paletteRows(p)) || columns * rows > Math.max(MAX_COLLECTION_CAPACITY, p.columns * paletteRows(p))) throw new RangeError("capacity");
+  return rows;
+}
+export function setPaletteRows(p: PaletteData, rows: number, trim = false): PaletteData {
+  if (!Number.isInteger(rows) || rows < 1 || rows > Math.max(MAX_COLLECTION_ROWS, paletteRows(p)) || rows * p.columns > Math.max(MAX_COLLECTION_CAPACITY, p.columns * paletteRows(p))) throw new RangeError("capacity");
+  if (!trim && p.cells.some(c => c.y >= rows)) throw new RangeError("occupied");
+  return rows === p.rows ? p : { ...p, rows, cells: trim ? p.cells.filter(c => c.y < rows) : p.cells };
+}
+
+/** Paste the entire reference rectangle; holes clear destination slots and keep its shape. */
 export function placeItems(p: PaletteData, items: readonly PaletteItem[], x: number, y: number): PaletteData {
-  const map = new Map(p.cells.map((c) => [key(c.x, c.y), c]));
-  for (const it of items) {
-    const cx = x + it.dx;
-    const cy = y + it.dy;
-    if (cx < 0 || cy < 0 || cx >= p.columns) continue;
-    map.set(key(cx, cy), slot(cx, cy, it));
-  }
-  return { ...p, cells: sortCells(map.values()) };
+  const { width, height } = shapeOfItems(items);
+  if (x < 0 || y < 0 || x + width > p.columns) throw new RangeError("capacity");
+  const rows = grownRows(p, y + height);
+  const map = new Map(p.cells.filter(c => c.x < x || c.x >= x + width || c.y < y || c.y >= y + height).map(c => [key(c.x, c.y), c]));
+  for (const it of items) map.set(key(x + it.dx, y + it.dy), slot(x + it.dx, y + it.dy, it));
+  return { ...p, rows, cells: sortCells(map.values()) };
 }
 
-/** Puts `items` into the first empty slots in reading order (layout is not kept): a drop on the palette's chip, or a paste without a target slot. */
-export function appendItems(p: PaletteData, items: readonly PaletteItem[]): PaletteData {
-  const taken = new Set(p.cells.map((c) => slotIndex(p.columns, c.x, c.y)));
-  const order = [...items].sort((a, b) => a.dy - b.dy || a.dx - b.dx);
-  const added: PaletteSlot[] = [];
-  let i = 0;
-  for (const it of order) {
-    while (taken.has(i)) i++;
-    added.push(slot(i % p.columns, Math.floor(i / p.columns), it));
-    taken.add(i);
+/** Append a rectangle at the first free row, preserving holes and relative positions. */
+export function appendOrigin(p: PaletteData, items: readonly PaletteItem[]): { x: number; y: number } {
+  const { width, height } = shapeOfItems(items);
+  if (width > p.columns) throw new RangeError("capacity");
+  for (let y = 0; ; y++) {
+    grownRows(p, y + height);
+    if (!p.cells.some(c => c.x < width && c.y >= y && c.y < y + height)) return { x: 0, y };
   }
-  return { ...p, cells: sortCells([...p.cells, ...added]) };
+}
+
+export function appendItems(p: PaletteData, items: readonly PaletteItem[]): PaletteData {
+  const at = appendOrigin(p, items);
+  return placeItems(p, items, at.x, at.y);
 }
 
 /** Empties the slots `ids` (reading-order indices). */
@@ -153,7 +174,7 @@ export function dropOnPalette(
 
 /** True when both palettes hold the same slots, name and columns. */
 export function samePalette(a: PaletteData, b: PaletteData): boolean {
-  if (a.name !== b.name || a.columns !== b.columns || a.cells.length !== b.cells.length) return false;
+  if (a.name !== b.name || a.columns !== b.columns || paletteRows(a) !== paletteRows(b) || a.cells.length !== b.cells.length) return false;
   return a.cells.every((c, i) => {
     const d = b.cells[i]!;
     return c.x === d.x && c.y === d.y && c.tilesetId === d.tilesetId && c.tileId === d.tileId && (c.flags ?? 0) === (d.flags ?? 0);
@@ -165,6 +186,7 @@ export function samePalette(a: PaletteData, b: PaletteData): boolean {
  * row of 8 becomes two rows). Clamped to [{@link MIN_PALETTE_COLUMNS}, {@link MAX_PALETTE_COLUMNS}].
  */
 export function setPaletteColumns(p: PaletteData, columns: number): PaletteData {
+  if (!Number.isFinite(columns)) throw new RangeError("capacity");
   const cols = Math.min(MAX_PALETTE_COLUMNS, Math.max(MIN_PALETTE_COLUMNS, Math.round(columns)));
   if (cols === p.columns) return p;
   const cells = sortCells(p.cells);
@@ -173,7 +195,7 @@ export function setPaletteColumns(p: PaletteData, columns: number): PaletteData 
     const i = slotIndex(p.columns, c.x, c.y);
     return { ...c, x: i % cols, y: Math.floor(i / cols) };
   });
-  return { ...p, columns: cols, cells: sortCells(moved) };
+  return { ...p, columns: cols, rows: grownRows(p, Math.max(1, ...moved.map(c => c.y + 1)), cols), cells: sortCells(moved) };
 }
 
 /**
@@ -189,10 +211,8 @@ export function paletteClip(p: PaletteData, ids: readonly number[], layerId = "t
 /** A one-layer clip of `items` (layout kept), or null when empty. */
 export function clipOfItems(items: readonly PaletteItem[], layerId = "tiles", name = ""): TileClip | null {
   if (items.length === 0) return null;
-  const x0 = Math.min(...items.map((i) => i.dx));
-  const y0 = Math.min(...items.map((i) => i.dy));
-  const width = Math.max(...items.map((i) => i.dx)) - x0 + 1;
-  const height = Math.max(...items.map((i) => i.dy)) - y0 + 1;
+  const { width, height } = shapeOfItems(items);
+  const x0 = 0, y0 = 0;
   const cells = new Uint32Array(width * height);
   const palette: PaletteEntry[] = [];
   const local = new Map<string, number>();

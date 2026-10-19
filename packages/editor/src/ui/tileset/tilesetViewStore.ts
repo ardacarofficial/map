@@ -10,6 +10,7 @@
 import type { TileClip } from "@smap/core";
 import { create } from "zustand";
 
+import type { ViewportTransform } from "./viewportModel";
 import type { Cell } from "./selectionModel";
 
 /** Cells selected in one tileset; `clip` is the stamp they produced (null = a single tile). */
@@ -17,6 +18,8 @@ export interface PanelSelection {
   readonly tilesetId: string;
   /** Sorted tile ids. */
   readonly ids: readonly number[];
+  /** Original selection including transparent border slots, for reference clipboard shape. */
+  readonly referenceIds?: readonly number[];
   /** Fixed corner for Shift + click / Shift + arrows. */
   readonly anchor: Cell;
   /** Moving corner (arrow keys). */
@@ -36,6 +39,10 @@ export interface RevealRequest {
 export type LibraryView = "single" | "all";
 
 interface TilesetViewState {
+  focusedSource: string | null;
+  focusSource(key: string): void;
+  transforms: Readonly<Record<string, ViewportTransform>>;
+  setTransform(key: string, transform: ViewportTransform): void;
   /** Tileset id → zoom override (null or missing = the global zoom). */
   zoom: Readonly<Record<string, number | null>>;
   /** Zoom of every tileset without an override (null = fit to the panel width). */
@@ -123,6 +130,10 @@ let nonce = 0;
 const prefs = readPrefs();
 
 export const useTilesetView = create<TilesetViewState>()((set, get) => ({
+  focusedSource: null,
+  focusSource: (focusedSource) => set({ focusedSource }),
+  transforms: {},
+  setTransform: (key, transform) => set(s => ({ transforms: { ...s.transforms, [key]: transform } })),
   zoom: readZoom(),
   globalZoom: prefs.globalZoom,
   view: prefs.view,

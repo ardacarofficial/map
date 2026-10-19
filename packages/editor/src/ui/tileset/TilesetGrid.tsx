@@ -12,6 +12,8 @@ import {
   type PointerEvent,
 } from "react";
 
+import { openPalettePastePicker } from "../palettes/paletteDialogsStore";
+import { usePaletteStore } from "../palettes/paletteStore";
 import { addTilesToRandom, inRandomSet, toggleRandomTile } from "../../commands/randomBrush";
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -42,6 +44,7 @@ import {
 import { CellLabel, drawMarks, drawTiles, SelectionOverlay } from "./TilesetOverlays";
 import { commitTilesetSelection, highlightedIds } from "./tilesetSelect";
 import { useTilesetView } from "./tilesetViewStore";
+import { sourceCellAt } from "./viewportModel";
 import { GridHostContext } from "./view/gridHost";
 
 /** What a grid needs from the viewport around it. */
@@ -72,10 +75,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const [menuCell, setMenuCell] = useState<Cell | null>(null);
   const [visible, setVisible] = useState(!host.lazy);
 
-  const cellW = tileset.tileWidth * scale;
-  const cellH = tileset.tileHeight * scale;
-  const cssW = Math.round(tileset.columns * cellW);
-  const cssH = Math.round(tileset.rows * cellH);
+  const raw = host.sourcePixels === true;
+  const margin = raw ? tileset.margin * scale : 0;
+  const cellW = (tileset.tileWidth + (raw ? tileset.spacing : 0)) * scale;
+  const cellH = (tileset.tileHeight + (raw ? tileset.spacing : 0)) * scale;
+  const cssW = (raw ? (image?.bitmap.width ?? tileset.columns * (tileset.tileWidth + tileset.spacing) - tileset.spacing + 2 * tileset.margin) : tileset.columns * tileset.tileWidth) * scale;
+  const cssH = (raw ? (image?.bitmap.height ?? tileset.rows * (tileset.tileHeight + tileset.spacing) - tileset.spacing + 2 * tileset.margin) : tileset.rows * tileset.tileHeight) * scale;
 
   const updateDrag = (next: Drag | null) => {
     dragRef.current = next;
@@ -96,12 +101,12 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas && image && visible) drawTiles(canvas, tileset, image.bitmap);
+    if (canvas && image && visible) drawTiles(canvas, tileset, image.bitmap, raw);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw only when the image or the grid changes
-  }, [visible, image, imageVersion, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
+  }, [visible, raw, image, imageVersion, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
 
   useEffect(() => {
-    if (marksRef.current && visible) drawMarks(marksRef.current, tileset, empty, cellW, cellH, cssW, cssH);
+    if (marksRef.current && visible) drawMarks(marksRef.current, tileset, empty, cellW, cellH, tileset.columns * cellW, tileset.rows * cellH);
   }, [visible, tileset, empty, cellW, cellH, cssW, cssH, image, imageVersion]);
 
   // ---- hit testing
@@ -109,9 +114,11 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const rawCellAt = (clientX: number, clientY: number): Cell => {
     const rect = gridRef.current?.getBoundingClientRect();
     if (!rect) return { col: -1, row: -1 };
-    return { col: Math.floor((clientX - rect.left) / cellW), row: Math.floor((clientY - rect.top) / cellH) };
+    return { col: Math.floor((clientX - rect.left - margin) / cellW), row: Math.floor((clientY - rect.top - margin) / cellH) };
   };
   const cellAt = (clientX: number, clientY: number): Cell | null => {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (raw && rect) return sourceCellAt(tileset, { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale });
     const c = rawCellAt(clientX, clientY);
     return insideGrid(tileset, c) ? c : null;
   };
@@ -162,9 +169,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       const el = gridRef.current;
       const b = boundsOf(tileset, ids);
       if (!el || !b) return;
-      host.reveal(el, { left: b.col * cellW, top: b.row * cellH, right: (b.col + b.width) * cellW, bottom: (b.row + b.height) * cellH }, center);
+      host.reveal(el, { left: margin + b.col * cellW, top: margin + b.row * cellH, right: margin + (b.col + b.width) * cellW, bottom: margin + (b.row + b.height) * cellH }, center);
     },
-    [host, tileset, cellW, cellH],
+    [host, tileset, cellW, cellH, margin],
   );
 
   // Map picks: scroll the picked tiles into view.
@@ -195,9 +202,6 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
       updateDrag(null);
       return true;
     }
-    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "c") {
-      return highlighted.length > 0 && copyTilesetTiles(tileset, highlighted, empty);
-    }
     const d = arrowDelta(event.key);
     if (!d || event.ctrlKey || event.metaKey || event.altKey) return false;
     const next = arrowSelect(tileset, corners, d, event.shiftKey);
@@ -217,7 +221,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     const cell = cellAt(e.clientX, e.clientY);
     if (!cell) return;
     if (e.button === 2) setMenuCell(cell);
-    host.focus();
+    host.focus(tileset.id);
     const tile = { tilesetId: tileset.id, tileId: idOf(tileset, cell) };
     const action = e.button === 0 ? e.altKey ? "randomRect" : "select" : "none";
     switch (action) {
@@ -229,9 +233,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
         const gesture = startGesture(tileset, cell, { ctrl, shift: e.shiftKey }, corners ? { ids: highlighted, anchor: corners.anchor } : null);
         let carry: PendingTileDrag | null = null;
         if (!ctrl && !e.shiftKey && highlighted.includes(tile.tileId)) {
-          const items = itemsOfTiles(tileset.id, tileset.columns, highlighted, empty);
-          const kept = highlighted.length > 1 ? highlighted.filter((id) => !empty.has(id)) : highlighted;
-          const b = boundsOf(tileset, kept);
+          const referenceIds = panelSelection?.tilesetId === tileset.id ? panelSelection.referenceIds ?? highlighted : highlighted;
+          const items = itemsOfTiles(tileset.id, tileset.columns, referenceIds, empty);
+          const b = boundsOf(tileset, referenceIds);
           if (items.length > 0 && b) carry = new PendingTileDrag({ kind: "tileset", tilesetId: tileset.id }, items, { col: cell.col - b.col, row: cell.row - b.row }, e.clientX, e.clientY);
         }
         updateDrag({ kind: "select", pointerId: e.pointerId, gesture, cell, press: { x: e.clientX, y: e.clientY }, alt: false, carry });
@@ -251,7 +255,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
     const g = dragRef.current;
     if (g?.kind === "select" && g.pointerId === e.pointerId) {
       const wasActive = g.carry?.active ?? false;
-      const outside = cellAt(e.clientX, e.clientY) === null;
+      const rect = gridRef.current?.getBoundingClientRect();
+      // Source gutters reject a click, but crossing one is still an in-sheet marquee.
+      const outside = !rect || e.clientX < rect.left || e.clientY < rect.top || e.clientX >= rect.right || e.clientY >= rect.bottom;
       if (!g.alt && outside && !g.carry && g.gesture.kind === "rect") {
         const ids = gestureIds(tileset, g.gesture, g.cell);
         const items = itemsOfTiles(tileset.id, tileset.columns, ids, empty);
@@ -334,8 +340,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             onLostPointerCapture={(e) => {
-              if (dragRef.current?.pointerId !== e.pointerId || dragRef.current.kind === "select" || dragRef.current.kind === "rough") return;
-                        updateDrag(null);
+              if (dragRef.current?.pointerId !== e.pointerId) return;
+              dragRef.current.carry?.cancel();
+              updateDrag(null);
             }}
             onAuxClick={(e) => e.preventDefault()}
             onContextMenu={(e) => {
@@ -353,8 +360,9 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
               ref={canvasRef}
               role="img"
               aria-label={t("tileset.preview")}
-              className={`absolute inset-0 block size-full ${scale >= 1 ? "pixelated" : ""}`}
+              className="absolute inset-0 block size-full pixelated"
             />
+            <div className="pointer-events-none absolute" style={{ left: margin, top: margin, width: tileset.columns * cellW, height: tileset.rows * cellH }}>
             {cellW >= 12 && (
               <div
                 aria-hidden
@@ -367,8 +375,10 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
               />
             )}
             <canvas ref={marksRef} aria-hidden className="pointer-events-none absolute inset-0 block size-full" />
+            </div>
           </>
         )}
+        <div className="pointer-events-none absolute" style={{ left: margin, top: margin, width: tileset.columns * cellW, height: tileset.rows * cellH }}>
         {randomHere.map((r) => {
           const col = r.tileId % tileset.columns;
           const row = Math.floor(r.tileId / tileset.columns);
@@ -390,7 +400,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
           />
         )}
         {shown.length > 0 && (
-          <SelectionOverlay tileset={tileset} ids={shown} empty={empty} cellW={cellW} cellH={cellH} width={cssW} height={cssH} live={preview !== null} />
+          <SelectionOverlay tileset={tileset} ids={shown} empty={empty} cellW={cellW} cellH={cellH} width={tileset.columns * cellW} height={tileset.rows * cellH} gapX={raw ? tileset.spacing * scale : 0} gapY={raw ? tileset.spacing * scale : 0} live={preview !== null} />
         )}
         {altPreview && preview && (
           <div data-random-rect className="contents">
@@ -413,6 +423,7 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
             }
           />
         )}
+        </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner className={menuPositionerClass}>
@@ -437,7 +448,8 @@ function TileMenuItems({
   empty: ReadonlySet<number>;
 }) {
   const tileId = idOf(tileset, cell);
-  const paletteItems = itemsOfTiles(tileset.id, tileset.columns, selected.includes(tileId) ? selected : [tileId], empty);
+  const referenceIds = selected.includes(tileId) ? (useTilesetView.getState().selection?.referenceIds ?? selected) : [tileId];
+  const paletteItems = itemsOfTiles(tileset.id, tileset.columns, referenceIds, empty);
   const tile = { tilesetId: tileset.id, tileId };
   const inRandom = inRandomSet(useEditorStore.getState().randomSet, tile);
   const copy = () => {
@@ -449,6 +461,17 @@ function TileMenuItems({
   return (
     <>
       <div className="px-2 pt-1 pb-1.5 font-mono text-2xs text-faint tabular">{t("tilesetPanel.hover", { id: tileId, col: cell.col, row: cell.row })}</div>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="copy-references" onClick={() => copyTilesetTiles(tileset, referenceIds, empty)}>
+        <Icon name="copy" size={16} className="text-muted" />{t("tilesetEditing.copy")}
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="cut-references" onClick={() => {
+        if (copyTilesetTiles(tileset, referenceIds, empty)) {
+          useTilesetView.getState().setSelection(null); useEditorStore.getState().setStamp(null); useEditorStore.getState().setSelection(null);
+        }
+      }}><Icon name="copy" size={16} className="text-muted" />{t("tilesetEditing.cut")}</ContextMenu.Item>
+      <ContextMenu.Item className={menuItemClass} disabled>{t("tilesetEditing.paste")}</ContextMenu.Item>
+      <div className="max-w-64 px-2 text-xs text-muted">{t("tilesetEditing.pasteHint")}</div>
+      <ContextMenu.Item className={menuItemClass} disabled={usePaletteStore.getState().clipboard === null} onClick={openPalettePastePicker}>{t("tilesetEditing.pasteToPalette")}</ContextMenu.Item>
       <AddToPaletteMenu items={paletteItems} />
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="random" onClick={() => toggleRandomTile(tile)}>
         <Icon name="dice" size={16} className="text-accent" />

@@ -48,11 +48,11 @@ test("tileset panel: drag a 3×2 block, paint it, Ctrl-toggle, right-click pick 
   const grid = page.getByRole("grid", { name: /overworld/i });
   const image = grid.locator("[data-tileset-grid]");
   await expect(image).toBeVisible();
-  // The default left host fits the sheet at a crisp fractional scale.
+  // Tek opens at native scale; Fit is an explicit request.
   const initialScale = Number(await image.getAttribute("data-tileset-scale"));
   expect(initialScale).toBeGreaterThan(0);
   expect(initialScale * 32).toBe(Math.round(initialScale * 32));
-  expect((await image.boundingBox())!.width).toBeLessThanOrEqual((await grid.boundingBox())!.width);
+  expect(initialScale).toBe(1);
   const selected = grid.locator("[data-selected-tiles]");
 
   // ---- Drag-select cells (1,1)–(3,2): ids 9,10,11 / 17,18,19.
@@ -141,8 +141,8 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   await page.waitForTimeout(300);
   const zoomed = await scale();
   expect(zoomed).toBeGreaterThan(before);
-  // It is this tileset's own zoom: the footer offers a reset.
-  await expect(page.locator("[data-tileset-zoom-override]")).toBeVisible();
+  // Continuous zoom has a readout and an explicit Fit action.
+  await expect(page.locator("[data-tileset-zoom-override]")).toHaveCount(0);
 
   // Shift + wheel: sideways, zoom unchanged.
   await page.keyboard.down("Shift");
@@ -173,9 +173,8 @@ test("tileset panel: the wheel works like the map (notch zooms at the cursor, Sh
   expect(s1.top).toBeGreaterThan(s0.top);
   expect(await selectedNow()).toBe(selectedBefore);
 
-  // Reset the own zoom: back to the global zoom (fit).
-  await page.locator("[data-tileset-zoom-override]").click();
-  await expect.poll(scale).toBe(before);
+  await page.locator("[data-tileset-zoom-fit]").click();
+  await expect.poll(scale).toBeLessThan(zoomed);
 });
 
 test("selected tile starts a 4×4 marquee, randomizes immediately, and mode hints stay in the dock header", async ({ page }) => {

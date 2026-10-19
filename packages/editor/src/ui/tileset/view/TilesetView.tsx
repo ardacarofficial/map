@@ -1,5 +1,6 @@
 import type { Collection, Tileset } from "@smap/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { fitTilesetViewport } from "../../../commands/tilesetEditing";
 import { openTilesetImport } from "../../../commands/tilesetActions";
 import { t } from "../../../i18n";
 import { useEditorStore } from "../../../state/editorStore";
@@ -20,6 +21,7 @@ import { useUiStore } from "../../uiStore";
 import { DockHeader } from "./DockHeader";
 import { TileDragGhost } from "./TileDragGhost";
 import { TilesetStack } from "./TilesetStack";
+import { SingleViewport, INITIAL_VIEW } from "./SingleViewport";
 import { HEADER_H, PADDING } from "./constants";
 installTilesetPickSync();
 
@@ -78,6 +80,7 @@ function TilesetLibrary({
   const view = useTilesetView((s) => s.view);
   const zoomMap = useTilesetView((s) => s.zoom);
   const globalZoom = useTilesetView((s) => s.globalZoom);
+  const transforms = useTilesetView(s => s.transforms);
   const setActive = useUiStore((s) => s.setActiveTileset);
   const map = useEditorStore((s) => s.project?.store.document.map);
   const mapTileW = map?.tileWidth ?? 32;
@@ -103,7 +106,7 @@ function TilesetLibrary({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [stack]);
 
   const shown: Source = showingPalette ? paletteSource(palette, mapTileW, mapTileH) : tilesetSource(active);
   const sources = useMemo(() => {
@@ -130,7 +133,10 @@ function TilesetLibrary({
 
   const host = useMemo(
     (): GridHost => ({
-      focus: () => viewportRef.current?.focus({ preventScroll: true }),
+      focus: (key) => {
+        if (key) useTilesetView.getState().focusSource(key);
+        viewportRef.current?.focus({ preventScroll: true });
+      },
       panning: () => panRef.current.active(),
       registerKeys: (id, handler) => {
         if (handler) keyHandlers.current.set(id, handler);
@@ -200,6 +206,7 @@ function TilesetLibrary({
 
   /** The global zoom; in "Tek" it also drops the shown source's own zoom (the zoom field always moves what you see). */
   const zoomGlobal = (next: number | null) => {
+    if (!stack) { fitTilesetViewport(); return; }
     setFitRequested(next === null);
     if (next === null) {
       anchorRef.current = null;
@@ -273,7 +280,7 @@ function TilesetLibrary({
     const onWheel = (e: WheelEvent) => onWheelRef.current(e);
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [stack]);
 
   // ---- keyboard
 
@@ -302,7 +309,7 @@ function TilesetLibrary({
   };
 
   const override = !stack ? (zoomMap[shown.key] ?? null) : null;
-  const shownScale = stack ? (globalZoom ?? scaleOfSource(shown)) : scaleOfSource(shown);
+  const shownScale = stack ? (globalZoom ?? scaleOfSource(shown)) : (transforms[shown.key] ?? INITIAL_VIEW).scale;
   const viewport = (
     <div
       ref={viewportRef}
@@ -347,7 +354,9 @@ function TilesetLibrary({
         <DockHeader tilesets={tilesets} palettes={palettes} active={active} palette={showingPalette ? palette : null}
           onSelect={setActive}
           override={override} onResetOverride={() => zoomSource(shown.key, null)} globalZoom={globalZoom} shownScale={shownScale} displayTileSize={Math.round(shown.tileH * scaleOfSource(shown))} onZoom={zoomGlobal} />
-        {viewport}
+        {stack ? viewport : <SingleViewport sourceKey={shown.key} label={showingPalette ? palette.name : active.name} width={showingPalette ? shown.width : active.columns * (active.tileWidth + active.spacing) - active.spacing + active.margin * 2} height={showingPalette ? shown.height : active.rows * (active.tileHeight + active.spacing) - active.spacing + active.margin * 2}>
+          {scale => showingPalette ? <PaletteGrid key={palette.id} palette={palette} scale={scale} /> : <TilesetGrid key={active.id} tileset={active} scale={scale} />}
+        </SingleViewport>}
       </div>
     </GridHostContext.Provider>
   );

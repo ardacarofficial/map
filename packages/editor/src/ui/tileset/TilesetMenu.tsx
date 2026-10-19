@@ -10,6 +10,7 @@ import type { Tileset } from "@smap/core";
 import {
   moveTilesetToNewGroup,
   openTilesetSettings,
+  promptRenameTileset,
   removeTileset,
   replaceTilesetImage,
   setTilesetGroup,
@@ -24,6 +25,10 @@ export function TilesetMenuItems({ tileset }: { tileset: Tileset }) {
   const current = tileset.group ?? null;
   return (
     <>
+      <Menu.Item className={menuItemClass} data-tileset-menu-item="rename" onClick={() => void promptRenameTileset(tileset.id)}>
+        <Icon name="pencilLine" size={16} className="text-muted" />
+        {t("tilesetEditing.rename")}
+      </Menu.Item>
       <Menu.Item className={menuItemClass} data-tileset-menu-item="settings" onClick={() => void openTilesetSettings(tileset.id)}>
         <Icon name="grid" size={16} className="text-muted" />
         {t("tilesetPanel.settings")}

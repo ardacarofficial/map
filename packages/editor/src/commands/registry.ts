@@ -76,6 +76,7 @@ export function runCommand(id: CommandId): boolean {
 interface Binding {
   command: CommandId;
   chord: KeyChord;
+  scope?: "tileset" | undefined;
 }
 
 let bindings: Binding[] | null = null;
@@ -85,12 +86,17 @@ let bindingsRevision = -1;
 function allBindings(): Binding[] {
   if (bindings === null || bindingsRevision !== shortcutsRevision()) {
     bindingsRevision = shortcutsRevision();
-    bindings = effectiveShortcuts().flatMap((s) => s.keys.map((keys) => ({ command: s.command, chord: parseChord(keys) })));
+    bindings = effectiveShortcuts().flatMap((s) => s.keys.map((keys) => ({ command: s.command, chord: parseChord(keys), scope: s.scope })));
   }
   return bindings;
 }
 
 /** The command bound to this key event, if any. */
-export function commandForEvent(event: KeyEventLike): CommandId | null {
-  return findBinding(event, allBindings())?.command ?? null;
+export function commandForEvent(event: KeyEventLike, scope?: "tileset"): CommandId | null {
+  const focusedScope = scope ?? (typeof document !== "undefined" && document.activeElement?.closest("[data-tileset-library], [data-tileset-dock], [data-panel-tab=tileset]") ? "tileset" : undefined);
+  if (focusedScope) {
+    const contextual = findBinding(event, allBindings().filter(b => b.scope === focusedScope));
+    if (contextual) return contextual.command;
+  }
+  return findBinding(event, allBindings().filter(b => !b.scope))?.command ?? null;
 }
