@@ -506,3 +506,5 @@ export * from "./pixel/palettes";
 export { migrateV6 } from "./migrations/v6";
 export { MAX_COLLECTION_ROWS, MAX_COLLECTION_CAPACITY } from "./collection";
 export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistoryChange } from "./store";
+
+export { exportGodot, preflightGodot, GodotPreflightError, encodeGodotCells, type GodotCell, type GodotMapInput, type GodotOptions, type GodotImageBytes, type GodotFile, type GodotPlan, type GodotProblem, type GodotProblemKey } from "./export/godot";
