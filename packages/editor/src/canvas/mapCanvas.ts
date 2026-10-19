@@ -1,5 +1,6 @@
 import { useMajorGrid } from "../state/majorGridSettings";
 import { useMapBorder } from "../commands/mapBorder";
+import { smartBrushPreparationDebug } from "../commands/smartBrushActions";
 import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
 /**
  * The map canvas: Pixi application, scene sync and the frame loop. Input,
@@ -551,6 +552,7 @@ export class MapCanvas {
     const self = this;
     const hook = {
       editor: useEditorStore,
+      smartBrushPreparation: smartBrushPreparationDebug,
       get smartPreview() { return self.#scene?.smartPreviewPlan ?? null; },
       get store() {
         return useEditorStore.getState().project?.store ?? null;
@@ -921,7 +923,7 @@ export class MapCanvas {
       this.#loadProject(s.project);
       return;
     }
-    if (this.#tools.gesture?.kind === "smart" && (s.tool !== prev.tool || s.stamp !== prev.stamp || s.activeLayerId !== prev.activeLayerId)) this.#tools.cancel();
+    if ((this.#tools.gesture?.kind === "smart" || this.#tools.gesture?.kind === "pendingSmart") && (s.tool !== prev.tool || s.stamp !== prev.stamp || s.activeLayerId !== prev.activeLayerId)) this.#tools.cancel();
     if (s.tool !== prev.tool) this.#toolMemory = nextToolMemory(this.#toolMemory, prev.tool, s.tool);
     if (s.activeLayerId !== prev.activeLayerId) this.#matchToolToLayer(s);
     if (

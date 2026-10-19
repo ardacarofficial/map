@@ -15,7 +15,7 @@ export function smartRect(g: Pick<SmartGesture, "start" | "end" | "square" | "fr
   const { a, b } = constrainRect(g.start, g.end, g);
   return normalizeRect(a.x, a.y, b.x, b.y)!;
 }
-export function addRoadSamples(g: SmartGesture, points: readonly CellPoint[]): void {
+export function addRoadSamples(g: Pick<SmartGesture, "members" | "offsets" | "last" | "end" | "version">, points: readonly CellPoint[]): void {
   for (const p of points) {
     for (const q of footprintCells(orthogonalBridge(g.last, p), g.offsets)) g.members.add(`${q.x},${q.y}`);
     g.last = p; g.end = p;

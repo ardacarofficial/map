@@ -1,4 +1,4 @@
-import { brushCandidate, brushPending, publishBrushAssets } from "../commands/smartBrushActions";
+import { autoBrush, brushCandidate, brushPending, publishBrushAssets, waitForSelectionBrush } from "../commands/smartBrushActions";
 import { applySmartStampPlan, isTileLayer } from "@smap/core";
 import { activeSmartStamp, orientedBrushClip, useSmartStampSession } from "../ui/stamps/smartStampSession";
 import { addRoadSamples, smartGesturePlan, smartHoverGesture, type SmartGesture } from "./smartStampGesture";
@@ -92,6 +92,7 @@ import {
 /** A pointer interaction in progress (left or right button). */
 export type Gesture =
   | SmartGesture
+  | PendingSmartGesture
   | {
       readonly kind: "paint";
       readonly pointerId: number;
@@ -227,6 +228,14 @@ export function rectGestureRegion(
   return normalizeRect(a.x, a.y, b.x, b.y, (g.thickness ?? 0) > 0 ? undefined : bounds);
 }
 
+/** Geometry is collected immediately, while the source recipe is still preparing. */
+interface PendingSmartGesture extends Omit<SmartGesture, "kind"> {
+  readonly kind: "pendingSmart";
+  readonly clip: TileClip;
+  readonly tool: "brush" | "rect";
+  released: boolean;
+}
+
 /** Last painted cell of a stroke: Shift + click draws a line from it. */
 interface LastPaint {
   readonly store: MapStore;
@@ -246,6 +255,7 @@ export function released(e: PointerEvent, button: number): boolean {
 
 export class ToolController {
   #gesture: Gesture | null = null;
+  #releasedSmart: PendingSmartGesture[] = [];
   #lastPaint: LastPaint | null = null;
   readonly #host: ToolHost;
 
@@ -254,7 +264,7 @@ export class ToolController {
   }
 
   get gesture(): Gesture | null {
-    return this.#gesture;
+    return this.#gesture ?? this.#releasedSmart.at(-1) ?? null;
   }
 
   /**
@@ -274,7 +284,7 @@ export class ToolController {
   /** Shift / Alt changed (keys or pointer events): reshapes a rectangle drag. */
   setModifiers(shift: boolean, alt: boolean): void {
     const g = this.#gesture;
-    if ((g?.kind !== "rect" && g?.kind !== "smart") || (g.square === shift && g.fromCenter === alt)) return;
+    if ((g?.kind !== "rect" && g?.kind !== "smart" && g?.kind !== "pendingSmart") || (g.square === shift && g.fromCenter === alt)) return;
     g.square = shift;
     g.fromCenter = alt;
     this.#host.requestRender();
@@ -284,7 +294,7 @@ export class ToolController {
   #footprintTool(): boolean {
     const s = useEditorStore.getState();
     const grid = isGridLayer(this.#activeLayer());
-    if (activeSmartStamp() && useSmartStampSession.getState().usage === "road" && s.tool === "brush") return true;
+    if ((activeSmartStamp() || brushPending()) && useSmartStampSession.getState().usage === "road" && s.tool === "brush") return true;
     if (s.tool === "eraser") return true;
     return s.tool === "brush" && !(s.stamp && (savedStamp(s.stamp) || s.stamp.layers.length > 1 || s.stamp.layers[0]?.grid || !grid));
   }
@@ -304,7 +314,7 @@ export class ToolController {
       return;
     }
     if (brushCandidate() && s.stamp?.layers.length === 1 && this.#reportBlocked(s.tool, true)) return;
-    if (brushPending() && (s.tool === "brush" || s.tool === "rect")) return;
+    if (brushPending() && (s.tool === "brush" || s.tool === "rect")) { this.#beginSmart(e, cell); return; }
     const active = this.#activeLayer();
     const grid = isGridLayer(active);
     if (activeSmartStamp() && ((s.tool === "brush" && useSmartStampSession.getState().usage === "area") || (s.tool === "rect" && useSmartStampSession.getState().usage === "area"))) { this.#beginSmart(e, cell); return; }
@@ -368,12 +378,13 @@ export class ToolController {
   pointerMove(e: PointerEvent): void {
     const g = this.#gesture;
     if (!g || e.pointerId !== g.pointerId) return;
+    if (g.kind === "pendingSmart" && g.released) return;
     // A second button pressed or released mid-drag arrives as a move ("chorded" buttons).
     if (e.button === 2 && (e.buttons & 2) !== 0 && this.isCancelable()) {
       this.cancel();
     } else if (g.kind === "pick" && released(e, g.button)) {
       this.#finish();
-    } else if (g.kind === "smart") {
+    } else if (g.kind === "smart" || g.kind === "pendingSmart") {
       this.#moveSmart(g, e);
     } else if (g.kind === "paint" || g.kind === "stamp") {
       const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
@@ -398,6 +409,14 @@ export class ToolController {
     if (!g || e.pointerId !== g.pointerId) return;
     const button = g.kind === "pick" ? g.button : 0;
     if (!released(e, button)) return;
+    if (g.kind === "pendingSmart") {
+      if (!g.released) this.#moveSmart(g, e);
+      g.released = true;
+      this.#releasedSmart.push(g);
+      this.#gesture = null;
+      this.#host.release(g.pointerId);
+      return;
+    }
     if (g.kind === "smart") this.#moveSmart(g, e);
     else if (g.kind === "paint" || g.kind === "stamp") this.#paint([e]);
     else if (g.kind === "entity") this.#dragEntity(g);
@@ -412,14 +431,15 @@ export class ToolController {
 
   /** Rectangle, marquee and pick drags can be cancelled (Esc, right click); strokes only by Esc. */
   isCancelable(): boolean {
-    const g = this.#gesture;
-    return !!g && (g.kind === "smart" || g.kind === "rect" || g.kind === "select" || g.kind === "entity" || g.kind === "move" || (g.kind === "pick" && g.button === 0));
+    const g = this.gesture;
+    return !!g && (g.kind === "pendingSmart" || g.kind === "smart" || g.kind === "rect" || g.kind === "select" || g.kind === "entity" || g.kind === "move" || (g.kind === "pick" && g.button === 0));
   }
 
   /** Ends without applying drags; keeps what a stroke already painted (lost capture, project change). */
   end(): void {
     const g = this.#gesture;
-    if (!g) return;
+    this.#releasedSmart = [];
+    if (!g) { this.#host.requestRender(); return; }
     this.#gesture = null;
     if (g.kind === "smart" && g.store.inTransaction) {
       g.store.rollback();
@@ -436,7 +456,8 @@ export class ToolController {
   /** Cancels the gesture; a stroke is rolled back. */
   cancel(): void {
     const g = this.#gesture;
-    if (!g) return;
+    this.#releasedSmart = [];
+    if (!g) { this.#host.requestRender(); return; }
     this.#gesture = null;
     if ((g.kind === "smart" || g.kind === "paint" || g.kind === "stamp" || g.kind === "entity" || g.kind === "move") && g.store.inTransaction) g.store.rollback();
     this.#host.release(g.pointerId);
@@ -458,12 +479,7 @@ export class ToolController {
     this.#gesture = null;
     switch (g.kind) {
       case "smart":
-        try {
-          if (g.rectangle) applySmartStampPlan(g.store, smartGesturePlan(g));
-          if (g.store.inTransaction) g.store.commit();
-          if (!g.rectangle) this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last };
-          if (!g.erase) this.#pushRecentClip(g.stamp);
-        } catch (error) { if (g.store.inTransaction) g.store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+        this.#finishSmart(g);
         break;
       case "paint":
       case "stamp":
@@ -847,7 +863,8 @@ export class ToolController {
   }
 
   #beginSmart(e: PointerEvent, cell: CellPoint): void {
-    const store = this.#host.scene?.store, stamp = activeSmartStamp(), state = useEditorStore.getState();
+    const state = useEditorStore.getState(), pending = brushPending();
+    const store = this.#host.scene?.store, stamp = activeSmartStamp() ?? (pending ? autoBrush(state.stamp)?.source : null);
     if (!store || !stamp || !state.activeLayerId) return;
     if (stamp.layers.length === 1) {
       const layer = store.document.getLayer(state.activeLayerId);
@@ -860,9 +877,63 @@ export class ToolController {
     if (usage === "road" && !isTileLayer(store.document.getLayer(state.activeLayerId))) return;
     const anchor = e.shiftKey && usage === "road" && state.tool !== "rect" ? this.lineAnchor() : null;
     const g: SmartGesture = { ...smartHoverGesture(store, stamp, state.activeLayerId, cell, usage, session.orientation, state.brushSize, state.brushShape, erase, anchor), pointerId: e.pointerId, rectangle: usage === "area" || state.tool === "rect", thickness: state.tool === "rect" ? rectangleThickness() : 0, square: e.shiftKey, fromCenter: e.altKey };
-    store.beginTransaction();
-    try { publishBrushAssets(state.stamp, store); } catch (error) { store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); return; }
+    if (pending && state.stamp && (state.tool === "brush" || state.tool === "rect")) {
+      const buffered: PendingSmartGesture = { ...g, kind: "pendingSmart", clip: state.stamp, tool: state.tool, released: false };
+      this.#start(buffered);
+      void this.#resumeSmart(buffered);
+      return;
+    }
     this.#start(g);
+    this.#activateSmart(g, state.stamp);
+  }
+
+  /** No document transaction stays open while image hashing/PNG encoding is pending. */
+  async #resumeSmart(buffered: PendingSmartGesture): Promise<void> {
+    try {
+      const prepared = await waitForSelectionBrush(buffered.clip);
+      if (this.#gesture !== buffered && !this.#releasedSmart.includes(buffered)) return;
+      const state = useEditorStore.getState();
+      if (!prepared || state.stamp !== buffered.clip || state.project?.store !== buffered.store || this.#host.scene?.store !== buffered.store || state.tool !== buffered.tool || state.activeLayerId !== buffered.layerId) { this.cancel(); return; }
+      // A layer can become locked/hidden while the PNG is being prepared.
+      if (this.#reportBlocked(buffered.tool, true)) { this.cancel(); return; }
+      const g: SmartGesture = { ...buffered, kind: "smart", stamp: prepared.stamp };
+      if (buffered.released) {
+        this.#releasedSmart = this.#releasedSmart.filter(pending => pending !== buffered);
+        // Each completed press→release owns its transaction, even with another press held.
+        let opened = false;
+        try {
+          g.store.beginTransaction(); opened = true;
+          publishBrushAssets(buffered.clip, g.store);
+          if (!g.rectangle) applySmartStampPlan(g.store, smartGesturePlan(g));
+          this.#finishSmart(g);
+        } catch (error) {
+          if (opened && g.store.inTransaction) g.store.rollback();
+          toast.error(t("smartStamp.failed", { detail: String(error) }));
+        }
+      } else {
+        this.#gesture = g;
+        this.#activateSmart(g, buffered.clip);
+      }
+      this.#host.requestRender();
+    } catch {
+      // Preparation already reports its existing failure toast and failed-brush state.
+      if (this.#gesture === buffered || this.#releasedSmart.includes(buffered)) this.cancel();
+    }
+  }
+
+  #finishSmart(g: SmartGesture): void {
+    try {
+      if (g.rectangle) applySmartStampPlan(g.store, smartGesturePlan(g));
+      if (g.store.inTransaction) g.store.commit();
+      if (!g.rectangle) this.#lastPaint = { store: g.store, layerId: g.layerId, cell: g.last };
+      if (!g.erase) this.#pushRecentClip(g.stamp);
+    } catch (error) { if (g.store.inTransaction) g.store.rollback(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
+  }
+
+  #activateSmart(g: SmartGesture, clip: TileClip | null): void {
+    g.store.beginTransaction();
+    try { publishBrushAssets(clip, g.store); }
+    catch (error) { this.cancel(); toast.error(t("smartStamp.failed", { detail: String(error) })); return; }
     if (!g.rectangle) this.#applySmart(g);
   }
 
@@ -871,7 +942,7 @@ export class ToolController {
     catch (error) { this.cancel(); toast.error(t("smartStamp.failed", { detail: String(error) })); }
   }
 
-  #moveSmart(g: SmartGesture, e: PointerEvent): void {
+  #moveSmart(g: SmartGesture | PendingSmartGesture, e: PointerEvent): void {
     if (g.rectangle) {
       this.setModifiers(e.shiftKey, e.altKey);
       const cell = this.#host.pointerCell(); if (cell) g.end = cell;
@@ -879,7 +950,8 @@ export class ToolController {
     } else {
       const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
       const samples = (events.length ? events : [e]).map(sample => this.#host.camera.cellAt(this.#host.toLocal(sample))).filter((p): p is CellPoint => p !== null);
-      addRoadSamples(g, samples); this.#applySmart(g);
+      addRoadSamples(g, samples);
+      if (g.kind === "smart") this.#applySmart(g);
     }
     this.#host.requestRender();
   }
