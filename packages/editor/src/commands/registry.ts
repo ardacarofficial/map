@@ -53,11 +53,19 @@ export interface PaletteEntry {
 }
 
 const paletteProviders = new Set<() => PaletteEntry[]>();
+let paletteProvidersRevision = 0;
+const paletteProviderListeners = new Set<() => void>();
+/** Async view settings can arrive while the palette is already open. */
+export function notifyPaletteEntriesChanged(): void { paletteProvidersRevision++; for (const listener of paletteProviderListeners) listener(); }
+export function paletteEntriesVersion(): number { return paletteProvidersRevision; }
+export function subscribePaletteEntries(listener: () => void): () => void { paletteProviderListeners.add(listener); return () => { paletteProviderListeners.delete(listener); }; }
+
 
 /** Adds a source of dynamic palette entries. Returns an unregister function. */
 export function registerPaletteProvider(provider: () => PaletteEntry[]): () => void {
   paletteProviders.add(provider);
-  return () => paletteProviders.delete(provider);
+  notifyPaletteEntriesChanged();
+  return () => { paletteProviders.delete(provider); notifyPaletteEntriesChanged(); };
 }
 
 /** Every dynamic palette entry available right now. */

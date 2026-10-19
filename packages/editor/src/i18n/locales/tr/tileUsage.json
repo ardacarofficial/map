@@ -1,0 +1,21 @@
+{
+  "find": "Kullanımları bul…",
+  "title": "Kullanımlar",
+  "refresh": "Yenile",
+  "next": "Sonraki kullanım",
+  "previous": "Önceki kullanım",
+  "loading": "Dünya taranıyor…",
+  "error": "Bazı haritalar okunamadı — yenile.",
+  "changed": "Değişti — yenile",
+  "count": "{count, plural, other {# kullanım}}",
+  "results": "Kullanım sonuçları",
+  "mapCount": "{name} · {count, plural, other {# kullanım}}",
+  "cell": "{layer} · {x}, {y} · Tile {tile}",
+  "flipH": "Yatay çevrilmiş",
+  "flipV": "Dikey çevrilmiş",
+  "flipD": "Çapraz çevrilmiş",
+  "noFlip": "Çevirme yok",
+  "previousPage": "Önceki sayfa",
+  "nextPage": "Sonraki sayfa",
+  "page": "{page} / {total}"
+}

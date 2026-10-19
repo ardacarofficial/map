@@ -1,3 +1,4 @@
+import { findTileUsages } from "../../extras/usageActions";
 /**
  * One palette's interactive grid, shown in the tileset dock like a
  * tileset: the slots (filled and empty) with the same selection model
@@ -319,6 +320,9 @@ function SlotMenuItems({ palette, cell, selected }: { palette: Collection; cell:
   const canPaste = usePaletteStore.getState().clipboard !== null;
   return (
     <>
+      <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="find-usages" onClick={() => { void findTileUsages(ids.flatMap(i => slotAt(palette, i % palette.columns, Math.floor(i / palette.columns)) ?? [])); }}>
+        <Icon name="search" size={16} className="text-muted" />{t("tileUsage.find")}
+      </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} disabled={!filled} data-palette-menu-item="copy" onClick={() => copyPaletteSlots(palette, ids)}>
         <Icon name="copy" size={16} className="text-muted" />
         {t("palettes.copy")}

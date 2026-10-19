@@ -1,6 +1,7 @@
 import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
 import { useSyncExternalStore } from "react";
 
+import { UsageResults } from "../../extras/UsageResults";
 import { clampRegion } from "../../commands/enablement";
 import { useRandomBrush } from "../../commands/randomBrush";
 import { useEditorStore } from "../../state/editorStore";
@@ -70,6 +71,7 @@ function InspectorSections({ doc }: { doc: MapDocument }) {
   const sections = inspectorSectionsFor(ctx);
   return (
     <div className="flex min-h-0 flex-auto flex-col overflow-y-auto pb-3" data-inspector data-inspector-mode={ctx.mode}>
+      <UsageResults />
       {sections.map(({ id, Component }) => (
         <div className="shrink-0" key={id} data-inspector-section={id}>
           <Component ctx={ctx} />

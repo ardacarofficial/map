@@ -41,7 +41,7 @@ import { Application, CanvasSource, Container, Sprite, Texture, Ticker } from "p
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore, type CellRegion, type EditorState, type OpenProject } from "../state/editorStore";
 import { getTilesetImage, onTilesetImage } from "../state/tilesetImages";
-import { recallLevelView, rememberLevelView } from "../state/levelViewMemory";
+import { recallLevelView, rememberLevelView, type LevelView } from "../state/levelViewMemory";
 import { subscribeLocale, t, type MessageKey } from "../i18n";
 import { MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, snappedOffset, type Camera, type Point } from "./camera";
 import { useUiStore } from "../ui/uiStore";
@@ -120,6 +120,11 @@ export interface CanvasHandle {
   onNavigate(cb: (request: NavigateRequest) => void): () => void;
   /** Moves the camera (zoom unchanged) so the centre of cell (`cellX`, `cellY`) is in the middle of the view. */
   centerOn(cellX: number, cellY: number): void;
+  /** Read-only camera settings for named bookmarks. */
+  captureView(): LevelView | null;
+  restoreView(view: LevelView): void;
+  /** Transient navigation feedback; creates no map selection or operation. */
+  flashCell(x: number, y: number): void;
   /** Shows / hides the minimap (bottom-right of the canvas). Visible by default. */
   setMinimapVisible(visible: boolean): void;
   isMinimapVisible(): boolean;
@@ -639,6 +644,9 @@ export class MapCanvas {
       if (!map) return;
       this.#camera.centerOnWorld((cellX + 0.5) * map.tileWidth, (cellY + 0.5) * map.tileHeight);
     },
+    captureView: () => this.#view === "level" ? this.#camera.savedView() : null,
+    restoreView: (view) => this.#camera.restoreView(view),
+    flashCell: (x, y) => this.#overlays.flash({ x, y, width: 1, height: 1 }),
     setMinimapVisible: (visible) => {
       this.#minimapVisible = visible;
       this.#minimap?.setVisible(visible);

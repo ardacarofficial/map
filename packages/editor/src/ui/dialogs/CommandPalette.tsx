@@ -1,8 +1,8 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 
 import { fuzzyFilter, type FuzzyMatch } from "../../commands/fuzzy";
-import { allCommands, isEnabled, paletteEntries, runCommand, type Command } from "../../commands/registry";
+import { allCommands, isEnabled, paletteEntries, paletteEntriesVersion, subscribePaletteEntries, runCommand, type Command } from "../../commands/registry";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
 import { getLocale, t } from "../../i18n";
 import { KbdText } from "../primitives/Kbd";
@@ -56,6 +56,7 @@ export function CommandPalette() {
 
 function PaletteBody({ onClose }: { onClose(): void }) {
   const locale = getLocale();
+  const providersRevision = useSyncExternalStore(subscribePaletteEntries, paletteEntriesVersion);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -70,7 +71,7 @@ function PaletteBody({ onClose }: { onClose(): void }) {
     ],
     // commandItem/paletteEntries translate through t(), which reads the external locale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale],
+    [locale, providersRevision],
   );
   const [recents] = useState(readPaletteRecents);
   const results = useMemo(() => {

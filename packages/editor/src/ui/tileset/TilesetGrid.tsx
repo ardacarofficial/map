@@ -1,3 +1,4 @@
+import { findTileUsages } from "../../extras/usageActions";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { type Tileset } from "@smap/core";
 import {
@@ -461,6 +462,9 @@ function TileMenuItems({
   return (
     <>
       <div className="px-2 pt-1 pb-1.5 font-mono text-2xs text-faint tabular">{t("tilesetPanel.hover", { id: tileId, col: cell.col, row: cell.row })}</div>
+      <ContextMenu.Item className={menuItemClass} data-tile-menu-item="find-usages" onClick={() => { void findTileUsages(referenceIds.map(tileId => ({ tilesetId: tileset.id, tileId }))); }}>
+        <Icon name="search" size={16} className="text-muted" />{t("tileUsage.find")}
+      </ContextMenu.Item>
       <ContextMenu.Item className={menuItemClass} data-tile-menu-item="copy-references" onClick={() => copyTilesetTiles(tileset, referenceIds, empty)}>
         <Icon name="copy" size={16} className="text-muted" />{t("tilesetEditing.copy")}
       </ContextMenu.Item>

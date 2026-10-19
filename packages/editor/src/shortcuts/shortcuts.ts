@@ -12,6 +12,9 @@ import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "usage.find" | "usage.refresh" | "usage.next" | "usage.previous"
+  | "bookmark.add" | "bookmark.rename" | "bookmark.delete" | "bookmark.jump"
+  | `bookmark.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
   | "map.border"
   | "stamp.nineSlice"
   | "smartBrush.matchGrid"
@@ -119,6 +122,15 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  { command: "usage.find", keys: [] },
+  { command: "usage.refresh", keys: [] },
+  { command: "usage.next", keys: ["F3"] },
+  { command: "usage.previous", keys: ["Shift+F3"] },
+  { command: "bookmark.add", keys: ["Ctrl+Shift+D"] },
+  { command: "bookmark.rename", keys: [] },
+  { command: "bookmark.delete", keys: [] },
+  { command: "bookmark.jump", keys: [] },
+  ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map(slot => ({ command: `bookmark.${slot}` as const, keys: [`Ctrl+Digit${slot}`] })),
   { command: "map.border", keys: [] },
   { command: "stamp.nineSlice", keys: [] },
   { command: "smartBrush.matchGrid", keys: [] },
