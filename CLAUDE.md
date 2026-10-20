@@ -90,6 +90,7 @@ Bağımlılık yönü: `desktop → editor → core`.
 | Katman türleri | Tile, Izgara (manuel Collision), Entity | Arazi katmanı/seti yoktur |
 | Autotile / akıllı stamp | Kullanıcıya dönük arazi seti ve tile etiketi yoktur; akıllı stamp açıkça seçilen kaynağın sınırlarını çözer ve sıradan tile hücreleri yazar | Ekim 2026 kararı, Arda: Katı/Arazi kaldırıldı; yol bağlantı çözücüsü smart-stamp modülündedir |
 | Collision | Yalnız manuel Collision ızgara katmanları; üstteki dolu karar kazanır | Tileset solid flag ve otomatik collision kaldırıldı (Ekim 2026, Arda) |
+| AI etiketleri | İsteğe bağlı `ai-tags.json` (proje kökü, kendi `tagFormatVersion`'ı): tile/stamp başına serbest kelimeler + piksel parmak izi; parmak izi tutmazsa "eski" sayılır | Yalnız ajana anlam bilgisi verir. Arazi seti, katı işareti, autotile kuralı veya collision değildir; harita formatı ve dışa aktarma değişmez (v2.0, Arda) |
 | Varyant seçimi | `hash(seed, x, y)` | Sıralı rastgele sayı kullanılırsa undo ve yeniden açmada tile'lar değişir |
 | Undo | Fareye basıştan bırakışa tek işlem; değişen hücrelerin `{önce, sonra}` yaması | Geri alma ikisini yer değiştirir, ayrı "ters işlem" tutulmaz |
 | Sürüm numarası | Tek `documentFormatVersion` | |
@@ -288,6 +289,19 @@ Terim: proje kullanıcı dilinde **Dünya**'dır; haritalar bu dünyanın içind
 
 **Bitti:** gerçek proje klasörü ve otomatik kayıt açıkken tileset→çiz ve tileset→stamp kaydet→çiz yol çizer (16 px kaynak/32 px harita durumu dahil anlaşılır); çalı düz kalır. Piksel kopyalama, kapsam, undo, kaydet-aç, PNG yedeği ve tüm dışa aktarma hedefleri testlerden geçer. Türkçe/İngilizce tam; panel ve kısayol ayarları yeniden açılışta korunur.
 
+### v2.0 — AI kumanda (MCP) (Ekim 2026, Arda onayladı)
+
+Claude Code veya Codex'te çalışan bir ajan, açık editörü MCP üzerinden kullanıp kullanıcının sprite'larıyla canlı harita tasarlar. Editöre model gömülmez; tasarımı dışarıdaki ajan yapar, editör belirlenimli işlemleri yürütür.
+
+- **Agent API** (`packages/agent`, DOM'suz, `core`'a bağlı): oturum/dünya/harita bilgisi, bölge okuma, tileset ve tile kataloğu (ajan görsün diye PNG), stamp listesi ve yerleştirme, hücre/dikdörtgen/çizgi/fill boyama (çağrı başına sınırlı), seçilen kaynakla akıllı yol/alan, nehir/patika yardımcısı, katman ve entity işlemleri, dünya içinde harita oluşturma/boyutlandırma, `render_preview` (ızgara/koordinat seçenekli PNG), `validate_map`. Her harita değişikliği yine `MapStore` işlemidir
+- **İşlem grubu:** ajan `begin_edit` → araçlar → `finish_edit` der; değişiklikler canlı görünür ama onay bekler. Ekranda "AI çalışıyor" çubuğu: Durdur / Onayla / Vazgeç. Onayla tek geri alma adımıdır; Vazgeç, bağlantı kopması veya süre dolması her şeyi geri sarar. Ajan kendi işini onaylayamaz. Bekleyen değişiklik otomatik kayda, yedeğe ve dışa aktarmaya girmez; bu sırada elle düzenleme kilitli, gezinme serbesttir
+- **Bağlantı:** masaüstü uygulaması yalnız `127.0.0.1` üzerinde Streamable HTTP MCP sunucusu açar (varsayılan kapalı, port ayarlanır, rastgele bearer token, Origin/Host denetimi). Ayarlar → AI: aç/kapa, port, token yenile, bağlantı durumu ve istemci adı, Claude Code ve Codex için "Bağlantı ayarlarını kopyala". Geliştirme ve otomatik test için `harita-mcp` stdio köprüsü (`packages/agent-cli`) ve yalnız dev sunucusunda açılan Vite eklentisi vardır; proje klasörünü editörsüz düzenleyen ikinci bir yazıcı yoktur
+- **AI etkinliği** paneli ajanın yaptıklarını listeler; diğer paneller gibi bölgeler arasında taşınır
+- **AI etiketleri** ("çim", "su", "çatı-sol"): isteğe bağlı `ai-tags.json`; ajan etiket ister ve önerir, kullanıcı Denetçi'de düzeltir. Geri alma geçmişine girmez
+- Ajanın PNG yazma, dosya, kabuk veya kod çalıştırma aracı yoktur; kullanıcı PNG'lerine dokunulmaz. Belge formatı 6 kalır
+
+**Bitti:** gerçek bir Codex ajanı MCP ile bağlanıp örnek dünyada nehirli, köprülü, yollu, evli 48×32 köy taslağı çizer; Onayla tek undo, Vazgeç birebir eski hal; Rust sunucu güvenlik testleri, Agent API özellik testleri ve AI e2e'leri geçer.
+
 ### Sonra
 
 - Katı işareti ve arazi fırçası: gerekirse yeniden düşünülür
@@ -337,13 +351,13 @@ Kaynaklardan doğrulanmış; ilgili sürüme gelince uygulanır.
 | Canlı bağlantılı prefab, iç içe prefab | Haritanın bütün okuma mantığını değiştirir; düz stamp yeterli |
 | Checkpoint, dallanan geçmiş, crash journal | Undo + otomatik kayıt + yedek klasörü aynı ihtiyacı karşılıyor |
 | Sonsuz tuval | Fill, dışa aktarma ve minimap'i sınır sorusuyla uğraştırır |
-| Görsel kural editörlü autotile, otomatik harita üretimi | Kullanıcıya programlama yaptırır |
+| Görsel kural editörlü autotile, editör içinde otomatik/prosedürel harita üretimi | Kullanıcıya programlama yaptırır. v2.0'da haritayı dışarıdaki AI ajanı tasarlar; editör yalnız komutları yürütür |
 | Altı aşamalı tile kimlik eşleme | Nadir durum için haftalarca iş |
 | Aseprite'ı komut satırından çalıştırma | Çıktısı güvenilmez; PNG izleme yetiyor |
 | WebGPU, chunk'lar arası birleşik GPU buffer | Gereksiz karmaşıklık |
 | Layer mask, efektler, blend mode, parallax | Harita çizmek için şart değil |
 | İzometrik ve hex ızgara | Tuvalin tamamını etkiler |
-| Motorlardan içe aktarma veya canlı bağlantı (Godot, Defold, LDtk), web sürümü, plugin API | Kapsam dışı; motorlar yalnız dışa aktarma hedefidir (v1.6, Arda) |
+| Motorlardan içe aktarma veya canlı bağlantı (Godot, Defold, LDtk), web sürümü, plugin API | Kapsam dışı; motorlar yalnız dışa aktarma hedefidir (v1.6, Arda). Tek istisna v2.0'ın yerel, sınırlı AI kumanda arayüzüdür (MCP); genel eklenti/plugin sistemi yine yoktur |
 | Lisans, ödeme, updater, kod imzalama, telemetri | Satış ve dağıtım yok |
 
 ## Açık sorular
