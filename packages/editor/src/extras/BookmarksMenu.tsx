@@ -1,4 +1,4 @@
-import { Menu } from '@base-ui/react/menu';
+import { Menu } from "../ui/primitives/Overlays";
 import { getCommand, isEnabled, runCommand } from '../commands/registry';
 import { t } from '../i18n';
 import { keysFor } from '../shortcuts/shortcuts';
@@ -13,7 +13,7 @@ export function BookmarksMenu() {
     <Menu.SubmenuTrigger data-submenu="bookmarks" className={menuItemClass}>
       <span className="flex-1">{t('bookmarks.title')}</span><Icon name="chevronRight" size={12} className="text-faint" />
     </Menu.SubmenuTrigger>
-    <Menu.Portal><Menu.Positioner side="right" align="start" sideOffset={4} className={menuPositionerClass}>
+    <Menu.Portal><Menu.Positioner side="right" align="start" className={menuPositionerClass}>
       <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) max-w-90 overflow-y-auto`} data-bookmarks-menu>
         <Menu.Item className={menuItemClass} data-command="bookmark.add" disabled={!getCommand('bookmark.add') || !isEnabled(getCommand('bookmark.add')!)} onClick={() => runCommand('bookmark.add')}>
           <span className="flex-1">{t('bookmarks.add')}</span><KbdText keys={keysFor('bookmark.add')[0] ?? ''} className={menuShortcutClass} />
@@ -26,7 +26,7 @@ export function BookmarksMenu() {
             {index < 9 && <KbdText keys={keysFor(`bookmark.${index + 1}` as 'bookmark.1')[0] ?? ''} className={menuShortcutClass} />}
             <Icon name="chevronRight" size={12} className="text-faint" />
           </Menu.SubmenuTrigger>
-          <Menu.Portal><Menu.Positioner side="right" align="start" sideOffset={4} className={menuPositionerClass}>
+          <Menu.Portal><Menu.Positioner side="right" align="start" className={menuPositionerClass}>
             <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) overflow-y-auto`}>
               <Menu.Item className={menuItemClass} data-bookmark-action="jump" onClick={() => bookmarkCommand('jump', bookmark.id)}>{t('bookmarks.jump')}</Menu.Item>
               <Menu.Item className={menuItemClass} data-bookmark-action="rename" onClick={() => bookmarkCommand('rename', bookmark.id)}>{t('bookmarks.rename')}</Menu.Item>

@@ -1,0 +1,132 @@
+{
+  "branch": "v17/overlay",
+  "base": "b78646f",
+  "checks": {
+    "static": "pnpm typecheck && pnpm lint passed; e2e typecheck and lint passed again after the final audit-only additions",
+    "unit": {
+      "command": "pnpm test --maxWorkers=2 --testTimeout=30000",
+      "passed": 1742,
+      "skipped": 2,
+      "filesPassed": 236,
+      "filesSkipped": 1,
+      "newCases": 9
+    },
+    "build": "pnpm build passed for editor and desktop frontend",
+    "e2e": {
+      "commandPrefix": "CI=1 E2E_PORT=6001 pnpm test:e2e",
+      "workers": 2,
+      "uniqueCasesPassedAcrossRuns": 114,
+      "newCases": 27,
+      "fullSuiteRun": false,
+      "specs": [
+        "e2e/tests/overlay-matrix.spec.ts",
+        "e2e/tests/overlay-presentation.spec.ts",
+        "e2e/tests/settings.spec.ts",
+        "e2e/tests/export-targets.spec.ts",
+        "e2e/tests/extras.spec.ts",
+        "e2e/tests/pixel-canvas.spec.ts",
+        "e2e/tests/layout-polish.spec.ts",
+        "e2e/tests/ux-review.spec.ts",
+        "e2e/tests/tileset-editing.spec.ts",
+        "e2e/tests/map-border.spec.ts",
+        "e2e/tests/zone-polish.spec.ts",
+        "e2e/tests/docking.spec.ts",
+        "e2e/tests/i18n.spec.ts"
+      ],
+      "auditMatrix": {
+        "viewports": [
+          [
+            1024,
+            600
+          ],
+          [
+            1366,
+            768
+          ],
+          [
+            1920,
+            1080
+          ]
+        ],
+        "deviceScaleFactors": [
+          1,
+          1.5
+        ],
+        "locales": [
+          "tr",
+          "en"
+        ],
+        "extraFeedbackViewport": [
+          800,
+          600
+        ]
+      },
+      "finalRuns": [
+        {
+          "output": "e2e/test-results/overlay-complete",
+          "passed": 50,
+          "overallTimeouts": 4,
+          "note": "Four long source flows exhausted the former 180s overall budget; all geometry assertions reached before timeout passed."
+        },
+        {
+          "output": "e2e/test-results/overlay-budget-and-feedback",
+          "passed": 6,
+          "note": "All four source reruns passed with a 300s overall budget and unchanged 30s action limits; both existing language regressions passed. The initial 880px feedback fixture retained sufficient minimap clearance on the left."
+        },
+        {
+          "output": "e2e/test-results/overlay-narrow-feedback",
+          "passed": 1,
+          "note": "800px fixture exercises actual placement above the adaptive minimap, HUD stacking, modal suppression and in-dialog feedback."
+        },
+        {
+          "output": "e2e/test-results/overlay-presentation-final",
+          "passed": 1,
+          "note": "Final editor presentation captures passed after adding the opacity wait; the isolated baseline capture is excluded from production case counts."
+        }
+      ]
+    },
+    "perf": "Not run: changes concern UI layers, popup geometry and feedback placement; no renderer data-path changes."
+  },
+  "presentation": [
+    {
+      "change": "Align Settings category rows with section headings; retain internal scrolling.",
+      "before": "overlay-before/settings.png",
+      "after": "overlay-after/settings.png"
+    },
+    {
+      "change": "Keep export header/footer visible; use internally scrolling body and wrapping target descriptions.",
+      "before": "overlay-before/export.png",
+      "after": "overlay-after/export.png"
+    },
+    {
+      "change": "Grow long source group labels beyond the row minimum instead of overlapping the next source.",
+      "before": "overlay-before/source-picker.png",
+      "after": "overlay-after/source-picker.png"
+    },
+    {
+      "change": "Wrap canvas feedback; keep HUD/toasts clear of dock and minimap.",
+      "before": "overlay-before/feedback.png",
+      "after": "overlay-after/feedback.png",
+      "additional": [
+        "overlay-after/feedback-narrow.png",
+        "overlay-after/modal-feedback.png"
+      ],
+      "captureNote": "The before image was recaptured from an isolated b78646f editor snapshot with the original toast fully opaque. The final presentation spec waits for opacity 1 before capturing feedback."
+    }
+  ],
+  "intentionalExistingTestChanges": {
+    "ux-review.spec.ts": "Expect decode errors in the dialog footer and an uncovered Create action, replacing the old above-modal toast expectation.",
+    "zone-polish.spec.ts": "Fully visible tab labels no longer carry a repeating native title tooltip."
+  },
+  "affectedAcceptance": {
+    "r3layout": "Viewport-fitting menus and shared full-name tooltips; a shared tooltip can use aria-describedby rather than a native title attribute.",
+    "r4layout": "Semantic modal/menu layers and export internal scrolling; headers/footer stay inside viewport.",
+    "r4fix": "Wrapping canvas-local feedback, 12px default inset, 8px minimap clearance; narrow gutters use placement above the minimap. Nonoverflow text still passes pointers through.",
+    "probe-dock": "6px menu/submenu gaps, viewport collision avoidance and dismissal on dock changes; header/minimum-height rules remain exercised."
+  },
+  "limits": [
+    "Native Windows WebView2 was not exercised; Chromium covers the requested DPR and locale matrix.",
+    "Single-PNG navigation can retain an offscreen transform after dock collapse/hide. The edge probes use the existing Fit action to position the source; this navigation issue is outside overlay placement."
+  ],
+  "ownership": "No changes to ui/pixel/**, commands/pixelWriteback.ts, CLAUDE.md, core operations, locale catalogs or shortcut registry."
+}

@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { entityCell, SPAWN_TYPE_ID } from "@smap/core";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 

@@ -24,3 +24,7 @@ describe("canvas feedback placement", () => {
     expect(feedbackPlacement(1440, 560).center).toBe(720);
   });
 });
+
+it('uses the width above the minimap when its side gutter cannot fit feedback actions', () => {
+  expect(feedbackPlacement(300, 560, 116)).toEqual({ maxWidth: 276, center: 150 });
+});

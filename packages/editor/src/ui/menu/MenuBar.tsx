@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { Menubar } from "@base-ui/react/menubar";
 
 import { BookmarksMenu } from "../../extras/BookmarksMenu";
@@ -50,7 +50,7 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
         {t(menu.label)}
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) min-w-56 overflow-y-auto`}>
             <MenuItems menu={menu} />
           </Menu.Popup>
@@ -123,7 +123,7 @@ function RecentProjectsSubmenu() {
         <Icon name="chevronRight" size={12} className="ml-6 shrink-0 text-faint" />
       </Menu.SubmenuTrigger>
       <Menu.Portal>
-        <Menu.Positioner side="right" align="start" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="right" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) max-w-90 min-w-56 overflow-y-auto`}>
             {entries.length === 0 ? (
               <Menu.Item disabled className={menuItemClass}>

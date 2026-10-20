@@ -74,7 +74,7 @@ export function CanvasHost() {
         if (e.button === 0 && useEditorStore.getState().tool === "select") useStampLibrary.getState().select(null);
       }}
       onPointerDown={(e) => e.currentTarget.focus({ preventScroll: true })}
-      className="relative h-full w-full overflow-hidden bg-canvas outline-none after:pointer-events-none after:absolute after:inset-0 after:z-30 data-focus-inset:after:shadow-[inset_0_0_0_1px_var(--color-accent)]"
+      className="relative h-full w-full overflow-hidden bg-canvas outline-none after:pointer-events-none after:absolute after:inset-0 after:z-(--overlay-drag) data-focus-inset:after:shadow-[inset_0_0_0_1px_var(--color-accent)]"
     />
   );
 }

@@ -66,7 +66,7 @@ export function FileDropOverlay() {
 
   if (!dragging || !hasProject) return null;
   return (
-    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-overlay p-4">
+    <div className="pointer-events-none fixed inset-0 z-(--overlay-modal-backdrop) grid place-items-center bg-overlay p-4">
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-accent-line bg-accent-soft/30">
         <div className="flex items-center gap-2">
           <Icon name="upload" size={16} className="shrink-0 text-muted" />

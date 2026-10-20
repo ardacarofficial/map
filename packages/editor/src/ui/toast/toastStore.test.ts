@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { setActiveModalScope } from "../primitives/overlayPolicy";
 import { toast, useToastStore } from "./toastStore";
 
 const latest = () => useToastStore.getState().toasts.at(-1)!;
 
 afterEach(() => {
+  setActiveModalScope(null);
   for (const item of useToastStore.getState().toasts) useToastStore.getState().dismiss(item.id);
 });
 
@@ -51,4 +53,13 @@ describe("toast duration policy", () => {
     expect(useToastStore.getState().toasts.map(item => item.message)).toEqual(["newest"]);
   });
 
+});
+
+it("routes feedback produced in a dialog to its scope, then returns to canvas feedback", () => {
+  setActiveModalScope("settings");
+  toast.error("Write failed");
+  expect(latest().scope).toBe("settings");
+  setActiveModalScope(null);
+  toast.info("Canvas feedback");
+  expect(latest().scope).toBeUndefined();
 });

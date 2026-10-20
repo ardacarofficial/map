@@ -157,7 +157,7 @@ export function CellLabel({
     <div
       aria-hidden
       data-tileset-cell-label
-      className="pointer-events-none absolute z-10 rounded-sm border border-line-strong bg-popup px-1.5 font-mono text-2xs leading-4 whitespace-nowrap text-text tabular"
+      className="pointer-events-none absolute z-(--overlay-chrome) rounded-sm border border-line-strong bg-popup px-1.5 font-mono text-2xs leading-4 whitespace-nowrap text-text tabular"
       style={{ left, top: flipBottom ? cell.row * cellH + 2 : top }}
     >
       {text}

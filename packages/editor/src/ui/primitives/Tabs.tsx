@@ -69,7 +69,7 @@ export function Tabs<Value extends string>({ value, onValueChange, items, label,
             {...item.attrs}
             key={item.value}
             ref={node => { buttons.current[i] = node; }}
-            title={item.attrs?.title ?? (typeof item.label === "string" ? item.label : undefined)}
+            title={item.attrs?.title}
             onFocus={event => { item.attrs?.onFocus?.(event); reveal(event.currentTarget); }}
             type="button"
             role="tab"

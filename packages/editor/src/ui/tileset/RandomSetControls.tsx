@@ -5,7 +5,7 @@
  * candidates (weights); the options-bar "Rastgele" toggle makes the brush
  * random (`makeRandomFromStamp`).
  */
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 
 import {
   deleteRandomSet,
@@ -48,7 +48,7 @@ export function RandomSetPicker({ compact = false }: { compact?: boolean }) {
         <Icon name="chevron-down" size={12} />
       </Button>} />
       <Menu.Portal>
-        <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) w-(--anchor-width) min-w-48 overflow-y-auto`}>
             {sets.length === 0 && <div className="px-2 py-1 text-sm text-muted">{t("randomSets.none")}</div>}
             {sets.map((s) => (
@@ -98,7 +98,7 @@ export function RandomSetControls() {
         <RandomSetPicker />
         <Button size="sm"
           data-random-set-save
-          title={activeSetId ? t("randomSets.save") : t("randomSets.saveAs")}
+          title={activeSetId ? undefined : t("randomSets.saveAs")}
           onClick={() => (activeSetId ? saveRandomSet() : void saveRandomSetAs())}
         >
           {t("randomSets.save")}

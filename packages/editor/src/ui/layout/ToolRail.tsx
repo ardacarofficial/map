@@ -1,6 +1,6 @@
 import { usePixelUi } from "../../state/pixelUi";
 import type { Ref } from "react";
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { Fragment } from "react";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
@@ -41,7 +41,7 @@ function SettingsMenu() {
         </Menu.Trigger>
       </Tooltip>
       <Menu.Portal>
-        <Menu.Positioner side="right" align="end" sideOffset={8} className={menuPositionerClass}>
+        <Menu.Positioner side="right" align="end" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} min-w-56`}>
             {SETTINGS.map(({ command, fallback }) => {
               const cmd = getCommand(command);

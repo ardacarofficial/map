@@ -1,7 +1,9 @@
-import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Dialog } from "@base-ui/react/dialog";
+import { AlertDialog } from "../primitives/Overlays";
+import { Dialog } from "../primitives/Overlays";
 import { useEffect, useRef, useState, type ComponentProps, type HTMLAttributes, type ReactNode } from "react";
 
+import { Tooltip } from "../primitives/Tooltip";
+import { Toaster } from "../toast/Toaster";
 import { t } from "../../i18n";
 import { IconButton } from "../primitives/Button";
 import { Icon } from "../primitives/Icon";
@@ -30,7 +32,7 @@ export function DialogHeader({ title, subtitle, onClose, alert = false }: { titl
         <Title className="text-lg font-semibold text-title">{title}</Title>
         {subtitle && <Description title={typeof subtitle === "string" ? subtitle : undefined} className="mt-1 truncate text-md text-muted">{subtitle}</Description>}
       </div>
-      <IconButton size="md" aria-label={t("common.close")} onClick={onClose}><Icon name="x" size={16} /></IconButton>
+      <Tooltip label={t("common.close")} side="right"><IconButton size="md" aria-label={t("common.close")} onClick={onClose}><Icon name="x" size={16} /></IconButton></Tooltip>
     </header>
   );
 }
@@ -41,7 +43,8 @@ export function DialogBody({ className = "", ...props }: HTMLAttributes<HTMLDivE
 
 export function DialogFooter({ children, status, left }: { children: ReactNode; status?: ReactNode; left?: ReactNode }) {
   return (
-    <footer className="flex shrink-0 items-center gap-3 border-t border-line-subtle px-4 py-3">
+    <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line-subtle px-4 py-3">
+      <Toaster modal />
       {left ? <div className="min-w-0">{left}</div> : status && <span className="min-w-0 truncate text-sm text-muted">{status}</span>}
       <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
     </footer>

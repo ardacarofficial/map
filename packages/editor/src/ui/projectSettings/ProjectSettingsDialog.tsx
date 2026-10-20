@@ -5,7 +5,7 @@
  * settings file). Edits apply on "Kaydet" as one settings change, saved with
  * the project by the next (auto)save.
  */
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { Tabs } from "../primitives/Tabs";
 import { normalizeProjectSettings, type ProjectSettings } from "@smap/core";
 import { useId, useRef, useState, type FormEvent } from "react";

@@ -1,5 +1,5 @@
 /** One export home for every target, with successful-only option persistence. */
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../ui/primitives/Overlays";
 import {
   deriveCollision,
   exportBaseName,
@@ -67,7 +67,7 @@ export function ExportDialog() {
     <Dialog.Root open={open && project !== null} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup ref={popupRef} initialFocus={() => submitRef.current && !submitRef.current.disabled ? submitRef.current : popupRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), footer button:not(:disabled)') ?? popupRef.current} className={`${popupClass} ${dialogWidthL} ${dialogLayoutClass}`}>
+        <Dialog.Popup ref={popupRef} initialFocus={() => submitRef.current && !submitRef.current.disabled ? submitRef.current : popupRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), footer button:not(:disabled)') ?? popupRef.current} className={`${popupClass} ${dialogWidthL} ${dialogLayoutClass} export-dialog`}>
           {open && project && <ExportForm project={project} submitRef={submitRef} onDone={() => setOpen(false)} />}
         </Dialog.Popup>
       </Dialog.Portal>
@@ -255,10 +255,10 @@ function ExportForm({
   const subfolder = subfolderDraft ?? current.unitySubfolder;
 
   return (
-    <form onSubmit={submit} noValidate className="flex min-h-0 max-h-[calc(100vh-32px)] flex-col">
+    <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
       <DialogHeader title={t("exportTargets.open")}
         subtitle={chosen === "zip" ? t("export.description") : <>{before}<span className="text-text">{mapName}</span>{after}</>} onClose={onDone} />
-      <DialogBody className="grid grid-cols-2 gap-4 pt-3">
+      <DialogBody className="export-dialog-body grid grid-cols-2 gap-4 pt-3">
         <div className="col-span-2"><ExportTargetList value={chosen} onChange={setTarget} /></div>
         <div className="flex min-w-0 flex-col gap-4" data-testid="export-form">
           {showMap && (

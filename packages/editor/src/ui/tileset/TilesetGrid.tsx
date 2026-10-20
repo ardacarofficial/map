@@ -1,5 +1,5 @@
 import { findTileUsages } from "../../extras/usageActions";
-import { ContextMenu } from "@base-ui/react/context-menu";
+import { ContextMenu } from "../primitives/Overlays";
 import { type Tileset } from "@smap/core";
 import {
   useCallback,

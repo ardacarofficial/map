@@ -4,7 +4,7 @@
  * "Hücreleri temizle ve sil" / "Vazgeç". `askRemoveTileset()` resolves with
  * the choice.
  */
-import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { AlertDialog } from "../primitives/Overlays";
 import { create } from "zustand";
 
 import { t } from "../../i18n";

@@ -3,7 +3,7 @@ import { ModeSelector, PixelOptions } from "../pixel/PixelOptions";
 import { usePixelUi } from "../../state/pixelUi";
 import { GridControl, GridSettings } from "../toolOptions/GridControl";
 import type { Ref } from "react";
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { useEffect, useRef, useState } from "react";
 
 import { runCommand } from "../../commands/registry";
@@ -82,7 +82,7 @@ export function OptionsBar() {
               </Menu.Trigger>
             </Tooltip>
             <Menu.Portal>
-              <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
+              <Menu.Positioner side="bottom" align="end" className={menuPositionerClass}>
                 <Menu.Popup className={menuPopupClass}>
                   {pixelMode && <Menu.Item className={menuItemClass} data-command="pixel.applyPng" disabled={world || !hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => runCommand('pixel.applyPng')}>{t('pngWriteback.apply')}</Menu.Item>}
                   {pixelMode && <Menu.Item className={menuItemClass} data-command="pixel.restorePng" disabled={world || !hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => runCommand('pixel.restorePng')}>{t('pngWriteback.restore')}</Menu.Item>}

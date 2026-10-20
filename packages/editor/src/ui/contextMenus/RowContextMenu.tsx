@@ -1,5 +1,5 @@
-import { ContextMenu } from "@base-ui/react/context-menu";
-import { Menu } from "@base-ui/react/menu";
+import { ContextMenu } from "../primitives/Overlays";
+import { Menu } from "../primitives/Overlays";
 import { useMemo, type ReactElement, type ReactNode } from "react";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
@@ -38,7 +38,7 @@ function Items({ entries, Item }: { entries: ResolvedContextEntry[]; Item: typeo
           <Icon name="chevronRight" size={12} className="ml-4 shrink-0 text-faint" />
         </Menu.SubmenuTrigger>
         <Menu.Portal>
-          <Menu.Positioner side="right" align="start" sideOffset={-2} className={menuPositionerClass}>
+          <Menu.Positioner side="right" align="start" className={menuPositionerClass}>
             <Menu.Popup className={`${menuPopupClass} max-h-80 overflow-y-auto`} data-context-submenu={entry.id}>
               <Items entries={entry.submenu} Item={Item} />
             </Menu.Popup>
@@ -138,7 +138,7 @@ export function PointMenu({ at, items, onClose }: { at: MenuPoint | null; items:
       }}
     >
       <ContextMenu.Portal>
-        <ContextMenu.Positioner anchor={anchor} side="bottom" align="start" sideOffset={2} className={menuPositionerClass}>
+        <ContextMenu.Positioner anchor={anchor} side="bottom" align="start" className={menuPositionerClass}>
           <ContextMenu.Popup className={menuPopupClass} data-context-menu="">
             {at && <OpenItems items={items} Item={ContextMenu.Item} />}
           </ContextMenu.Popup>

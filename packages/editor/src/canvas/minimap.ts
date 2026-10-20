@@ -90,7 +90,7 @@ export class Minimap {
       background: css(colors.popup),
       border: `1px solid ${css(colors.lineStrong)}`,
       display: "none",
-      zIndex: "1",
+      zIndex: "var(--overlay-chrome)",
       lineHeight: "0",
       userSelect: "none",
       opacity: REST_OPACITY,

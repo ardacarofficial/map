@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 
 import { getCommand, isEnabled, runCommand } from "../../commands/registry";
 import { openExportDialog } from "../../export/exportStore";
@@ -76,7 +76,7 @@ function ProjectName() {
         <Icon name="chevronDown" size={12} className="shrink-0 text-faint" />
       </Menu.Trigger></Tooltip>
       <Menu.Portal>
-        <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} min-w-56`} data-project-menu="">
             <Menu.Item className={menuItemClass} onClick={startProjectRename} data-command="project.rename">
               <Icon name="pencilLine" size={16} className="text-muted" />

@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { normalizeProjectSettings } from "@smap/core";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { create } from "zustand";

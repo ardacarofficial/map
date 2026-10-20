@@ -1,6 +1,6 @@
-import { ContextMenu } from "@base-ui/react/context-menu";
-import { Popover } from "@base-ui/react/popover";
-import { Menu } from "@base-ui/react/menu";
+import { ContextMenu } from "../primitives/Overlays";
+import { Popover } from "../primitives/Overlays";
+import { Menu } from "../primitives/Overlays";
 import type { Collection, Tileset } from "@smap/core";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -63,7 +63,7 @@ export function SourceMenuButton({ tileset, palette, className = "", onAction }:
   // under the nested menu's floating-position observers.
   return <Menu.Root onOpenChange={(open, details) => { if (!open && details.reason === "item-press") onAction?.(); }}>
     <Menu.Trigger render={<IconButton size="sm" aria-label={label} data-tileset-menu={tileset?.id} data-palette-menu={palette?.id} className={className} onClick={(e) => e.stopPropagation()}><Icon name="more" /></IconButton>} />
-    <Menu.Portal><Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
+    <Menu.Portal><Menu.Positioner side="bottom" align="end" className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
       {tileset ? <TilesetMenuItems tileset={tileset} /> : palette ? <PaletteMenuItems palette={palette} /> : null}
     </Menu.Popup></Menu.Positioner></Menu.Portal>
   </Menu.Root>;
@@ -98,7 +98,7 @@ export function TilesetSwitcher({ tilesets, palettes = [], active, palette = nul
       {palette ? <Icon name="grid" /> : <TilesetThumb tileset={active} size={16} />}
       <span className="min-w-0 flex-1 truncate text-left" data-tileset-switcher-name>{name}</span><Icon name="chevron-down" size={12} className="shrink-0 text-faint" />
     </Popover.Trigger></Tooltip>
-    <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+    <Popover.Portal><Popover.Positioner side="bottom" align="start" className={menuPositionerClass}>
       <Popover.Popup initialFocus={searchRef} className={`${menuPopupClass} flex max-h-[min(420px,var(--available-height))] w-70 flex-col`}>
         <TextField ref={searchRef} size="sm" leadingIcon="search" value={query} data-tileset-switcher-search aria-label={t("tilesetLib.search")} placeholder={t("tilesetLib.search")} className="mb-1 shrink-0"
           onChange={(e) => { setQuery(e.target.value); setHighlight(0); }}

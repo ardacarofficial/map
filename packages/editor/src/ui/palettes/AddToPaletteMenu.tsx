@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -18,7 +18,7 @@ export function AddToPaletteMenu({ items }: { items: readonly PaletteItem[] }) {
         <Icon name="chevronRight" size={12} className="text-faint" />
       </Menu.SubmenuTrigger>
       <Menu.Portal>
-        <Menu.Positioner side="right" align="start" sideOffset={-4} className={menuPositionerClass}>
+        <Menu.Positioner side="right" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-[min(360px,var(--available-height))] overflow-y-auto`}>
             {palettes.map((p) => (
               <Menu.Item key={p.id} className={menuItemClass} data-palette-option={p.id} onClick={() => addToPalette(p.id, items)}>

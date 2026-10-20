@@ -38,6 +38,7 @@ import { SettingsDialog } from "./platform/SettingsDialog";
 import { useEditorStore } from "./state/editorStore";
 import { useUiStore } from "./ui/uiStore";
 import { App } from "./ui";
+import { TooltipProvider } from "./ui/primitives/Tooltip";
 import { installContextMenuGuard } from "./ui/contextMenuGuard";
 import { preloadCanvas } from "./ui/canvas/loadCanvas";
 
@@ -49,12 +50,12 @@ export interface StartEditorOptions {
 function Root() {
   useAppSettings((s) => s.revision);
   return (
-    <>
+    <TooltipProvider>
       <App />
       <SettingsDialog />
       <MapBorderDialog />
       <ApplyPngDialog />
-    </>
+    </TooltipProvider>
   );
 }
 

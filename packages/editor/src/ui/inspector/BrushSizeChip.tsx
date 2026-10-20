@@ -1,5 +1,5 @@
 import { activeSmartStamp, useSmartStampSession } from "../stamps/smartStampSession";
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 
 import { t } from "../../i18n";
 import { useEditorStore } from "../../state/editorStore";
@@ -52,7 +52,7 @@ export function BrushSizeChip({ withShape = true, showLabel = true }: { withShap
           </Menu.Trigger>
           </Tooltip>
           <Menu.Portal>
-            <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+            <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
               <Menu.Popup className={`${menuPopupClass} min-w-48`}>
                 {BRUSH_PRESETS.map((preset) => (
                   <Menu.Item key={preset} className={`${menuItemClass} tabular`} onClick={() => setSize(preset)}>

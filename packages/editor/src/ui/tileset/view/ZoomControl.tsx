@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../../primitives/Overlays";
 
 import { t } from "../../../i18n";
 import { IconButton } from "../../primitives/Button";
@@ -28,7 +28,7 @@ export function ZoomControl({ override, onResetOverride, globalZoom, shownScale,
     {stack && <Tooltip label={t("tilesetLib.wheelHint")}><span role="img" aria-label={t("tilesetLib.wheelHint")} data-tileset-wheel-hint className="tileset-header-wheel flex size-6 items-center justify-center text-faint"><Icon name="info" /></span></Tooltip>}
     {!stack ? <span aria-label={t("tilesetEditing.zoom")} data-tileset-zoom-label className="w-14 text-right font-mono text-sm text-text tabular">{formattedZoom(shownScale)}</span> : <Menu.Root>
       <Menu.Trigger data-tileset-zoom-label className="h-control-sm w-14 rounded-sm border border-line bg-field px-1 font-mono text-sm text-text hover:border-line-strong">{stack ? t("tilesetDock.tilePixels", { value: displayTileSize }) : formattedZoom(shownScale)}</Menu.Trigger>
-      <Menu.Portal><Menu.Positioner side="top" align="end" sideOffset={4} className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
+      <Menu.Portal><Menu.Positioner side="top" align="end" className={menuPositionerClass}><Menu.Popup className={menuPopupClass}>
         <Menu.Item className={menuItemClass} onClick={() => onZoom(null)}>{t("tileset.zoomFit")}</Menu.Item>
         {ZOOM_STEPS.filter((step) => [0.5, 1, 2, 4].includes(step)).map((step) => <Menu.Item key={step} className={menuItemClass} onClick={() => onZoom(step)}>{formattedZoom(step)}</Menu.Item>)}
       </Menu.Popup></Menu.Positioner></Menu.Portal>

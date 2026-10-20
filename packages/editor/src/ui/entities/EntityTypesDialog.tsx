@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { ENTITY_FIELD_TYPES, isBuiltinEntityTypeId, type EntityFieldType, type EntityType, type MapDocument } from "@smap/core";
 import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 

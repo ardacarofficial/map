@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { beginReplacementPick, cancelReplacementPick, closeTileReplacement, commitTileReplacement, replacementPlan, updateTileReplacement, useTileReplacement, type ReplacementDraft } from "../../commands/replaceTiles";
@@ -27,7 +27,7 @@ export function ReplaceTilesDialog() {
     return () => window.removeEventListener("keydown", cancel, true);
   }, [draft?.picking]);
   if (!draft || store !== draft.store) return null;
-  if (draft.picking) return <div data-replace-picking="" role="status" className="fixed bottom-8 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-md border border-line-strong bg-popup px-3 py-2 text-sm text-text shadow-popup">
+  if (draft.picking) return <div data-replace-picking="" role="status" className="fixed bottom-8 left-1/2 z-(--overlay-popover) flex -translate-x-1/2 items-center gap-3 rounded-md border border-line-strong bg-popup px-3 py-2 text-sm text-text shadow-popup">
     {t("replaceTiles.picking", { target: t(draft.picking === "from" ? "replaceTiles.from" : "replaceTiles.to") })}
     <Button onClick={cancelReplacementPick}>{t("common.cancel")}</Button>
   </div>;

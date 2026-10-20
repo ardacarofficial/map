@@ -3,9 +3,16 @@
  * and the desktop shell's Vite app (`packages/desktop/vite.config.ts`), so
  * both compile the editor the same way.
  */
+import { fileURLToPath } from "node:url";
+
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { PluginOption } from "vite";
+
+/** The browser and Tauri builds must share the same feature-owned popover adapter. */
+export function editorAliases() {
+  return { "@base-ui/react/popover": fileURLToPath(new URL("./src/ui/primitives/Overlays.tsx", import.meta.url)) };
+}
 
 export function editorPlugins(): PluginOption[] {
   return [react(), tailwindcss()];

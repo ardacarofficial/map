@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useState, type FormEvent } from "react";
 
 import { defaultStampName, saveSelectionAsStamp, stampRegion, usedStampLayerIds } from "../../commands/stampActions";

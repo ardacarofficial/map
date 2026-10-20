@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../ui/primitives/Overlays";
 import { useRef, useState } from "react";
 import { backdropClass, popupClass, dialogWidthL } from "../../ui/dialogs/styles";
 import { dialogLayoutClass } from "../../ui/dialogs/DialogFrame";

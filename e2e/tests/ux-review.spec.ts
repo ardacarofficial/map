@@ -174,17 +174,20 @@ test("new project validates immediately and retains its preview without shifting
   await expect(dialog.getByRole("button", { name: "Oluştur", exact: true })).toBeEnabled();
 });
 
-test("corrupt PNG uses a decode error and its toast stays above the new-project dialog", async ({ page }) => {
+test("corrupt PNG reports its decode error inside the new-project dialog without covering Create", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Control+n");
   await expect(page.locator("[data-dialog=new-project]")).toBeVisible();
   await dropFile(page, "[data-dialog=new-project] form", "broken.png", [1, 2, 3]);
   await expect(page.locator("[data-toaster]")).toContainText("Görsel okunamadı: broken.png");
-  expect(await page.locator("[data-toaster]").evaluate(el => {
-    const dialog = document.querySelector<HTMLElement>("[data-dialog=new-project]")!;
-    let toastZ = 0;
-    for (let node: Element | null = el; node; node = node.parentElement) toastZ = Math.max(toastZ, Number.parseInt(getComputedStyle(node).zIndex) || 0);
-    return toastZ > Number.parseInt(getComputedStyle(dialog).zIndex);
+  const dialog = page.locator("[data-dialog=new-project]");
+  await expect(dialog.locator("[data-modal-feedback]")).toBeVisible();
+  expect(await dialog.locator("[data-modal-feedback]").evaluate(el => !!el.closest("footer"))).toBe(true);
+  const create = dialog.getByRole("button", { name: "Oluştur", exact: true });
+  expect(await create.evaluate(el => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return hit === el || el.contains(hit);
   })).toBe(true);
   await dropFile(page, "[data-dialog=new-project] form", "wrong.jpg", [1, 2, 3], "image/jpeg");
   await expect(page.locator("[data-toaster]")).toContainText("Yalnızca PNG tileset eklenebilir: wrong.jpg");
