@@ -69,7 +69,7 @@ import type {
 } from "./ops";
 import { cellChangesOf, patchCellCount, PatchBuilder, withCellChanges, type CellChangeSet } from "./patch";
 import type { PaletteEntry } from "./palette";
-import { isValidTileId, normalizeTileset, tilesetProblem, type Tileset, type GeneratedTilesetMetadata } from "./tileset";
+import { isValidTileId, normalizeTileset, withEditedRasterRevision, tilesetProblem, type Tileset, type GeneratedTilesetMetadata } from "./tileset";
 import { tileGridSpecProblem, tilesetGridRemap, tilesetImageExtent, tilesetWithGrid } from "./tilesetGrid";
 
 export type StructureChange = "layers" | "tilesets" | "palette" | "map" | "entities" | "entityTypes" | "randomSets" | "collections" | "props";
@@ -527,6 +527,8 @@ export class MapStore {
   readonly #historyLimit: number;
   /** Latest image provenance overlays historical tileset snapshots, including removed assets. */
   readonly #generatedProvenance = new Map<string, GeneratedTilesetMetadata>();
+  readonly #usageCounts = new Map<number, number>();
+  readonly #usageChunks = new Map<string, Map<ChunkKey, Map<number, number>>>();
   #revision = 0;
   #depth = 0;
   #pending: ChangeRecorder | null = null;
@@ -538,6 +540,35 @@ export class MapStore {
     this.#doc = document;
     this.#rasters = options.rasterAssets ?? new RasterAssets();
     this.#historyLimit = Math.max(0, options.historyLimit ?? 1000);
+    this.#rebuildUsageCounts();
+  }
+
+  /** O(1) ownership query, including hidden/locked layers and flipped placements.
+   * Histograms are updated from operation dirty chunks before subscribers run.
+   */
+  tileUsageCount(tilesetId: string, tileId: number): number {
+    return this.#usageCounts.get(this.#doc.palette.indexOf(tilesetId, tileId)) ?? 0;
+  }
+
+  #rebuildUsageCounts(): void {
+    this.#usageCounts.clear(); this.#usageChunks.clear();
+    for (const layer of this.#doc.layers) if (isTileLayer(layer)) for (const chunk of layer.chunks()) this.#updateUsageChunk(layer.id, chunk.key);
+  }
+
+  #updateUsageChunk(layerId: string, key: ChunkKey): void {
+    let chunks = this.#usageChunks.get(layerId);
+    if (!chunks) { chunks = new Map(); this.#usageChunks.set(layerId, chunks); }
+    const previous = chunks.get(key);
+    if (previous) for (const [index, count] of previous) {
+      const next = this.#usageCounts.get(index)! - count;
+      if (next) this.#usageCounts.set(index, next); else this.#usageCounts.delete(index);
+    }
+    const layer = this.#doc.getLayer(layerId), chunk = isTileLayer(layer) ? layer.getChunkByKey(key) : undefined;
+    if (!chunk) { chunks.delete(key); return; }
+    const histogram = new Map<number, number>();
+    for (const cell of chunk.data) { const index = cellPaletteIndex(cell); if (index) histogram.set(index, (histogram.get(index) ?? 0) + 1); }
+    chunks.set(key, histogram);
+    for (const [index, count] of histogram) this.#usageCounts.set(index, (this.#usageCounts.get(index) ?? 0) + count);
   }
 
   get rasterAssets(): RasterAssetsView { return this.#rasters.view; }
@@ -801,7 +832,7 @@ export class MapStore {
     if (this.inTransaction) throw new Error("project metadata cannot be synchronized during a transaction");
     const structure: StructureChange[] = [];
     const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
-    if (!same(this.#doc.tilesets, source.tilesets)) {
+    if (!sameList(this.#doc.tilesets, source.tilesets)) {
       this.#doc._setTilesets(source.tilesets);
       for (const ts of source.tilesets) if (ts.generated) this.#generatedProvenance.set(ts.id, ts.generated);
       structure.push("tilesets");
@@ -825,11 +856,17 @@ export class MapStore {
   #setEditedTileset(op: SetEditedTilesetOp): void {
     const old = this.#doc.getTileset(op.tileset.id);
     if (!old?.edited || !op.tileset.edited) throw new Error('setEditedTileset requires an existing edited asset');
+    if (old === op.tileset) return;
     const next = normalizeTileset(op.tileset);
     const problem = tilesetProblem(next);
     if (problem) throw new Error(problem);
-    if (old.tileWidth !== next.tileWidth || old.tileHeight !== next.tileHeight || next.edited!.nextTileId < old.edited.nextTileId || old.edited.origins.some(origin => !next.edited!.origins.some(o => JSON.stringify(o) === JSON.stringify(origin)))) throw new Error('edited slots and origins cannot be reassigned');
-    if (JSON.stringify(old) === JSON.stringify(next)) return;
+    const nextOrigins = old.edited.origins === next.edited!.origins ? undefined : new Map(next.edited!.origins.map(o => [o.tileId, o]));
+    const reassigned = nextOrigins && old.edited.origins.some(origin => {
+      const after = nextOrigins.get(origin.tileId);
+      return !after || after.sourceTilesetId !== origin.sourceTilesetId || after.sourceTileId !== origin.sourceTileId || after.sourcePixelHash !== origin.sourcePixelHash;
+    });
+    if (old.tileWidth !== next.tileWidth || old.tileHeight !== next.tileHeight || next.edited!.nextTileId < old.edited.nextTileId || reassigned) throw new Error('edited slots and origins cannot be reassigned');
+    if (old === next) return;
     const ctx = this.#openOp();
     this.#replaceTileset(ctx, next);
     this.#closeOp(ctx);
@@ -872,13 +909,9 @@ export class MapStore {
     const before = this.#rasters.info(assetId!);
     if (ts && (!before || before.tileCount !== ts.edited!.nextTileId || before.columns !== ts.columns || before.rows !== ts.rows || before.tileWidth !== ts.tileWidth || before.tileHeight !== ts.tileHeight)) throw new Error('edited raster must be loaded before allocation');
     const oldTile = this.#rasters.getTile(assetId!, tileId)?.data;
-    const old = this.#rasters.getAsset(assetId!);
-    const data = new Uint8Array(width * height * 4);
-    if (old) data.set(old.data);
-    for (let y = 0; y < op.tileHeight; y++) data.set(pixels.subarray(y * op.tileWidth * 4, (y + 1) * op.tileWidth * 4), ((Math.floor(tileId / 16) * op.tileHeight + y) * width + (tileId % 16) * op.tileWidth) * 4);
-    const contentHash = rasterContentHash(width, height, data);
+    const contentHash = '0'.repeat(64); // Resolved lazily from the committed immutable tile pages.
     const origins = [...(ts?.edited?.origins ?? []), ...(op.source ? [{ tileId, sourceTilesetId: op.source.tilesetId, sourceTileId: op.source.tileId, sourcePixelHash: op.source.pixelHash }] : [])];
-    const next = normalizeTileset({ ...(ts ?? { id: assetId!, name: 'Düzenlenen', tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, margin: 0, spacing: 0 }), rows, imagePath: editedImagePath(assetId!, contentHash), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: tileId + 1, contentHash, origins } });
+    const next = normalizeTileset({ ...(ts ? rasterMetadataBase(ts) : { id: assetId!, name: 'Düzenlenen', tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, margin: 0, spacing: 0 }), rows, imagePath: editedImagePath(assetId!, contentHash), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: tileId + 1, contentHash, origins } });
     const problem = tilesetProblem(next);
     if (problem) throw new Error(problem);
     // Preflight palette capacity before any raster/metadata mutation.
@@ -887,8 +920,10 @@ export class MapStore {
     const after = Object.freeze({ tileCount: tileId + 1, assetId: assetId!, tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, rows });
     this.#rasters._slot(after, assetId!, tileId, pixels);
     ctx.rec.recordStructural(Object.freeze({ kind: 'rasterSlot', assetId: assetId!, tileId, before, after, get beforeBytes() { return oldTile?.slice(); }, get afterBytes() { return pixels.slice(); } }));
-    if (ts) this.#replaceTileset(ctx, next);
-    else this.#setTilesetList(ctx, [...this.#doc.tilesets, next]);
+    const snapshot = this.#rasters.fork();
+    const revision = withEditedRasterRevision(next, () => { const image = snapshot.getAsset(assetId!)!; return rasterContentHash(image.width, image.height, image.data); });
+    if (ts) this.#replaceTileset(ctx, revision);
+    else this.#setTilesetList(ctx, [...this.#doc.tilesets, revision]);
     const paletteBefore = Object.freeze([...this.#doc.palette.entries()]);
     const paletteIndex = this.#doc.palette._getOrAdd(assetId!, tileId);
     ctx.rec.recordStructural(Object.freeze({ kind: 'paletteAppend', before: paletteBefore, after: Object.freeze([...this.#doc.palette.entries()]) }));
@@ -921,9 +956,9 @@ export class MapStore {
   #patchPixels(op: PatchPixelsOp): readonly PixelRectPatch[] {
     const patches: PixelRectPatch[] = [];
     const rects: PixelDirtyRect[] = [];
-    const images = new Map<string, { width: number; height: number; data: Uint8Array }>();
+    const assets = new Set<string>();
     const tiles = new Map<string, { rect: PixelDirtyRect; before: Uint8Array; after: Uint8Array }>();
-    // All validation, hashing and allocation happens before the first mutation.
+    // Validate every patch and allocate owned history bytes before the first mutation.
     for (const p of op.patches) {
       const ts = this.#doc.getTileset(p.assetId);
       if (ts?.edited && this.#rasters.info(p.assetId)?.tileCount !== ts.edited.nextTileId) throw new Error('edited metadata must be synchronized before writing');
@@ -945,18 +980,9 @@ export class MapStore {
         tiles.set(key, history);
       }
       for (let row = 0; row < p.height; row++) history.after.set(after.subarray(row * p.width * 4, (row + 1) * p.width * 4), ((p.y + row) * tile.width + p.x) * 4);
-      let image = images.get(p.assetId);
-      if (!image) { image = this.#rasters.getAsset(p.assetId)!; images.set(p.assetId, image); }
-      const x = (p.tileId % ts.columns) * ts.tileWidth + p.x;
-      const y = Math.floor(p.tileId / ts.columns) * ts.tileHeight + p.y;
-      for (let row = 0; row < p.height; row++) image.data.set(after.subarray(row * p.width * 4, (row + 1) * p.width * 4), ((y + row) * image.width + x) * 4);
+      assets.add(p.assetId);
     }
     if (!patches.length) return Object.freeze([]);
-    const metadata = [...images].map(([id, image]) => {
-      const ts = this.#doc.getTileset(id)!;
-      const contentHash = rasterContentHash(image.width, image.height, image.data);
-      return normalizeTileset({ ...ts, imagePath: editedImagePath(id, contentHash), edited: { ...ts.edited!, contentHash } });
-    });
     const ctx = this.#openOp();
     for (const p of patches) {
       this.#rasters._rect(p.assetId, p.tileId, p.x, p.y, p.width, p.height, p.after);
@@ -964,7 +990,10 @@ export class MapStore {
     }
     const owned = Object.freeze(patches);
     ctx.rec.recordStructural(Object.freeze({ kind: 'pixels', patches: Object.freeze([...tiles.values()].map(t => ownedPixelPatch(t.rect, t.before, t.after))) }));
-    for (const next of metadata) this.#replaceTileset(ctx, next);
+    const snapshot = this.#rasters.fork();
+    for (const id of assets) this.#replaceTileset(ctx, withEditedRasterRevision(this.#doc.getTileset(id)!, () => {
+      const image = snapshot.getAsset(id)!; return rasterContentHash(image.width, image.height, image.data);
+    }));
     this.#closeOp(ctx);
     return owned;
   }
@@ -1996,6 +2025,8 @@ export class MapStore {
   }
 
   #emit(change: Omit<StoreChangeEvent, "revision" | "pixelRects"> & { pixelRects?: readonly PixelDirtyRect[] }): void {
+    if (change.structure.includes('layers') || change.structure.includes('map')) this.#rebuildUsageCounts();
+    else for (const dirty of change.cells) for (const key of dirty.chunks) this.#updateUsageChunk(dirty.layerId, key);
     if (change.cells.length > 0 || change.structure.length > 0 || change.pixelRects?.length) this.#revision++;
     const event: StoreChangeEvent = Object.freeze({ revision: this.#revision, ...change, pixelRects: Object.freeze((change.pixelRects ?? []).map(r => Object.freeze({ ...r }))) });
     let firstError: unknown = null;
@@ -2025,4 +2056,9 @@ function cropPixels(data: Uint8Array, stride: number, p: PixelDirtyRect): Uint8A
 function ownedPixelPatch(p: PixelDirtyRect, before: Uint8Array, after: Uint8Array): PixelRectPatch {
   const a = before.slice(), b = after.slice();
   return Object.freeze({ ...dirtyPixelRect(p), get before() { return a.slice(); }, get after() { return b.slice(); } });
+}
+
+/** Copy editable geometry/provenance without resolving the previous revision's digest. */
+function rasterMetadataBase(ts: Tileset): Tileset {
+  return { id: ts.id, name: ts.name, ...(ts.group === undefined ? {} : { group: ts.group }), ...(ts.roadProfile ? { roadProfile: ts.roadProfile } : {}), tileWidth: ts.tileWidth, tileHeight: ts.tileHeight, columns: ts.columns, rows: ts.rows, margin: ts.margin, spacing: ts.spacing, imagePath: editedImagePath(ts.id, '0'.repeat(64)), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: ts.edited!.nextTileId, origins: ts.edited!.origins, contentHash: '0'.repeat(64) } };
 }

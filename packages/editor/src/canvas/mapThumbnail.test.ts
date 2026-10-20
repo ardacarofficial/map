@@ -84,3 +84,15 @@ it("invalidates overview samples when a tileset grid rewrites palette entries", 
   expect(thumb.snapshot()).toBeDefined();
   thumb.destroy();
 });
+
+it('reads edited tile pages without reading the complete atlas bitmap', () => {
+  const store = new MapStore(createDocument({ width: 4, height: 4 }));
+  const layerId = store.dispatch({ type: 'addLayer', layer: { name: 'Ground' } });
+  const slot = store.dispatch({ type: 'allocateEditedTile', tileWidth: 32, tileHeight: 32, pixels: new Uint8Array(32 * 32 * 4).fill(255) });
+  store.dispatch({ type: 'remapCells', layerId, cells: [{ x: 0, y: 0 }], tilesetId: slot.assetId, tileId: slot.tileId });
+  const lookup = vi.fn(() => undefined), thumb = new MapThumbnail(store, lookup, () => {});
+  while (thumb.pending) thumb.update(50);
+  expect(lookup).not.toHaveBeenCalled();
+  expect(thumb.snapshot()).toBeDefined();
+  thumb.destroy();
+});

@@ -1,7 +1,7 @@
 import { t } from "../i18n";
 /** Pixel planning/COW boundary. No DOM, UI state, disk IO or live mutation until commit. */
 import {
-  cellPaletteIndex, cellFlags, isTileLayer, MapStore, RasterAssets, parseLevel, serializeLevel,
+  cellPaletteIndex, cellFlags, isTileLayer, MapStore, parseLevel, serializeLevel,
   pixelStrokePoints, pixelRectangle, mirrorPixels, pixelDirtyRect, planPixelFill, placedPixelSize,
   placedToSourcePixel, sourceToPlacedPixel, rasterContentHash, prepareWorldEdit, applyWorldEdit, WorldEditError,
   type RasterImage, type Rgba8, type PixelPoint, type PixelRect, type PixelWrite, type TilePixelPlan,
@@ -98,10 +98,8 @@ export function applyPixelWrites(owner: PixelOwner, writes: readonly PixelWrite[
   return after;
 }
 function detached(store: MapStore): MapStore {
-  const rasters = new RasterAssets(), doc = store.document;
-  const copy = new MapStore(parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes), { rasterAssets: rasters });
-  for (const ts of doc.tilesets) if (ts.edited) { const image = store.rasterAssets.getAsset(ts.id); if (image) copy.dispatch({ type: 'loadRasterAsset', asset: { assetId: ts.id, tileWidth: ts.tileWidth, tileHeight: ts.tileHeight, columns: ts.columns, rows: ts.rows, data: image.data } }); }
-  return copy;
+  const doc = store.document;
+  return new MapStore(parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes), { rasterAssets: store.rasterAssets.fork() });
 }
 export function tileUsages(doc: MapDocument, tilesetId: string, tileId: number) {
   const indices = new Set<number>();
@@ -154,7 +152,8 @@ export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: r
     const o = plan.owner, key = `${o.tilesetId}:${o.tileId}`;
     if (scope === 'world' && o.tilesetId && processed.has(key)) continue;
     processed.add(key);
-    const all = o.tilesetId ? maps.flatMap(m => tileUsages(ws.entry(m.id)!.store.document, o.tilesetId!, o.tileId!).map(u => ({ ...u, mapId: m.id }))) : [];
+    const usageCount = o.tilesetId ? maps.reduce((n, m) => n + ws.entry(m.id)!.store.tileUsageCount(o.tilesetId!, o.tileId!), 0) : 0;
+    const all = scope === 'world' && o.tilesetId ? maps.flatMap(m => tileUsages(ws.entry(m.id)!.store.document, o.tilesetId!, o.tileId!).map(u => ({ ...u, mapId: m.id }))) : [];
     const targets = scope === 'world' && o.tilesetId ? all : [{ mapId: origin, layerId, x: o.cellX, y: o.cellY }];
     const blockers = targets.flatMap(t => { const l = ws.entry(t.mapId)!.store.document.getLayer(t.layerId)!; return [...(l.locked ? [{ mapId: t.mapId, layerId: t.layerId, reason: 'locked' as const }] : []), ...(!l.visible ? [{ mapId: t.mapId, layerId: t.layerId, reason: 'hidden' as const }] : [])]; });
     if (blockers.length) throw new WorldEditError(blockers);
@@ -177,7 +176,7 @@ export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: r
       const owner = group.owner, after = applyPixelWrites(owner, group.writes);
       let assetId = o.tilesetId!, tileId = o.tileId!;
       const ts = o.tilesetId ? live.document.getTileset(o.tilesetId) : undefined;
-      const reuse = ts?.edited && tileId < ts.edited.nextTileId && all.length === 1 && !hasPixelLibraryReference(live.document, ts.id, tileId, clips) && owner.width === ts.tileWidth && owner.height === ts.tileHeight;
+      const reuse = ts?.edited && tileId < ts.edited.nextTileId && usageCount === 1 && !hasPixelLibraryReference(live.document, ts.id, tileId, clips) && owner.width === ts.tileWidth && owner.height === ts.tileHeight;
       if (reuse) {
         const rect = pixelDirtyRect(group.writes)!;
         const crop = (data: Uint8Array) => { const out = new Uint8Array(rect.width * rect.height * 4); for (let row = 0; row < rect.height; row++) { const offset = ((rect.y + row) * owner.width + rect.x) * 4; out.set(data.subarray(offset, offset + rect.width * 4), row * rect.width * 4); } return out; };

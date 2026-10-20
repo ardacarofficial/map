@@ -94,6 +94,8 @@ export function tilesetHistoryVerb(changes: readonly HistoryChange[]): HistoryVe
     const { before, after } = change;
     if (before.name !== after.name) return "history.tilesetRename";
     if (before.group !== after.group) return "history.tilesetGroup";
+    // Pixel paths are lazy content hashes; describing history must not resolve them.
+    if (before.edited && after.edited) return "pixel.stroke";
     if (before.imagePath !== after.imagePath) return "history.tilesetImage";
     if (before.tileWidth !== after.tileWidth || before.tileHeight !== after.tileHeight || before.columns !== after.columns || before.rows !== after.rows || before.margin !== after.margin || before.spacing !== after.spacing) return "history.tilesetGrid";
 

@@ -103,7 +103,10 @@ export interface Tileset {
 
 }
 
+const normalizedTilesets = new WeakSet<Tileset>();
+
 export function normalizeTileset(tileset: Tileset): Tileset {
+  if (normalizedTilesets.has(tileset)) return tileset;
   const base: Tileset = {
     id: tileset.id,
     name: tileset.name,
@@ -120,6 +123,7 @@ export function normalizeTileset(tileset: Tileset): Tileset {
     spacing: tileset.spacing,
   };
 
+  normalizedTilesets.add(base);
   return Object.freeze(base);
 }
 
@@ -177,6 +181,7 @@ export function gridCount(imageSize: number, tileSize: number, margin = 0, spaci
  * Checks integer sizes, a non-empty grid and a safe relative `imagePath`.
  */
 export function tilesetProblem(tileset: Tileset): string | null {
+  if (normalizedTilesets.has(tileset) && Object.getOwnPropertyDescriptor(tileset, "imagePath")?.get) return null;
   if (typeof tileset.id !== "string" || tileset.id.length === 0) return "id must be a non-empty string";
   if (typeof tileset.name !== "string") return "name must be a string";
   if (tileset.group !== undefined && typeof tileset.group !== "string") return "group must be a string";
@@ -222,4 +227,24 @@ export function relativePathProblem(path: unknown): string | null {
     return `must not contain empty, "." or ".." segments, got "${path}"`;
   }
   return null;
+}
+
+/** @internal Content addressing is resolved only when save/export reads the path/hash.
+ * The closure owns an immutable tile-page snapshot, independent of subsequent edits/replay.
+ * Geometry and provenance have already been validated before the raster mutation.
+ */
+export function withEditedRasterRevision(base: Tileset, hash: () => string): Tileset {
+  const assetId = base.id;
+  let digest: string | undefined, resolveHash: (() => string) | undefined = hash;
+  const contentHash = () => {
+    if (digest === undefined) { digest = resolveHash!(); resolveHash = undefined; }
+    return digest;
+  };
+  const edited = Object.defineProperty({ kind: 'pixel' as const, layoutVersion: 1 as const, nextTileId: base.edited!.nextTileId, contentHash: '', origins: base.edited!.origins }, 'contentHash', { enumerable: true, get: contentHash });
+  const descriptors: PropertyDescriptorMap = Object.getOwnPropertyDescriptors(base);
+  descriptors.edited = { enumerable: true, value: Object.freeze(edited) };
+  descriptors.imagePath = { enumerable: true, get: () => `tilesets/${assetId}-${contentHash()}.png` };
+  const next = Object.defineProperties({}, descriptors) as Tileset;
+  normalizedTilesets.add(next);
+  return Object.freeze(next);
 }

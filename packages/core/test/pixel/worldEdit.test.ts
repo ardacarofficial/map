@@ -186,3 +186,14 @@ it('prepares raster-only edits without enumerating unrelated map layers/chunks',
   applyWorldEdit(history, plan); expect(origin.store.rasterAssets.getTile(slot.assetId, 0)!.data).toEqual(pixels(9));
   history.undo(); expect(origin.store.rasterAssets.getTile(slot.assetId, 0)!.data).toEqual(pixels(4));
 });
+
+it('reuses one immutable metadata revision across maps and keeps repeated world pixel writes as no-ops', () => {
+  const { maps, history } = setup(), owner = maps[0]!;
+  const slot = owner.store.dispatch({ type: 'allocateEditedTile', tileWidth: 1, tileHeight: 1, pixels: pixels(4) });
+  for (const m of maps.slice(1)) m.store.dispatch({ type: 'addTileset', tileset: owner.store.document.getTileset(slot.assetId)! });
+  history.reset();
+  const edit = () => applyWorldEdit(history, prepareWorldEdit('0', maps.map((m, i) => ({ ...m, operations: i ? [] : [{ type: 'editTilePixels', assetId: slot.assetId, tileId: 0, x: 0, y: 0, width: 1, height: 1, after: pixels(9) }] }))));
+  edit(); const depth = history.undoDepth;
+  edit(); expect(history.undoDepth).toBe(depth);
+  expect(maps.every(m => m.store.document.getTileset(slot.assetId) === owner.store.document.getTileset(slot.assetId))).toBe(true);
+});

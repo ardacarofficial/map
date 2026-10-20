@@ -9,3 +9,13 @@ it('ignores edited content hashes while retaining layout, names and source paths
   const { edited: _, ...source } = ts;
   expect(tilesetStructureKey([source])).not.toBe(tilesetStructureKey([{ ...source, imagePath: 'other.png' }]));
 });
+
+it('does not traverse large immutable provenance arrays on pixel revisions', () => {
+  let reads = 0;
+  const origins = Object.freeze(Array.from({ length: 1024 }, (_, tileId) => Object.freeze({ tileId, sourceTilesetId: 'source', sourceTileId: 0, get sourcePixelHash() { reads++; return 'source-version'; } })));
+  const ts: Tileset = { id: 'edited', name: 'Edited', imagePath: 'tilesets/a.png', tileWidth: 32, tileHeight: 32, columns: 16, rows: 64, margin: 0, spacing: 0, edited: { kind: 'pixel', layoutVersion: 1, nextTileId: 1024, contentHash: 'a'.repeat(64), origins } };
+  const key = tilesetStructureKey([ts]);
+  expect(tilesetStructureKey([{ ...ts, imagePath: 'tilesets/b.png', edited: { ...ts.edited!, contentHash: 'b'.repeat(64) } }])).toBe(key);
+  expect(reads).toBe(0);
+  expect(tilesetStructureKey([{ ...ts, edited: { ...ts.edited!, origins: Object.freeze([]) } }])).not.toBe(key);
+});

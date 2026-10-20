@@ -400,8 +400,12 @@ export class MapThumbnail {
     let block: Uint8ClampedArray | null = null;
     const tileset = entry ? doc.getTileset(entry.tilesetId) : undefined;
     if (entry && tileset && entry.tileId >= 0 && entry.tileId < tileCount(tileset)) {
-      const pixels = this.#pixels(entry.tilesetId);
-      if (pixels) block = tileThumb(pixels, tileRect(tileset, entry.tileId), overview ? this.#overviewK : this.#k);
+      const tile = tileset.edited ? this.#store.rasterAssets.getTile(entry.tilesetId, entry.tileId) : undefined;
+      if (tile) block = tileThumb({ ...tile, data: new Uint8ClampedArray(tile.data) }, { x: 0, y: 0, width: tile.width, height: tile.height }, overview ? this.#overviewK : this.#k);
+      else {
+        const pixels = this.#pixels(entry.tilesetId);
+        if (pixels) block = tileThumb(pixels, tileRect(tileset, entry.tileId), overview ? this.#overviewK : this.#k);
+      }
     }
     // A tileset whose image has not arrived yet is not cached as "not drawable".
     if (block || !entry || this.#tilesetPixels.has(entry.tilesetId)) blocks[paletteIndex] = block;

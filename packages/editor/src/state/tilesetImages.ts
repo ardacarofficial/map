@@ -18,10 +18,13 @@ export interface TilesetImage {
   bytes: Uint8Array | undefined;
 }
 
+const bitmapClosers = new WeakMap<TilesetImage, () => void>();
 const encoders = new WeakMap<TilesetImage, () => Promise<Uint8Array>>();
 const encoding = new WeakMap<TilesetImage, Promise<Uint8Array>>();
-export function deferredTilesetImage(tilesetId: string, bitmap: TilesetBitmap, encode: () => Promise<Uint8Array>): TilesetImage {
-  const image: TilesetImage = { tilesetId, bitmap, bytes: undefined };
+export function deferredTilesetImage(tilesetId: string, bitmap: TilesetBitmap | (() => TilesetBitmap), encode: () => Promise<Uint8Array>): TilesetImage {
+  let materialized: TilesetBitmap | undefined = typeof bitmap === 'function' ? undefined : bitmap;
+  const image: TilesetImage = { tilesetId, get bitmap() { return materialized ??= (bitmap as () => TilesetBitmap)(); }, bytes: undefined };
+  bitmapClosers.set(image, () => { materialized?.close(); });
   encoders.set(image, encode); return image;
 }
 export function tilesetImageBytes(image: TilesetImage): Promise<Uint8Array> {
@@ -49,7 +52,9 @@ const retired = new WeakSet<TilesetImage>();
 const closed = new WeakSet<TilesetImage>();
 function closeImage(image: TilesetImage): void {
   if (closed.has(image) || leases.get(image)) return;
-  closed.add(image); if ("close" in image.bitmap) image.bitmap.close();
+  closed.add(image);
+  const close = bitmapClosers.get(image);
+  if (close) close(); else if ("close" in image.bitmap) image.bitmap.close();
 }
 export function retainTilesetImage(image: TilesetImage): () => void {
   leases.set(image, (leases.get(image) ?? 0) + 1);

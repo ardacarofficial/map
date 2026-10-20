@@ -13,7 +13,7 @@ import { beforePixelModeChange, usePixelUi } from '../state/pixelUi';
 import { toast } from '../ui/toast/toastStore';
 import { snappedOffset } from './camera';
 import { CANVAS_COLORS } from './colors';
-import { applyPixelWrites, hasPixelLibraryReference, tileUsages, planPixelGesture, preparePixelCommit, rasterView, type PixelCellPlan, type PixelGestureOptions, type PixelTool } from './pixelEditing';
+import { applyPixelWrites, hasPixelLibraryReference, planPixelGesture, preparePixelCommit, rasterView, type PixelCellPlan, type PixelGestureOptions, type PixelTool } from './pixelEditing';
 import type { ToolHost } from './toolController';
 
 interface PixelGesture { pointerId: number; button: number; store: MapStore; revision: number; layerId: string; samples: PixelPoint[]; options: PixelGestureOptions; dirty: boolean; plans: PixelCellPlan[] }
@@ -105,7 +105,7 @@ export class PixelController {
     const started = performance.now();
     try { g.plans = planPixelGesture(g.store, g.layerId, g.samples, g.options, readPixelSource); this.#host.scene?.setPixelPreview(g.layerId, g.plans.map(p => {
       const o = p.owner, ws = getLevelWorkspace(), ts = o.tilesetId ? g.store.document.getTileset(o.tilesetId) : undefined;
-      const unique = ts?.edited && o.tileId! < ts.edited.nextTileId && !hasPixelLibraryReference(g.store.document, ts.id, o.tileId!, useProjectLibrary.getState().stamps) && o.width === ts.tileWidth && o.height === ts.tileHeight && ws?.cachedIds().reduce((n, id) => n + tileUsages(ws.entry(id)!.store.document, ts.id, o.tileId!).length, 0) === 1;
+      const unique = ts?.edited && o.tileId! < ts.edited.nextTileId && !hasPixelLibraryReference(g.store.document, ts.id, o.tileId!, useProjectLibrary.getState().stamps) && o.width === ts.tileWidth && o.height === ts.tileHeight && ws?.cachedIds().reduce((n, id) => n + ws.entry(id)!.store.tileUsageCount(ts.id, o.tileId!), 0) === 1;
       return { ...o, data: applyPixelWrites(o, p.writes), previewRect: p.dirtyRect!, ...(unique ? { previewAsset: { assetId: ts.id, tileId: o.tileId! } } : {}) };
     })); }
     catch { this.cancel(); toast.error(t('pixel.sourceMissing')); }
