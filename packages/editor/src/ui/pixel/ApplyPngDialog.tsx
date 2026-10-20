@@ -1,4 +1,4 @@
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from '../primitives/Overlays';
 import { useEffect, useRef } from 'react';
 import type { RasterImage } from '@smap/core';
 import { choosePngBackup, choosePngVariant, closePngWriteback, confirmPngWriteback, pngCanConfirm, pngReasonKey, pngTileBefore, pngUsageCount, selectPngSource, usePngWriteback, variantGroups, type PngDraft } from '../../commands/pixelWriteback';

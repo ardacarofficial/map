@@ -1,3 +1,4 @@
+import { formatUiError } from "./errorMessages";
 import { pixelColorSettings, usePixelColors } from "../state/pixelColors";
 /**
  * Applies the settings file (language + shortcut overrides) and keeps the UI
@@ -103,7 +104,7 @@ async function readAppSettings(): Promise<void> {
     text = await platform.readSettings();
   } catch (error) {
     platform.log("error", `settings: ${String(error)}`);
-    toast.error(t("settings.unreadable", { detail: error instanceof Error ? error.message : String(error) }));
+    toast.error(t("settings.unreadable", { detail: formatUiError(error) }));
     return;
   }
   if (text === null) {

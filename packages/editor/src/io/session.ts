@@ -1,3 +1,4 @@
+import { formatUiError } from "../platform/errorMessages";
 import { EditedAssetError } from "./editedPng";
 import { usePixelUi } from "../state/pixelUi";
 import type { ColorPalette } from "@smap/core";
@@ -227,7 +228,7 @@ export function describeError(error: unknown): string {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
     return t("toast.permissionDenied");
   }
-  return error instanceof Error ? error.message : String(error);
+  return formatUiError(error);
 }
 
 async function withBusy<T>(work: () => Promise<T>): Promise<T | undefined> {

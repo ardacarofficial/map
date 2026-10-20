@@ -274,3 +274,52 @@ test("trackpad and pinch, selection during Space, cancelled pan and dock move re
   await expect(page.locator("[data-tileset-grid]")).toHaveAttribute("data-tileset-scale", scale!);
   await expect(page.locator("[data-selected-tiles]")).toHaveAttribute("data-selected-tiles", "0,1,8,9");
 });
+
+test("single PNG survives dock collapse, visibility, moves and zero viewport without losing zoom", async ({ page }) => {
+  await open(page);
+  const vp = page.locator('[data-tileset-viewport]'), grid = page.locator('[data-tileset-grid]');
+  const r = (await vp.boundingBox())!;
+  await page.mouse.move(r.x + 100, r.y + 90); await page.mouse.wheel(0, -200);
+  await expect.poll(async () => Number(await grid.getAttribute('data-tileset-scale'))).toBeGreaterThan(1);
+  await page.mouse.down({ button: 'middle' }); await page.mouse.move(r.x + 140, r.y + 120, { steps: 4 }); await page.mouse.up({ button: 'middle' });
+  const scale = (await grid.getAttribute('data-tileset-scale'))!;
+  const reachable = async () => {
+    await expect(grid).toHaveAttribute('data-tileset-scale', scale);
+    await expect.poll(() => vp.evaluate(el => {
+      const v = el.getBoundingClientRect(), g = el.querySelector('[data-tileset-grid]')!.getBoundingClientRect();
+      return Math.min(v.right, g.right) - Math.max(v.left, g.left) >= 31 && Math.min(v.bottom, g.bottom) - Math.max(v.top, g.top) >= 31;
+    })).toBe(true);
+    await expect(page.locator('[data-tileset-zoom-label]')).toHaveText(`%${Math.round(Number(scale) * 100)}`);
+  };
+  const savedTransform = () => page.evaluate(async path => {
+    const { useTilesetView } = await import(/* @vite-ignore */ path);
+    return useTilesetView.getState().transforms['overworld-32'];
+  }, '/src/ui/tileset/tilesetViewStore.ts');
+  const saved = await savedTransform();
+  await page.keyboard.press('Control+b'); await expect(vp).toBeHidden();
+  await page.keyboard.press('Control+b'); await reachable();
+  expect(await savedTransform()).toEqual(saved);
+  for (const action of ['hide', 'show']) {
+    await page.locator('[data-menu=view]').click();
+    await page.locator(`[data-command="dock.left.${action}"]`).click();
+  }
+  await reachable();
+  for (const zone of ['bottom', 'left']) {
+    await page.locator('[data-panel-tab=tileset]').click({ button: 'right' });
+    await page.locator('[data-context-item=move]').hover();
+    await page.locator(`[data-context-item=move-${zone}]`).click();
+    await reachable();
+  }
+  // A hidden, still-mounted viewport must ignore Fit, wheel and layout-generated scrolls.
+  const before = await grid.boundingBox();
+  await vp.evaluate(async el => { el.style.display = 'none'; await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+  await page.evaluate(async path => { const { fitTilesetViewport } = await import(/* @vite-ignore */ path); fitTilesetViewport(); }, '/src/commands/tilesetEditing.ts');
+  await vp.evaluate(el => { el.dispatchEvent(new Event('scroll')); el.style.display = ''; });
+  await reachable();
+  expect((await grid.boundingBox())!.x).toBeCloseTo(before!.x, 0);
+  // Previously saved offscreen pans are repaired on the next usable viewport.
+  await vp.evaluate(async el => { el.style.display = 'none'; await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+  await page.evaluate(async path => { const { useTilesetView } = await import(/* @vite-ignore */ path); useTilesetView.getState().setTransform('overworld-32', { x: -9000, y: 9000, scale: Number(document.querySelector('[data-tileset-grid]')!.getAttribute('data-tileset-scale')) }); }, '/src/ui/tileset/tilesetViewStore.ts');
+  await vp.evaluate(el => { el.style.display = ''; });
+  await reachable();
+});

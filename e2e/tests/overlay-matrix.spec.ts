@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { open as openPixelMap, key as pixelKey, click as pixelClick, type Hook } from '../support/pixelHarness';
 import { openDockMap } from '../support/docking';
 import { expect, test } from '../support/fixtures';
 
@@ -216,11 +217,11 @@ for (const [width, height] of [[1024, 600], [1366, 768], [1920, 1080]] as const)
           await page.locator('[data-pixel-mode] [role=radio]').last().click();
           const swatch = page.locator('[data-pixel-swatch=fg]');
           await swatch.click();
-          const hex = page.getByRole('dialog');
-          await inside(page, hex); await uncovered(hex.locator('input'));
-          await expect(hex.locator('..')).toHaveAttribute('data-overlay-policy', '');
-          await page.screenshot({ path: info.outputPath('pixel-hex.png') });
-          await page.keyboard.press('Escape'); await expect(swatch).toBeFocused();
+          const colors = page.locator('[data-color-panel]');
+          await expect(colors).toBeVisible();
+          await uncovered(colors.getByRole('textbox', { name: 'HEX', exact: true }));
+          await expect(page.getByRole('dialog')).toHaveCount(0);
+          await page.screenshot({ path: info.outputPath('pixel-colors.png') });
           await page.locator('[data-pixel-mode] [role=radio]').first().click();
           await page.locator('[data-tileset-zoom-fit]').click();
           const firstCell = 16 * Number(await grid.getAttribute('data-tileset-scale'));
@@ -352,3 +353,59 @@ test('narrow canvas feedback stacks above the minimap and yields to dialogs', as
   await uncovered(dialog.locator('footer button[type=submit]'));
   await page.screenshot({ path: info.outputPath('modal-feedback.png') });
 });
+
+for (const [width, height] of [[1366, 768], [1024, 600]] as const) for (const deviceScaleFactor of [1, 1.5]) {
+  test.describe(`pixel surfaces ${width}x${height} @${deviceScaleFactor}`, () => {
+    test.use({ viewport: { width, height }, deviceScaleFactor, actionTimeout: 15_000 });
+    test('Renk tooltips and PNG apply/restore keep modal ownership, geometry and focus', async ({ page }) => {
+      test.setTimeout(120_000);
+      await openPixelMap(page);
+      await pixelKey(page, 'm');
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.pixelUi.getState().pending)).toBe(false);
+      await pixelClick(page, 1, 1);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.document.tilesets.some(source => source.edited))).toBe(true);
+      const colors = page.locator('[data-color-panel]');
+      await expect(colors).toBeVisible();
+      const add = colors.getByRole('button', { name: 'Yeni renk paleti', exact: true });
+      await add.scrollIntoViewIfNeeded(); await add.hover();
+      const tip = page.getByRole('tooltip');
+      await inside(page, tip);
+      const a = (await add.boundingBox())!, b = (await tip.boundingBox())!;
+      expect(b.y + b.height <= a.y - 5.5 || b.y >= a.y + a.height + 5.5 || b.x + b.width <= a.x - 5.5 || b.x >= a.x + a.width + 5.5).toBe(true);
+      await add.focus(); await page.keyboard.press('Escape');
+      await expect(tip).toBeHidden(); await expect(add).toBeFocused();
+      await add.click(); await expect(tip).toBeHidden();
+      await expect(add).not.toHaveAttribute('title');
+      for (const mode of ['applyPng', 'restorePng']) {
+        const opener = page.getByRole('button', { name: 'Görünüm seçenekleri', exact: true });
+        await opener.click();
+        await inside(page, page.getByRole('menu'));
+        await page.locator(`[data-command="pixel.${mode}"]`).click();
+        const dialog = page.locator('[data-png-writeback-dialog]');
+        await inside(page, dialog);
+        await expect(dialog).toHaveAttribute('data-overlay-modal');
+        await expect(tip).toBeHidden();
+        await colors.locator('button[aria-label="Ön rengi düzenle"]').hover({ force: true });
+        await expect(tip).toBeHidden();
+        const close = dialog.locator('header button');
+        await close.hover(); await inside(page, tip);
+        await expect(tip.locator('..')).toHaveAttribute('data-overlay-owner', (await dialog.getAttribute('data-overlay-modal'))!);
+        const c = (await close.boundingBox())!, t = (await tip.boundingBox())!;
+        expect(t.x >= c.x + c.width + 5.5 || t.x + t.width <= c.x - 5.5 || t.y >= c.y + c.height + 5.5 || t.y + t.height <= c.y - 5.5).toBe(true);
+        if (mode === 'restorePng') await dialog.getByRole('combobox', { name: 'PNG yedekleri', exact: true }).selectOption({ index: 1 });
+        await expect(dialog.locator('[data-png-confirm]')).toBeEnabled();
+        await uncovered(dialog.locator('[data-png-confirm]'));
+        await page.mouse.move(1, 1);
+        await dialog.locator('[data-png-confirm]').focus();
+        await expect(tip).toBeHidden();
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden(); await expect(opener).toBeFocused();
+        if (mode === 'applyPng') {
+          await opener.click(); await page.locator('[data-command="pixel.applyPng"]').click();
+          await expect(dialog.locator('[data-png-confirm]')).toBeEnabled();
+          await dialog.locator('[data-png-confirm]').click(); await expect(dialog).toBeHidden();
+        }
+      }
+    });
+  });
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { inversePoint, panViewport, snapOrigin, sourceCellAt, zoomViewport, wheelScale } from "./viewportModel";
+import { clampViewport, inversePoint, panViewport, snapOrigin, sourceCellAt, zoomViewport, wheelScale } from "./viewportModel";
 
 describe("single PNG viewport", () => {
   it("keeps the cursor source point through random zoom and pan sequences", () => {
@@ -32,5 +32,25 @@ describe("single PNG viewport", () => {
   it("responds continuously to small wheel deltas", () => {
     expect(wheelScale(1, -1)).toBeGreaterThan(1);
     expect(wheelScale(1, -1)).toBeLessThan(1.01);
+  });
+});
+
+describe("viewport restoration", () => {
+  it("preserves a reachable pan and zoom, and never reconciles a hidden viewport", () => {
+    const v = { x: -90, y: 70, scale: 2.5 };
+    expect(clampViewport(v, 280, 300, 256, 256)).toEqual(v);
+    for (const [w, h] of [[0, 0], [0, 300], [280, 0]]) {
+      expect(clampViewport(v, w!, h!, 256, 256)).toBe(v);
+    }
+  });
+  it("restores an offscreen sheet without changing its zoom", () => {
+    const v = clampViewport({ x: -9000, y: 9000, scale: 2.5 }, 280, 100, 256, 256);
+    expect(v.scale).toBe(2.5);
+    expect(v.x + 256 * v.scale).toBeGreaterThanOrEqual(32);
+    expect(v.y).toBeLessThanOrEqual(100 - 32);
+    expect(clampViewport(v, 280, 100, 256, 256)).toEqual(v);
+  });
+  it("repairs invalid saved coordinates and scale", () => {
+    expect(clampViewport({ x: NaN, y: Infinity, scale: NaN }, 280, 100, 256, 256)).toEqual({ x: 8, y: 8, scale: 1 });
   });
 });

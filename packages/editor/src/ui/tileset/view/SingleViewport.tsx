@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTilesetView } from "../tilesetViewStore";
 import { usePanDrag } from "../usePanDrag";
-import { panViewport, snapOrigin, wheelScale, zoomViewport, type ViewportTransform } from "../viewportModel";
+import { clampViewport, panViewport, snapOrigin, wheelScale, zoomViewport, type ViewportTransform } from "../viewportModel";
 import { PAN_GESTURE_MS, tilesetWheel } from "../zoomModel";
 import { GridHostContext, type GridHost } from "./gridHost";
 
@@ -15,7 +15,8 @@ export function SingleViewport({ sourceKey, label, width, height, children }: {
   const ref = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const transform = useTilesetView(s => s.transforms[sourceKey]) ?? INITIAL_VIEW;
-  const [size, setSize] = useState({ width: 1, height: 1 });
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const measured = useRef({ width: 0, height: 0 });
   const get = () => useTilesetView.getState().transforms[sourceKey] ?? INITIAL_VIEW;
   const set = (v: ViewportTransform) => useTilesetView.getState().setTransform(sourceKey, v);
   const pan = usePanDrag(ref, (dx, dy) => set(panViewport(get(), dx, dy)));
@@ -34,13 +35,25 @@ export function SingleViewport({ sourceKey, label, width, height, children }: {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }));
+    const observer = new ResizeObserver(() => {
+      measured.current = { width: el.clientWidth, height: el.clientHeight };
+      // Keep the spacer stable while hidden: shrinking it would clamp native
+      // scroll offsets. A fresh usable measurement also reconciles the same size.
+      if (el.clientWidth > 0 && el.clientHeight > 0) setSize(measured.current);
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !el.clientWidth || !el.clientHeight) return;
+    const current = useTilesetView.getState().transforms[sourceKey] ?? INITIAL_VIEW;
+    const next = clampViewport(current, el.clientWidth, el.clientHeight, width, height);
+    if (next.x !== current.x || next.y !== current.y || next.scale !== current.scale) useTilesetView.getState().setTransform(sourceKey, next);
+  }, [size, sourceKey, width, height]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !el.clientWidth || !el.clientHeight) return;
     el.scrollLeft = origin.x - projected.x;
     el.scrollTop = origin.y - projected.y;
     sync.current = { left: el.scrollLeft, top: el.scrollTop };
@@ -56,7 +69,7 @@ export function SingleViewport({ sourceKey, label, width, height, children }: {
     registerKeys: (key, handler) => { if (handler) handlers.current.set(key, handler); else handlers.current.delete(key); },
     reveal: (grid, box, center) => {
       const vp = ref.current;
-      if (!vp) return;
+      if (!vp || !vp.clientWidth || !vp.clientHeight) return;
       const r = grid.getBoundingClientRect(), v = vp.getBoundingClientRect();
       const left = r.left - v.left + box.left, top = r.top - v.top + box.top;
       const right = r.left - v.left + box.right, bottom = r.top - v.top + box.bottom;
@@ -73,7 +86,7 @@ export function SingleViewport({ sourceKey, label, width, height, children }: {
   const lastPan = useRef(-Infinity);
   wheel.current = e => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !el.clientWidth || !el.clientHeight) return;
     e.preventDefault();
     const action = tilesetWheel(e, performance.now() - lastPan.current < PAN_GESTURE_MS);
     if (action.kind === "pan") {
@@ -99,6 +112,8 @@ export function SingleViewport({ sourceKey, label, width, height, children }: {
       {...pan.handlers}
       onScroll={e => {
         const el = e.currentTarget;
+        // Native scrollbar clamping during collapse/remount is not a user pan.
+        if (!el.clientWidth || !el.clientHeight || el.clientWidth !== measured.current.width || el.clientHeight !== measured.current.height) return;
         if (el.scrollLeft === sync.current.left && el.scrollTop === sync.current.top) return;
         const current = get();
         set(panViewport(current, sync.current.left - el.scrollLeft, sync.current.top - el.scrollTop));

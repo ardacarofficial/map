@@ -54,9 +54,10 @@ export function fitTilesetViewport(): void {
   const vp = document.querySelector<HTMLElement>('[data-tileset-view="single"]');
   const grid = vp?.querySelector<HTMLElement>("[data-tileset-grid]");
   const key = grid?.dataset.tilesetGrid;
-  if (!vp || !grid || !key) return;
+  if (!vp || !grid || !key || !vp.clientWidth || !vp.clientHeight) return;
   const scale = Number(grid.dataset.tilesetScale);
   const rect = grid.getBoundingClientRect();
+  if (!(rect.width > 0 && rect.height > 0 && Number.isFinite(scale) && scale > 0)) return;
   const next = Math.max(0.125, Math.min(16, (vp.clientWidth - 16) / (rect.width / scale), (vp.clientHeight - 16) / (rect.height / scale)));
   useTilesetView.getState().setTransform(key, { scale: next, x: 8, y: 8 });
 }

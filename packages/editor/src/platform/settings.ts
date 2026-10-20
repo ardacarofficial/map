@@ -1,3 +1,4 @@
+import { formatUiError } from "./errorMessages";
 import { parsePixelColors, type PixelColorSettings } from "../state/pixelColors";
 /**
  * The user's settings file. Pure parsing / validation / merging;
@@ -83,7 +84,7 @@ export function parseSettings(text: string, defaults: readonly ShortcutDef[], fa
   try {
     raw = JSON.parse(text);
   } catch (error) {
-    problems.push({ entry: "", reason: "json", detail: error instanceof Error ? error.message : String(error) });
+    problems.push({ entry: "", reason: "json", detail: formatUiError(error) });
     return { settings, problems };
   }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {

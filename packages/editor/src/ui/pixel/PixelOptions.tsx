@@ -18,12 +18,13 @@ import { revealPanel } from '../layout/dockStore';
 export function ModeSelector({ disabled = false }: { disabled?: boolean }) {
   const mode = usePixelUi(s => s.mode);
   const temporary = useEditorStore(s => s.project?.levelId?.startsWith('stamp:') ?? false);
-  return <Segmented label={t('pixel.mode')} value={mode} disabled={disabled || temporary} title={temporary ? t('pixel.mapsOnly') : undefined} data-pixel-mode onValueChange={next => usePixelUi.getState().setMode(next)} items={[{ value: 'tile', label: t('pixel.tile') }, { value: 'pixel', label: t('pixel.pixel') }]} />;
+  const selector = <Segmented label={t('pixel.mode')} value={mode} disabled={disabled || temporary} data-pixel-mode onValueChange={next => usePixelUi.getState().setMode(next)} items={[{ value: 'tile', label: t('pixel.tile') }, { value: 'pixel', label: t('pixel.pixel') }]} />;
+  return temporary ? <Tooltip label={t('pixel.mapsOnly')}><span className="inline-flex">{selector}</span></Tooltip> : selector;
 }
 function Swatch({ background = false }: { background?: boolean }) {
   const value = usePixelColors(s => background ? s.bg : s.fg);
   const label = t(background ? 'pixel.background' : 'pixel.foreground');
-  return <Tooltip label={label}><span><ColorSwatch color={value} label={label} quick={background ? 'bg' : 'fg'} onClick={() => { useColorPanel.setState({ target: background ? 'bg' : 'fg' }); revealPanel('color'); }} /></span></Tooltip>;
+  return <ColorSwatch color={value} label={label} quick={background ? 'bg' : 'fg'} onClick={() => { useColorPanel.setState({ target: background ? 'bg' : 'fg' }); revealPanel('color'); }} />;
 }
 export function PixelOptions() {
   const tool = useEditorStore(s => s.tool), p = usePixelUi(useShallow(s => ({ size: s.size, shape: s.shape, scope: s.scope, fillMode: s.fillMode, filled: s.filled, mirrorH: s.mirrorH, mirrorV: s.mirrorV, pending: s.pending, setSize: s.setSize })));
@@ -33,7 +34,7 @@ export function PixelOptions() {
       <label className="flex items-center gap-2">{t('pixel.size')}<TextField size="sm" className="w-14" type="number" min={1} max={64} step={1} value={p.size} aria-label={t('pixel.size')} onChange={e => { if (e.target.value) p.setSize(Number(e.target.value)); }} /></label>
       <Segmented label={t('pixel.shape')} value={p.shape} onValueChange={shape => usePixelUi.setState({ shape })} items={[{ value: 'square', label: t('pixel.square') }, { value: 'circle', label: t('pixel.circle') }]} />
     </>}
-    <label className="flex items-center gap-2" title={t('pixel.scopeHelp')}>{t('pixel.scope')}<NativeSelect size="sm" aria-label={t('pixel.scope')} value={p.scope} onChange={e => usePixelUi.setState({ scope: e.target.value as 'cell' | 'world' })}><option value="cell">{t('pixel.cell')}</option><option value="world">{t('pixel.world')}</option></NativeSelect></label>
+    <Tooltip label={t('pixel.scopeHelp')}><label className="flex items-center gap-2">{t('pixel.scope')}<NativeSelect size="sm" aria-label={t('pixel.scope')} value={p.scope} onChange={e => usePixelUi.setState({ scope: e.target.value as 'cell' | 'world' })}><option value="cell">{t('pixel.cell')}</option><option value="world">{t('pixel.world')}</option></NativeSelect></label></Tooltip>
     {tool === 'fill' && <Segmented label={t('pixel.fillMode')} value={p.fillMode} onValueChange={fillMode => usePixelUi.setState({ fillMode })} items={[{ value: 'contiguous', label: t('pixel.contiguous') }, { value: 'global', label: t('pixel.global') }]} />}
     {tool === 'rect' && <Segmented label={t('pixel.rectangle')} value={p.filled ? 'filled' : 'outline'} onValueChange={value => usePixelUi.setState({ filled: value === 'filled' })} items={[{ value: 'outline', label: t('pixel.outline') }, { value: 'filled', label: t('pixel.filled') }]} />}
     <div className="flex items-center gap-1"><Toggle checked={p.mirrorH} label={t('pixel.mirrorH')} onChange={mirrorH => usePixelUi.setState({ mirrorH })} /><span>{t('pixel.mirrorH')}</span></div>
