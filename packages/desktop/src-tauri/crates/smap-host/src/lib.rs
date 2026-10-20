@@ -7,6 +7,7 @@ pub mod atomic;
 pub mod close_guard;
 pub mod host;
 pub mod logfile;
+pub mod mcp;
 pub mod recent;
 pub mod scope;
 pub mod settings;

@@ -1,0 +1,953 @@
+use super::secret::random_hex;
+use axum::{
+    body::{to_bytes, Body},
+    extract::{Request, State},
+    http::{HeaderMap, Method, StatusCode},
+    response::{IntoResponse, Response},
+    routing::any,
+    Json, Router,
+};
+use serde_json::{json, Value};
+use std::{
+    collections::HashMap,
+    io,
+    net::{Ipv4Addr, SocketAddr},
+    sync::{Arc, Mutex, Weak},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use subtle::ConstantTimeEq;
+use tokio::{
+    net::TcpListener,
+    sync::{oneshot, watch},
+    task::JoinHandle,
+};
+
+pub const EVENT_REQUEST: &str = "smap://agent-request";
+pub const EVENT_CONTROL: &str = "smap://agent-control";
+pub const EVENT_STATUS: &str = "smap://agent-status";
+const VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
+const CATALOGUE: &str = include_str!("../../../../../../agent/schema/tools.json");
+pub const MAX_REPLY: usize = 8 * 1024 * 1024;
+pub type BridgeSink = Arc<dyn Fn(&'static str, Value) -> Result<(), String> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct Options {
+    pub call_timeout: Duration,
+    pub image_timeout: Duration,
+    pub session_idle: Duration,
+    pub heartbeat_interval: Duration,
+    pub heartbeat_timeout: Duration,
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            call_timeout: Duration::from_secs(10),
+            image_timeout: Duration::from_secs(30),
+            session_idle: Duration::from_secs(300),
+            heartbeat_interval: Duration::from_secs(5),
+            heartbeat_timeout: Duration::from_secs(15),
+        }
+    }
+}
+struct Session {
+    info: Value,
+    version: String,
+    initialized: bool,
+    touched: Instant,
+}
+struct Pending {
+    epoch: String,
+    session: String,
+    rpc_id: Value,
+    deadline: Instant,
+    tx: oneshot::Sender<Value>,
+}
+struct PendingEnd {
+    epoch: String,
+    sessions: Vec<String>,
+    done: watch::Sender<bool>,
+}
+struct Inner {
+    token: String,
+    epoch: Option<String>,
+    sessions: HashMap<String, Session>,
+    pending: HashMap<String, Pending>,
+    published: Option<Value>,
+    port: Option<u16>,
+    generation: u64,
+    token_revision: u64,
+    ending: HashMap<String, PendingEnd>,
+    heartbeat: Option<(String, Instant)>,
+    last_heartbeat: Instant,
+}
+pub struct Transport {
+    inner: Mutex<Inner>,
+    sink: BridgeSink,
+    options: Options,
+}
+pub struct RunningServer {
+    pub addr: SocketAddr,
+    task: JoinHandle<()>,
+    expiry: JoinHandle<()>,
+    transport: Weak<Transport>,
+    generation: u64,
+}
+impl RunningServer {
+    pub async fn stop(mut self) {
+        self.task.abort();
+        self.expiry.abort();
+        let _ = (&mut self.task).await;
+        let _ = (&mut self.expiry).await;
+    }
+}
+impl Drop for RunningServer {
+    fn drop(&mut self) {
+        if let Some(transport) = self.transport.upgrade() {
+            let mut inner = transport.inner.lock().unwrap();
+            if inner.generation == self.generation {
+                inner.port = None;
+                inner.generation += 1;
+            }
+        }
+        self.task.abort();
+        self.expiry.abort();
+    }
+}
+
+impl Transport {
+    pub fn new(token: String, sink: BridgeSink, options: Options) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(Inner {
+                token,
+                epoch: None,
+                sessions: HashMap::new(),
+                pending: HashMap::new(),
+                published: None,
+                port: None,
+                generation: 0,
+                token_revision: 0,
+                ending: HashMap::new(),
+                heartbeat: None,
+                last_heartbeat: Instant::now(),
+            }),
+            sink,
+            options,
+        })
+    }
+    pub async fn bind(self: &Arc<Self>, port: u16) -> io::Result<RunningServer> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await?;
+        Ok(self.serve_listener(listener))
+    }
+    pub(super) fn serve_listener(self: &Arc<Self>, listener: TcpListener) -> RunningServer {
+        let addr = listener.local_addr().expect("bound TCP listener");
+        let generation = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.port = Some(addr.port());
+            inner.generation += 1;
+            inner.generation
+        };
+        let app = Router::new()
+            .route("/mcp", any(handle))
+            .fallback(fallback)
+            .with_state((self.clone(), addr.port(), generation));
+        let task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let transport = self.clone();
+        let tick = self
+            .options
+            .session_idle
+            .min(Duration::from_secs(1))
+            .min(self.options.heartbeat_interval)
+            .max(Duration::from_millis(10));
+        let expiry = tokio::spawn(async move {
+            let mut timer = tokio::time::interval(tick);
+            loop {
+                timer.tick().await;
+                transport.expire();
+                transport.probe_ends();
+                transport.tick_renderer();
+            }
+        });
+        self.push_status("listening", addr.port(), None);
+        RunningServer {
+            addr,
+            task,
+            expiry,
+            transport: Arc::downgrade(self),
+            generation,
+        }
+    }
+    fn emit(&self, event: &'static str, value: Value) -> Result<(), String> {
+        (self.sink)(event, value)
+    }
+    pub fn push_status(&self, state: &str, port: u16, detail: Option<&str>) {
+        let clients: Vec<Value> = self
+            .inner
+            .lock()
+            .unwrap()
+            .sessions
+            .values()
+            .map(|s| s.info.clone())
+            .collect();
+        let mut clients = clients;
+        clients.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        let mut status = json!({"state": if state == "listening" && !clients.is_empty() { "connected" } else {state}, "port": port, "clients": clients});
+        if let Some(detail) = detail {
+            status["detail"] = json!(detail);
+        }
+        let _ = self.emit(EVENT_STATUS, status);
+    }
+    pub fn clients(&self) -> Vec<Value> {
+        let mut clients: Vec<_> = self
+            .inner
+            .lock()
+            .unwrap()
+            .sessions
+            .values()
+            .map(|s| s.info.clone())
+            .collect();
+        clients.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        clients
+    }
+    fn changed(&self) {
+        let port = self.inner.lock().unwrap().port;
+        if let Some(port) = port {
+            self.push_status("listening", port, None);
+        }
+    }
+    pub fn renderer_lost(&self) {
+        let (epoch, sessions) = {
+            let mut inner = self.inner.lock().unwrap();
+            let ended = revoke(&mut inner);
+            clear_ends(&mut inner);
+            inner.epoch = None;
+            inner.published = None;
+            ended
+        };
+        self.emit_ended(epoch, sessions, "disconnect");
+    }
+    pub fn ready(&self, epoch: String) -> Result<(), String> {
+        if epoch.is_empty() || epoch.len() > 128 {
+            return Err("invalid epoch".into());
+        }
+        let (ended, sessions) = {
+            let mut inner = self.inner.lock().unwrap();
+            let ended = if inner.epoch.as_ref().is_some_and(|e| e != &epoch) {
+                let ended = revoke(&mut inner);
+                clear_ends(&mut inner);
+                Some(ended)
+            } else {
+                None
+            };
+            inner.epoch = Some(epoch.clone());
+            inner.heartbeat = None;
+            inner.last_heartbeat = Instant::now();
+            inner.published = None;
+            let sessions = inner
+                .sessions
+                .iter()
+                .filter(|(_, s)| s.initialized)
+                .map(|(id, s)| (id.clone(), s.info.clone()))
+                .collect::<Vec<_>>();
+            (ended, sessions)
+        };
+        if let Some((old_epoch, sessions)) = ended {
+            self.emit_ended(old_epoch, sessions, "disconnect");
+        }
+        for (id, info) in sessions {
+            self.emit(EVENT_CONTROL,json!({"type":"sessionStarted","bridgeEpoch":epoch,"clientSessionId":id,"clientInfo":info}))?;
+        }
+        Ok(())
+    }
+    pub fn publish_status(&self, status: Value) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.epoch.is_none()
+            || status["bridgeEpoch"].as_str() != inner.epoch.as_deref()
+            || !status["state"].is_object()
+        {
+            return Err("stale epoch or invalid status".into());
+        }
+        if let Some(id) = status["requestId"].as_str() {
+            if inner
+                .heartbeat
+                .as_ref()
+                .is_some_and(|(pending, _)| pending == id)
+            {
+                inner.heartbeat = None;
+                inner.last_heartbeat = Instant::now();
+            }
+            if let Some(pending) = inner.ending.get(id) {
+                let state = &status["state"];
+                let owner = state["transaction"]["owner"]["clientSessionId"].as_str();
+                let rolled_back = state["phase"].as_str().is_some_and(|p| p != "cancelling")
+                    && (state["transaction"].is_null()
+                        || owner.is_some_and(|id| !pending.sessions.iter().any(|s| s == id)));
+                if rolled_back {
+                    let pending = inner.ending.remove(id).unwrap();
+                    let _ = pending.done.send(true);
+                }
+            }
+        }
+        inner.published = Some(status["state"].clone());
+        Ok(())
+    }
+    pub fn reply(&self, reply: Value) -> Result<(), String> {
+        if serde_json::to_vec(&reply)
+            .map_err(|_| "invalid reply")?
+            .len()
+            > MAX_REPLY
+        {
+            return Err("reply too large".into());
+        }
+        let id = reply["requestId"].as_str().ok_or("missing request id")?;
+        let mut inner = self.inner.lock().unwrap();
+        let pending = inner.pending.get(id).ok_or("unknown request id")?;
+        if reply["bridgeEpoch"].as_str() != Some(&pending.epoch)
+            || inner.epoch.as_deref() != Some(&pending.epoch)
+            || reply["clientSessionId"].as_str() != Some(&pending.session)
+            || Instant::now() >= pending.deadline
+        {
+            return Err("stale correlation or deadline".into());
+        }
+        let result = match reply["type"].as_str() {
+            Some("result") if valid_result(&reply["result"]) => reply["result"].clone(),
+            Some("failure") => {
+                let code = reply["error"]["code"].as_str().ok_or("invalid failure")?;
+                if ![
+                    "EDITOR_UNAVAILABLE",
+                    "TIMEOUT",
+                    "CANCELLED",
+                    "LIMIT_EXCEEDED",
+                    "STALE_EPOCH",
+                    "INTERNAL_ERROR",
+                ]
+                .contains(&code)
+                {
+                    return Err("invalid failure code".into());
+                }
+                failure(
+                    &inner,
+                    if code == "STALE_EPOCH" {
+                        "EDITOR_UNAVAILABLE"
+                    } else {
+                        code
+                    },
+                )
+            }
+            _ => return Err("invalid reply envelope".into()),
+        };
+        let pending = inner.pending.remove(id).unwrap();
+        pending.tx.send(result).map_err(|_| "request ended".into())
+    }
+    pub fn rotate_token(&self, token: String) {
+        let (epoch, sessions) = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.token = token;
+            inner.token_revision += 1;
+            revoke(&mut inner)
+        };
+        self.emit_ended(epoch, sessions, "tokenRegenerated");
+    }
+    pub fn end_sessions(&self, reason: &str) {
+        let (epoch, sessions) = {
+            let mut inner = self.inner.lock().unwrap();
+            revoke(&mut inner)
+        };
+        self.emit_ended(epoch, sessions, reason);
+    }
+    pub fn end_all(&self, reason: &str) {
+        let (epoch, sessions) = {
+            let mut inner = self.inner.lock().unwrap();
+            if ["disabled", "shutdown"].contains(&reason) {
+                inner.port = None;
+                inner.generation += 1;
+            }
+            let ended = revoke(&mut inner);
+            if reason == "shutdown" {
+                clear_ends(&mut inner);
+            }
+            ended
+        };
+        self.emit_ended(epoch, sessions, reason);
+    }
+    fn emit_ended(&self, epoch: Option<String>, sessions: Vec<String>, reason: &str) {
+        if let Some(epoch) = epoch {
+            for session in sessions {
+                let _ = self.emit(EVENT_CONTROL,json!({"type":"sessionEnded","bridgeEpoch":epoch,"clientSessionId":session,"reason":reason}));
+            }
+        }
+        self.changed();
+        self.probe_ends();
+    }
+    fn probe_ends(&self) {
+        let probes: Vec<_> = self
+            .inner
+            .lock()
+            .unwrap()
+            .ending
+            .iter()
+            .map(|(id, p)| json!({"type":"statusRequest","bridgeEpoch":p.epoch,"requestId":id}))
+            .collect();
+        for probe in probes {
+            let _ = self.emit(EVENT_CONTROL, probe);
+        }
+    }
+    pub async fn wait_for_ends(&self) -> Result<(), ()> {
+        let receivers: Vec<_> = self
+            .inner
+            .lock()
+            .unwrap()
+            .ending
+            .values()
+            .map(|p| p.done.subscribe())
+            .collect();
+        let wait = async {
+            for mut receiver in receivers {
+                while !*receiver.borrow_and_update() {
+                    if receiver.changed().await.is_err() {
+                        return Err(());
+                    }
+                }
+            }
+            Ok(())
+        };
+        tokio::time::timeout(self.options.call_timeout, wait)
+            .await
+            .map_err(|_| ())?
+    }
+    fn end_session(&self, session: &str, reason: &str) {
+        let (epoch, port) = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.sessions.remove(session).is_none() {
+                return;
+            }
+            let ids: Vec<_> = inner
+                .pending
+                .iter()
+                .filter(|(_, p)| p.session == session)
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in ids {
+                let pending = inner.pending.remove(&id).unwrap();
+                let _ = pending.tx.send(failure(&inner, "CANCELLED"));
+            }
+            register_end(&mut inner, vec![session.into()]);
+            (inner.epoch.clone(), inner.port)
+        };
+        if let Some(epoch) = epoch {
+            let _ = self.emit(EVENT_CONTROL, json!({"type":"sessionEnded","bridgeEpoch":epoch,"clientSessionId":session,"reason":reason}));
+        }
+        if port.is_some() {
+            self.changed();
+        }
+        self.probe_ends();
+    }
+    fn tick_renderer(&self) {
+        let (lost, probe) = {
+            let mut inner = self.inner.lock().unwrap();
+            let Some(epoch) = inner.epoch.clone() else {
+                return;
+            };
+            if inner
+                .heartbeat
+                .as_ref()
+                .is_some_and(|(_, sent)| sent.elapsed() >= self.options.heartbeat_timeout)
+            {
+                let ended = revoke(&mut inner);
+                clear_ends(&mut inner);
+                inner.epoch = None;
+                inner.published = None;
+                inner.heartbeat = None;
+                (Some(ended), None)
+            } else if inner.heartbeat.is_none()
+                && inner.last_heartbeat.elapsed() >= self.options.heartbeat_interval
+            {
+                let Ok(id) = random_hex() else {
+                    return;
+                };
+                inner.heartbeat = Some((id.clone(), Instant::now()));
+                (
+                    None,
+                    Some(json!({"type":"statusRequest","bridgeEpoch":epoch,"requestId":id})),
+                )
+            } else {
+                (None, None)
+            }
+        };
+        if let Some((epoch, sessions)) = lost {
+            self.emit_ended(epoch, sessions, "disconnect");
+        }
+        if let Some(probe) = probe {
+            let _ = self.emit(EVENT_CONTROL, probe);
+        }
+    }
+    fn expire(&self) {
+        let ids: Vec<_> = self
+            .inner
+            .lock()
+            .unwrap()
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.touched.elapsed() >= self.options.session_idle)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            self.end_session(&id, "expired");
+        }
+    }
+    fn cancel(&self, session: &str, rpc_id: &Value, reason: &str) {
+        let found = {
+            let mut inner = self.inner.lock().unwrap();
+            let id = inner
+                .pending
+                .iter()
+                .find(|(_, p)| p.session == session && p.rpc_id == *rpc_id)
+                .map(|(id, _)| id.clone());
+            id.and_then(|id| {
+                inner.pending.remove(&id).map(|p| {
+                    (
+                        id,
+                        p,
+                        failure(
+                            &inner,
+                            if reason == "timeout" {
+                                "TIMEOUT"
+                            } else {
+                                "CANCELLED"
+                            },
+                        ),
+                    )
+                })
+            })
+        };
+        if let Some((id, pending, result)) = found {
+            let _ = self.emit(EVENT_CONTROL, json!({"type":"cancel","bridgeEpoch":pending.epoch,"clientSessionId":session,"requestId":id,"reason":reason}));
+            let _ = pending.tx.send(result);
+        }
+    }
+    async fn call(&self, session: &str, rpc_id: Value, params: &Value) -> Value {
+        let (id, rx, envelope, duration) = {
+            let mut inner = self.inner.lock().unwrap();
+            if !inner.ending.is_empty() {
+                return failure(&inner, "EDITOR_UNAVAILABLE");
+            }
+            let Some(epoch) = inner.epoch.clone() else {
+                return failure(&inner, "EDITOR_UNAVAILABLE");
+            };
+            if inner.pending.len() >= 64
+                || inner
+                    .pending
+                    .values()
+                    .filter(|p| p.session == session)
+                    .count()
+                    >= 32
+            {
+                return failure(&inner, "LIMIT_EXCEEDED");
+            }
+            let Some(client) = inner.sessions.get(session) else {
+                return failure(&inner, "EDITOR_UNAVAILABLE");
+            };
+            let info = client.info.clone();
+            let name = params["name"].as_str().unwrap_or("");
+            let image_call = ["render_preview", "prepare_smart_source", "begin_edit"]
+                .contains(&name)
+                || (name == "get_tile_catalog"
+                    && params["arguments"]["image"]
+                        .as_str()
+                        .is_some_and(|s| s != "none"))
+                || (name == "list_stamps" && params["arguments"]["previewStampId"].is_string());
+            let duration = if image_call {
+                self.options.image_timeout
+            } else {
+                self.options.call_timeout
+            };
+            let id = match random_hex() {
+                Ok(id) => id,
+                Err(_) => return failure(&inner, "INTERNAL_ERROR"),
+            };
+            let (tx, rx) = oneshot::channel();
+            let envelope = json!({"type":"tools/call","requestId":id,"bridgeEpoch":epoch,"clientSessionId":session,"clientInfo":info,"deadline":now_ms()+duration.as_millis() as u64,"name":params["name"],"arguments":params.get("arguments").cloned().unwrap_or(json!({}))});
+            inner.pending.insert(
+                id.clone(),
+                Pending {
+                    epoch,
+                    session: session.into(),
+                    rpc_id: rpc_id.clone(),
+                    deadline: Instant::now() + duration,
+                    tx,
+                },
+            );
+            (id, rx, envelope, duration)
+        };
+        if self.emit(EVENT_REQUEST, envelope).is_err() {
+            self.inner.lock().unwrap().pending.remove(&id);
+            return failure(&self.inner.lock().unwrap(), "EDITOR_UNAVAILABLE");
+        }
+        match tokio::time::timeout(duration, rx).await {
+            Ok(Ok(result)) => result,
+            _ => {
+                self.cancel(session, &rpc_id, "timeout");
+                failure(&self.inner.lock().unwrap(), "TIMEOUT")
+            }
+        }
+    }
+}
+fn register_end(inner: &mut Inner, sessions: Vec<String>) {
+    if sessions.is_empty() {
+        return;
+    }
+    if let Some(epoch) = inner.epoch.clone() {
+        let Ok(id) = random_hex() else {
+            inner.epoch = None;
+            return;
+        };
+        let (done, _) = watch::channel(false);
+        inner.ending.insert(
+            id,
+            PendingEnd {
+                epoch,
+                sessions,
+                done,
+            },
+        );
+    }
+}
+fn clear_ends(inner: &mut Inner) {
+    for (_, pending) in inner.ending.drain() {
+        let _ = pending.done.send(true);
+    }
+}
+// Revoke credentials/renderer ownership and all in-flight work under one lock.
+fn revoke(inner: &mut Inner) -> (Option<String>, Vec<String>) {
+    let sessions: Vec<String> = inner.sessions.drain().map(|(id, _)| id).collect();
+    register_end(inner, sessions.clone());
+    for (_, pending) in std::mem::take(&mut inner.pending) {
+        let _ = pending.tx.send(failure(inner, "CANCELLED"));
+    }
+    (inner.epoch.clone(), sessions)
+}
+fn failure(inner: &Inner, code: &str) -> Value {
+    let state = inner.published.as_ref();
+    let data = json!({"ok":false,"code":code,"message":code,"worldSessionId":state.and_then(|s|s.get("worldSessionId")).cloned().unwrap_or(Value::Null),"revision":state.and_then(|s|s.get("revision")).and_then(Value::as_u64).unwrap_or(0),"retryable": (["TIMEOUT","EDITOR_UNAVAILABLE"].contains(&code)),"details":{}});
+    json!({"isError":true,"content":[{"type":"text","text":data.to_string()}],"structuredContent":data})
+}
+fn valid_result(value: &Value) -> bool {
+    let Some(content) = value["content"].as_array() else {
+        return false;
+    };
+    (1..=2).contains(&content.len())
+        && content[0]["type"] == "text"
+        && content[0]["text"].is_string()
+        && value["structuredContent"].is_object()
+        && (content.len() == 1
+            || (value["isError"] != true
+                && content[1]["type"] == "image"
+                && content[1]["mimeType"] == "image/png"
+                && content[1]["data"].as_str().is_some_and(|s| {
+                    !s.starts_with("data:") && s.len() <= 4 * 1024 * 1024 * 4 / 3 + 4
+                })))
+}
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+fn single<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    let mut values = headers.get_all(name).iter();
+    let first = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        None
+    } else {
+        Some(first)
+    }
+}
+fn response(status: StatusCode, body: Option<Value>) -> Response {
+    let mut res = match body {
+        Some(body) => (status, Json(body)).into_response(),
+        None => status.into_response(),
+    };
+    res.headers_mut()
+        .insert("Cache-Control", "no-store".parse().unwrap());
+    res
+}
+fn rpc(id: Value, result: Value) -> Response {
+    response(
+        StatusCode::OK,
+        Some(json!({"jsonrpc":"2.0","id":id,"result":result})),
+    )
+}
+fn error(id: Value, code: i32, message: &str) -> Response {
+    response(
+        StatusCode::OK,
+        Some(json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})),
+    )
+}
+async fn fallback() -> Response {
+    response(StatusCode::NOT_FOUND, None)
+}
+fn depth(value: &Value, n: usize) -> bool {
+    if n > 32 {
+        return false;
+    }
+    match value {
+        Value::Object(o) => o.values().all(|v| depth(v, n + 1)),
+        Value::Array(a) => a.iter().all(|v| depth(v, n + 1)),
+        _ => true,
+    }
+}
+fn printable(value: &Value) -> String {
+    value
+        .as_str()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| {
+            !c.is_control() && !matches!(*c,'\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+        .take(80)
+        .collect()
+}
+async fn handle(
+    State((transport, port, generation)): State<(Arc<Transport>, u16, u64)>,
+    request: Request<Body>,
+) -> Response {
+    let headers = request.headers();
+    let (authorized, token_revision) = {
+        let inner = transport.inner.lock().unwrap();
+        (
+            single(headers, "authorization")
+                .and_then(|s| s.strip_prefix("Bearer "))
+                .is_some_and(|token| {
+                    token.len() == 64 && bool::from(token.as_bytes().ct_eq(inner.token.as_bytes()))
+                }),
+            inner.token_revision,
+        )
+    };
+    if !authorized {
+        let mut res = response(StatusCode::UNAUTHORIZED, None);
+        res.headers_mut()
+            .insert("WWW-Authenticate", "Bearer".parse().unwrap());
+        return res;
+    }
+    if transport.inner.lock().unwrap().generation != generation {
+        return response(StatusCode::SERVICE_UNAVAILABLE, None);
+    }
+    let host = format!("127.0.0.1:{port}");
+    if single(headers, "host") != Some(host.as_str())
+        || request
+            .uri()
+            .authority()
+            .is_some_and(|a| a.as_str() != host)
+    {
+        return response(StatusCode::FORBIDDEN, None);
+    }
+    let origin = format!("http://{host}");
+    if headers.contains_key("origin") && single(headers, "origin") != Some(origin.as_str()) {
+        return response(StatusCode::FORBIDDEN, None);
+    }
+    if request.uri().query().is_some_and(|q| {
+        q.split('&').any(|p| {
+            ["token", "access_token", "authorization"].contains(&p.split('=').next().unwrap_or(""))
+        })
+    }) {
+        return response(StatusCode::UNAUTHORIZED, None);
+    }
+    if request.method() != Method::POST && request.method() != Method::DELETE {
+        let mut res = response(StatusCode::METHOD_NOT_ALLOWED, None);
+        res.headers_mut()
+            .insert("Allow", "POST, DELETE".parse().unwrap());
+        return res;
+    }
+    transport.expire();
+    let session_header = single(headers, "mcp-session-id").map(str::to_owned);
+    let version_header = single(headers, "mcp-protocol-version").map(str::to_owned);
+    let deleting = request.method() == Method::DELETE;
+    if !deleting
+        && !single(headers, "content-type").is_some_and(|s| {
+            s.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+        })
+    {
+        return response(StatusCode::UNSUPPORTED_MEDIA_TYPE, None);
+    }
+    if !deleting
+        && headers.contains_key("accept")
+        && !single(headers, "accept").is_some_and(|s| {
+            s.split(',')
+                .any(|v| matches!(v.trim().split(';').next(), Some("application/json" | "*/*")))
+        })
+    {
+        return response(StatusCode::NOT_ACCEPTABLE, None);
+    }
+    let message: Value = if deleting {
+        Value::Null
+    } else {
+        let bytes = match to_bytes(request.into_body(), 1024 * 1024).await {
+            Ok(bytes) => bytes,
+            Err(_) => return response(StatusCode::PAYLOAD_TOO_LARGE, None),
+        };
+        match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(_) => return error(Value::Null, -32700, "Parse error"),
+        }
+    };
+    {
+        let inner = transport.inner.lock().unwrap();
+        if inner.generation != generation {
+            return response(StatusCode::SERVICE_UNAVAILABLE, None);
+        }
+        if inner.token_revision != token_revision {
+            return response(StatusCode::UNAUTHORIZED, None);
+        }
+    }
+    let id = message.get("id").cloned().unwrap_or(Value::Null);
+    let has_id = message.get("id").is_some();
+    let method = message["method"].as_str().unwrap_or("");
+    if !deleting
+        && (!message.is_object()
+            || message["jsonrpc"] != "2.0"
+            || method.is_empty()
+            || !depth(&message, 0)
+            || (has_id
+                && !(id.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 128)
+                    || id
+                        .as_i64()
+                        .is_some_and(|n| n.unsigned_abs() <= 9007199254740991))))
+    {
+        return response(
+            StatusCode::BAD_REQUEST,
+            Some(
+                json!({"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request"}}),
+            ),
+        );
+    }
+    if method == "initialize" {
+        if !has_id || session_header.is_some() {
+            return error(id, -32600, "Invalid initialize");
+        }
+        let params = &message["params"];
+        let version = params["protocolVersion"].as_str().unwrap_or("");
+        if !VERSIONS.contains(&version) {
+            return error(id, -32602, "Unsupported protocol version");
+        }
+        if !params["clientInfo"]["name"].is_string()
+            || !params["clientInfo"]["version"].is_string()
+            || !params["capabilities"].is_object()
+        {
+            return error(id, -32602, "Invalid client info");
+        }
+        let session = match random_hex() {
+            Ok(id) => id,
+            Err(_) => return error(id, -32603, "Internal error"),
+        };
+        {
+            let mut inner = transport.inner.lock().unwrap();
+            if inner.generation != generation || inner.token_revision != token_revision {
+                return response(StatusCode::UNAUTHORIZED, None);
+            }
+            if !inner.ending.is_empty() {
+                return error(id, -32000, "Editor cancellation pending");
+            }
+            if inner.sessions.len() >= 4 {
+                return error(id, -32000, "Client limit reached");
+            }
+            inner.sessions.insert(session.clone(),Session {info:json!({"name":printable(&params["clientInfo"]["name"]),"version":printable(&params["clientInfo"]["version"])}),version:version.into(),initialized:false,touched:Instant::now()});
+        }
+        transport.changed();
+        let mut res = rpc(
+            id,
+            json!({"protocolVersion":version,"serverInfo":{"name":"harita","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{"listChanged":false}},"instructions":"Inspect the session and catalog, begin_edit before map changes, finish_edit for user review. Only the user can approve; cancellation rolls back pending edits."}),
+        );
+        res.headers_mut()
+            .insert("Mcp-Session-Id", session.parse().unwrap());
+        return res;
+    }
+    let Some(session) = session_header else {
+        return response(StatusCode::BAD_REQUEST, None);
+    };
+    {
+        let mut inner = transport.inner.lock().unwrap();
+        let Some(client) = inner.sessions.get_mut(&session) else {
+            return response(StatusCode::NOT_FOUND, None);
+        };
+        if version_header.as_deref() != Some(client.version.as_str()) {
+            return response(StatusCode::BAD_REQUEST, None);
+        }
+        client.touched = Instant::now();
+        if !deleting
+            && !client.initialized
+            && !["notifications/initialized", "ping"].contains(&method)
+        {
+            return error(id, -32000, "Client not initialized");
+        }
+        if has_id
+            && inner
+                .pending
+                .values()
+                .any(|p| p.session == session && p.rpc_id == id)
+        {
+            return error(id, -32600, "Duplicate request id");
+        }
+    }
+    if deleting {
+        transport.end_session(&session, "delete");
+        return response(
+            if transport.wait_for_ends().await.is_ok() {
+                StatusCode::OK
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            },
+            None,
+        );
+    }
+    match method {
+        "notifications/initialized" if !has_id => {
+            let event = {
+                let mut inner = transport.inner.lock().unwrap();
+                let Some(client) = inner.sessions.get_mut(&session) else {
+                    return response(StatusCode::NOT_FOUND, None);
+                };
+                let first = !client.initialized;
+                client.initialized = true;
+                let info = client.info.clone();
+                if first {
+                    inner.epoch.clone().map(|epoch|json!({"type":"sessionStarted","bridgeEpoch":epoch,"clientSessionId":session,"clientInfo":info}))
+                } else {
+                    None
+                }
+            };
+            if let Some(event) = event {
+                let _ = transport.emit(EVENT_CONTROL, event);
+            }
+            response(StatusCode::ACCEPTED, None)
+        }
+        "notifications/cancelled" if !has_id => {
+            transport.cancel(&session, &message["params"]["requestId"], "clientCancelled");
+            response(StatusCode::ACCEPTED, None)
+        }
+        _ if !has_id => response(StatusCode::ACCEPTED, None),
+        "ping" => rpc(id, json!({})),
+        "tools/list" => {
+            let catalogue: Value =
+                serde_json::from_str(CATALOGUE).expect("embedded catalogue must parse");
+            rpc(id, json!({"tools":catalogue["tools"]}))
+        }
+        "tools/call" => {
+            let params = &message["params"];
+            if !params["name"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty() && s.len() <= 128)
+                || params.get("arguments").is_some_and(|a| !a.is_object())
+            {
+                return error(id, -32602, "Invalid tool call");
+            }
+            let result = transport.call(&session, id.clone(), params).await;
+            rpc(id, result)
+        }
+        _ => error(id, -32601, "Method not found"),
+    }
+}

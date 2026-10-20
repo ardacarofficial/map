@@ -1,27 +1,30 @@
 //! Kullanıcı ayar dosyası: uygulama ayar klasöründe `settings.json`
 //! (`{ "locale": "tr", "shortcuts": { "tool.brush": ["B"] } }`).
 //!
-//! Rust içeriği yorumlamaz; doğrulama ve varsayılanlarla birleştirme
-//! editördedir (`packages/editor/src/platform/settings.ts`). Burada yalnızca
-//! okuma ve güvenli kayıt var. Dosya yoksa `None` döner; editör ilk açılışta
+//! Genel ayarları editör doğrular. AI uç noktası Rust tarafından CAS ile
+//! yönetilir; tüm yazıcılar aynı kilidi kullanır ve eski genel ayar taslakları
+//! AI bölümünü değiştiremez. Dosya yoksa `None` döner; editör ilk açılışta
 //! tüm komutların mevcut tuşlarıyla bir varsayılan dosya yazar (JSON'da yorum
 //! olmadığı için "örnekli" dosya budur).
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::atomic;
 
 /// Bundan büyük ayar dosyası okunmaz (yanlış dosya seçilmesine karşı).
 pub const MAX_SETTINGS_BYTES: u64 = 1024 * 1024;
 
+#[derive(Clone)]
 pub struct SettingsFile {
     path: PathBuf,
+    lock: Arc<Mutex<()>>,
 }
 
 impl SettingsFile {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
+        Self { path, lock: Arc::new(Mutex::new(())) }
     }
 
     pub fn path(&self) -> &Path {
@@ -30,6 +33,11 @@ impl SettingsFile {
 
     /// Dosyanın metni; yoksa `None`.
     pub fn read(&self) -> io::Result<Option<String>> {
+        let _guard = self.lock.lock().unwrap();
+        self.read_unlocked()
+    }
+
+    fn read_unlocked(&self) -> io::Result<Option<String>> {
         match std::fs::metadata(&self.path) {
             Ok(m) if m.len() > MAX_SETTINGS_BYTES => {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "settings file is too large"))
@@ -46,6 +54,34 @@ impl SettingsFile {
 
     /// Güvenli kayıt (geçici dosya → fsync → yeniden adlandırma). Klasör yoksa oluşturur.
     pub fn write(&self, text: &str) -> io::Result<()> {
+        if text.len() as u64 > MAX_SETTINGS_BYTES { return Err(io::Error::new(io::ErrorKind::InvalidData, "settings file is too large")); }
+        let _guard = self.lock.lock().unwrap();
+        // AI configuration has its own CAS command. A stale general settings
+        // draft must never restore its old endpoint or enable the service.
+        let mut incoming: serde_json::Value = serde_json::from_str(text)?;
+        let object = incoming.as_object_mut().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "expected settings object"))?;
+        let existing: serde_json::Value = serde_json::from_str(&self.read_unlocked()?.unwrap_or_else(|| "{}".into()))?;
+        let old_ai = object.remove("ai");
+        let ai = existing.get("ai").cloned();
+        if let Some(ai) = &ai { object.insert("ai".into(), ai.clone()); }
+        if old_ai == ai { self.write_unlocked(text) } else { self.write_unlocked(&(serde_json::to_string_pretty(&incoming)? + "\n")) }
+    }
+
+    pub fn read_ai(&self) -> io::Result<crate::mcp::AgentSettings> {
+        let _guard = self.lock.lock().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&self.read_unlocked()?.unwrap_or_else(|| "{}".into()))?;
+        if !value.is_object() {return Err(io::Error::new(io::ErrorKind::InvalidData,"expected settings object"));}
+        match value.get("ai") { Some(ai) => serde_json::from_value(ai.clone()).map_err(Into::into), None => Ok(crate::mcp::AgentSettings::default()) }
+    }
+
+    pub fn write_ai(&self, settings: &crate::mcp::AgentSettings) -> io::Result<()> {
+        let _guard = self.lock.lock().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&self.read_unlocked()?.unwrap_or_else(|| "{}".into()))?;
+        value.as_object_mut().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "expected settings object"))?.insert("ai".into(), serde_json::to_value(settings)?);
+        self.write_unlocked(&(serde_json::to_string_pretty(&value)? + "\n"))
+    }
+
+    fn write_unlocked(&self, text: &str) -> io::Result<()> {
         if text.len() as u64 > MAX_SETTINGS_BYTES {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "settings file is too large"));
         }
