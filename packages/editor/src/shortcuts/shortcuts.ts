@@ -15,6 +15,7 @@ export type CommandId =
   | "usage.find" | "usage.refresh" | "usage.next" | "usage.previous"
   | "bookmark.add" | "bookmark.rename" | "bookmark.delete" | "bookmark.jump"
   | `bookmark.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
+  | "pixel.applyPng" | "pixel.restorePng"
   | "pixel.mode"
   | "tool.line"
   | "pixel.swap"
@@ -135,6 +136,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "bookmark.delete", keys: [] },
   { command: "bookmark.jump", keys: [] },
   ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map(slot => ({ command: `bookmark.${slot}` as const, keys: [`Ctrl+Digit${slot}`] })),
+  { command: "pixel.applyPng", keys: [] },
+  { command: "pixel.restorePng", keys: [] },
   { command: "pixel.mode", keys: ["M"] },
   { command: "tool.line", keys: ["L"] },
   { command: "pixel.swap", keys: ["Shift+X"] },

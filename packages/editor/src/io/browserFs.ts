@@ -1,5 +1,6 @@
+import { browserPngReplace, equalPngBytes, PngChangedError } from './pngWriteback';
 /** `ProjectFileSystem` over a File System Access API directory handle (Chromium). */
-import { FileNotFoundError, splitPath, type ProjectFileSystem } from "./fs";
+import { FileNotFoundError, splitPath, type ProjectFileSystem, type GuardedPngRequest } from "./fs";
 
 export class DirectoryHandleFileSystem implements ProjectFileSystem {
   readonly handle: FileSystemDirectoryHandle;
@@ -26,6 +27,23 @@ export class DirectoryHandleFileSystem implements ProjectFileSystem {
 
   async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
     await this.#write(path, new Blob([bytes as Uint8Array<ArrayBuffer>]));
+  }
+
+  async replacePngGuarded(request: GuardedPngRequest): Promise<void> {
+    // Serializes browser adapter callers across tabs sharing this OPFS/directory name.
+    const run = () => browserPngReplace(this, request, async () => {
+      const { dirs, file } = splitPath(request.path);
+      const handle = await (await this.#dir(dirs, false)).getFileHandle(file);
+      const stream = await handle.createWritable();
+      try {
+        await stream.write(new Blob([request.replacement as Uint8Array<ArrayBuffer>]));
+        // Stage before the final CAS. Abort discards the swap file on conflicts.
+        if (!equalPngBytes(await this.readBytes(request.path), request.expected)) throw new PngChangedError();
+        await stream.close();
+      } catch (error) { await stream.abort().catch(() => undefined); throw error; }
+    });
+    if (typeof navigator !== 'undefined' && navigator.locks) await navigator.locks.request(`smap-png:${this.name}`, run);
+    else await run();
   }
 
   async list(dir: string): Promise<string[]> {

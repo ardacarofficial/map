@@ -1,3 +1,4 @@
+import { useSaveStatus } from '../../io/saveStatus';
 import { ModeSelector, PixelOptions } from "../pixel/PixelOptions";
 import { usePixelUi } from "../../state/pixelUi";
 import { GridControl, GridSettings } from "../toolOptions/GridControl";
@@ -25,6 +26,7 @@ registerRulerCommands();
 
 /** Options follow the active tool; view controls fold based on this bar's own width. */
 export function OptionsBar() {
+  const hasFolder = useSaveStatus(s => s.hasFolder);
   const pixelMode = usePixelUi(s => s.mode === "pixel");
   const tool = useEditorStore((s) => s.tool);
   const grid = useEditorStore((s) => s.gridVisible);
@@ -64,7 +66,7 @@ export function OptionsBar() {
       </div>
       {!world && <><Divider orientation="vertical" length={16} tone="line" /><div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">{pixelMode ? <PixelOptions /> : <ToolOptions />}</div></>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        {compact ? (
+        {(compact || pixelMode) ? (
           <Menu.Root>
             <Tooltip label={t("toolOptions.viewOptions")}>
               <Menu.Trigger
@@ -82,6 +84,8 @@ export function OptionsBar() {
             <Menu.Portal>
               <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
                 <Menu.Popup className={menuPopupClass}>
+                  {pixelMode && <Menu.Item className={menuItemClass} data-command="pixel.applyPng" disabled={world || !hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => runCommand('pixel.applyPng')}>{t('pngWriteback.apply')}</Menu.Item>}
+                  {pixelMode && <Menu.Item className={menuItemClass} data-command="pixel.restorePng" disabled={world || !hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => runCommand('pixel.restorePng')}>{t('pngWriteback.restore')}</Menu.Item>}
                   {toggles.map(({ command, icon, label, on }) => (
                     <Menu.CheckboxItem key={command} checked={on} disabled={world} closeOnClick data-view-toggle={command} data-command={command} className={menuItemClass} onCheckedChange={() => runCommand(command)}>
                       <span className="grid size-4 place-items-center">{on && <Icon name="tick" size={12} />}</span>
@@ -98,7 +102,7 @@ export function OptionsBar() {
             <IconButton size="md" aria-label={label} active={on} aria-pressed={on} disabled={world} data-view-toggle={command} onClick={() => runCommand(command)}><Icon name={icon} size={16} /></IconButton>
           </Tooltip>
         ))}
-        {compact && <GridSettings disabled={world} />}
+        {(compact || pixelMode) && <GridSettings disabled={world} />}
       </div>
     </div>
   );

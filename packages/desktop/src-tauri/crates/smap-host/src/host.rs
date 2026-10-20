@@ -19,6 +19,7 @@ pub enum ErrorKind {
     NotFound,
     OutOfScope,
     InvalidPath,
+    Changed,
     Io,
 }
 
@@ -138,6 +139,58 @@ impl Host {
             log::error!("save failed {}: {e}", real.display());
         }
         result.map_err(|e| HostError::io(path, &e))
+    }
+
+    /// Explicit source PNG write-back only. Scope, CAS, verified unique backup,
+    /// rename retries and watcher hashing share the host critical section.
+    pub fn replace_png_guarded(&self, path: &str, backup: &str, expected: &[u8], replacement: &[u8]) -> HostResult<()> {
+        self.replace_png_guarded_with(path, backup, expected, replacement, atomic::replace_file)
+    }
+
+    fn replace_png_guarded_with(&self, path: &str, backup: &str, expected: &[u8], replacement: &[u8], mut rename: impl FnMut(&Path, &Path) -> io::Result<()>) -> HostResult<()> {
+        use std::io::Write;
+        let scope = self.scope.lock().unwrap();
+        let real = scope.resolve(path).map_err(|e| HostError::scope(path, e))?;
+        let backup_real = scope.resolve(backup).map_err(|e| HostError::scope(backup, e))?;
+        let root = scope.project_root().ok_or_else(|| HostError::new(ErrorKind::OutOfScope, path, "no open project"))?;
+        if !real.starts_with(root.join("tilesets"))
+            || !real.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"))
+            || backup_real.parent() != Some(root.join("backups/png").as_path())
+            || !backup_real.extension().is_some_and(|e| e == "png") {
+            return Err(HostError::new(ErrorKind::OutOfScope, path, "PNG write-back must stay in project tilesets and backups/png"));
+        }
+        let mut known = self.known.lock().unwrap();
+        let check = || -> io::Result<()> {
+            if fs::read(&real)? != expected { return Err(io::Error::new(io::ErrorKind::InvalidData, "PNG changed")); }
+            Ok(())
+        };
+        let map_error = |e: io::Error| {
+            if e.kind() == io::ErrorKind::InvalidData { HostError::new(ErrorKind::Changed, path, "PNG changed") }
+            else { HostError::io(path, &e) }
+        };
+        check().map_err(map_error)?;
+        fs::create_dir_all(backup_real.parent().unwrap()).map_err(|e| HostError::io(backup, &e))?;
+        // Never truncate or replace an existing backup, including on a repeated request.
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&backup_real).map_err(|e| HostError::io(backup, &e))?;
+        file.write_all(expected).and_then(|_| file.sync_all()).map_err(|e| HostError::io(backup, &e))?;
+        if fs::read(&backup_real).map_err(|e| HostError::io(backup, &e))? != expected {
+            return Err(HostError::new(ErrorKind::Io, backup, "backup verification failed"));
+        }
+        // On Unix fsync the new directory entries as well as the file before
+        // making the source replacement durable. Any failure leaves it intact.
+        #[cfg(unix)]
+        for dir in [backup_real.parent().unwrap(), root.join("backups").as_path(), root] {
+            fs::File::open(dir).and_then(|f| f.sync_all()).map_err(|e| HostError::io(backup, &e))?;
+        }
+        let previous = known.get(&real);
+        known.record(&real, replacement);
+        let result = atomic::write_file_atomic_with(&real, replacement, |from, to| {
+            // Recheck immediately before every rename, including after antivirus retries.
+            check()?;
+            rename(from, to)
+        }, std::thread::sleep);
+        if result.is_err() { known.restore(&real, previous); }
+        result.map_err(map_error)
     }
 
     pub fn list_dir(&self, path: &str) -> HostResult<Vec<String>> {
@@ -360,6 +413,86 @@ mod tests {
         fs::create_dir_all(root.join("levels")).unwrap();
         fs::write(root.join("project.smap"), b"{}\n").unwrap();
         root
+    }
+
+    #[test]
+    fn guarded_png_backup_restore_cas_and_known_echo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (h, _) = host(tmp.path());
+        let root = project(tmp.path());
+        h.allow_user_dir(&root).unwrap();
+        h.set_project_root(&s(&root)).unwrap();
+        fs::create_dir_all(root.join("tilesets")).unwrap();
+        let target = root.join("tilesets/a.png");
+        let backup = root.join("backups/png/first.png");
+        fs::write(&target, b"original exact bytes").unwrap();
+        h.replace_png_guarded(&s(&target), &s(&backup), b"original exact bytes", b"new").unwrap();
+        assert_eq!(fs::read(&backup).unwrap(), b"original exact bytes");
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert!(h.known.lock().unwrap().classify(&target, Some(&fs::read(&target).unwrap())).is_none());
+        let restore_backup = root.join("backups/png/second.png");
+        h.replace_png_guarded(&s(&target), &s(&restore_backup), b"new", &fs::read(&backup).unwrap()).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"original exact bytes");
+        assert_eq!(fs::read(&restore_backup).unwrap(), b"new");
+        fs::write(&target, b"external").unwrap();
+        let race_backup = root.join("backups/png/race.png");
+        assert_eq!(h.replace_png_guarded(&s(&target), &s(&race_backup), b"original exact bytes", b"bad").unwrap_err().kind, ErrorKind::Changed);
+        assert!(!race_backup.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        assert!(h.replace_png_guarded(&s(&target), &s(&backup), b"external", b"bad").is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        assert_eq!(fs::read(&backup).unwrap(), b"original exact bytes");
+    }
+
+    #[test]
+    fn guarded_png_race_during_antivirus_retry_and_permission_failure_keep_source() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (h, _) = host(tmp.path());
+        let root = project(tmp.path());
+        h.allow_user_dir(&root).unwrap();
+        h.set_project_root(&s(&root)).unwrap();
+        fs::create_dir_all(root.join("tilesets")).unwrap();
+        let target = root.join("tilesets/a.png");
+        let backup = root.join("backups/png/race.png");
+        fs::write(&target, b"original").unwrap();
+        let mut attempts = 0;
+        let result = h.replace_png_guarded_with(&s(&target), &s(&backup), b"original", b"ours", |_, to| {
+            attempts += 1;
+            fs::write(to, b"external").unwrap();
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "antivirus"))
+        });
+        assert_eq!(result.unwrap_err().kind, ErrorKind::Changed);
+        assert_eq!(attempts, 1);
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        assert_eq!(fs::read(&backup).unwrap(), b"original");
+        assert!(h.list_dir(&s(&root.join("tilesets"))).unwrap().iter().all(|n| !n.ends_with(atomic::TEMP_SUFFIX)));
+        let failed = root.join("backups/png/permission.png");
+        assert!(h.replace_png_guarded_with(&s(&target), &s(&failed), b"external", b"ours", |_, _| {
+            Err(io::Error::new(io::ErrorKind::Other, "denied"))
+        }).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        assert_eq!(fs::read(&failed).unwrap(), b"external");
+        assert!(h.known.lock().unwrap().classify(&target, Some(b"external")).is_some());
+    }
+
+    #[test]
+    fn guarded_png_refuses_backup_failure_and_outside_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (h, _) = host(tmp.path());
+        let root = project(tmp.path());
+        h.allow_user_dir(&root).unwrap();
+        h.set_project_root(&s(&root)).unwrap();
+        fs::create_dir_all(root.join("tilesets")).unwrap();
+        let target = root.join("tilesets/a.png");
+        fs::write(&target, b"old").unwrap();
+        fs::write(root.join("backups"), b"not a directory").unwrap();
+        assert!(h.replace_png_guarded(&s(&target), &s(&root.join("backups/png/a.png")), b"old", b"new").is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"old");
+        fs::remove_file(root.join("backups")).unwrap();
+        let outside = tmp.path().join("outside.png");
+        fs::write(&outside, b"old").unwrap();
+        h.allow_user_file(&outside).unwrap();
+        assert_eq!(h.replace_png_guarded(&s(&outside), &s(&root.join("backups/png/a.png")), b"old", b"new").unwrap_err().kind, ErrorKind::OutOfScope);
     }
 
     #[test]

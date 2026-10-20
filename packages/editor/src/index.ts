@@ -18,4 +18,4 @@ export {
   type RecentEntry,
   type SaveFileFilter,
 } from "./platform";
-export { FileNotFoundError, type ProjectFileSystem } from "./io/fs";
+export { FileNotFoundError, type ProjectFileSystem, type GuardedPngRequest } from "./io/fs";

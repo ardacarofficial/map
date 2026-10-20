@@ -249,6 +249,14 @@ Segments divided by 1 px `line-subtle`, 12 px padding: X/Y (mono, `text`), tile 
 - Successful exports remember the target and options per world. Cancelling or a failed export keeps the previous selection. Folder choices and Unity's export-on-save switch retain their existing immediate persistence; automatic export remains Unity-only. Resolve all files before publishing, write resources before map entry points, and preserve unrelated destination files.
 
 
+### 4.10.2 PNG'ye uygula
+- One M dialog with the established 80 px preview size is shared by the command palette, Piksel options overflow and the edited tileset context menu. It lists source tile ids, crisp before/after previews and world cell counts. Divergent copies require an explicit radio choice or skip; generated, expanded, missing and uncaptured-grid origins are listed as unavailable. A source picker shows the actual project PNG path and a reserved unique `backups/png/` path as text.
+- “Bu kaynağı kullanan hücrelerin görünüşü değişir” and the paint-undo exclusion remain visible before confirmation. A changed source invalidates confirmation; Yeniden yükle starts a fresh review of current disk pixels. Grid changes never invent a new source rectangle. Edited copies and cell references remain independent.
+- “Yedekten geri yükle” uses the same dialog, lists backups for the chosen PNG and previews the selected backup against current disk pixels. Its explicit confirmation first backs up the current file. Backup failures leave the source untouched; no source write is part of paint history.
+- Ordinary save/autosave creates missing source PNGs but never replaces existing source bytes. Görseli değiştir selects an immutable revision path; undo/redo follows that path even when dimensions match. Only the confirmed apply/restore action overwrites a source PNG.
+- Write-back supports static PNGs up to the core RGBA capacity. Sixteen-bit/animated sources and older clones without a captured grid are refused rather than reduced or assigned a guessed rectangle. Native Windows/WebView2 verification remains a release gate; Linux host tests do not substitute for it.
+
+
 ---
 
 ## 5. Icons

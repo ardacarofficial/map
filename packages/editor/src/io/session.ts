@@ -88,6 +88,17 @@ let writesInFlight = 0;
 /** Writes run one after another (manual save and autosave never overlap). */
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+/** Explicit file actions serialize with manual save/autosave and suppress focus checks. */
+export function withProjectWriteGate<T>(run: () => Promise<T>): Promise<T> {
+  const guarded = async () => {
+    writesInFlight++;
+    try { return await run(); } finally { writesInFlight--; }
+  };
+  const next = writeQueue.then(guarded, guarded);
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
 function setFolder(next: ProjectFolder | null): void {
   folder = next;
   lastBackupText.clear();
@@ -281,11 +292,12 @@ export async function confirmDiscard(): Promise<boolean> {
  * the layer template are part of the initial state, not undo steps.
  */
 export async function newProject(options: NewProjectSetup): Promise<void> {
+  const reservedIds = options.tilesets?.length ? await sourceIdsOnDisk(options.folder?.fs ?? null) : new Set<string>();
   const project = createProjectDocument(options);
   const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
   activate(project, [], null, null, { stamps: [], brokenStampFiles: [], levels: defaultLevels(project.levelPath, options.firstMapName?.trim() || t("levels.firstMapName")), settings });
   if (options.tilesets && options.tilesets.length > 0) {
-    addDecodedTilesets(project.store, options.tilesets);
+    addDecodedTilesets(project.store, options.tilesets, null, reservedIds);
   }
   // Starting a project is not an undo step.
   project.store.clearHistory();
@@ -479,15 +491,21 @@ export interface PlannedTileset {
   readonly spec: TileGridSpec;
 }
 
+/** Keep orphan PNGs from being mistaken for a newly imported source on save. */
+async function sourceIdsOnDisk(fs: ProjectFileSystem | null): Promise<ReadonlySet<string>> {
+  const files = fs ? await fs.list("tilesets") : [];
+  return new Set(files.filter(name => name.toLowerCase().endsWith(".png")).map(name => name.slice(0, -4).toLowerCase()));
+}
+
 /**
  * Adds decoded PNGs as tilesets in ONE undo step (optionally all in
  * `group`). Returns the added tilesets; images that hold no tile are
  * reported and skipped. Ids taken by a removed tileset whose image is still
  * registered (its removal can be undone) are not reused.
  */
-export function addDecodedTilesets(store: MapStore, items: readonly PlannedTileset[], group: string | null = null): Tileset[] {
+export function addDecodedTilesets(store: MapStore, items: readonly PlannedTileset[], group: string | null = null, reservedIds: ReadonlySet<string> = new Set()): Tileset[] {
   const doc: MapDocument = store.document;
-  const taken = new Set(doc.tilesets.map((ts) => ts.id));
+  const taken = new Set([...doc.tilesets.map((ts) => ts.id), ...reservedIds]);
   for (const image of allTilesetImages()) taken.add(image.tilesetId);
   const added: Tileset[] = [];
   for (const { png, name, spec } of items) {
@@ -522,8 +540,8 @@ export function addDecodedTilesets(store: MapStore, items: readonly PlannedTiles
 }
 
 /** Adds one tileset (one undo step); only automatic imports need a notification. */
-function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec, announce = false): boolean {
-  const [tileset] = addDecodedTilesets(store, [{ png, name, spec }]);
+function addDecodedTileset(store: MapStore, png: DecodedPng, name: string, spec: TileGridSpec, announce = false, reservedIds: ReadonlySet<string> = new Set()): boolean {
+  const [tileset] = addDecodedTilesets(store, [{ png, name, spec }], null, reservedIds);
   if (!tileset) return false;
   if (announce) announceAdded(store, tileset);
   return true;
@@ -604,6 +622,10 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     for (const png of pngs) png.bitmap.close();
     return;
   }
+  let reservedIds: ReadonlySet<string>;
+  try { reservedIds = await sourceIdsOnDisk(getProjectFolder()?.fs ?? null); }
+  catch (error) { for (const png of pngs) png.bitmap.close(); toast.error(t("toast.saveFailed", { detail: describeError(error) })); return; }
+  if (useEditorStore.getState().project !== project) { for (const png of pngs) png.bitmap.close(); return; }
   const map = project.store.document.map;
   const mapTile = { tileWidth: map.tileWidth, tileHeight: map.tileHeight };
   if (pngs.length === 1) {
@@ -611,7 +633,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     const guess = guessGrid(png, mapTile);
     const best = guess.suggestions[0];
     if (best && readAutoAdd() && isConfidentGuess(guess.suggestions, mapTile)) {
-      addDecodedTileset(project.store, png, guess.name, { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }, true);
+      addDecodedTileset(project.store, png, guess.name, { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }, true, reservedIds);
       return;
     }
     const choice = await promptTilesetGrid(png, { kind: "add" }, mapTile);
@@ -620,7 +642,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
       png.bitmap.close();
       return;
     }
-    addDecodedTileset(store, png, choice.name, choice.spec);
+    addDecodedTileset(store, png, choice.name, choice.spec, false, reservedIds);
     return;
   }
   const plan = await promptBulk(pngs, { kind: "add" }, mapTile, groupNames(project.store.document.tilesets));
@@ -629,7 +651,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     for (const item of plan?.items ?? []) item.png.bitmap.close();
     return;
   }
-  addDecodedTilesets(store, plan.items, plan.group);
+  addDecodedTilesets(store, plan.items, plan.group, reservedIds);
 }
 
 /**

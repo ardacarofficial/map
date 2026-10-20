@@ -6,11 +6,11 @@
  * yeniden adlandırma → kilitliyse tekrar dene.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { FileNotFoundError, type ProjectFileSystem } from "@smap/editor";
+import { FileNotFoundError, type ProjectFileSystem, type GuardedPngRequest } from "@smap/editor";
 
 /** Rust `HostError`'ın webview'e gelen biçimi. */
 export interface HostErrorPayload {
-  kind: "NotFound" | "OutOfScope" | "InvalidPath" | "Io";
+  kind: "NotFound" | "OutOfScope" | "InvalidPath" | "Changed" | "Io";
   path: string;
   message: string;
 }
@@ -114,6 +114,18 @@ export class TauriFileSystem implements ProjectFileSystem {
     } catch (error) {
       throw toFsError(error, path);
     }
+  }
+
+  async replacePngGuarded(request: GuardedPngRequest): Promise<void> {
+    const body = new Uint8Array(request.expected.length + request.replacement.length);
+    body.set(request.expected); body.set(request.replacement, request.expected.length);
+    try {
+      await invoke<void>("replace_png_guarded", body, { headers: {
+        "x-smap-path": encodeURIComponent(this.resolve(request.path)),
+        "x-smap-backup": encodeURIComponent(this.resolve(request.backupPath)),
+        "x-smap-expected-length": String(request.expected.length),
+      } });
+    } catch (error) { throw toFsError(error, request.path); }
   }
 
   list(dir: string): Promise<string[]> {

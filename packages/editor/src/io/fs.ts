@@ -5,7 +5,16 @@
  * Implemented by the browser File System Access API (`browserFs.ts`), an
  * in-memory map for tests (`memoryFs.ts`), and in v0.5 by Tauri.
  */
+export interface GuardedPngRequest {
+  readonly path: string;
+  readonly backupPath: string;
+  readonly expected: Uint8Array;
+  readonly replacement: Uint8Array;
+}
+
 export interface ProjectFileSystem {
+  /** Scoped host CAS, backup and atomic replacement in one critical section. */
+  replacePngGuarded?(request: GuardedPngRequest): Promise<void>;
   /** Folder name (shown in recents and toasts). */
   readonly name: string;
   readText(path: string): Promise<string>;

@@ -446,7 +446,7 @@ export function syncLevelGrids(ws: LevelWorkspace): LevelSync {
     let touched = false;
     for (const want of active.tilesets) {
       const have = entry.store.document.getTileset(want.id);
-      if (!have || sameGrid(have, want)) continue;
+      if (!have || (sameGrid(have, want) && have.imagePath === want.imagePath)) continue;
       touched = true;
       const r = followGrid(entry.store, want, !ws.history.collecting);
       out.clearedCells += r.cleared;
@@ -471,7 +471,7 @@ function followGrid(store: MapStore, want: Tileset, reuseHistory: boolean): Foll
   const out: FollowResult = { cleared: 0, restored: 0, kept: 0 };
   const records = levelRecords.get(store) ?? [];
   const current = () => store.document.getTileset(want.id)!;
-  const matches = () => sameGrid(current(), want);
+  const matches = () => sameGrid(current(), want) && current().imagePath === want.imagePath;
   if (store.inTransaction) store.commit();
   const have = gridCopy(current());
 
@@ -516,7 +516,7 @@ function followGrid(store: MapStore, want: Tileset, reuseHistory: boolean): Foll
   try {
     const result =
       regridMode(have, want) === "image"
-        ? store.dispatch({ type: "replaceTilesetImage", tilesetId: want.id, imageWidth: extent.width, imageHeight: extent.height })
+        ? store.dispatch({ type: "replaceTilesetImage", tilesetId: want.id, imageWidth: extent.width, imageHeight: extent.height, imagePath: want.imagePath })
         : store.dispatch({
             type: "updateTilesetGrid",
             tilesetId: want.id,
@@ -527,6 +527,7 @@ function followGrid(store: MapStore, want: Tileset, reuseHistory: boolean): Foll
             imageWidth: extent.width,
             imageHeight: extent.height,
           });
+    if (doc.getTileset(want.id)!.imagePath !== want.imagePath) store.dispatch({ type: "replaceTilesetImage", tilesetId: want.id, imageWidth: extent.width, imageHeight: extent.height, imagePath: want.imagePath });
     out.cleared = result.clearedCells;
     out.restored = restoreCells(store, back);
     out.kept += back.length - out.restored;

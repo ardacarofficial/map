@@ -1384,7 +1384,7 @@ export class MapStore {
     if (current?.edited) throw new Error("edited atlas grids cannot change");
     if (!current) throw new Error(`replaceTilesetImage: unknown tileset "${op.tilesetId}"`);
     assertImageSize("replaceTilesetImage", op.imageWidth, op.imageHeight);
-    return this.#regridTileset("replaceTilesetImage", current, tilesetWithGrid(current, current, op.imageWidth, op.imageHeight));
+    return this.#regridTileset("replaceTilesetImage", current, { ...tilesetWithGrid(current, current, op.imageWidth, op.imageHeight), ...(op.imagePath !== undefined ? { imagePath: op.imagePath } : {}) });
   }
 
   #regridTileset(name: "updateTilesetGrid" | "replaceTilesetImage", current: Tileset, next: Tileset): TilesetRemapResult {
@@ -1394,7 +1394,7 @@ export class MapStore {
       throw new RangeError(`${name}: not even one ${next.tileWidth}×${next.tileHeight} tile fits the image`);
     }
     if (
-      (["tileWidth", "tileHeight", "margin", "spacing", "columns", "rows"] as const).every((k) => current[k] === next[k])
+      current.imagePath === next.imagePath && (["tileWidth", "tileHeight", "margin", "spacing", "columns", "rows"] as const).every((k) => current[k] === next[k])
     ) {
       return Object.freeze(result);
     }
