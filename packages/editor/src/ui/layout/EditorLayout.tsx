@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { AiTagsEditor } from "../agent/AiTagsEditor";
+import { AiBar } from "../agent/AiBar";
+import { useAiCommands } from "../agent/commands";
 import { t } from "../../i18n";
 import { CanvasHost } from "../canvas/CanvasHost";
 import { PointPickOverlay } from "../levels/PointPickOverlay";
@@ -32,6 +35,7 @@ function useViewportWidth(): number {
 
 /** Resizable side columns surround the canvas options, canvas and dock. */
 export function EditorLayout() {
+  useAiCommands();
   const hidden = useUiStore((s) => s.panelsHidden);
   const viewport = useViewportWidth();
   const zones = useDockStore(s => s.layout.zones);
@@ -49,6 +53,7 @@ export function EditorLayout() {
         <DockZone zone="left" size={sideSize("left")} temporaryHidden={hidden} />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <OptionsBar />
+          <AiBar />
           <StampEditorBanner />
           <main aria-label={t("layout.canvas")} className="dock-canvas relative min-h-0 min-w-0 flex-1 bg-canvas">
             <CanvasHost />
@@ -62,6 +67,7 @@ export function EditorLayout() {
         <DockZone zone="right" size={sideSize("right")} temporaryHidden={hidden} />
       </div>
       <PanelHosts />
+      <AiTagsEditor />
       <DockDropIndicator />
       <StampCloseDialog />
       <StatusBar />

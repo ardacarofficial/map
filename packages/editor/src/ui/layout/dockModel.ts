@@ -1,5 +1,5 @@
 /** Flat docking model: no floating windows or recursive split trees. */
-export const PANEL_IDS = ["tileset", "stamps", "project", "recent", "inspector", "history", "layers", "entities", "color"] as const;
+export const PANEL_IDS = ["tileset", "stamps", "project", "recent", "inspector", "history", "layers", "entities", "color", "aiActivity"] as const;
 export type PanelId = typeof PANEL_IDS[number];
 export const ZONE_IDS = ["left", "right", "bottom"] as const;
 export type ZoneId = typeof ZONE_IDS[number];
@@ -29,7 +29,7 @@ export function defaultDockLayout(): DockLayout {
       right: { state: "expanded", expandedPx: 296, mode: "split", groups: [group("properties", ["inspector", "history", "color"], .6), group("layers", ["layers"], .4)] },
       bottom: { state: "expanded", expandedPx: 68, mode: "tabs", groups: [group("recent", ["recent"])] },
     },
-    hiddenPanels: [], hiddenHomes: {}, rulersVisible: true,
+    hiddenPanels: ["aiActivity"], hiddenHomes: { aiActivity: { zone: "bottom", groupId: "recent", groupIndex: 0, tabIndex: 1, weight: 1 } }, rulersVisible: true,
   };
 }
 export function locatePanel(layout: DockLayout, panel: PanelId): { zone: ZoneId; group: number; index: number } | null {
@@ -97,7 +97,12 @@ export function revealInLayout(layout: DockLayout, panel: PanelId): DockLayout {
   const at = locatePanel(layout, panel);
   if (!at) {
     const home = layout.hiddenHomes[panel];
-    if (!home) return movePanel(layout, panel, locatePanel(defaultDockLayout(), panel)!);
+    if (!home) {
+      const defaults = defaultDockLayout();
+      const at = locatePanel(defaults, panel);
+      const hidden = defaults.hiddenHomes[panel];
+      return movePanel(layout, panel, at ?? { zone: hidden?.zone ?? "bottom", group: hidden?.groupIndex ?? 0, index: hidden?.tabIndex ?? 0 });
+    }
     const next = copyLayout(layout), z = next.zones[home.zone];
     let index = z.groups.findIndex(g => g.id === home.groupId);
     if (index < 0) {
@@ -149,6 +154,7 @@ export function normalizeLayout(raw: unknown): DockLayout | null {
     }
   }
   next.hiddenPanels = [];
+  next.hiddenHomes = {};
   if (Array.isArray(raw.hiddenPanels)) for (const id of raw.hiddenPanels.slice(0, 64)) {
     if (isPanelId(id) && !seen.has(id)) { next.hiddenPanels.push(id); seen.add(id); }
   }
@@ -160,6 +166,11 @@ export function normalizeLayout(raw: unknown): DockLayout | null {
   }
   const defaults = defaultDockLayout();
   for (const panel of PANEL_IDS) if (!seen.has(panel)) {
+    if (defaults.hiddenPanels.includes(panel)) {
+      next.hiddenPanels.push(panel);
+      next.hiddenHomes[panel] = defaults.hiddenHomes[panel]!;
+      continue;
+    }
     const at = locatePanel(defaults, panel)!;
     const z = next.zones[at.zone];
     const original = defaults.zones[at.zone].groups[at.group]!;

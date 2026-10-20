@@ -1,3 +1,4 @@
+import { AiActivityPanel } from "../agent/AiActivityPanel";
 import { ColorPanel } from '../pixel/ColorPanel';
 import { usePixelUi } from '../../state/pixelUi';
 import { useSyncExternalStore } from "react";
@@ -24,6 +25,7 @@ import { RecentTilesStrip } from "./RecentTilesStrip";
 
 interface PanelDefinition { label: MessageKey; Component: ComponentType; focus: string; visible?(context: { entity: boolean; world: boolean }): boolean }
 export const PANELS: Record<PanelId, PanelDefinition> = {
+  aiActivity: { label: "ai.activity.title", Component: AiActivityPanel, focus: "input, button, [role=region]" },
   color: { label: "colorPanel.title", Component: ColorPanel, focus: "[data-color-control=square]" },
   tileset: { label: "tilesetDock.title", Component: TilesetView, focus: "[data-tileset-viewport], [data-tileset-empty]" },
   stamps: { label: "panels.stamps", Component: StampsPanel, focus: "input, button" },

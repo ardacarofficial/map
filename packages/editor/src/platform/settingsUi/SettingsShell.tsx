@@ -11,8 +11,11 @@ import { defaultDockLayout, type DockLayout } from "../../ui/layout/dockModel";
 import { Button } from "../../ui/primitives/Button";
 import { NativeSelect } from "../../ui/primitives/NativeSelect";
 import { toast } from "../../ui/toast/toastStore";
-import { beginSettingsPreview } from "../appSettings";
+import { useAppSettings, beginSettingsPreview } from "../appSettings";
 import { defaultSettingsText, parseSettings } from "../settings";
+import { AiSection } from "./AiSection";
+import { AiSettingsError, commitAiSettings, useAiSettingsDraft } from "./aiSettingsDraft";
+import { validAgentPort } from "../../ui/agent/connectionSnippet";
 import { AdvancedSection } from "./AdvancedSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { ExportSection } from "./ExportSection";
@@ -22,18 +25,19 @@ import { PanelsSection } from "./PanelsSection";
 import { ShortcutsSection } from "./ShortcutsSection";
 import { draftObject, editDraft, editShortcutDraft } from "./settingsDraft";
 
-export const SETTINGS_CATEGORIES = ["general", "appearance", "panels", "shortcuts", "language", "export", "advanced"] as const;
+export const SETTINGS_CATEGORIES = ["general", "appearance", "panels", "shortcuts", "language", "export", "ai", "advanced"] as const;
 type Category = typeof SETTINGS_CATEGORIES[number];
 type Preview = Awaited<ReturnType<typeof beginSettingsPreview>>;
 export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusyChange(busy: boolean): void }) {
   const session = useRef<Preview | null>(null);
   const sidebar = useRef<HTMLDivElement>(null);
   const [text, setText] = useState<string | null>(null);
-  const [category, setCategory] = useState<Category>("general");
+  const [category, setCategory] = useState<Category>(useAppSettings.getState().settingsCategory ?? "general");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings | null>(null);
   const [exportPatch, setExportPatch] = useState<Partial<ExportSettings>>({});
+  const aiDraft = useAiSettingsDraft();
   const project = useEditorStore(s => s.project);
   const layout = useDockStore(s => s.layout);
   useEffect(() => {
@@ -61,19 +65,33 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (text === null || !session.current || busy) return;
+    if (aiDraft.connection && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))) { setError(t("ai.settings.invalidPort")); return; }
     setBusy(true); onBusyChange(true); setError(null);
+    let aiReceipt: Awaited<ReturnType<typeof commitAiSettings>> = null;
     try {
+      draftObject(text);
+      if (aiDraft.connection && aiDraft.snapshot) aiReceipt = await commitAiSettings(aiDraft.connection, aiDraft.snapshot, { enabled: aiDraft.enabled, port: Number(aiDraft.port) });
       const problems = await session.current.save(text);
+      if (aiReceipt) aiDraft.acceptSnapshot(aiReceipt.snapshot);
       if (exportSettings && Object.keys(exportPatch).length) { await updateExportSettings(exportSettings.project, exportPatch); useExportStore.getState().bump(); }
       if (!problems.length) toast.success(t("settings.saved"));
       onDone();
-    } catch (error) { setError(t(error instanceof SyntaxError ? "settings.invalidJson" : "settingsUi.saveFailed", { detail: formatUiError(error) })); }
+    } catch (error) {
+      if (aiReceipt) {
+        try { await aiReceipt.rollback(); if (aiDraft.connection) aiDraft.acceptSnapshot(await aiDraft.connection.getSettings()); }
+        catch { setError(t("ai.settings.saveFailed")); return; }
+      }
+      if (error instanceof AiSettingsError) {
+        if (error.snapshot) aiDraft.acceptSnapshot(error.snapshot);
+        setError(error.code === "CONFLICT" ? t("ai.settings.conflict") : error.code === "PORT_IN_USE" ? t("ai.settings.portInUse", { port: Number(aiDraft.port) }) : error.code === "INVALID_ARGUMENT" ? t("ai.settings.invalidPort") : t("ai.settings.saveFailed"));
+      } else setError(t(error instanceof SyntaxError ? "settings.invalidJson" : "settingsUi.saveFailed", { detail: formatUiError(error) }));
+    }
     finally { setBusy(false); onBusyChange(false); }
   };
   let valid = true;
   if (text !== null) { try { draftObject(text); } catch { valid = false; } }
   const parsed = parseSettings(text ?? "{}", SHORTCUTS, getLocale());
-  const title = (id: Category) => t(`settingsUi.${id}` as MessageKey);
+  const title = (id: Category) => id === "ai" ? t("ai.title") : t(`settingsUi.${id}` as MessageKey);
   return <form onSubmit={event => void submit(event)} className="settings-form flex min-h-0 flex-1 flex-col" noValidate>
     <DialogHeader title={t("settings.dialogTitle")} subtitle={t("settings.dialogDescription")} onClose={() => { if (!busy) onDone(); }} />
     <div className="settings-content flex min-h-0 flex-1">
@@ -88,6 +106,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
         <h2 className="mb-3 flex min-h-control-md items-center text-md font-semibold text-title">{title(category)}</h2>
         {text === null ? <p className="text-sm text-muted">{t("settingsUi.loading")}</p> : <fieldset disabled={busy} className="min-w-0">
           {!valid && category !== "advanced" ? <p role="alert" className="text-sm text-danger">{t("settingsUi.fixJson")}</p> : <>
+            {category === "ai" && <AiSection draft={aiDraft} onBusyChange={value => { setBusy(value); onBusyChange(value); }} />}
             {category === "general" && <GeneralSection />}
             {category === "appearance" && <AppearanceSection layout={layout} onChange={layout => patch({ layout })} />}
             {category === "panels" && <PanelsSection layout={layout} onChange={layout => patch({ layout })} />}
@@ -100,7 +119,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
       </div>
     </div>
     {error && <p role="alert" className="shrink-0 px-4 pb-2 text-sm text-danger">{error}</p>}
-    <DialogFooter><Button variant="secondary" disabled={busy} onClick={onDone}>{t("settings.dialogCancel")}</Button><Button variant="primary" type="submit" disabled={text === null || busy}>{t("settings.dialogSave")}</Button></DialogFooter>
+    <DialogFooter><Button variant="secondary" disabled={busy} onClick={onDone}>{t("settings.dialogCancel")}</Button><Button variant="primary" type="submit" disabled={text === null || busy || !!aiDraft.connection && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))}>{t("settings.dialogSave")}</Button></DialogFooter>
   </form>;
 }
 function editDraftSafe(text: string, layout: DockLayout): string {

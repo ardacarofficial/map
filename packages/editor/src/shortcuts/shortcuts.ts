@@ -12,7 +12,7 @@ import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
-  | "ai.stop" | "ai.approve" | "ai.discard" | "view.aiActivity" | "ai.openSettings"
+  | "ai.stop" | "ai.approve" | "ai.discard" | "view.aiActivity" | "ai.openSettings" | "ai.editTags"
   | "usage.find" | "usage.refresh" | "usage.next" | "usage.previous"
   | "bookmark.add" | "bookmark.rename" | "bookmark.delete" | "bookmark.jump"
   | `bookmark.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
@@ -119,7 +119,7 @@ export type CommandId =
   // Docking
   | "view.toggleBottom"
   | `dock.${"left" | "right" | "bottom"}.${"show" | "hide"}`
-  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities" | "color"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`
+  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities" | "color" | "aiActivity"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`
   | "selection.toggleMode"
   | "pick.toggleScope";
 
@@ -131,7 +131,7 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
-  ...(["ai.stop", "ai.approve", "ai.discard", "view.aiActivity", "ai.openSettings"] as const).map(command => ({ command, keys: [] })),
+  ...(["ai.stop", "ai.approve", "ai.discard", "view.aiActivity", "ai.openSettings", "ai.editTags"] as const).map(command => ({ command, keys: [] })),
   { command: "usage.find", keys: [] },
   { command: "usage.refresh", keys: [] },
   { command: "usage.next", keys: ["F3"] },
