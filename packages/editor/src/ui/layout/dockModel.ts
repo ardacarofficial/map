@@ -1,5 +1,5 @@
 /** Flat docking model: no floating windows or recursive split trees. */
-export const PANEL_IDS = ["tileset", "stamps", "project", "recent", "inspector", "history", "layers", "entities"] as const;
+export const PANEL_IDS = ["tileset", "stamps", "project", "recent", "inspector", "history", "layers", "entities", "color"] as const;
 export type PanelId = typeof PANEL_IDS[number];
 export const ZONE_IDS = ["left", "right", "bottom"] as const;
 export type ZoneId = typeof ZONE_IDS[number];
@@ -26,7 +26,7 @@ export function defaultDockLayout(): DockLayout {
     version: 2,
     zones: {
       left: { state: "expanded", expandedPx: 260, mode: "tabs", groups: [group("library", ["tileset", "stamps", "project", "entities"])] },
-      right: { state: "expanded", expandedPx: 296, mode: "split", groups: [group("properties", ["inspector", "history"], .6), group("layers", ["layers"], .4)] },
+      right: { state: "expanded", expandedPx: 296, mode: "split", groups: [group("properties", ["inspector", "history", "color"], .6), group("layers", ["layers"], .4)] },
       bottom: { state: "expanded", expandedPx: 68, mode: "tabs", groups: [group("recent", ["recent"])] },
     },
     hiddenPanels: [], hiddenHomes: {}, rulersVisible: true,

@@ -1,9 +1,11 @@
+import type { MapStore, PixelPoint } from '@smap/core';
 import { create } from 'zustand';
 import { useEditorStore, type ToolId } from './editorStore';
 import type { PixelScope } from '../canvas/pixelEditing';
 interface PixelUi {
   mode: 'tile' | 'pixel'; size: number; shape: 'square' | 'circle'; scope: PixelScope;
   fillMode: 'contiguous' | 'global'; filled: boolean; mirrorH: boolean; mirrorV: boolean;
+  mirrorOrigins: WeakMap<MapStore, PixelPoint>; originRevision: number;
   pending: boolean; hover: { x: number; y: number } | null;
   tileTool: ToolId; pixelTool: ToolId;
   setMode(mode: 'tile' | 'pixel'): void; setSize(size: number): void;
@@ -13,6 +15,7 @@ const modeListeners = new Set<() => void>();
 export function beforePixelModeChange(listener: () => void): () => void { modeListeners.add(listener); return () => modeListeners.delete(listener); }
 export const usePixelUi = create<PixelUi>()((set, get) => ({
   mode: 'tile', size: 1, shape: 'square', scope: 'cell', fillMode: 'contiguous', filled: false,
+  mirrorOrigins: new WeakMap(), originRevision: 0,
   mirrorH: false, mirrorV: false, pending: false, hover: null, tileTool: 'brush', pixelTool: 'brush',
   setMode: mode => {
     const prev = get(); if (prev.mode === mode) return;

@@ -19,6 +19,9 @@ export type CommandId =
   | "tool.line"
   | "pixel.swap"
   | "pixel.reset"
+  | "pixel.resetOrigin"
+  | "colorPalette.load" | "colorPalette.save"
+  | `color.${"left" | "right" | "up" | "down" | "leftFast" | "rightFast" | "upFast" | "downFast"}`
   | "map.border"
   | "stamp.nineSlice"
   | "smartBrush.matchGrid"
@@ -114,7 +117,7 @@ export type CommandId =
   // Docking
   | "view.toggleBottom"
   | `dock.${"left" | "right" | "bottom"}.${"show" | "hide"}`
-  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`
+  | `panel.${"tileset" | "stamps" | "project" | "recent" | "inspector" | "history" | "layers" | "entities" | "color"}.${"left" | "right" | "bottom" | "show" | "hide" | "forward" | "backward" | "split" | "merge"}`
   | "selection.toggleMode"
   | "pick.toggleScope";
 
@@ -139,6 +142,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { command: "tool.line", keys: ["L"] },
   { command: "pixel.swap", keys: ["Shift+X"] },
   { command: "pixel.reset", keys: ["D"] },
+  { command: "pixel.resetOrigin", keys: [] },
+  { command: "colorPalette.load", keys: [] },
+  { command: "colorPalette.save", keys: [] },
+  ...(["left", "right", "up", "down"] as const).flatMap(direction => {
+    const arrow = `Arrow${direction[0]!.toUpperCase()}${direction.slice(1)}`;
+    return [{ command: `color.${direction}` as const, keys: [arrow] }, { command: `color.${direction}Fast` as const, keys: [`Shift+${arrow}`] }];
+  }),
   { command: "map.border", keys: [] },
   { command: "stamp.nineSlice", keys: [] },
   { command: "smartBrush.matchGrid", keys: [] },

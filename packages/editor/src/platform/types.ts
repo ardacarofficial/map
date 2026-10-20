@@ -129,6 +129,7 @@ export interface Platform {
    * Saves an exported file where the user chooses (desktop: native save
    * dialog). Absent → the editor downloads it. Resolves false when cancelled.
    */
+  openFile?(filter: SaveFileFilter): Promise<{ name: string; bytes: Uint8Array } | null>;
   saveFile?(fileName: string, bytes: Uint8Array, filter: SaveFileFilter): Promise<boolean>;
 }
 

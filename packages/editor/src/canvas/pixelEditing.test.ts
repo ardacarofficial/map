@@ -146,3 +146,10 @@ it('world strokes keep the precise source identity captured at press', () => {
   const plans = planPixelGesture(store, layerId, [{ x: 1, y: 1 }, { x: 18, y: 1 }], { ...options, scope: 'world' }, source);
   expect(plans.every(p => p.owner.tilesetId === 'source')).toBe(true);
 });
+it('uses the moved origin for stroke and fill reflection', () => {
+  const { store, layerId, source } = setup();
+  for (const tool of ['brush', 'fill'] as const) {
+    const plans = planPixelGesture(store, layerId, [{ x: 1, y: 1 }], { ...options, tool, mirrorH: true, mirrorV: true, mirrorOrigin: { x: 9, y: 9 } }, source);
+    expect(new Set(plans.map(p => `${p.cellX},${p.cellY}`))).toEqual(new Set(['0,0', '1,0', '0,1', '1,1']));
+  }
+});

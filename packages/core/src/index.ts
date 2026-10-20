@@ -514,3 +514,5 @@ export { prepareWorldEdit, applyWorldEdit, WorldEditError } from "./pixel/worldE
 export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEditPlan, WorldEditBlocker } from "./pixel/worldEdit";
 
 export { tileUsageBatches, type TileUsage } from "./tileUsage";
+
+export { ColorPaletteStore, type ColorPaletteOp } from './pixel/palettes';

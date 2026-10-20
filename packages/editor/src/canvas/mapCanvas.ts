@@ -378,6 +378,7 @@ export class MapCanvas {
     });
     this.#lodSprite.visible = false;
     const toolHost: ToolHost = {
+      get colors() { return self.#colors; },
       get scene() {
         return self.#scene;
       },

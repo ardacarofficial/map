@@ -13,7 +13,7 @@ export type PixelTool = 'brush' | 'eraser' | 'fill' | 'eyedropper' | 'line' | 'r
 export type PixelScope = 'cell' | 'world';
 export interface PixelGestureOptions {
   tool: PixelTool; color: Rgba8; size: number; shape: 'square' | 'circle'; scope: PixelScope;
-  fillMode: 'contiguous' | 'global'; filled: boolean; mirrorH: boolean; mirrorV: boolean;
+  fillMode: 'contiguous' | 'global'; filled: boolean; mirrorH: boolean; mirrorV: boolean; mirrorOrigin?: PixelPoint;
 }
 export type PixelSource = (tileset: Tileset, tileId: number) => RasterImage | undefined;
 export interface PixelOwner {
@@ -64,7 +64,7 @@ export function planPixelGesture(store: MapStore, layerId: string, samples: read
   const sameIdentity = (owner: PixelOwner) => options.scope !== "world" || !initial.tilesetId || (owner.tilesetId === initial.tilesetId && owner.tileId === initial.tileId);
   const color = options.tool === 'eraser' ? { r: 0, g: 0, b: 0, a: 0 } : options.color;
   if (options.tool === 'fill') {
-    const seeds = options.mirrorH || options.mirrorV ? mirrorPixels([start], { horizontal: options.mirrorH, vertical: options.mirrorV, origin: { x: (map.width * map.tileWidth - 1) / 2, y: (map.height * map.tileHeight - 1) / 2 } }) : [start];
+    const seeds = options.mirrorH || options.mirrorV ? mirrorPixels([start], { horizontal: options.mirrorH, vertical: options.mirrorV, origin: options.mirrorOrigin ?? { x: (map.width * map.tileWidth - 1) / 2, y: (map.height * map.tileHeight - 1) / 2 } }) : [start];
     const drafts = new Map<PixelOwner, Map<number, PixelWrite>>();
     for (const seed of seeds) {
       const o = ownerAt(Math.floor(seed.x / map.tileWidth), Math.floor(seed.y / map.tileHeight));
@@ -78,7 +78,7 @@ export function planPixelGesture(store: MapStore, layerId: string, samples: read
   }
   const end = samples.at(-1)!;
   let points = options.tool === 'rect' ? pixelRectangle(start, end, options.filled) : pixelStrokePoints(options.tool === 'line' ? [start, end] : samples, options.size, options.shape);
-  if (options.mirrorH || options.mirrorV) points = mirrorPixels(points, { horizontal: options.mirrorH, vertical: options.mirrorV, origin: { x: (map.width * map.tileWidth - 1) / 2, y: (map.height * map.tileHeight - 1) / 2 } });
+  if (options.mirrorH || options.mirrorV) points = mirrorPixels(points, { horizontal: options.mirrorH, vertical: options.mirrorV, origin: options.mirrorOrigin ?? { x: (map.width * map.tileWidth - 1) / 2, y: (map.height * map.tileHeight - 1) / 2 } });
   const drafts = new Map<PixelOwner, Map<number, PixelWrite>>();
   const extent = placedPixelSize(initial.width, initial.height, initial.flags);
   const oversized = extent.width > map.tileWidth || extent.height > map.tileHeight;

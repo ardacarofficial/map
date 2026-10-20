@@ -1,3 +1,4 @@
+import type { CanvasColors } from './colors';
 import { reportSmartBrushError } from "../commands/smartBrushErrors";
 import { autoBrush, brushDisabled, brushUnavailable, brushCandidate, brushPending, publishBrushAssets, waitForSelectionBrush } from "../commands/smartBrushActions";
 import { applySmartStampPlan, isTileLayer } from "@smap/core";
@@ -184,6 +185,7 @@ export type Gesture =
 
 /** What the controller needs from the canvas. */
 export interface ToolHost {
+  readonly colors?: CanvasColors;
   readonly scene: MapScene | null;
   readonly entities: EntityRenderer;
   readonly camera: CameraController;

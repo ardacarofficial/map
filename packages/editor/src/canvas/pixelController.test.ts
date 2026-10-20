@@ -59,3 +59,13 @@ it('lists every map whose preload failed and leaves no edit pending', async () =
   expect(usePixelUi.getState().pending).toBe(false); expect(ws.history.undoDepth).toBe(0);
   controller.destroy();
 });
+
+it('drags the mirror origin without paint; cancel restores the original origin', () => {
+  const { controller, store, ws } = setup(); usePixelUi.setState({ mirrorH: true, mirrorV: true });
+  controller.down(pointer(31, 31)); controller.move(pointer(12, 18)); controller.up(pointer(12, 18));
+  expect(usePixelUi.getState().mirrorOrigins.get(store)).toEqual({ x: 12, y: 18 });
+  expect(ws.history.undoDepth).toBe(0);
+  controller.down(pointer(12, 18)); controller.move(pointer(20, 20)); controller.cancel();
+  expect(usePixelUi.getState().mirrorOrigins.get(store)).toEqual({ x: 12, y: 18 });
+  controller.destroy();
+});

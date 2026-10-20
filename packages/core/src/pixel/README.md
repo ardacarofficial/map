@@ -67,7 +67,11 @@ are embedded in project JSON. Exporters consume its ordinary PNG path.
 Colour palettes use `ColorPalette {name,colors}` with ordered `#rrggbbaa`
 values. Project `colorPalettes` is independent of tile-reference collections.
 `parseColorPalette`/`serializeColorPalette` read/write `.smap-colors.json`,
-version 1. Built-in UI/app settings and disk adapters are separate lanes.
+version 1. `ColorPaletteStore.dispatch` applies validated add/replace/remove
+operations with owned immutable before/after snapshots. `WorldHistory.projectEdit`
+records them in the same chronological undo stack as map strokes, without
+inventing cell changes or duplicating world palettes in level documents.
+The editor owns UI/app settings and routes file IO through the host platform.
 
 Collection normalization always writes `rows`. The input `Collection.rows`
 remains optional for existing core/editor callers; omitted input derives the

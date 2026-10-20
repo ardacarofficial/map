@@ -176,3 +176,15 @@ it("picks an export folder directly without creating a world subfolder", async (
   handlers.set("dialog_pick_folder", () => null);
   expect(await platform.pickExportFolder!()).toBeNull();
 });
+
+it('opens palette bytes only from native dialog grants and propagates read failures/cancellation', async () => {
+  const platform = createDesktopPlatform(), filter = { name: 'Color palette', extensions: ['smap-colors.json'] };
+  handlers.set('dialog_pick_files', () => ['C:\\palettes\\Sea.smap-colors.json']);
+  const bytes = new TextEncoder().encode('{"version":1}'); handlers.set('read_file', () => bytes.buffer);
+  expect(await platform.openFile!(filter)).toEqual({ name: 'Sea.smap-colors.json', bytes });
+  expect(calls).toContainEqual(['dialog_pick_files', { title: undefined, filterName: filter.name, extensions: filter.extensions }]);
+  expect(calls).toContainEqual(['read_file', { path: 'C:\\palettes\\Sea.smap-colors.json' }]);
+  handlers.set('read_file', () => { throw { kind: 'PermissionDenied', message: 'blocked' }; });
+  await expect(platform.openFile!(filter)).rejects.toThrow();
+  handlers.set('dialog_pick_files', () => []); expect(await platform.openFile!(filter)).toBeNull();
+});

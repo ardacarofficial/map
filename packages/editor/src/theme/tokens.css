@@ -80,6 +80,10 @@
   --color-collision-solid: #ff5468; /* manually blocked cells: warm red, reads on dark and on grass */
   --color-collision-pass: #5cb2ff; /* manually passable cells: sky blue (≠ teal accent) */
 
+  /* Renk functional controls (DESIGN §3). */
+  --spacing-color-square: 160px;
+  --spacing-color-swatch: 24px;
+
   /* ---- Type */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
