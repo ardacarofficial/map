@@ -56,7 +56,9 @@ export async function readOpfsText(page: Page, path: string): Promise<string | n
       const parts = path.split("/");
       const file = parts.pop() as string;
       for (const part of parts) dir = await dir.getDirectoryHandle(part);
-      return await (await (await dir.getFileHandle(file)).getFile()).text();
+      const text = await (await (await dir.getFileHandle(file)).getFile()).text();
+      // A file that is still being created reads as empty: treat it as not written yet.
+      return text === "" ? null : text;
     } catch {
       return null;
     }
