@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
-import { test, expect, dropFile, sampleBytes, confirmTilesetCard } from "../support/fixtures";
+import { test, expect, dropFile, sampleBytes, confirmTilesetCard, pixelDiffRatio } from "../support/fixtures";
 import { connect, type AgentClient } from "../support/agentClient";
 import type { AgentToolResult, ToolName, ToolSuccess } from "../../packages/agent/src/contracts";
 
@@ -104,5 +104,90 @@ for (const phase of ["running", "stopped", "awaitingApproval"] as const) test(`m
     await page.locator("[data-ai-bar]").getByRole("button", { name: "Vazgeç", exact: true }).click();
     const tags = success(await client.callTool("get_tags", { context: { worldSessionId: edit.context.worldSessionId }, tilesetId: edit.tilesetId, status: "all" }));
     expect(tags.data.items.some(item => item.tags.includes(`review-${phase}`))).toBe(true);
+  } finally { await client.close(); }
+});
+
+// The bridge is installed on the welcome screen, before a world/store exists.
+// Exercise user creation/navigation rather than importing editor singletons.
+test("AI follows UI-created maps and worlds reopened after pairing", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pair = randomUUID();
+  await page.goto(`/?agent=${pair}`);
+  await expect(page.locator("[data-welcome-drop]")).toBeVisible();
+  let client = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
+  try {
+    expect(success(await client.getSession()).worldSessionId).toBeNull();
+    await page.getByRole("button", { name: /Yeni dünya/ }).click();
+    const dialog = page.locator('[data-dialog="new-project"]');
+    await dialog.getByLabel("Dünya adı", { exact: true }).fill("AI dünyası");
+    await dialog.getByRole("button", { name: "Oluştur", exact: true }).click();
+    await expect(page.locator("[data-canvas-host] canvas").first()).toBeVisible();
+    await dropFile(page, "[data-canvas-host]", "overworld-32.png", sampleBytes("tilesets/overworld-32.png"));
+    await confirmTilesetCard(page);
+    await page.locator('[data-library-tab-button="project"]').click();
+    await page.getByRole("button", { name: "Yeni harita", exact: true }).first().click();
+    const mapDialog = page.locator('[data-dialog="new-level"]');
+    await mapDialog.getByLabel("Ad", { exact: true }).fill("Bahçe");
+    await mapDialog.getByRole("button", { name: "Oluştur", exact: true }).click();
+    await expect(page.getByRole("option", { name: /^Bahçe/ })).toHaveAttribute("aria-selected", "true");
+    await page.locator("[data-canvas-host]").focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    for (const source of ["created", "same-page", "folder", "recent"]) {
+      if (source === "same-page") {
+        const oldWorld = success(await client.getSession()).worldSessionId;
+        await page.locator("[data-canvas-host]").focus();
+        await page.keyboard.press("Control+o");
+        await expect.poll(async () => success(await client.getSession()).worldSessionId).not.toBe(oldWorld);
+      } else if (source !== "created") {
+        await client.close();
+        await page.reload();
+        if (source === "recent") await page.locator("[data-recent-project]").first().click();
+        else await page.getByRole("button", { name: /^Aç/ }).click();
+        client = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
+        await expect(page.locator("[data-canvas-host] canvas").first()).toBeVisible();
+      }
+      const edit = await begin(client), original = await cells(client, edit);
+      const bar = page.locator("[data-ai-bar]");
+      await expect(bar).toBeVisible();
+      // Wait for the automatic activity dock to settle before comparing canvas pixels.
+      await expect(page.locator("[data-ai-activity]")).toBeVisible();
+      await page.mouse.move(0, 0);
+      const canvas = page.locator("[data-canvas-host] canvas").first();
+      const empty = await canvas.screenshot();
+      await paint(client, edit);
+      expect(await cells(client, edit)).not.toEqual(original);
+      await expect.poll(async () => pixelDiffRatio(page, empty, await canvas.screenshot())).toBeGreaterThan(0.0001);
+      await expect(page.locator('[data-save-state="saved"]')).toHaveCount(0);
+      success(await client.callTool("finish_edit", { context: edit.context }));
+      await expect(bar).toContainText("AI değişiklikleri onay bekliyor");
+      const row = page.locator("[data-ai-entry]").filter({ has: page.locator("summary", { hasText: /^paint_rect$/ }) }).first();
+      await expect(row.locator("td").nth(3)).toHaveText(success(await client.getSession()).data.maps.find(map => map.id === edit.mapId)!.name);
+      await expect(row.locator("td").nth(6)).toHaveText("4");
+      await bar.getByRole("button", { name: "Onayla", exact: true }).click();
+      await expect(bar).toBeHidden();
+      await page.locator("[data-canvas-host]").focus();
+      await page.keyboard.press("Control+z");
+      await expect.poll(() => cells(client, edit)).toEqual(original);
+      await page.keyboard.press("Control+Shift+z");
+      await expect.poll(() => cells(client, edit)).not.toEqual(original);
+      // The next iteration starts empty; the final edit must survive save/reopen.
+      if (source !== "recent") await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+s");
+      await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    }
+    const saved = success(await client.getSession());
+    const mapId = saved.data.activeMapId!, layerId = saved.data.activeLayerId!;
+    await client.close();
+    await page.reload();
+    await page.locator("[data-recent-project]").first().click();
+    await expect(page.locator("[data-canvas-host] canvas").first()).toBeVisible();
+    client = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
+    const reopened = success(await client.getSession());
+    const region = success(await client.callTool("read_region", { context: { worldSessionId: reopened.worldSessionId! }, mapId, layerIds: [layerId], region: { x: 2, y: 2, width: 2, height: 2 } }));
+    const layer = region.data.layers[0];
+    if (!layer || layer.kind !== "tile") throw Error("Expected the reopened tile layer");
+    expect(layer.cells).toHaveLength(4);
+    expect(layer.cells.every(cell => cell > 0)).toBe(true);
   } finally { await client.close(); }
 });

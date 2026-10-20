@@ -160,6 +160,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
     const s = result.structuredContent;
     const data = s.ok ? s.data : undefined;
     const changed = data && "change" in data ? data.change : undefined;
+    // Only inspect schema-validated successful arguments. Never retain raw requests.
+    const args = s.ok ? call.arguments as ToolArguments[ToolName] : undefined;
+    const transaction = s.ok && (call.name === "finish_edit" || call.name === "cancel_edit")
+      ? tx.state().transaction : null;
+    const targets = args && "mapId" in args && typeof args.mapId === "string" ? [args.mapId] :
+      args && "mapIds" in args && Array.isArray(args.mapIds) ? args.mapIds.filter((id): id is string => typeof id === "string") : [];
+    const mapIds = [...targets, ...(changed?.affected.map(a => a.mapId) ?? []), ...(transaction?.affectedMapIds ?? [])];
     try {
       host.activity.append({
         id: host.ids.next("activity"),
@@ -174,10 +181,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
           s.ok && "transactionId" in s
             ? s.transactionId
             : (tx.pending?.summary.id ?? null),
-        mapIds: changed?.affected.map((a) => a.mapId) ?? [],
+        mapIds: [...new Set(mapIds)],
         status,
-        plannedCells: changed?.plannedCells ?? 0,
-        changedCells: changed?.changedCells ?? 0,
+        plannedCells: changed?.plannedCells ?? transaction?.counters.plannedWrites ?? 0,
+        changedCells: changed?.changedCells ?? transaction?.counters.changedCells ?? 0,
         durationMs: host.clock.now() - startedAt,
         ...(!s.ok ? { code: s.code } : {}),
         summary: call.name,
