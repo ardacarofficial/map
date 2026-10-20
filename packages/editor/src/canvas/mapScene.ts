@@ -79,6 +79,7 @@ export class MapScene {
   readonly #pixelDirect = new Map<string, PixelDirtyRect>();
   readonly #pixelPreviews = new Map<string, { canvas: HTMLCanvasElement; mesh: Mesh; texture: Texture }>();
   #pixelLayer: string | null = null;
+  #rasterTileCanvas: HTMLCanvasElement | undefined;
   readonly #pixelMasks = new Set<string>();
   readonly #smartMasks = new Map<string, Set<string>>();
   readonly #smartPreviews: TilePreview[] = [];
@@ -116,9 +117,9 @@ export class MapScene {
 
   /** Builds (or rebuilds) the atlas of `tilesetId` from its image and marks dependent chunks dirty. */
   imageChanged(tilesetId: string, pixelRects?: readonly PixelDirtyRect[]): void {
-    const ts = this.store.document.getTileset(tilesetId), entry = this.#atlases.get(tilesetId), image = this.#images(tilesetId);
-    if (pixelRects && ts?.edited && entry && image) {
-      this.metrics.pageBytesTouched += entry.atlas.updateTiles(pixelRects, ts, image);
+    const ts = this.store.document.getTileset(tilesetId), entry = this.#atlases.get(tilesetId);
+    if (pixelRects && ts?.edited && entry && this.store.rasterAssets.info(tilesetId)) {
+      this.metrics.pageBytesTouched += entry.atlas.updateTiles(pixelRects, ts, this.#rasterTiles(tilesetId));
       entry.atlas.pages.forEach((texture, i) => this.#groupTextures.set(entry.groupBase + i, texture));
       this.#onChange(); return;
     }
@@ -301,8 +302,8 @@ export class MapScene {
     this.#pixelLayer = owners.length ? layerId : null;
     const directKeys = new Set(owners.filter(o => o.previewAsset).map(o => `${o.cellX},${o.cellY}`));
     for (const [key, ref] of this.#pixelDirect) if (!directKeys.has(key)) {
-      const ts = this.store.document.getTileset(ref.assetId), image = this.#images(ref.assetId);
-      if (restoreDirect && ts && image) this.metrics.pageBytesTouched += this.#atlases.get(ref.assetId)?.atlas.updateTiles([ref], ts, image) ?? 0;
+      const ts = this.store.document.getTileset(ref.assetId);
+      if (restoreDirect && ts) this.metrics.pageBytesTouched += this.#atlases.get(ref.assetId)?.atlas.updateTiles([ref], ts, this.#rasterTiles(ref.assetId)) ?? 0;
       this.#pixelDirect.delete(key);
     }
     for (const o of owners) if (o.previewAsset) {
@@ -418,13 +419,24 @@ export class MapScene {
     else this.#dirty.delete(layer.id);
   }
 
+  #rasterTiles(tilesetId: string): (tileId: number) => CanvasImageSource | undefined {
+    return tileId => {
+      const tile = this.store.rasterAssets.getTile(tilesetId, tileId); if (!tile) return undefined;
+      const canvas = this.#rasterTileCanvas ??= document.createElement('canvas');
+      if (canvas.width !== tile.width) canvas.width = tile.width;
+      if (canvas.height !== tile.height) canvas.height = tile.height;
+      canvas.getContext('2d', { willReadFrequently: true })!.putImageData(new ImageData(new Uint8ClampedArray(tile.data), tile.width, tile.height), 0, 0);
+      return canvas;
+    };
+  }
+
   #ensureAtlas(tilesetId: string): void {
-    if (!this.#atlases.has(tilesetId) && this.#images(tilesetId)) this.#buildAtlas(tilesetId);
+    if (!this.#atlases.has(tilesetId) && (this.store.rasterAssets.info(tilesetId) || this.#images(tilesetId))) this.#buildAtlas(tilesetId);
   }
 
   #buildAtlas(tilesetId: string, staged?: Tileset): void {
     const tileset = this.store.document.getTileset(tilesetId) ?? staged;
-    const image = this.#images(tilesetId);
+    const image = tileset?.edited && this.store.rasterAssets.info(tilesetId) ? this.#rasterTiles(tilesetId) : this.#images(tilesetId);
     if (!tileset || !image) return;
     let atlas: TilesetAtlas;
     try {

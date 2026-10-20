@@ -10,6 +10,8 @@ import { CanvasSource, Rectangle, Texture } from "pixi.js";
 import { layoutAtlas, dirtyTileBlits, tileBlits, tileUV, type AtlasLayout, type TileUV } from "./atlas";
 import { releaseTexture } from "./releaseTexture";
 
+/** Edited CPU pages can be supplied one tile at a time, without assembling a sheet. */
+export type AtlasImage = CanvasImageSource | ((tileId: number) => CanvasImageSource | undefined);
 export class TilesetAtlas {
   readonly tilesetId: string;
   readonly layout: AtlasLayout;
@@ -19,7 +21,7 @@ export class TilesetAtlas {
   readonly #canvases: HTMLCanvasElement[] = [];
   readonly #tileTextures = new Map<number, Texture>();
 
-  constructor(tileset: Tileset, image: CanvasImageSource) {
+  constructor(tileset: Tileset, image: AtlasImage) {
     this.tilesetId = tileset.id;
     this.layout = tileset.edited
       ? layoutAtlas(MAX_EDITED_TILES, tileset.tileWidth, tileset.tileHeight, 2, Math.min(4096, Math.max(256, 2 ** Math.ceil(Math.log2(Math.max(tileset.tileWidth, tileset.tileHeight) + 4)))))
@@ -41,10 +43,12 @@ export class TilesetAtlas {
     const { pad } = this.layout;
     this.layout.slots.forEach((slot, tileId) => {
       if (tileId >= (tileset.edited?.nextTileId ?? tileCount(tileset))) return;
-      const r = tileRect(tileset, tileId);
+      const source = typeof image === 'function' ? image(tileId) : image;
+      if (!source) return;
+      const r = typeof image === 'function' ? { x: 0, y: 0, width: tileset.tileWidth, height: tileset.tileHeight } : tileRect(tileset, tileId);
       const ctx = contexts[slot.page]!;
       for (const b of tileBlits(r.x, r.y, r.width, r.height, slot.x, slot.y, pad)) {
-        ctx.drawImage(image, b.sx, b.sy, b.sw, b.sh, b.dx, b.dy, b.dw, b.dh);
+        ctx.drawImage(source, b.sx, b.sy, b.sw, b.sh, b.dx, b.dy, b.dw, b.dh);
       }
     });
     this.pages = canvases.map(
@@ -64,7 +68,7 @@ export class TilesetAtlas {
    * Edited CanvasSources use pixelUpload.ts for exact dirty GPU subrectangles.
    * Retained canvases are also the context-restoration source of truth.
    */
-  updateTiles(rects: readonly PixelDirtyRect[], tileset: Tileset, image: CanvasImageSource): number {
+  updateTiles(rects: readonly PixelDirtyRect[], tileset: Tileset, image: AtlasImage): number {
     const dirty = new Set<number>();
     const byTile = new Map<number, PixelRect>();
     for (const r of rects) { const old = byTile.get(r.tileId); const x = Math.min(old?.x ?? r.x, r.x), y = Math.min(old?.y ?? r.y, r.y); byTile.set(r.tileId, { x, y, width: Math.max(old ? old.x + old.width : 0, r.x + r.width) - x, height: Math.max(old ? old.y + old.height : 0, r.y + r.height) - y }); }
@@ -80,8 +84,10 @@ export class TilesetAtlas {
       const { tileW: w, tileH: h, pad } = this.layout;
       ctx.imageSmoothingEnabled = false;
       if (tileId < (tileset.edited?.nextTileId ?? tileCount(tileset))) {
-        const r = tileRect(tileset, tileId);
-        for (const b of dirtyTileBlits(r.x, r.y, w, h, slot.x, slot.y, pad, rect)) { ctx.clearRect(b.dx, b.dy, b.dw, b.dh); ctx.drawImage(image, b.sx, b.sy, b.sw, b.sh, b.dx, b.dy, b.dw, b.dh); markPixelAtlasDirty(this.pages[slot.page]!.source, { x: b.dx, y: b.dy, width: b.dw, height: b.dh }); }
+        const source = typeof image === 'function' ? image(tileId) : image;
+        if (!source) continue;
+        const r = typeof image === 'function' ? { x: 0, y: 0 } : tileRect(tileset, tileId);
+        for (const b of dirtyTileBlits(r.x, r.y, w, h, slot.x, slot.y, pad, rect)) { ctx.clearRect(b.dx, b.dy, b.dw, b.dh); ctx.drawImage(source, b.sx, b.sy, b.sw, b.sh, b.dx, b.dy, b.dw, b.dh); markPixelAtlasDirty(this.pages[slot.page]!.source, { x: b.dx, y: b.dy, width: b.dw, height: b.dh }); }
       } else { ctx.clearRect(slot.x - pad, slot.y - pad, w + 2 * pad, h + 2 * pad); markPixelAtlasDirty(this.pages[slot.page]!.source, { x: slot.x - pad, y: slot.y - pad, width: w + 2 * pad, height: h + 2 * pad }); }
       dirty.add(slot.page);
     }

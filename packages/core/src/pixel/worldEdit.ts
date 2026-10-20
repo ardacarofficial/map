@@ -1,9 +1,10 @@
+import { normalizeTileset } from '../tileset';
 import { createDocument } from '../document';
 import { isTileLayer } from '../layer';
 import { parseLevel, serializeLevel } from '../serialize';
 import { MapStore } from '../store';
 import type { AddPaletteEntryOp, AddTilesetOp } from '../ops';
-import { RasterAssets } from './assets';
+import type { RasterAssets } from './assets';
 import type { PixelOp } from './ops';
 import type { WorldHistory } from './worldHistory';
 
@@ -29,14 +30,19 @@ export class WorldEditError extends Error {
   constructor(readonly blockers: readonly WorldEditBlocker[]) { super(blockers.map(b => `${b.mapId}${b.layerId ? ` / ${b.layerId}` : ''}: ${b.reason}${b.detail ? ` (${b.detail})` : ''}`).join('\n')); this.name = 'WorldEditError'; }
 }
 function own(op: WorldEditOperation): WorldEditOperation {
+  if (op.type === 'setEditedTileset') return { ...op, tileset: normalizeTileset(op.tileset) };
   if (op.type === 'editTilePixels') return { ...op, after: op.after.slice(), ...(op.before ? { before: op.before.slice() } : {}) };
   if (op.type === 'patchPixels') return { ...op, patches: op.patches.map(p => ({ ...p, before: p.before.slice(), after: p.after.slice() })) };
   if (op.type === 'allocateEditedTile') return { ...op, pixels: op.pixels.slice(), ...(op.source ? { source: { ...op.source } } : {}) };
   if (op.type === 'addPaletteEntry') return { ...op, undoable: true };
-  if (op.type === 'addTileset' && op.undoable === false) throw new Error('world edits require undoable metadata');
+  if (op.type === 'addTileset') {
+    if (op.undoable === false) throw new Error('world edits require undoable metadata');
+    return { ...op, tileset: normalizeTileset(op.tileset) };
+  }
   if (op.type === 'remapCells') return { ...op, cells: op.cells.map(c => ({ ...c })) };
-  // Tilesets have nested generated/edited provenance; JSON data only.
-  return JSON.parse(JSON.stringify(op)) as WorldEditOperation;
+  // All variants above detach caller-owned arrays or normalize immutable metadata.
+  const exhaustive: never = op;
+  return exhaustive;
 }
 function blockersOf(participants: readonly WorldEditInput[]): WorldEditBlocker[] {
   const blockers: WorldEditBlocker[] = [];
@@ -69,19 +75,12 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
   // Pixel-only preparation must not serialize unrelated map chunks or copy
   // unrelated raster pages. The same version guards still cover the complete registry.
   const rasterOnly = participants.every(p => p.operations.every(op => op.type === 'editTilePixels' || op.type === 'patchPixels' || op.type === 'setEditedTileset'));
-  const touched = new Set(participants.flatMap(p => p.operations.flatMap(op => op.type === 'editTilePixels' ? [op.assetId] : op.type === 'patchPixels' ? op.patches.map(rect => rect.assetId) : [])));
   // Each shared view has one detached backing store for the simulation.
   const copies = new Map<typeof shared, RasterAssets>();
   const simulated = participants.map(p => {
     let rasters = copies.get(p.store.rasterAssets);
     if (!rasters) {
-      rasters = new RasterAssets(); copies.set(p.store.rasterAssets, rasters);
-      for (const assetId of p.store.rasterAssets.assetIds()) {
-        if (rasterOnly && !touched.has(assetId)) continue;
-        const info = p.store.rasterAssets.info(assetId)!, image = p.store.rasterAssets.getAsset(assetId)!;
-        // Owned simulation data, including slots not referenced by these participant documents.
-        rasters._load({ ...info, data: image.data }, info.tileCount);
-      }
+      rasters = p.store.rasterAssets.fork(); copies.set(p.store.rasterAssets, rasters);
     }
     const doc = p.store.document;
     const snapshot = rasterOnly ? createDocument({ ...doc.map, tilesets: doc.tilesets }) : parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes, { randomSets: doc.randomSets, collections: doc.collections });
@@ -122,12 +121,14 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
       for (const assetId of changedAssets) latest.set(assetId, scratch.document.getTileset(assetId)!);
     } catch (error) { throw new WorldEditError([{ mapId: p.mapId, reason: 'invalid', detail: error instanceof Error ? error.message : String(error) }]); }
   }
-  // Raster ops also update their owner's content hash. Synchronize that metadata undoably everywhere.
+  // Raster ops also replace their owner's lazy content revision. Synchronize that metadata undoably everywhere.
   for (const [i, p] of participants.entries()) for (const ts of latest.values()) {
     const have = simulated[i]!.document.getTileset(ts.id);
-    if (have?.edited && JSON.stringify(have) !== JSON.stringify(ts)) {
+    if (have?.edited && (have !== ts || p.mapId === rasterOwner)) {
       const op = { type: 'setEditedTileset', tileset: ts } as const;
-      try { simulated[i]!.dispatch(op); }
+      // The live owner adopts this same immutable revision after its raster op.
+      // Followers and subsequent no-op plans can compare identity without hashing.
+      try { if (have !== ts) simulated[i]!.dispatch(op); }
       catch (error) { throw new WorldEditError([{ mapId: p.mapId, reason: 'invalid', detail: error instanceof Error ? error.message : String(error) }]); }
       p.operations.push(op);
     }

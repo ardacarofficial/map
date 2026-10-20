@@ -153,3 +153,17 @@ describe("specific tileset metadata history", () => {
     expect(tilesetHistoryVerb([{ kind: "tilesetList", before: [before], after: [] }])).toBe("history.tilesetRemove");
   });
 });
+
+it('labels an edited pixel revision without resolving content-addressed image paths', async () => {
+  const { RasterAssets } = await import('@smap/core');
+  const { tilesetHistoryVerb } = await import('./historyLabels');
+  const { vi } = await import('vitest');
+  const store = new MapStore(createDocument({ width: 1, height: 1 }));
+  const slot = store.dispatch({ type: 'allocateEditedTile', tileWidth: 32, tileHeight: 32, pixels: new Uint8Array(32 * 32 * 4).fill(255) });
+  store.dispatch({ type: 'editTilePixels', assetId: slot.assetId, tileId: 0, x: 0, y: 0, width: 1, height: 1, after: Uint8Array.of(1, 2, 3, 255) });
+  const materialize = vi.spyOn(RasterAssets.prototype, 'getAsset');
+  try {
+    expect(tilesetHistoryVerb(store.peekUndo()!.changes)).toBe('pixel.stroke');
+    expect(materialize).not.toHaveBeenCalled();
+  } finally { materialize.mockRestore(); }
+});

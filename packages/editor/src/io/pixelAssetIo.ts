@@ -49,11 +49,18 @@ export function installPixelAssets(store: MapStore): () => void {
     for (const rect of event.pixelRects) { const list = byAsset.get(rect.assetId) ?? []; list.push(rect); byAsset.set(rect.assetId, list); }
     for (const [id, rects] of byAsset) {
       if (!store.document.getTileset(id)?.edited) continue;
-      const raster = store.rasterAssets.getAsset(id); if (!raster) continue;
-      const canvas = document.createElement('canvas'); canvas.width = raster.width; canvas.height = raster.height;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true }); if (!ctx) continue;
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(raster.data), raster.width, raster.height), 0, 0);
-      setTilesetImage(deferredTilesetImage(id, Object.assign(canvas, { close() {} }), async () => encodeRgbaPng(raster.width, raster.height, raster.data)), rects);
+      const snapshot = store.rasterAssets.fork();
+      // Only tile-map references are captured here. No atlas assembly, hashing,
+      // ImageData or PNG encoding runs while handling a pointer release.
+      const raster = () => snapshot.getAsset(id)!;
+      setTilesetImage(deferredTilesetImage(id, () => {
+        const image = raster(), canvas = document.createElement('canvas');
+        canvas.width = image.width; canvas.height = image.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error('2D canvas context unavailable');
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+        return Object.assign(canvas, { close() {} });
+      }, async () => { const image = raster(); return encodeRgbaPng(image.width, image.height, image.data); }), rects);
     }
   });
 }

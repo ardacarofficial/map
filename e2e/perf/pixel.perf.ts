@@ -1,6 +1,6 @@
 /** Production-build pixel controller/atlas frame budget, separately from tile regression metrics. */
 import { test, expect } from '@playwright/test';
-import { createDocument, encodeRgbaPng, MapStore, serializeLevel, serializeProject } from '../../packages/core/src/index';
+import { createDocument, encodeRgbaPng, MapStore, serializeLevel, serializeProject, rasterContentHash, editedImagePath, type Tileset } from '../../packages/core/src/index';
 interface Hook {
   pixelUploadMetrics: { fullUploads: number; subUploads: number; uploadedBytes: number };
   editor: { getState(): { setTool(tool: 'brush' | 'eraser'): void } };
@@ -10,20 +10,36 @@ interface Hook {
   setCamera(x: number, y: number, zoom: number): void;
   cellCenter(x: number, y: number): { x: number; y: number };
 }
+const allocatedTiles = Number(process.env.PERF_PIXEL_TILES ?? 1);
+const mapCount = Number(process.env.PERF_PIXEL_MAPS ?? 1);
 for (const dpr of [1, 1.25, 1.5]) test.describe(`DPR ${dpr}`, () => {
   test.use({ deviceScaleFactor: dpr });
-test('warm pixel strokes: 1/8/32 px frame work and bounded atlas uploads', async ({ page }) => {
+test(allocatedTiles === 1 && mapCount === 1 ? 'warm pixel strokes: 1/8/32 px frame work and bounded atlas uploads' : `warm pixel strokes: 1/8/32 px frame work and bounded atlas uploads (${allocatedTiles} tiles, ${mapCount} maps)`, async ({ page }) => {
   const ts = { id: 'source', name: 'Source', imagePath: 'tilesets/source.png', tileWidth: 32, tileHeight: 32, columns: 1, rows: 1, margin: 0, spacing: 0 };
-  const store = new MapStore(createDocument({ width: 16, height: 16, tileWidth: 32, tileHeight: 32, tilesets: [ts] }));
-  const layerId = store.dispatch({ type: 'addLayer', layer: { name: 'Ground' } }), pi = store.dispatch({ type: 'addPaletteEntry', tilesetId: ts.id, tileId: 0 });
+  const rows = Math.ceil(allocatedTiles / 16), data = new Uint8Array(512 * rows * 32 * 4).fill(255);
+  const hash = allocatedTiles > 1 ? rasterContentHash(512, rows * 32, data) : '';
+  const edited: Tileset | undefined = allocatedTiles > 1 ? { id: 'edited-32x32-1', name: 'Edited', imagePath: editedImagePath('edited-32x32-1', hash), tileWidth: 32, tileHeight: 32, columns: 16, rows, margin: 0, spacing: 0, edited: { kind: 'pixel', layoutVersion: 1, nextTileId: allocatedTiles, contentHash: hash, origins: Array.from({ length: allocatedTiles }, (_, tileId) => ({ tileId, sourceTilesetId: ts.id, sourceTileId: 0, sourcePixelHash: 'benchmark-source' })) } } : undefined;
+  const tilesets = edited ? [ts, edited] : [ts];
+  const store = new MapStore(createDocument({ width: 16, height: 16, tileWidth: 32, tileHeight: 32, tilesets }));
+  const layerId = store.dispatch({ type: 'addLayer', layer: { name: 'Ground' } }), pi = store.dispatch({ type: 'addPaletteEntry', tilesetId: edited?.id ?? ts.id, tileId: 0 });
   store.dispatch({ type: 'paintCells', layerId, cells: [{ x: 8, y: 8, cell: pi }] });
   const png = encodeRgbaPng(32, 32, new Uint8Array(32 * 32 * 4).fill(255));
   await page.addInitScript(() => { (window as unknown as { showDirectoryPicker(): Promise<FileSystemDirectoryHandle> }).showDirectoryPicker = () => navigator.storage.getDirectory(); });
   await page.goto('/');
+  const other = new MapStore(createDocument({ width: 16, height: 16, tileWidth: 32, tileHeight: 32, tilesets }));
+  const otherLayer = other.dispatch({ type: 'addLayer', layer: { name: 'Ground' } }), sourceIndex = other.getOrAddPaletteIndex(ts.id, 0);
+  other.dispatch({ type: 'paintCells', layerId: otherLayer, cells: [{ x: 8, y: 8, cell: sourceIndex }] });
+  const levels = Array.from({ length: mapCount }, (_, i) => ({ id: `map-${i}`, name: `Map ${i}`, path: `levels/map-${i}.json` }));
+  const files: { path: string; data: string | number[] }[] = [
+    { path: 'project.smap', data: serializeProject({ name: 'Pixel benchmark', levels, tilesets }) },
+    { path: ts.imagePath, data: [...png] },
+    ...levels.map((level, i) => ({ path: level.path, data: serializeLevel(i === 0 ? store.document : other.document) })),
+    ...(edited ? [{ path: edited.imagePath, data: [...encodeRgbaPng(512, rows * 32, data)] }] : []),
+  ];
   await page.evaluate(async files => {
     const root = await navigator.storage.getDirectory();
     for (const { path, data } of files) { const parts = path.split('/'), name = parts.pop()!; let dir = root; for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: true }); const writer = await (await dir.getFileHandle(name, { create: true })).createWritable(); await writer.write(typeof data === 'string' ? data : new Uint8Array(data)); await writer.close(); }
-  }, [{ path: 'project.smap', data: serializeProject({ name: 'Pixel benchmark', levels: [{ name: 'Main', path: 'levels/main.json' }], tilesets: [ts] }) }, { path: 'levels/main.json', data: serializeLevel(store.document) }, { path: ts.imagePath, data: [...png] }]);
+  }, files);
   await page.keyboard.press('Control+o');
   await page.waitForFunction(() => !!(window as unknown as { __smap?: Hook }).__smap);
   await page.evaluate(() => { const h = (window as unknown as { __smap: Hook }).__smap; h.setCamera(-300, -300, 2); h.pixelUi.getState().setMode('pixel'); });
@@ -78,7 +94,7 @@ test('warm pixel strokes: 1/8/32 px frame work and bounded atlas uploads', async
     result.push({ tool, size, gpuBytes: quantiles(gpu), work: quantiles(cpu), mainThreadTask: quantiles(tasks), wallPlan: quantiles(plans), wallCommit: quantiles(commits), cpuPageBytesTouched: bytesAfter - bytesBefore });
   }
   if (process.env.PERF_PROFILE) { const { profile } = await cdp.send('Profiler.stop'); await test.info().attach('pixel.cpuprofile', { body: JSON.stringify(profile), contentType: 'application/json' }); const totals = new Map<string, number>(); for (const node of profile.nodes) { const key = `${node.callFrame.functionName} ${node.callFrame.url}:${node.callFrame.lineNumber}`; totals.set(key, (totals.get(key) ?? 0) + (node.hitCount ?? 0)); } console.log('PX1 CPU samples:', JSON.stringify([...totals].sort((a, b) => b[1] - a[1]).slice(0, 25))); }
-  console.log(`PX1 production warm strokes DPR ${dpr}:`, JSON.stringify(result));
+  console.log(`PX1 production warm strokes DPR ${dpr} (${allocatedTiles} tiles, ${mapCount} maps):`, JSON.stringify(result));
   await test.info().attach('pixel-frame-work.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
   for (const row of result) { expect(row.work.p95).toBeLessThan(16.7); expect(row.gpuBytes.p50).toBeGreaterThan(0); }
 });

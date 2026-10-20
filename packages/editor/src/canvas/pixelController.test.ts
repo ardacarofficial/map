@@ -102,3 +102,23 @@ it('loads and pins a disk-only world participant before the real commit path, wi
  await ws.activate(b.id,fs);expect(ws.entry('a')).toBeDefined();
  controller.destroy();
 });
+
+it('previews a unique edited slot on a dense 512×512 map without scanning map chunks', async () => {
+  const { store, layerId, controller, preview } = setup();
+  store.dispatch({ type: 'resizeMap', width: 512, height: 512 });
+  store.dispatch({ type: 'addTileset', tileset: { id: 'source', name: 'Source', imagePath: 'tilesets/source.png', tileWidth: 16, tileHeight: 16, columns: 1, rows: 1, margin: 0, spacing: 0 } });
+  const pi = store.getOrAddPaletteIndex('source', 0), cells = [];
+  for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) cells.push({ x, y, cell: pi });
+  store.dispatch({ type: 'paintCells', layerId, cells });
+  const slot = store.dispatch({ type: 'allocateEditedTile', tileWidth: 16, tileHeight: 16, pixels: new Uint8Array(16 * 16 * 4).fill(255) });
+  store.dispatch({ type: 'remapCells', layerId, cells: [{ x: 1, y: 1 }], tilesetId: slot.assetId, tileId: slot.tileId });
+  await controller.warm();
+  const chunks = vi.spyOn(store.document.getLayer(layerId)!, 'chunks');
+  controller.down(pointer(17, 17)); controller.flush();
+  controller.move(pointer(18, 17)); controller.flush();
+  expect(chunks).not.toHaveBeenCalled();
+  expect(preview.mock.lastCall?.[1][0].previewAsset).toEqual({ assetId: slot.assetId, tileId: slot.tileId });
+  controller.up(pointer(18, 17));
+  expect(chunks).not.toHaveBeenCalled();
+  controller.destroy();
+}, 15_000);

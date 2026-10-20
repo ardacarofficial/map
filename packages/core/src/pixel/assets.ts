@@ -26,6 +26,8 @@ export interface RasterAssetInfo {
 export interface RasterAssetsView {
   assetIds(): readonly string[];
   info(assetId: string): RasterAssetInfo | undefined;
+  /** Detached tile-page snapshot; buffers are shared until either side writes. */
+  fork(): RasterAssets;
   getAsset(assetId: string): RasterImage | undefined;
   getTile(assetId: string, tileId: number): RasterImage | undefined;
 }
@@ -56,10 +58,18 @@ export class RasterAssets implements RasterAssetsView {
   readonly #tileRevisions = new Map<string, Map<number, number>>();
   #revision = 0;
   readonly view: RasterAssetsView = Object.freeze({
-    assetIds: () => this.assetIds(), info: (id: string) => this.info(id),
+    fork: () => this.fork(), assetIds: () => this.assetIds(), info: (id: string) => this.info(id),
     getAsset: (id: string) => this.getAsset(id), getTile: (id: string, tile: number) => this.getTile(id, tile),
   });
   get revision(): number { return this.#revision; }
+  fork(): RasterAssets {
+    const copy = new RasterAssets();
+    for (const [id, asset] of this.#assets) copy.#assets.set(id, { info: asset.info, tiles: new Map(asset.tiles) });
+    for (const [id, revision] of this.#revisions) copy.#revisions.set(id, revision);
+    for (const [id, revisions] of this.#tileRevisions) copy.#tileRevisions.set(id, new Map(revisions));
+    copy.#revision = this.#revision;
+    return copy;
+  }
   assetIds(): readonly string[] { return Object.freeze([...this.#assets.keys()].sort()); }
   info(assetId: string): RasterAssetInfo | undefined {
     const asset = this.#assets.get(assetId);
@@ -117,7 +127,8 @@ export class RasterAssets implements RasterAssetsView {
   /** @internal Caller prevalidates all rects; replay never exposes these owned buffers. */
   _rect(assetId: string, tileId: number, x: number, y: number, width: number, height: number, bytes: Uint8Array): void {
     const asset = this.#assets.get(assetId)!;
-    const tile = asset.tiles.get(tileId)!;
+    const tile = asset.tiles.get(tileId)!.slice();
+    asset.tiles.set(tileId, tile);
     for (let row = 0; row < height; row++) tile.set(bytes.subarray(row * width * 4, (row + 1) * width * 4), ((y + row) * asset.info.tileWidth + x) * 4);
     this.#touch(assetId, tileId);
   }
