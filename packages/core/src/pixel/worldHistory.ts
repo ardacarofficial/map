@@ -1,6 +1,12 @@
 import type { HistoryEntry, HistoryListItem, MapStore } from '../store';
 import type { PixelRectPatch } from './ops';
 
+export interface ProjectHistoryPatch { readonly apply: (side: "before" | "after") => void }
+export interface PendingWorldGroup {
+  finish(commitStores: () => void, projectPatch?: ProjectHistoryPatch): WorldHistoryEntry | null;
+  cancel(rollbackStoresAndMetadata: () => void): void;
+}
+
 export interface WorldParticipant {
   readonly mapId: string;
   readonly entryId: number;
@@ -30,6 +36,7 @@ export class WorldHistory {
   #replaying = false;
   #batch: WorldParticipant[] | null = null;
   #applyingPlan = false;
+  #pending = false;
   #version = 0;
 
   get applyingPlan(): boolean { return this.#applyingPlan; }
@@ -38,7 +45,7 @@ export class WorldHistory {
   get version(): number { return this.#version; }
   get undoDepth(): number { return this.#done.length; }
   get redoDepth(): number { return this.#undone.length; }
-  get busy(): boolean { return this.#replaying || this.#batch !== null || [...this.#stores.values()].some(s => s.inTransaction); }
+  get busy(): boolean { return this.#pending || this.#replaying || this.#batch !== null || [...this.#stores.values()].some(s => s.inTransaction); }
   get canUndo(): boolean { return !this.busy && this.#valid(this.#done.at(-1), 'undo'); }
   get canRedo(): boolean { return !this.busy && this.#valid(this.#undone.at(-1), 'redo'); }
   peekUndo(): WorldHistoryEntry | undefined { return this.#done.at(-1); }
@@ -63,6 +70,7 @@ export class WorldHistory {
       this.#seen.set(mapId, head?.id);
       if (this.#replaying) return;
       if (event.historyReset === 'all') { if (this.dependsOn(mapId)) this.reset(); return; }
+      if (this.#pending && event.historyReset) return;
       if (event.historyReset === 'redo') { this.#clearRedo(); this.#bump(); return; }
       if (event.cause === 'undo' || event.cause === 'redo') {
         const from = event.cause === 'undo' ? this.#done : this.#undone;
@@ -80,6 +88,41 @@ export class WorldHistory {
       }
       this.#bump();
     }));
+  }
+
+  /** Collect outer commits across a long-lived, exclusively owned edit. */
+  beginPending(originMapId: string, label: string): PendingWorldGroup {
+    if (this.busy || !this.#stores.has(originMapId)) throw new Error('world history is busy or origin is missing');
+    this.#batch = []; this.#pending = true;
+    let closed = false;
+    const assertOpen = () => { if (closed || !this.#pending) throw new Error('pending world group is closed'); };
+    const close = () => { closed = true; this.#batch = null; this.#pending = false; this.#bump(); };
+    this.#bump();
+    return {
+      finish: (commitStores, projectPatch) => {
+        assertOpen();
+        // Validate helper nesting before the first irreversible local commit.
+        for (const store of this.#stores.values()) if (store.transactionDepth > 1) throw new Error('unbalanced participant transaction nesting');
+        commitStores();
+        const participants = this.#batch!;
+        if (new Set(participants.map(p => p.mapId)).size !== participants.length) throw new Error('pending participants must commit once');
+        this.#batch = null;
+        try {
+          if (!participants.length && !projectPatch) return null;
+          if (participants.length) this.#record(originMapId, participants, undefined, projectPatch, label);
+          else {
+            this.#clearRedo();
+            const id = this.#next++;
+            this.#done.push(Object.freeze({ id, originMapId, participants: Object.freeze([]), pixelPatches: Object.freeze([]), changes: Object.freeze([]), item: Object.freeze({ id, kind: 'palette', state: 'done', label }), ...(projectPatch ? { projectEdit: projectPatch } : {}) }));
+          }
+          return this.#done.at(-1)!;
+        } finally { close(); }
+      },
+      cancel: rollback => {
+        assertOpen();
+        try { rollback(); } finally { close(); }
+      },
+    };
   }
 
   /** Group already-prevalidated, synchronously committed participant transactions into one action. */
@@ -109,7 +152,7 @@ export class WorldHistory {
       this.#batch = null;
       if (followers.length) {
         this.#done.pop();
-        this.#record(originMapId, [...original.participants, ...followers], original.id);
+        this.#record(originMapId, [...original.participants, ...followers], original.id, original.projectEdit, original.item.label);
       }
       return result;
     } finally { this.#batch = null; this.#bump(); }
@@ -161,7 +204,7 @@ export class WorldHistory {
     this.#off.clear(); this.#stores.clear(); this.#seen.clear();
     this.#done.length = 0; this.#undone.length = 0; this.#bump();
   }
-  #record(originMapId: string, participants: readonly WorldParticipant[], existingId?: number): void {
+  #record(originMapId: string, participants: readonly WorldParticipant[], existingId?: number, projectEdit?: ProjectHistoryPatch, label?: string): void {
     // A compound has one committed store entry per map. Raster writes belong to one of them.
     if (new Set(participants.map(p => p.mapId)).size !== participants.length) throw new Error('compound participants must commit once');
     this.#clearRedo();
@@ -181,7 +224,7 @@ export class WorldHistory {
       if (!item || p.mapId === originMapId) { item = store.historyEntries().find(i => i.id === entry.id); changes = entry.changes; }
     }
     const id = existingId ?? this.#next++;
-    this.#done.push(Object.freeze({ id, originMapId, participants: Object.freeze([...participants]), pixelPatches: Object.freeze(patches), changes, item: Object.freeze({ ...item!, id }) }));
+    this.#done.push(Object.freeze({ id, originMapId, participants: Object.freeze([...participants]), pixelPatches: Object.freeze(patches), changes, item: Object.freeze({ ...item!, id, ...(label === undefined ? {} : { label }) }), ...(projectEdit ? { projectEdit } : {}) }));
     // MapStore may evict old entries at its configured capacity. Trim the inaccessible
     // world prefix too, so every displayed undo row is still reachable chronologically.
     let cutoff = -1;
@@ -194,7 +237,9 @@ export class WorldHistory {
   }
   #clearRedo(): void {
     this.#replaying = true;
-    try { for (const store of this.#stores.values()) store.clearRedo(); }
+    try { for (const store of this.#stores.values()) {
+      try { store.clearRedo(); } catch (error) { if (store.redoDepth !== 0) throw error; }
+    } }
     finally { this.#replaying = false; }
     this.#undone.length = 0;
   }
@@ -213,11 +258,19 @@ export class WorldHistory {
     this.#replaying = true;
     try {
       const participants = move === 'undo' ? [...entry!.participants].reverse() : entry!.participants;
-      for (const p of participants) this.#stores.get(p.mapId)![move]();
-      entry!.projectEdit?.apply(move === "undo" ? "before" : "after");
+      if (move === 'redo') entry!.projectEdit?.apply('after');
+      for (const p of participants) {
+        const store = this.#stores.get(p.mapId)!;
+        try { store[move](); } catch (error) {
+          // Listeners run after history replay. Continue only if that replay completed.
+          const head = move === 'undo' ? store.peekRedo() : store.peekUndo();
+          if (head?.id !== p.entryId) throw error;
+        }
+      }
+      if (move === 'undo') entry!.projectEdit?.apply('before');
       from.pop(); to.push(entry!);
     } finally { this.#replaying = false; this.#bump(); }
     return entry!;
   }
-  #bump(): void { this.#version++; for (const listener of this.#listeners) listener(); }
+  #bump(): void { this.#version++; for (const listener of this.#listeners) { try { listener(); } catch { /* observers cannot break chronological history */ } } }
 }

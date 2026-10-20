@@ -169,6 +169,7 @@ export { patchCellCount } from "./patch";
 export {
   MapStore,
   type MapStoreOptions,
+  type EditLease,
   type StoreChangeEvent,
   type StoreListener,
   type StructureChange,
@@ -428,6 +429,7 @@ export {
   type DrawLayer,
   type DrawList,
   layerDrawList,
+  regionDrawList,
   encodeRle,
   decodeRle,
 } from "./export";
@@ -509,7 +511,7 @@ export type { PixelsHistoryChange, RasterSlotHistoryChange, PaletteAppendHistory
 
 export { exportGodot, preflightGodot, GodotPreflightError, encodeGodotCells, type GodotCell, type GodotMapInput, type GodotOptions, type GodotImageBytes, type GodotFile, type GodotPlan, type GodotProblem, type GodotProblemKey } from "./export/godot";
 export { WorldHistory } from "./pixel/worldHistory";
-export type { WorldHistoryEntry, WorldHistoryRow, WorldParticipant } from "./pixel/worldHistory";
+export type { WorldHistoryEntry, WorldHistoryRow, WorldParticipant, PendingWorldGroup, ProjectHistoryPatch } from "./pixel/worldHistory";
 export { prepareWorldEdit, applyWorldEdit, WorldEditError } from "./pixel/worldEdit";
 export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEditPlan, WorldEditBlocker } from "./pixel/worldEdit";
 

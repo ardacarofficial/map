@@ -268,6 +268,13 @@ export interface HistoryListItem {
   readonly state: "done" | "undone";
 }
 
+/** Synchronous mutation authority for an exclusively leased store. */
+export interface EditLease {
+  readonly owner: object;
+  run<T>(apply: () => T extends PromiseLike<unknown> ? never : T): T;
+  release(): void;
+}
+
 export interface MapStoreOptions {
   /** Maximum number of undo steps kept. Defaults to 1000. */
   historyLimit?: number;
@@ -529,6 +536,8 @@ export class MapStore {
   readonly #generatedProvenance = new Map<string, GeneratedTilesetMetadata>();
   readonly #usageCounts = new Map<number, number>();
   readonly #usageChunks = new Map<string, Map<ChunkKey, Map<number, number>>>();
+  #lease: EditLease | null = null;
+  #leaseScope = 0;
   #revision = 0;
   #depth = 0;
   #pending: ChangeRecorder | null = null;
@@ -541,6 +550,36 @@ export class MapStore {
     this.#rasters = options.rasterAssets ?? new RasterAssets();
     this.#historyLimit = Math.max(0, options.historyLimit ?? 1000);
     this.#rebuildUsageCounts();
+  }
+
+  get transactionDepth(): number { return this.#depth; }
+
+  acquireEditLease(owner: object): EditLease {
+    if (this.#lease) throw new Error("store already has an edit lease");
+    let released = false;
+    const lease: EditLease = {
+      owner,
+      run: <T>(apply: () => T extends PromiseLike<unknown> ? never : T): T => {
+        if (released) throw new Error("edit lease was released");
+        this.#leaseScope++;
+        try {
+          const result = apply();
+          if (result !== null && (typeof result === "object" || typeof result === "function") && typeof (result as { then?: unknown }).then === "function") throw new Error("edit lease run must be synchronous");
+          return result;
+        } finally { this.#leaseScope--; }
+      },
+      release: () => {
+        if (this.#leaseScope) throw new Error("cannot release edit lease inside its run scope");
+        if (released) return;
+        released = true; this.#lease = null;
+      },
+    };
+    this.#lease = lease;
+    return lease;
+  }
+
+  #assertLease(): void {
+    if (this.#lease && !this.#leaseScope) throw new Error("store mutation requires edit lease authority");
   }
 
   /** O(1) ownership query, including hidden/locked layers and flipped placements.
@@ -639,6 +678,7 @@ export class MapStore {
    * transaction.
    */
   undoTo(id: number): number {
+    this.#assertLease();
     if (this.#depth > 0) return 0;
     const at = this.#undo.findIndex((e) => e.id === id);
     if (at < 0) return 0;
@@ -653,6 +693,7 @@ export class MapStore {
    * redone: 0 when `id` is not on the redo stack or a transaction is open.
    */
   redoTo(id: number): number {
+    this.#assertLease();
     if (this.#depth > 0) return 0;
     const at = this.#redo.findIndex((e) => e.id === id);
     if (at < 0) return 0;
@@ -672,6 +713,7 @@ export class MapStore {
   /** Applies an operation. See each op type for its result and rules. */
   dispatch<O extends Op>(op: O): OpResult<O>;
   dispatch(op: Op): OpResult<Op> {
+    this.#assertLease();
     switch (op.type) {
       case "setEditedTileset": return this.#setEditedTileset(op);
       case "allocateEditedTile": return this.#allocateEditedTile(op);
@@ -752,6 +794,7 @@ export class MapStore {
    * transaction is open wins.
    */
   beginTransaction(label?: string): void {
+    this.#assertLease();
     this.#depth++;
     if (label !== undefined && this.#pendingLabel === undefined) this.#pendingLabel = label;
     if (this.#depth > 1) return;
@@ -767,6 +810,7 @@ export class MapStore {
    * @throws Error when no transaction is open.
    */
   commit(): void {
+    this.#assertLease();
     if (this.#depth === 0) throw new Error("commit() called without an open transaction");
     this.#depth--;
     if (this.#depth > 0) return;
@@ -786,6 +830,7 @@ export class MapStore {
    * @throws Error when no transaction is open.
    */
   rollback(): void {
+    this.#assertLease();
     if (this.#depth === 0) throw new Error("rollback() called without an open transaction");
     const changes = this.#pending?.build() ?? [];
     this.#pending = null;
@@ -797,6 +842,7 @@ export class MapStore {
 
   /** Undoes the last step. Returns false (and does nothing) if impossible or a transaction is open. */
   undo(): boolean {
+    this.#assertLease();
     if (!this.canUndo) return false;
     const entry = this.#undo.pop()!;
     this.#redo.push(entry);
@@ -807,6 +853,7 @@ export class MapStore {
 
   /** Redoes the last undone step. Returns false (and does nothing) if impossible or a transaction is open. */
   redo(): boolean {
+    this.#assertLease();
     if (!this.canRedo) return false;
     const entry = this.#redo.pop()!;
     this.#undo.push(entry);
@@ -817,6 +864,7 @@ export class MapStore {
 
   /** Drop the linear redo tail without disturbing committed undo entries (world coordinator). */
   clearRedo(): void {
+    this.#assertLease();
     if (!this.#redo.length) return;
     this.#redo.length = 0;
     this.#emit({ cause: "commit", cells: [], structure: [], historyChanged: true, historyReset: "redo" });
@@ -829,6 +877,7 @@ export class MapStore {
 
   /** Synchronize validated project metadata in place; this is not a new user action. */
   syncProjectData(source: MapDocument): void {
+    this.#assertLease();
     if (this.inTransaction) throw new Error("project metadata cannot be synchronized during a transaction");
     const structure: StructureChange[] = [];
     const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
@@ -845,6 +894,7 @@ export class MapStore {
 
   /** Drops all undo/redo steps (e.g. after opening a file or setting up a new document). */
   clearHistory(): void {
+    this.#assertLease();
     if (this.#undo.length === 0 && this.#redo.length === 0) return;
     this.#undo.length = 0;
     this.#redo.length = 0;
