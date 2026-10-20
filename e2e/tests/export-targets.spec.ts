@@ -48,11 +48,13 @@ test("Dışa aktar selects Godot, writes native resources and remembers successf
   await expect(dialog).toBeHidden();
   const output = await files(page);
   // Export names follow the map display name; its internal path remains levels/main.json.
-  expect(output.find(f => f.path === "game/maps/Ana harita.tscn")?.text).toContain('type="TileMapLayer"');
-  expect(output.find(f => f.path === "game/maps/tileset.tres")?.text).toContain('type="TileSet"');
+  const scene = output.find(f => f.path.startsWith("game/maps/") && f.path.endsWith("/Ana harita.tscn"))!;
+  const folder = scene.path.slice(0, -"/Ana harita.tscn".length);
+  expect(scene.text).toContain('type="TileMapLayer"');
+  expect(output.find(f => f.path === `${folder}/tileset.tres`)?.text).toContain('type="TileSet"');
   expect(output.filter(f => f.path.endsWith(".png")).every(f => f.width! > 0 && f.height! > 0)).toBe(true);
   expect(output.filter(f => f.path.endsWith(".png"))).toHaveLength(1);
-  expect(JSON.parse(output.find(f => f.path === "game/maps/Ana harita.json")!.text!).smapExport).toBe(1);
+  expect(JSON.parse(output.find(f => f.path === `${folder}/Ana harita.json`)!.text!).smapExport).toBe(1);
   await openExport(page);
   await expect(dialog.getByRole("radio", { name: "Godot 4", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("textbox")).toHaveValue("game/maps");
@@ -178,4 +180,85 @@ for (const target of ["Godot 4", "Defold"]) test(`${target} exports manual colli
   const output = await files(page);
   expect(output.some(f => f.path.endsWith(target === "Godot 4" ? ".tscn" : ".collisionobject"))).toBe(true);
   expect(output.some(f => f.path.endsWith(".png"))).toBe(false);
+});
+
+test("sequential Godot exports isolate equally named maps in the same destination", async ({ page }) => {
+  await page.goto("/"); await startWithTileset(page); await paint(page);
+  let dialog = await openExport(page, "Godot 4");
+  await dialog.getByTestId("export-submit").click();
+  await expect(dialog).toBeHidden();
+  const before = await files(page);
+  await page.evaluate(async () => {
+    const { createLevel } = await import(/* @vite-ignore */ String("/src/commands/levelActions.ts"));
+    if (!await createLevel({ name: "Ana harita", width: 4, height: 4, tileSize: 32 })) throw new Error("Map creation failed");
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { setTilesetImage } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
+    const store = useEditorStore.getState().project.store;
+    const t = { id: "second-blue", name: "Blue", imagePath: "blue.png", tileWidth: 32, tileHeight: 32, columns: 1, rows: 1, margin: 0, spacing: 0 };
+    store.dispatch({ type: "addTileset", tileset: t });
+    const canvas = new OffscreenCanvas(32,32), ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "blue"; ctx.fillRect(0,0,32,32);
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    setTilesetImage({ tilesetId: t.id, bitmap: await createImageBitmap(blob), bytes: new Uint8Array(await blob.arrayBuffer()) });
+    const layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
+    store.dispatch({ type: "paintCells", layerId: layer.id, cells: [{ x: 0, y: 0, cell: store.getOrAddPaletteIndex(t.id, 0) }] });
+  });
+  dialog = await openExport(page, "Godot 4");
+  await expect(dialog.getByTestId("export-submit")).toBeEnabled();
+  await dialog.getByTestId("export-submit").click();
+  await expect(dialog).toBeHidden();
+  const after = await files(page);
+  for (const file of before) expect(after.find(f => f.path === file.path)).toEqual(file);
+  const a = before.find(f => f.path.endsWith(".tscn"))!;
+  const b = after.find(f => f.path.endsWith(".tscn") && !before.some(old => old.path === f.path))!;
+  expect(b).toBeDefined();
+  const folderA = a.path.slice(0,a.path.lastIndexOf("/")), folderB = b.path.slice(0,b.path.lastIndexOf("/"));
+  expect(a.text).toContain(`res://${folderA}/tileset.tres`);
+  expect(b.text).toContain(`res://${folderB}/tileset.tres`);
+  expect(after.find(f => f.path === `${folderB}/tileset.tres`)?.text).toContain(`res://${folderB}/blue.png`);
+});
+
+test("Godot dialog exports mixed native art with transparent padding and oversized origins", async ({ page }) => {
+  await page.goto("/"); await startWithTileset(page); await paint(page);
+  const original = await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
+    const { setTilesetImage } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
+    const store = useEditorStore.getState().project.store;
+    const layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
+    const images: number[][] = [];
+    for (const [id,w,h,x] of [["small",16,16,1],["large",48,64,2]] as const) {
+      store.dispatch({ type: "addTileset", tileset: { id, name: id, imagePath: `${id}.png`, tileWidth: w, tileHeight: h, columns: 1, rows: 1, margin: 0, spacing: 0 } });
+      const canvas = new OffscreenCanvas(w,h), ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "red"; ctx.fillRect(0,0,w,h);
+      const blob = await canvas.convertToBlob({ type: "image/png" });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      images.push([...bytes]);
+      setTilesetImage({ tilesetId: id, bitmap: await createImageBitmap(blob), bytes });
+      store.dispatch({ type: "paintCells", layerId: layer.id, cells: [{ x, y: 2, cell: store.getOrAddPaletteIndex(id, 0) }] });
+    }
+    return images;
+  });
+  const dialog = await openExport(page, "Godot 4");
+  await expect(dialog.getByTestId("export-submit")).toBeEnabled();
+  await dialog.getByTestId("export-submit").click();
+  await expect(dialog).toBeHidden();
+  const output = await files(page);
+  const scene = output.find(f => f.path.endsWith("/Ana harita.tscn"))!;
+  const folder = scene.path.slice(0,scene.path.lastIndexOf("/"));
+  expect(output.find(f => f.path === `${folder}/godot/small.png`)).toMatchObject({ width: 32, height: 32 });
+  expect(output.find(f => f.path === `${folder}/small.png`)).toMatchObject({ width: 16, height: 16 });
+  expect(output.find(f => f.path.endsWith("/large.png"))).toMatchObject({ width: 48, height: 64 });
+  expect(output.find(f => f.path.endsWith("/tileset.tres"))?.text).toContain("texture_origin = Vector2i(-8, 16)");
+  const pixels = await page.evaluate(async folder => {
+    const { getTilesetImage } = await import(/* @vite-ignore */ String("/src/state/tilesetImages.ts"));
+    const root = await navigator.storage.getDirectory();
+    let dir = root;
+    for (const part of folder.split("/")) dir = await dir.getDirectoryHandle(part);
+    const file = await (await (await dir.getDirectoryHandle("godot")).getFileHandle("small.png")).getFile();
+    const canvas = new OffscreenCanvas(32,32), ctx = canvas.getContext("2d")!;
+    ctx.drawImage(await createImageBitmap(file), 0,0);
+    return { top: [...ctx.getImageData(0,0,1,1).data], bottom: [...ctx.getImageData(0,31,1,1).data], originals: ["small","large"].map(id => [...getTilesetImage(id).bytes]) };
+  }, folder);
+  expect(pixels.top).toEqual([0,0,0,0]); expect(pixels.bottom).toEqual([255,0,0,255]);
+  expect(pixels.originals).toEqual(original);
 });

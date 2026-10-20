@@ -421,19 +421,30 @@ validation and throws `GodotPreflightError` before returning files on failure.
 No document or source PNG is modified.
 
 Write the result beneath the **Godot project root**. `resourceRoot` selects a
-portable relative subfolder (default `smap`, empty string for the root); all
-engine dependencies use `res://<resourceRoot>/…`. A shared `tileset.tres`
-contains one `TileSetAtlasSource` per used tileset, including generated road
-artwork. Sources are numbered in stable tileset-id order, used tile entries
-are sorted, and source margins/spacing/native region sizes are retained.
-Each map produces `<name>.tscn` and `<name>.json`, plus its referenced PNGs.
-The JSON is exactly `exportGameJson` with the same layer/collision options:
+portable relative parent folder (default `smap`, empty string for the root).
+Each map owns a separate `<resourceRoot>/<namespace>/` folder containing
+`<name>.tscn`, `<name>.json`, `tileset.tres`, and its PNG copies. All engine
+dependencies use absolute `res://` paths inside that namespace. Sequential
+single-map exports and multi-map plans use the same layout; exporting B
+never rewrites A's TileSet, artwork or collision source ids. The production
+host supplies the stable map id; its namespace is
+`<name>--id-<hex-codepoints-of-id>`. The lossless ASCII suffix isolates maps
+with identical display names, sanitized names, or ids differing only by case.
+Re-exporting the same map/name updates that export; renaming leaves the old
+export intact. Direct API callers should supply `GodotMapInput.id` too;
+without it, the portable export name is the identity and must be distinct.
+Conflicting namespaces in a batch are blocking diagnostics.
+
+Each TileSet contains one `TileSetAtlasSource` per used tileset, including
+generated road artwork. Sources are numbered in stable tileset-id order
+within that map; used tile entries are sorted. Maps may have different cell
+sizes and sources with identical PNG basenames because their resources are
+isolated. PNG basenames retain the game's naming convention. The companion
+JSON is exactly `exportGameJson` with the same layer/collision options:
 entities, portal targets and spawn keep the existing game format and Y down.
-PNG basenames retain the game's naming convention. Conflicting names across
-maps or differing definitions of a shared tileset are blocking problems;
-export those maps separately or rename their assets. Treat each resource
-root as one batch: plan all maps sharing it together. Separate per-map
-exports need separate roots so they do not replace another batch’s TileSet.
+Its tileset metadata and adjacent original PNG copies retain the source grid.
+Padded copies live under `<resourceRoot>/<namespace>/godot/`; only the TileSet
+references these generated textures.
 
 Both text formats use `format=3`. The scene root is `Node2D`; tile layers
 remain in document order with visibility, opacity and nearest filtering.
@@ -445,7 +456,10 @@ encoded names receive a numeric suffix. TileSet resource names are escaped.
 little-endian header, followed by 12 bytes per occupied cell, sorted Y/X:
 signed int16 X/Y, then source id, atlas X/Y and alternative/transform word.
 Identifiers and atlas coordinates are limited to 0…32767. The alternative
-is base 0 with H=4096, V=8192, transpose=16384; transpose precedes mirrors.
+is base 0 with H=4096, V=8192, transpose=16384 for matching-size art.
+Native-size art uses alternatives 0…7 with TileData transpose/mirror flags
+and compensated texture origins; transpose still precedes mirrors. This
+keeps the native rectangle bottom-left anchored after every transform.
 Empty layers use an empty array. Y is not flipped. Coordinates do not wrap.
 
 Collision is a separate enabled `TileMapLayer`, from `deriveCollision` over
@@ -457,14 +471,23 @@ Visual layers have collision disabled. Collision on empty visual cells is
 preserved. `collision: false` omits this source/layer and uses the existing
 all-passable game JSON representation.
 
-This target **rejects native tile sizes different from the map cell size**
-before writing; it never resamples PNGs. Maps sharing one TileSet must use
-the same cell size. Rectangular cells are supported without transpose;
-transposed rectangular tiles are rejected because their bottom-left anchor
-cannot be preserved by the base alternative encoding used here. Cell texture
-dimensions must be 1…16384 px. Missing PNGs, invalid PNG headers, undersized
-atlas images, invalid tile references, unsafe resource paths, name conflicts
-and int16 overflow are blocking preflight diagnostics.
+Native artwork keeps its pixels and bottom-left cell anchor. Undersized
+axes receive export-only transparent padding, without resampling. Padded
+atlases are repacked with zero margins/spacing and regions at least as large
+as the map cell. Oversized artwork keeps its visible native extent; tested
+`texture_origin` values align it left and bottom (e.g. 48×64 in a 32×32 cell
+uses `Vector2i(-8, 16)` without transforms). A transparent extra row/column
+handles odd differences so origins remain integral and pixels stay sharp.
+Unpadded PNGs retain their exact bytes and original margins/spacing. Padded
+copies preserve native sample depth, alpha and colour-profile chunks; user
+PNGs and document metadata remain untouched.
+
+Rectangular cells are supported without transpose; transposed rectangular
+map cells remain an explicit preflight restriction. Rectangular source art
+in square cells supports all eight orientations. Cell/region dimensions must
+be 1…16384 px. Missing PNGs, invalid headers or padding decode failures,
+undersized atlas images, invalid tile references, unsafe resource paths,
+name conflicts and int16 overflow are blocking preflight diagnostics.
 
 The self-contained editor contribution is `export/targets/godot.ts`:
 `{ id, labelKey, options, snapshot, preflight, planFiles }`. Its snapshot copies

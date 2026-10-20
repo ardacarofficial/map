@@ -6,7 +6,7 @@ import { resolveFileData } from "../../io/fileData";
 import type { ExportFileSet, TilesetBytes } from "../exportFiles";
 
 export interface GodotTargetInput {
-  /** One or more maps; selections are per map, collision is independent. */
+  /** One or more maps; each owns its resource namespace under resourceRoot. */
   readonly maps: readonly GodotMapInput[];
   /** Same registry callback used by unityExportFiles/tmjExportFiles; generated PNGs may encode lazily. */
   readonly bytes: TilesetBytes;
@@ -23,6 +23,7 @@ export interface GodotTargetSnapshot {
 export async function snapshotGodot(input: GodotTargetInput): Promise<GodotTargetSnapshot> {
   const maps = input.maps.map(map => ({
     name: map.name,
+    ...(map.id === undefined ? {} : { id: map.id }),
     doc: parseLevel(serializeLevel(map.doc), map.doc.tilesets, map.doc.entityTypes),
     ...(map.layers ? { layers: [...map.layers] } : {}),
   }));
@@ -79,7 +80,7 @@ export const godotTarget = {
 export default godotTarget;
 
 function commonInput(input: ExportTargetInput, options: ExportTargetOptions): GodotTargetInput {
-  return { maps: [{ doc: input.doc, name: input.levelName, ...(input.layers ? { layers: input.layers } : {}) }], bytes: input.bytes,
+  return { maps: [{ doc: input.doc, name: input.levelName, ...(input.levelId === undefined ? {} : { id: input.levelId }), ...(input.layers ? { layers: input.layers } : {}) }], bytes: input.bytes,
     options: { resourceRoot: typeof options.resourceRoot === "string" ? options.resourceRoot : "smap", collision: options.collision !== false } };
 }
 /** Shared single-map plugin contract; the multi-map API above remains available. */

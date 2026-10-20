@@ -41,16 +41,37 @@ const golden = encodePng(256, 64, (x,y) => y < 16 && x % 32 < 16
 
 const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: "custom" });
 try {
-  const { godotFixture } = await server.ssrLoadModule(`${fixture}/input.ts`);
+  const { godotFixture, nativeFixture, nativeSizes, sequentialFixture } = await server.ssrLoadModule(`${fixture}/input.ts`);
   const { exportGodot } = await server.ssrLoadModule(fileURLToPath(new URL("../../core/src/export/godot/index.ts", import.meta.url)));
   const { store } = godotFixture();
   const plan = exportGodot([{ doc: store.document, name: "fixture" }], () => png());
-  for (const file of plan.files) {
+  const native = exportGodot([{ doc: nativeFixture().document, name: "native" }], id => {
+    const [w,h] = nativeSizes[Number(id.slice(7))];
+    return encodePng(w * 2 + 4, h * 2 + 4, (x,y) => x >= w + 3 && x < w * 2 + 3 && y >= h + 3 && y < h * 2 + 3
+      ? colors[(x - w - 3 >= Math.floor(w / 2) ? 1 : 0) + (y - h - 3 >= Math.floor(h / 2) ? 2 : 0)] : [255,0,255,255]);
+  });
+  const sequential = ["red", "blue"].map(id => exportGodot([{ doc: sequentialFixture(id).document, name: "Same", id: id === "red" ? "A" : "B" }], source => encodePng(32,32, () => source === "red" ? colors[0] : source === "blue" ? colors[2] : [255,255,255,255])));
+  // Publish independent plans in sequence to the SAME destination; retain A's
+  // files while B is written, exactly like consecutive single-map exports.
+  for (const file of [plan, native, ...sequential].flatMap(plan => plan.files)) {
     const path = resolve(target, file.path);
     await mkdir(resolve(path, ".."), { recursive: true });
     await writeFile(path, file.text ?? file.bytes);
   }
   await writeFile(resolve(target, "golden.png"), golden);
+  // Independent native rectangle oracle. Explicit inverse D4 formulas operate on
+  // the ORIGINAL native extent, anchored at x=cellX*32, bottom=(cellY+1)*32.
+  const nativeGolden = encodePng(768,640, (x,y) => {
+    for (const [row,[w,h]] of nativeSizes.entries()) for (let i = 0; i < 8; i++) {
+      const dw = i < 4 ? w : h, dh = i < 4 ? h : w;
+      const u = x - i * 96, v = y - ((row * 4 + 3) * 32 - dh);
+      if (u < 0 || v < 0 || u >= dw || v >= dh) continue;
+      const inverse = [[u,v],[w-1-u,v],[u,h-1-v],[w-1-u,h-1-v],[v,u],[v,h-1-u],[w-1-v,u],[w-1-v,h-1-u]][i];
+      return colors[(inverse[0] >= Math.floor(w / 2) ? 1 : 0) + (inverse[1] >= Math.floor(h / 2) ? 2 : 0)];
+    }
+    return [0,0,0,0];
+  });
+  await writeFile(resolve(target, "native-golden.png"), nativeGolden);
   await writeFile(resolve(target, "project.godot"), '[application]\nconfig/name="SMAP Godot export fixture"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\ntextures/default_filters/use_nearest_mipmap_filter=false\n');
-  log(`Generated ${plan.files.length} exporter files in ${target}`);
+  log(`Generated ${[plan, native, ...sequential].reduce((n, p) => n + p.files.length, 0)} exporter files in ${target}`);
 } finally { await server.close(); }

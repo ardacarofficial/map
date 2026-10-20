@@ -1,4 +1,4 @@
-/** Pure, deterministic Godot 4.3+ export. No image decoding, filesystem or host APIs. */
+/** Pure, deterministic Godot 4.3+ export. No filesystem or host APIs. */
 import { cellPaletteIndex } from "../../cell";
 import { CHUNK_MASK, CHUNK_SHIFT } from "../../chunk";
 import { deriveCollision } from "../../collision";
@@ -7,16 +7,19 @@ import { portablePathProblem } from "../../fileName";
 import type { Tileset } from "../../tileset";
 import { exportBaseName, exportedLayers, exportedTilesets, exportWarnings, layerCells, type ExportLayerOptions } from "../common";
 import { exportGameJson } from "../game";
+import { nativeOrigin, nativePng, nativeRegion } from "./native";
 import { encodeGodotCells, godotCellProblem, type GodotCell } from "./cells";
 
 export { encodeGodotCells, type GodotCell } from "./cells";
 
 export interface GodotMapInput extends ExportLayerOptions {
+  /** Stable map identity; use it when display names may repeat. */
+  readonly id?: string;
   readonly doc: MapDocument;
   readonly name: string;
 }
 export interface GodotOptions {
-  /** Project-relative export folder; "" is the Godot project root. Default: smap. */
+  /** Project-relative parent folder; each map owns a subfolder. Default: smap. */
   readonly resourceRoot?: string;
   /** Resolved manual Collision, independent of visual selection/visibility. Default true. */
   readonly collision?: boolean;
@@ -124,9 +127,8 @@ function prepare(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options
         if (previous && previous.source.tileset.id !== t.id) problem("godotExport.fileConflict", { path: image.fileName });
         else imageFiles.set(imageKey, { fileName: image.fileName, source });
         if (portablePathProblem(image.fileName) || !/\.png$/i.test(image.fileName)) problem("godotExport.invalidImage", { path: image.sourcePath });
-        if (t.tileWidth !== doc.map.tileWidth || t.tileHeight !== doc.map.tileHeight) problem("godotExport.nativeSizeMismatch", { tileset: t.name, nativeWidth: t.tileWidth, nativeHeight: t.tileHeight, cellWidth: doc.map.tileWidth, cellHeight: doc.map.tileHeight });
         if ((cell.flags & 4) && doc.map.tileWidth !== doc.map.tileHeight) problem("godotExport.rectangularTranspose", { map: input.name });
-        return { x: cell.x, y: cell.y, sourceId: 0, atlasX: cell.tileId % t.columns, atlasY: Math.floor(cell.tileId / t.columns), alternative: cell.flags * 4096, tilesetId: t.id };
+        return { x: cell.x, y: cell.y, sourceId: 0, atlasX: cell.tileId % t.columns, atlasY: Math.floor(cell.tileId / t.columns), alternative: t.tileWidth === doc.map.tileWidth && t.tileHeight === doc.map.tileHeight ? cell.flags * 4096 : cell.flags, tilesetId: t.id };
       });
       return { id: layer.id, name: layer.name, visible: layer.visible, opacity: layer.opacity, cells };
     });
@@ -134,16 +136,25 @@ function prepare(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options
   }
   const sources = [...sourcesById.values()].sort((a, b) => a.tileset.id < b.tileset.id ? -1 : a.tileset.id > b.tileset.id ? 1 : 0);
   const imageData = new Map<string, Uint8Array>();
+  const paddedImages = new Map<string, Uint8Array>();
   sources.forEach((source, id) => {
     // Source objects are local planning records, never document state.
     source.id = id;
     const t = source.tileset;
     const data = bytes(t.id);
     if (!data) { problem("godotExport.missingImage", { path: t.imagePath }); return; }
-    imageData.set(t.id, data);
     const size = pngSize(data);
     if (!size) problem("godotExport.invalidImage", { path: t.imagePath });
     else if (size.width < t.margin + t.columns * t.tileWidth + (t.columns - 1) * t.spacing || size.height < t.margin + t.rows * t.tileHeight + (t.rows - 1) * t.spacing) problem("godotExport.imageTooSmall", { path: t.imagePath });
+    else if (first) {
+      const region = nativeRegion(t, first.tileWidth, first.tileHeight);
+      if (region.width > 16384 || region.height > 16384) problem("godotExport.cellSizeOutOfRange", { map: maps[0]!.name });
+      else try {
+        imageData.set(t.id, data);
+        if (region.width !== t.tileWidth || region.height !== t.tileHeight) paddedImages.set(t.id, nativePng(data, t, first.tileWidth, first.tileHeight));
+      }
+      catch { problem("godotExport.invalidImage", { path: t.imagePath }); }
+    }
   });
   for (const map of mapData) for (const layer of map.layers) for (const cell of layer.cells) {
     Object.assign(cell, { sourceId: sourcesById.get(cell.tilesetId)!.id });
@@ -151,27 +162,73 @@ function prepare(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options
   }
   if (sources.length + (options.collision === false ? 0 : 1) > 32768) problem("godotExport.overflow", { map: maps.map(map => map.name).join(", ") });
   for (const { fileName } of imageFiles.values()) if (taken.has(fileName.toLowerCase())) problem("godotExport.fileConflict", { path: fileName });
-  return { problems, maps: mapData, sources, imageFiles: [...imageFiles.values()], imageData };
+  return { problems, maps: mapData, sources, imageFiles: [...imageFiles.values()], imageData, paddedImages };
 }
 
-/** All blocking user-facing problems; callers must run this before writing any file. */
+function mapNamespace(map: GodotMapInput): string {
+  const base = exportBaseName(map.name);
+  // Lossless lowercase ASCII identity survives case-insensitive file systems
+  // and portable-name substitutions. The prefix remains human-readable.
+  return map.id === undefined ? base : `${base}--id-${[...map.id].map(c => c.codePointAt(0)!.toString(16)).join("-")}`;
+}
+
+/** Each map owns every dependency, regardless of batching or export order. */
+function namespaces(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options: GodotOptions) {
+  const problems: GodotProblem[] = [];
+  const names = new Set<string>();
+  if (!maps.length) problems.push({ key: "godotExport.noMaps", params: {} });
+  const prepared = [...maps].sort((a,b) => mapNamespace(a) < mapNamespace(b) ? -1 : mapNamespace(a) > mapNamespace(b) ? 1 : 0).map(map => {
+    const name = mapNamespace(map);
+    if (names.has(name.toLowerCase())) problems.push({ key: "godotExport.fileConflict", params: { path: name } });
+    names.add(name.toLowerCase());
+    const scoped = { ...options, resourceRoot: pathIn(folder(options), name) };
+    const plan = prepare([map], bytes, scoped);
+    problems.push(...plan.problems);
+    return { plan, options: scoped };
+  });
+  return { prepared, problems };
+}
+
+/** All blocking user-facing problems; no files are returned on failure. */
 export function preflightGodot(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options: GodotOptions = {}): readonly GodotProblem[] {
-  return prepare(maps, bytes, options).problems;
+  return namespaces(maps, bytes, options).problems;
 }
 
-/** Shared TileSet, copied PNGs, one scene and byte-identical game JSON companion per map. */
+/** Per-map TileSets/PNGs/scenes. Sequential plans never rewrite another map. */
 export function exportGodot(maps: readonly GodotMapInput[], bytes: GodotImageBytes, options: GodotOptions = {}): GodotPlan {
-  const prepared = prepare(maps, bytes, options);
+  const result = namespaces(maps, bytes, options);
+  if (result.problems.length) throw new GodotPreflightError(result.problems);
+  const plans = result.prepared.map(item => exportMap(item.plan, item.options));
+  return { files: plans.flatMap(plan => plan.files), scenes: plans.flatMap(plan => plan.scenes) };
+}
+function exportMap(prepared: ReturnType<typeof prepare>, options: GodotOptions): GodotPlan {
   if (prepared.problems.length) throw new GodotPreflightError(prepared.problems);
   const root = folder(options), files: GodotFile[] = [], scenes: string[] = [];
-  for (const image of prepared.imageFiles) files.push({ path: pathIn(root, image.fileName), bytes: prepared.imageData.get(image.source.tileset.id)!.slice() });
-  const tileWidth = maps[0]!.doc.map.tileWidth, tileHeight = maps[0]!.doc.map.tileHeight;
+  for (const image of prepared.imageFiles) {
+    const id = image.source.tileset.id;
+    // The byte-identical game JSON companion still addresses the original PNG.
+    files.push({ path: pathIn(root, image.fileName), bytes: prepared.imageData.get(id)!.slice() });
+    const padded = prepared.paddedImages.get(id);
+    if (padded) files.push({ path: pathIn(root, `godot/${image.fileName}`), bytes: padded });
+  }
+  const tileWidth = prepared.maps[0]!.input.doc.map.tileWidth, tileHeight = prepared.maps[0]!.input.doc.map.tileHeight;
   const collision = options.collision !== false;
   const collisionSource = prepared.sources.length;
-  const ext = prepared.sources.map(source => `[ext_resource type="Texture2D" path=${quote(`res://${pathIn(root, source.fileName)}`)} id="texture_${source.id}"]`);
+  const ext = prepared.sources.map(source => `[ext_resource type="Texture2D" path=${quote(`res://${pathIn(root, prepared.paddedImages.has(source.tileset.id) ? `godot/${source.fileName}` : source.fileName)}`)} id="texture_${source.id}"]`);
   const sub = prepared.sources.map(source => {
     const t = source.tileset;
-    return `[sub_resource type="TileSetAtlasSource" id="atlas_${source.id}"]\nresource_name = ${quote(t.name)}\ntexture = ExtResource("texture_${source.id}")\nmargins = Vector2i(${t.margin}, ${t.margin})\nseparation = Vector2i(${t.spacing}, ${t.spacing})\ntexture_region_size = Vector2i(${t.tileWidth}, ${t.tileHeight})\n${[...source.used].sort((a, b) => a - b).map(id => `${id % t.columns}:${Math.floor(id / t.columns)}/0 = 0`).join("\n")}`;
+    const region = nativeRegion(t, tileWidth, tileHeight);
+    const padded = region.width !== t.tileWidth || region.height !== t.tileHeight;
+    const native = t.tileWidth !== tileWidth || t.tileHeight !== tileHeight;
+    const entries = [...source.used].sort((a, b) => a - b).flatMap(id => {
+      const tile = `${id % t.columns}:${Math.floor(id / t.columns)}`;
+      if (!native) return [`${tile}/0 = 0`];
+      return Array.from({ length: 8 }, (_, flags) => {
+        const origin = nativeOrigin(t, tileWidth, tileHeight, flags);
+        return `${tile}/${flags} = ${flags}\n${tile}/${flags}/flip_h = ${!!(flags & 1)}\n${tile}/${flags}/flip_v = ${!!(flags & 2)}\n${tile}/${flags}/transpose = ${!!(flags & 4)}\n${tile}/${flags}/texture_origin = Vector2i(${origin.x}, ${origin.y})`;
+      });
+    });
+    return `[sub_resource type="TileSetAtlasSource" id="atlas_${source.id}"]\nresource_name = ${quote(t.name)}\ntexture = ExtResource("texture_${source.id}")\nmargins = Vector2i(${padded ? 0 : t.margin}, ${padded ? 0 : t.margin})\nseparation = Vector2i(${padded ? 0 : t.spacing}, ${padded ? 0 : t.spacing})\ntexture_region_size = Vector2i(${region.width}, ${region.height})\n${entries.join("\n")}`;
   });
   if (collision) {
     sub.push('[sub_resource type="Gradient" id="collision_gradient"]\ncolors = PackedColorArray(0, 0, 0, 0, 0, 0, 0, 0)');

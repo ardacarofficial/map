@@ -201,7 +201,7 @@ function ExportForm({
   useEffect(() => {
     if (!settings || (chosen !== "godot" && chosen !== "defold")) return;
     let cancelled = false;
-    void prepareTarget(chosen, { doc: source.document, levelName: sourceLevelName(source), bytes: tilesetPngSource, layers: derived.layers }, current).then(plan => {
+    void prepareTarget(chosen, { doc: source.document, levelName: sourceLevelName(source), levelId: source.levelId ?? source.levelPath, bytes: tilesetPngSource, layers: derived.layers }, current).then(plan => {
       if (!cancelled) setEnginePlan({ target: chosen, settings: current, source, plan });
     }, (error: unknown) => {
       if (!cancelled) setEnginePlan({ target: chosen, settings: current, source, plan: { set: null, problems: [{ severity: "error", key: "exportTargets.preflightFailed", params: { detail: describeError(error) } }] } });

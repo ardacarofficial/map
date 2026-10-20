@@ -8,7 +8,10 @@ func _initialize() -> void:
 	call_deferred("verify")
 
 func verify() -> void:
-	var packed = load("res://smap/fixture.tscn") as PackedScene
+	if not verify_sequential() or not verify_native():
+		quit(1)
+		return
+	var packed = load("res://smap/fixture/fixture.tscn") as PackedScene
 	if packed == null:
 		fail("Scene did not load")
 		quit(1)
@@ -79,4 +82,43 @@ func verify_data(map: Node2D) -> bool:
 		return fail("Collision artwork is opaque")
 	if ground.collision_enabled or not collision.collision_enabled:
 		return fail("Collision layer isolation failed")
+	return true
+
+func verify_sequential() -> bool:
+	for entry in [["41", Color.RED, 2], ["42", Color.BLUE, 1]]:
+		var scene = load("res://smap/Same--id-%s/Same.tscn" % entry[0]) as PackedScene
+		if scene == null:
+			return fail("Sequential scene failed to load: " + entry[0])
+		var map = scene.instantiate()
+		var layer = map.get_child(0) as TileMapLayer
+		var source = layer.tile_set.get_source(layer.get_cell_source_id(Vector2i.ZERO)) as TileSetAtlasSource
+		if not source.texture.get_image().get_pixel(0,0).is_equal_approx(entry[1]):
+			return fail("Sequential export changed artwork: " + entry[0])
+		if (map.get_child(1) as TileMapLayer).get_cell_source_id(Vector2i(0,1)) != entry[2]:
+			return fail("Sequential export changed collision source: " + entry[0])
+		map.free()
+	print("GODOT_SEQUENTIAL_OK: A red and B blue, distinct textures and collision source ids")
+	return true
+
+func verify_native() -> bool:
+	var scene = load("res://smap/native/native.tscn") as PackedScene
+	if scene == null:
+		return fail("Native scene failed to load")
+	var map = scene.instantiate()
+	var layer = map.get_child(0) as TileMapLayer
+	var sizes = [Vector2i(16,16), Vector2i(32,32), Vector2i(48,64), Vector2i(16,48), Vector2i(17,35)]
+	for row in range(sizes.size()):
+		for flags in range(8):
+			var cell = Vector2i(flags * 3, row * 4 + 2)
+			var alternative = flags * 4096 if row == 1 else flags
+			if layer.get_cell_source_id(cell) != row or layer.get_cell_atlas_coords(cell) != Vector2i(1,1) or layer.get_cell_alternative_tile(cell) != alternative:
+				return fail("Native cell source/atlas/alternative mismatch")
+			var source = layer.tile_set.get_source(row) as TileSetAtlasSource
+			if not source.has_alternative_tile(Vector2i(1,1), alternative):
+				return fail("Missing native alternative")
+			var data = source.get_tile_data(Vector2i(1,1), alternative)
+			if row == 2 and flags == 0 and data.texture_origin != Vector2i(-8,16):
+				return fail("Oversized native origin changed")
+	map.free()
+	print("GODOT_NATIVE_OK: mixed 16/32, oversized, rectangular and odd native extents; eight orientations")
 	return true

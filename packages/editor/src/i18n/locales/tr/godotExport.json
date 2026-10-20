@@ -1,7 +1,7 @@
 {
   "label": "Godot 4",
   "resourceRoot": "Kaynak klasörü",
-  "resourceRootHint": "Godot proje köküne göre klasör. Örnek: smap veya levels/world. Kök klasör için boş bırakın.",
+  "resourceRootHint": "Godot proje köküne göre ana klasör; örneğin smap veya levels/world. Her haritanın kaynakları kendi alt klasörüne yazılır. Kök için boş bırakın.",
   "collision": "Çarpışma",
   "invalidRoot": "Kaynak klasörü geçerli bir göreli yol olmalı: {path}",
   "missingImage": "Gerekli PNG bulunamadı: {path}",

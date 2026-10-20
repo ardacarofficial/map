@@ -4,7 +4,7 @@ import { expect, readOpfsText, test } from "../support/fixtures";
 
 // The target registry/dialog is owned by lane E. Exercise its exact plugin/writer boundary in a real browser.
 const coreFixture = fileURLToPath(new URL("../../packages/core/test/fixtures/godot/input.ts", import.meta.url));
-const png = [...readFileSync(new URL("../../packages/core/test/fixtures/godot/project/smap/road.png", import.meta.url))];
+const png = [...readFileSync(new URL("../../packages/core/test/fixtures/godot/project/smap/fixture/road.png", import.meta.url))];
 
 test("Godot target plans shared resources, freezes deferred assets and writes deterministic OPFS files", async ({ page }) => {
   await page.goto("/");
@@ -25,13 +25,13 @@ test("Godot target plans shared resources, freezes deferred assets and writes de
     return { problems, first, repeated, missing, mapFile: plan.mapFile };
   }, { fixturePath: coreFixture, png });
   expect(result.problems).toEqual([]);
-  expect(result.mapFile).toBe("godot/maps/main.tscn");
+  expect(result.mapFile).toBe("godot/maps/main/main.tscn");
   expect(result.first.written).toHaveLength(5);
   expect(result.repeated.written).toEqual([]);
   expect(result.missing.map((p: { key: string }) => p.key)).toEqual(["godotExport.missingImage", "godotExport.missingImage"]);
-  const scene = await readOpfsText(page, "godot/maps/main.tscn");
-  expect(scene).toContain('path="res://godot/maps/tileset.tres"');
+  const scene = await readOpfsText(page, "godot/maps/main/main.tscn");
+  expect(scene).toContain('path="res://godot/maps/main/tileset.tres"');
   expect(scene).toContain("tile_map_data = PackedByteArray(0, 0,");
-  expect(await readOpfsText(page, "godot/maps/tileset.tres")).toContain("physics_layer_0/polygon_0/points");
-  expect(JSON.parse((await readOpfsText(page, "godot/maps/main.json"))!).smapExport).toBe(1);
+  expect(await readOpfsText(page, "godot/maps/main/tileset.tres")).toContain("physics_layer_0/polygon_0/points");
+  expect(JSON.parse((await readOpfsText(page, "godot/maps/main/main.json"))!).smapExport).toBe(1);
 });

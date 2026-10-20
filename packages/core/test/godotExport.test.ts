@@ -57,9 +57,10 @@ describe("Godot 4 export", () => {
     const cell = { x: -32768, y: 32767, sourceId: 32767, atlasX: 32767, atlasY: 0, alternative: 28672 };
     const encoded = encodeGodotCells([cell]);
     expect(decode(`tile_map_data = PackedByteArray(${[...encoded].join(", ")})`)).toEqual([[-32768,32767,32767,32767,0,28672]]);
-    for (const [field, value] of [["x", -32769], ["y", 32768], ["sourceId", 32768], ["atlasX", -1], ["atlasY", 32768], ["alternative", 32768], ["alternative", 1], ["x", 1.5]] as const) {
+    for (const [field, value] of [["x", -32769], ["y", 32768], ["sourceId", 32768], ["atlasX", -1], ["atlasY", 32768], ["alternative", 32768], ["alternative", -1], ["x", 1.5]] as const) {
       expect(() => encodeGodotCells([{ ...cell, [field]: value }])).toThrow(RangeError);
     }
+    for (let alternative = 0; alternative < 8; alternative++) expect(decode(`tile_map_data = PackedByteArray(${[...encodeGodotCells([{ ...cell, alternative }])].join(",")})`)[0]![5]).toBe(alternative);
     expect(encodeGodotCells([])).toEqual(new Uint8Array());
     fc.assert(fc.property(fc.integer({ min: -32768, max: 32767 }), fc.integer({ min: -32768, max: 32767 }), (x, y) => {
       const b = encodeGodotCells([{ ...cell, x, y }]);
@@ -104,24 +105,32 @@ describe("Godot 4 export", () => {
     const { store, bytes, result } = texts();
     expect(exportGodot([{ doc: store.document, name: 'Map "one"' }], bytes)).toEqual(result);
     expect(result.files.find(f => f.path.endsWith(".json"))!.text).toContain('"smapExport": 1');
-    expect(result.files.filter(f => f.bytes).map(f => f.path)).toEqual(["smap/road.png", "smap/items.png"]);
+    expect(result.files.filter(f => f.bytes).map(f => f.path)).toEqual(["smap/Map _one_/road.png", "smap/Map _one_/items.png"]);
     expect(result.files[0]!.bytes).toEqual(fixturePng(36, 36));
     const selection = exportGodot([{ doc: store.document, name: "only", layers: [] }], bytes, { collision: false, resourceRoot: "levels/one" });
-    expect(selection.files.map(f => f.path)).toEqual(["levels/one/tileset.tres", "levels/one/only.json", "levels/one/only.tscn"]);
+    expect(selection.files.map(f => f.path)).toEqual(["levels/one/only/tileset.tres", "levels/one/only/only.json", "levels/one/only/only.tscn"]);
     expect(selection.files[2]!.text).not.toContain("TileMapLayer");
   });
 
-  it("shares one TileSet across maps, unions used tiles, and keeps stable source ids", () => {
+  it("isolates each map TileSet and assigns its source ids independently", () => {
     const { store, bytes } = godotFixture();
     const result = exportGodot([{ doc: store.document, name: "b" }, { doc: store.document, name: "a", layers: ["deco"] }], bytes);
-    expect(result.files.filter(f => f.path.endsWith(".tres"))).toHaveLength(1);
-    expect(result.files.filter(f => f.path.endsWith(".tscn")).map(f => f.path)).toEqual(["smap/a.tscn", "smap/b.tscn"]);
-    const a = result.files.find(f => f.path === "smap/a.tscn")!.text!;
-    expect(decode(a.split('[node ')[2]!)[0]![2]).toBe(1);
-    expect(a).toContain('path="res://smap/tileset.tres"');
+    expect(result.files.filter(f => f.path.endsWith(".tres"))).toHaveLength(2);
+    expect(result.files.filter(f => f.path.endsWith(".tscn")).map(f => f.path)).toEqual(["smap/a/a.tscn", "smap/b/b.tscn"]);
+    const a = result.files.find(f => f.path === "smap/a/a.tscn")!.text!;
+    expect(decode(a.split('[node ')[2]!)[0]![2]).toBe(0);
+    expect(a).toContain('path="res://smap/a/tileset.tres"');
   });
 
-  it("preflights missing/invalid images, mismatched native sizes, resource traversal and invalid tiles before planning", () => {
+  it("orders equally named map namespaces by lossless identity", () => {
+    const { store, bytes } = godotFixture();
+    const a = { doc: store.document, name: "Same", id: "A" }, b = { ...a, id: "a" };
+    const plan = exportGodot([a,b], bytes);
+    expect(exportGodot([b,a], bytes)).toEqual(plan);
+    expect(new Set(plan.scenes.map(path => path.toLowerCase())).size).toBe(2);
+  });
+
+  it("preflights missing/invalid images, resource traversal and invalid tiles before planning", () => {
     const { store, bytes } = godotFixture();
     const maps = [{ doc: store.document, name: "a" }];
     expect(preflightGodot(maps, () => undefined).map(p => p.key)).toContain("godotExport.missingImage");
@@ -135,7 +144,7 @@ describe("Godot 4 export", () => {
     const small = new MapStore(createDocument({ width: 1, height: 1, tilesets: [tileset] }));
     small.dispatch({ type: "addLayer", layer: { id: "a", name: "A" } });
     small.dispatch({ type: "paintCells", layerId: "a", cells: [{ x: 0, y: 0, cell: makeCell(small.getOrAddPaletteIndex("small", 0)) }] });
-    expect(preflightGodot([{ doc: small.document, name: "a" }], () => fixturePng(8,8)).map(p => p.key)).toContain("godotExport.nativeSizeMismatch");
+    expect(preflightGodot([{ doc: small.document, name: "a" }], () => fixturePng(8,8)).map(p => p.key)).toContain("godotExport.invalidImage");
     small.dispatch({ type: "paintCells", layerId: "a", cells: [{ x: 0, y: 0, cell: makeCell(small.document.palette._getOrAdd("small", 1)) }] });
     expect(preflightGodot([{ doc: small.document, name: "a" }], bytes).map(p => p.key)).toContain("godotExport.invalidTiles");
   });
@@ -205,7 +214,7 @@ describe("Godot resource structure and preflight limits", () => {
     expect(scene.files.find(f => f.path.endsWith(".tres"))).toEqual(original.files.find(f => f.path.endsWith(".tres")));
   });
 
-  it("rejects atlas int16 overflow, filename conflicts, inconsistent sources and shared cell sizes", () => {
+  it("rejects atlas int16 overflow and map name conflicts while isolating different cell sizes and sources", () => {
     const t: Tileset = { id: "wide", name: "Wide", imagePath: "wide.png", tileWidth: 1, tileHeight: 1, columns: 32769, rows: 1, margin: 0, spacing: 0 };
     const store = new MapStore(createDocument({ width: 1, height: 1, tileWidth: 1, tileHeight: 1, tilesets: [t] }));
     store.dispatch({ type: "addLayer", layer: { id: "a", name: "A" } });
@@ -214,12 +223,15 @@ describe("Godot resource structure and preflight limits", () => {
     expect(preflightGodot([input], bytes).map(p => p.key)).toContain("godotExport.overflow");
     expect(preflightGodot([input, { ...input, name: "A" }], bytes).map(p => p.key)).toContain("godotExport.fileConflict");
     expect(preflightGodot([], bytes)).toEqual([{ key: "godotExport.noMaps", params: {} }]);
-    const other = createDocument({ width: 1, height: 1, tileWidth: 16, tileHeight: 16 });
-    expect(preflightGodot([input, { doc: other, name: "other" }], bytes).map(p => p.key)).toContain("godotExport.differentCellSizes");
+    const empty32 = createDocument({ width: 1, height: 1 });
+    const empty16 = createDocument({ width: 1, height: 1, tileWidth: 16, tileHeight: 16 });
+    const mixed = [{ doc: empty32, name: "cell32" }, { doc: empty16, name: "cell16" }];
+    expect(preflightGodot(mixed, bytes)).toEqual([]);
+    expect(exportGodot(mixed, bytes).files.filter(f => f.path.endsWith(".tres")).map(f => f.text!.match(/tile_size = Vector2i\([^)]*\)/)![0])).toEqual(["tile_size = Vector2i(16, 16)", "tile_size = Vector2i(32, 32)"]);
     const { store: original } = godotFixture();
     const { store: changed } = godotFixture();
     changed.document._replaceTileset({ ...changed.document.tilesets[0]!, margin: 0 });
-    expect(preflightGodot([{ doc: original.document, name: "a" }, { doc: changed.document, name: "b" }], () => fixturePng(36,36)).map(p => p.key)).toContain("godotExport.inconsistentTileset");
+    expect(preflightGodot([{ doc: original.document, name: "a" }, { doc: changed.document, name: "b" }], () => fixturePng(36,36))).toEqual([]);
   });
 });
 
@@ -250,18 +262,5 @@ describe("Godot companion and supported extents", () => {
     expect(preflightGodot(maps, bytes).map(p => p.key)).toContain("godotExport.rectangularTranspose");
     const huge = createDocument({ width: 1, height: 1, tileWidth: 16385 });
     expect(preflightGodot([{ doc: huge, name: "huge" }], bytes).map(p => p.key)).toContain("godotExport.cellSizeOutOfRange");
-  });
-});
-
-describe("Godot native size policy", () => {
-  it.each([8, 64])("rejects %i px source art in a 32 px map without changing PNG bytes", size => {
-    const t: Tileset = { id: "native", name: "Native", imagePath: "native.png", tileWidth: size, tileHeight: size, columns: 1, rows: 1, margin: 0, spacing: 0 };
-    const store = new MapStore(createDocument({ width: 1, height: 1, tilesets: [t] }));
-    store.dispatch({ type: "addLayer", layer: { id: "a", name: "A" } });
-    store.dispatch({ type: "paintCells", layerId: "a", cells: [{ x: 0, y: 0, cell: makeCell(store.getOrAddPaletteIndex(t.id, 0)) }] });
-    const bytes = fixturePng(size,size), before = bytes.slice(), input = [{ doc: store.document, name: "native" }];
-    expect(preflightGodot(input, () => bytes)).toEqual([{ key: "godotExport.nativeSizeMismatch", params: { tileset: "Native", nativeWidth: size, nativeHeight: size, cellWidth: 32, cellHeight: 32 } }]);
-    expect(() => exportGodot(input, () => bytes)).toThrow("godotExport.nativeSizeMismatch");
-    expect(bytes).toEqual(before);
   });
 });
