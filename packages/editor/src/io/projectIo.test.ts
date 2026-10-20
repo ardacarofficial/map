@@ -124,7 +124,7 @@ describe("saveProject / loadProject", () => {
     for (const [path, bytes] of first.files) expect(second.files.get(path)).toEqual(bytes);
   });
 
-  it("does not rewrite unchanged tileset images, but writes changed ones", async () => {
+  it("never rewrites existing user source images from cached bytes", async () => {
     const fs = new MemoryFileSystem();
     const store = sampleStore();
     await save(fs, store.document);
@@ -140,7 +140,8 @@ describe("saveProject / loadProject", () => {
     BYTES.grass = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 4, 4, 4, 4]);
     try {
       await save(fs, store.document);
-      expect(writes.filter((p) => p.startsWith("tilesets/"))).toEqual(["tilesets/grass.png"]);
+      expect(writes.filter((p) => p.startsWith("tilesets/"))).toEqual([]);
+      expect(await fs.readBytes("tilesets/grass.png")).toEqual(PNG_GRASS);
     } finally {
       BYTES.grass = PNG_GRASS;
     }

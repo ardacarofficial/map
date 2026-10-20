@@ -330,6 +330,8 @@ export interface UpdateTilesetGridOp {
 export interface ReplaceTilesetImageOp {
   readonly type: "replaceTilesetImage";
   readonly tilesetId: string;
+  /** A separate immutable source revision; omitted keeps the current path. */
+  readonly imagePath?: string;
   readonly imageWidth: number;
   readonly imageHeight: number;
 }

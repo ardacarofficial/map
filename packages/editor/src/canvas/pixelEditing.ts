@@ -1,3 +1,4 @@
+import { capturedPixelHash } from '../state/pixelProvenance';
 import { t } from "../i18n";
 /** Pixel planning/COW boundary. No DOM, UI state, disk IO or live mutation until commit. */
 import {
@@ -184,7 +185,7 @@ export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: r
         reusedPatches.push({ assetId, tileId, ...rect, before: crop(owner.data), after: crop(after) });
         continue;
       } else {
-        const op = { type: 'allocateEditedTile', tileWidth: owner.width, tileHeight: owner.height, pixels: after, ...(o.tilesetId && o.original ? { source: { tilesetId: o.tilesetId, tileId: o.tileId!, pixelHash: rasterContentHash(o.original.width, o.original.height, o.original.data) } } : {}) } as const;
+        const op = { type: 'allocateEditedTile', tileWidth: owner.width, tileHeight: owner.height, pixels: after, ...(o.tilesetId && o.original ? { source: { tilesetId: o.tilesetId, tileId: o.tileId!, pixelHash: capturedPixelHash(rasterContentHash(o.original.width, o.original.height, o.original.data), ts!) } } : {}) } as const;
         scratch ??= detached(live);
         const slot = scratch.dispatch(op); assetId = slot.assetId; tileId = slot.tileId; originOps.push(op);
       }

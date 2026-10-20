@@ -1,3 +1,4 @@
+import { pngHash } from '../state/pngHash';
 import { isGeneratedAsset } from "@smap/core";
 /**
  * Tileset actions: the import card from every entry point, the settings
@@ -15,7 +16,6 @@ import { isGeneratedAsset } from "@smap/core";
  * {@link replaceTilesetImage}; the command palette has the same commands.
  */
 import {
-  gridCount,
   inferTileGrid,
   tilesetUsage,
   type MapDocument,
@@ -169,7 +169,9 @@ export async function applyTilesetGrid(tilesetId: string, spec: TileGridSpec): P
 // ------------------------------------------------------------------ replace image
 
 /** Earlier images of a tileset, so that undoing an image replacement shows the old pixels again. */
-const imageVersions = new Map<string, { bytes: Uint8Array; width: number; height: number }[]>();
+const imageVersions = new Map<string, { bytes: Uint8Array; width: number; height: number; imagePath: string }[]>();
+const imagePaths = new Map<string, string>();
+const seenImagePaths = new Map<string, string>();
 
 /**
  * "Görseli değiştir…": picks a PNG and makes it the tileset's image. Tiles
@@ -186,12 +188,14 @@ export async function replaceTilesetImage(tilesetId: string | null = currentTile
   if (!png) return false;
   const old = getTilesetImage(tilesetId);
   const { width, height } = png.bitmap;
+  const imagePath = `tilesets/image-${tilesetId}-${await pngHash(png.bytes)}.png`;
   let swapped = false;
   const outcome = await runProjectRegrid(tilesetId, (store) => {
-    const result = store.dispatch({ type: "replaceTilesetImage", tilesetId, imageWidth: width, imageHeight: height });
+    const result = store.dispatch({ type: "replaceTilesetImage", tilesetId, imageWidth: width, imageHeight: height, imagePath });
     // The new pixels go in right away (same grid, other image), before the levels follow.
-    if (old?.bytes) rememberImage(tilesetId, old.bytes, old.bitmap.width, old.bitmap.height);
+    if (old?.bytes) rememberImage(tilesetId, old.bytes, old.bitmap.width, old.bitmap.height, fixed!.imagePath);
     setTilesetImage({ tilesetId, bitmap: png.bitmap, bytes: png.bytes });
+    imagePaths.set(tilesetId, imagePath);
     swapped = true;
     return result;
   });
@@ -206,9 +210,9 @@ export async function replaceTilesetImage(tilesetId: string | null = currentTile
   return true;
 }
 
-function rememberImage(tilesetId: string, bytes: Uint8Array, width: number, height: number): void {
+function rememberImage(tilesetId: string, bytes: Uint8Array, width: number, height: number, imagePath: string): void {
   const list = imageVersions.get(tilesetId) ?? [];
-  list.push({ bytes, width, height });
+  list.push({ bytes, width, height, imagePath });
   if (list.length > 8) list.shift();
   imageVersions.set(tilesetId, list);
 }
@@ -217,23 +221,20 @@ function rememberImage(tilesetId: string, bytes: Uint8Array, width: number, heig
 function followImage(doc: MapDocument, tilesetId: string): void {
   const tileset = doc.getTileset(tilesetId);
   const current = getTilesetImage(tilesetId);
-  const list = imageVersions.get(tilesetId);
-  if (!tileset || !current?.bytes || !list) return;
-  const fits = (w: number, h: number) =>
-    gridCount(w, tileset.tileWidth, tileset.margin, tileset.spacing) === tileset.columns &&
-    gridCount(h, tileset.tileHeight, tileset.margin, tileset.spacing) === tileset.rows;
-  if (fits(current.bitmap.width, current.bitmap.height)) return;
-  let index = list.length - 1;
-  while (index >= 0 && !fits(list[index]!.width, list[index]!.height)) index--;
-  if (index < 0) return;
-  const [version] = list.splice(index, 1);
-  list.push({ bytes: current.bytes, width: current.bitmap.width, height: current.bitmap.height });
-  void decodePng(version!.bytes)
-    .then((bitmap) => {
-      if (getTilesetImage(tilesetId) === current) setTilesetImage({ tilesetId, bitmap, bytes: version!.bytes });
-      else bitmap.close();
-    })
-    .catch((error: unknown) => console.warn("Tileset image restore failed", error));
+  const list = imageVersions.get(tilesetId) ?? [];
+  if (!tileset || !current?.bytes || imagePaths.get(tilesetId) === tileset.imagePath) return;
+  const wantedPath = tileset.imagePath;
+  const version = list.find(v => v.imagePath === wantedPath);
+  const previousPath = imagePaths.get(tilesetId);
+  if (previousPath) rememberImage(tilesetId, current.bytes, current.bitmap.width, current.bitmap.height, previousPath);
+  const bytes = version ? Promise.resolve(version.bytes) : getProjectFolder()?.fs.readBytes(wantedPath);
+  if (!bytes) return;
+  void bytes.then(async bytes => ({ bytes, bitmap: await decodePng(bytes) })).then(({ bytes, bitmap }) => {
+    if (getTilesetImage(tilesetId) === current && activeStore()?.document.getTileset(tilesetId)?.imagePath === wantedPath) {
+      imagePaths.set(tilesetId, wantedPath);
+      setTilesetImage({ tilesetId, bitmap, bytes });
+    } else bitmap.close();
+  }).catch((error: unknown) => console.warn("Tileset image restore failed", error));
 }
 
 // ------------------------------------------------------------------ project-wide regrid
@@ -338,12 +339,14 @@ export function syncProject(): SyncStats {
   const regridded: { tilesetId: string; before: TileGrid; after: TileGrid }[] = [];
   for (const tileset of doc.tilesets) {
     const seen = seenGrids.get(tileset.id);
-    if (seen && !sameGrid(seen, tileset)) {
+    if (seen && (!sameGrid(seen, tileset) || seenImagePaths.get(tileset.id) !== tileset.imagePath)) {
       followImage(doc, tileset.id);
       notifyTilesetImage(tileset.id);
       regridded.push({ tilesetId: tileset.id, before: seen, after: gridCopy(tileset) });
     }
     seenGrids.set(tileset.id, gridCopy(tileset));
+    seenImagePaths.set(tileset.id, tileset.imagePath);
+    if (!imagePaths.has(tileset.id)) imagePaths.set(tileset.id, tileset.imagePath);
   }
   const lists = ws.history.replaying ? { levels: [] } : syncLevelLists(ws);
   const levels = ws.history.replaying ? { levels: [], clearedCells: 0, keptCells: 0 } : syncLevelGrids(ws);
@@ -426,11 +429,15 @@ function resetSync(): void {
   stampGrids.clear();
   stampRecords = [];
   imageVersions.clear();
+  imagePaths.clear();
+  seenImagePaths.clear();
   const doc = activeStore()?.document;
   if (!doc) return;
   for (const tileset of doc.tilesets) {
     seenGrids.set(tileset.id, gridCopy(tileset));
     stampGrids.set(tileset.id, gridCopy(tileset));
+    imagePaths.set(tileset.id, tileset.imagePath);
+    seenImagePaths.set(tileset.id, tileset.imagePath);
   }
 }
 

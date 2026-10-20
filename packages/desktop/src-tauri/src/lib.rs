@@ -93,6 +93,18 @@ async fn dir_has_entries(host: State<'_, Host>, path: String) -> Result<bool, Ho
     host.dir_has_entries(&path)
 }
 
+#[tauri::command]
+async fn replace_png_guarded(host: State<'_, Host>, request: Request<'_>) -> Result<(), HostError> {
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
+    let path = header(PATH_HEADER).and_then(percent_decode).ok_or_else(|| bad_input("missing x-smap-path header"))?;
+    let backup = header("x-smap-backup").and_then(percent_decode).ok_or_else(|| bad_input("missing x-smap-backup header"))?;
+    let length = header("x-smap-expected-length").and_then(|v| v.parse::<usize>().ok()).ok_or_else(|| bad_input("invalid expected length"))?;
+    match request.body() {
+        InvokeBody::Raw(bytes) if length <= bytes.len() => host.replace_png_guarded(&path, &backup, &bytes[..length], &bytes[length..]),
+        _ => Err(bad_input("expected original and replacement PNG bytes")),
+    }
+}
+
 // ---- ayar dosyası ---------------------------------------------------------
 // `settings.json` uygulama ayar klasöründe; yol webview'den gelmez.
 
@@ -426,6 +438,7 @@ pub fn run() {
             read_text,
             write_file_atomic,
             write_text_atomic,
+            replace_png_guarded,
             list_dir,
             create_dir_all,
             remove_file,

@@ -145,7 +145,15 @@ export async function saveProjectLevels(fs: ProjectFileSystem, input: SaveProjec
   const levelTexts = new Map<string, string>();
   const levelPaths = new Set([input.levelPath, ...(input.otherLevels ?? []).map((l) => l.path)]);
   const stampFiles = new Set((input.stamps ?? []).map((s) => stampPath(s.id)));
+  const sourcePaths = new Set(input.document.tilesets.filter(ts => !ts.generated && !ts.edited).map(ts => ts.imagePath));
   for (const file of projectFiles(input)) {
+    // Existing user sources belong to the disk, including external edits that
+    // the watcher has not delivered yet. Only confirmed PNG write-back may
+    // replace them. Imports and image replacements use new revision paths.
+    if (sourcePaths.has(file.path) && typeof file.data !== "string") {
+      try { await fs.readBytes(file.path); continue; }
+      catch (error) { if (!(error instanceof FileNotFoundError)) throw error; }
+    }
     const data = await resolveFileData(file.data);
     if (typeof data === "string") {
       // Unchanged stamp files are not rewritten (a library can hold many).

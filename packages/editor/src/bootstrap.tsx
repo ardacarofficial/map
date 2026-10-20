@@ -1,3 +1,5 @@
+import { registerPngWritebackCommands } from './commands/pixelWriteback';
+import { ApplyPngDialog } from './ui/pixel/ApplyPngDialog';
 import { registerMapBorderCommand } from "./commands/mapBorder";
 import { MapBorderDialog } from "./ui/dialogs/MapBorderDialog";
 import { installSmartStamps } from "./commands/smartStampCommands";
@@ -51,6 +53,7 @@ function Root() {
       <App />
       <SettingsDialog />
       <MapBorderDialog />
+      <ApplyPngDialog />
     </>
   );
 }
@@ -112,6 +115,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   registerSelectionPickCommands();
   registerTileReplacementCommand();
   registerMapBorderCommand();
+  registerPngWritebackCommands();
   registerRotateCommands(); // after the app commands: replaces edit.flipX / flipY with the random-aware version
   registerHandToolCommand();
   registerExportCommands();

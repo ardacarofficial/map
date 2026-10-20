@@ -1,3 +1,5 @@
+import { useSaveStatus } from '../../io/saveStatus';
+import { openPngWriteback } from '../../commands/pixelWriteback';
 /**
  * What can be done to a whole tileset: "Ayarlar… · Görseli değiştir… ·
  * Gruba taşı ▸ · Kaldır". The same items serve the "⋯" menu, the right
@@ -21,10 +23,13 @@ import { Icon } from "../primitives/Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass } from "../primitives/menuStyles";
 
 export function TilesetMenuItems({ tileset }: { tileset: Tileset }) {
+  const hasFolder = useSaveStatus(s => s.hasFolder);
   const groups = tilesetGroups();
   const current = tileset.group ?? null;
   return (
     <>
+      {tileset.edited && <Menu.Item className={menuItemClass} data-tileset-menu-item="apply-png" disabled={!hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => { void openPngWriteback(tileset.id); }}>{t('pngWriteback.apply')}</Menu.Item>}
+      {!tileset.generated && !tileset.edited && <Menu.Item className={menuItemClass} data-tileset-menu-item="restore-png" disabled={!hasFolder} title={!hasFolder ? t("pngWriteback.saveFirst") : undefined} onClick={() => { void openPngWriteback(undefined, 'restore', tileset.id); }}>{t('pngWriteback.restore')}</Menu.Item>}
       <Menu.Item className={menuItemClass} data-tileset-menu-item="rename" onClick={() => void promptRenameTileset(tileset.id)}>
         <Icon name="pencilLine" size={16} className="text-muted" />
         {t("tilesetEditing.rename")}
