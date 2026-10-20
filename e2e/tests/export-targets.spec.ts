@@ -133,7 +133,8 @@ test("engine and legacy folder targets include painted road and edited PNGs and 
     const store = useEditorStore.getState().project.store;
     const layer = store.document.layers.find((l: { type: string }) => l.type === "tile");
     const pixels = new Uint8Array(32 * 32 * 4).fill(255);
-    const slot = store.dispatch({ type: "allocateEditedTile", tileWidth: 32, tileHeight: 32, pixels });
+    const { t } = await import(/* @vite-ignore */ String("/src/i18n/index.ts"));
+    const slot = store.dispatch({ type: "allocateEditedTile", name: t("pixel.edited"), tileWidth: 32, tileHeight: 32, pixels });
     store.dispatch({ type: "remapCells", layerId: layer.id, cells: [{ x: 1, y: 1 }], tilesetId: slot.assetId, tileId: slot.tileId });
     const asset = store.rasterAssets.getAsset(slot.assetId);
     const canvas = new OffscreenCanvas(asset.width, asset.height);

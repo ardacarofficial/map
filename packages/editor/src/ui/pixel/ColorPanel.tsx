@@ -15,7 +15,7 @@ export function ColorPanel() {
   const pixel = usePixelUi(s => s.mode === 'pixel');
   const colors = usePixelColors(), target = useColorPanel(s => s.target);
   return <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2" data-color-panel>
-    <div className="flex items-center gap-2">{(['fg', 'bg'] as const).map(id => <Tooltip key={id} label={t(id === 'fg' ? 'pixel.foreground' : 'pixel.background')}><span><ColorSwatch color={colors[id]} label={t(id === 'fg' ? 'colorPanel.editFg' : 'colorPanel.editBg')} active={target === id} onClick={() => useColorPanel.setState({ target: id })} /></span></Tooltip>)}
+    <div className="flex items-center gap-2">{(['fg', 'bg'] as const).map(id => <ColorSwatch key={id} color={colors[id]} label={t(id === 'fg' ? 'colorPanel.editFg' : 'colorPanel.editBg')} active={target === id} onClick={() => useColorPanel.setState({ target: id })} />)}
       <Tooltip label={t('pixel.swap')} command="pixel.swap"><IconButton size="sm" disabled={!pixel} aria-label={t('pixel.swap')} onClick={() => runCommand('pixel.swap')}><Icon name="arrow-left-right" size={16} /></IconButton></Tooltip>
       <Tooltip label={t('pixel.reset')} command="pixel.reset"><IconButton size="sm" disabled={!pixel} aria-label={t('pixel.reset')} onClick={() => runCommand('pixel.reset')}><Icon name="rotate-ccw" size={16} /></IconButton></Tooltip>
       <span className="text-sm text-muted">{t(target === 'fg' ? 'pixel.foreground' : 'pixel.background')}</span>

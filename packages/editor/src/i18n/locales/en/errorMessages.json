@@ -1,0 +1,4 @@
+{
+  "unexpected": "The operation could not be completed. Check access permissions and available disk space, then try again.",
+  "invalidJson": "Check the JSON format: a quote, comma or bracket may be missing."
+}

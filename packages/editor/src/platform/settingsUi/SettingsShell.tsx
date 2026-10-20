@@ -1,3 +1,4 @@
+import { formatUiError } from "../errorMessages";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { loadExportSettings, updateExportSettings, type ExportSettings } from "../../export/exportSettings";
 import { useExportStore } from "../../export/exportStore";
@@ -41,7 +42,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
       if (!alive) { preview.cancel(); return; }
       session.current = preview;
       setText(editDraftSafe(preview.text, useDockStore.getState().layout));
-    }).catch(error => { if (alive) setError(t("settings.unreadable", { detail: String(error) })); });
+    }).catch(error => { if (alive) setError(t("settings.unreadable", { detail: formatUiError(error) })); });
     if (project) void loadExportSettings(project.name).then(settings => { if (alive) setExportSettings(settings); });
     return () => { alive = false; session.current?.cancel(); };
   // The world cannot change behind the modal; its starting identity owns export defaults.
@@ -66,7 +67,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
       if (exportSettings && Object.keys(exportPatch).length) { await updateExportSettings(exportSettings.project, exportPatch); useExportStore.getState().bump(); }
       if (!problems.length) toast.success(t("settings.saved"));
       onDone();
-    } catch (error) { setError(t(error instanceof SyntaxError ? "settings.invalidJson" : "settingsUi.saveFailed", { detail: error instanceof Error ? error.message : String(error) })); }
+    } catch (error) { setError(t(error instanceof SyntaxError ? "settings.invalidJson" : "settingsUi.saveFailed", { detail: formatUiError(error) })); }
     finally { setBusy(false); onBusyChange(false); }
   };
   let valid = true;

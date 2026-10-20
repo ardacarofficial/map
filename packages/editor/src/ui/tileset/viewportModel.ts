@@ -12,6 +12,18 @@ export function zoomViewport(v: ViewportTransform, scale: number, x: number, y: 
 }
 export const snapOrigin = (v: ViewportTransform, dpr: number): ViewportTransform => ({ ...v, x: Math.round(v.x * dpr) / dpr, y: Math.round(v.y * dpr) / dpr });
 
+/** Reconcile only against a usable viewport; preserve zoom and every reachable pan. */
+export function clampViewport(v: ViewportTransform, viewW: number, viewH: number, sourceW: number, sourceH: number): ViewportTransform {
+  if (!(viewW > 0 && viewH > 0)) return v;
+  const scale = Number.isFinite(v.scale) && v.scale > 0 ? Math.max(0.125, Math.min(16, v.scale)) : 1;
+  const axis = (position: number, viewport: number, source: number) => {
+    const extent = Math.max(0, source * scale);
+    const reachable = Math.min(32, extent, viewport);
+    return Math.max(reachable - extent, Math.min(viewport - reachable, Number.isFinite(position) ? position : 8));
+  };
+  return { scale, x: axis(v.x, viewW, sourceW), y: axis(v.y, viewH, sourceH) };
+}
+
 /** Reject source margins, gutters and all positions outside the sliced PNG. */
 export function sourceCellAt(ts: Pick<Tileset, "tileWidth" | "tileHeight" | "columns" | "rows" | "margin" | "spacing">, point: { x: number; y: number }) {
   const x = point.x - ts.margin;

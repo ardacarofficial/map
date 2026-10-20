@@ -157,7 +157,8 @@ test("delayed load keeps sidebar focus; write failure and in-flight save retain 
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toBeVisible();
   await expect.poll(() => page.evaluate(() => typeof (window as unknown as { finishSettingsWrite?: unknown }).finishSettingsWrite)).toBe("function");
   await page.evaluate(() => (window as unknown as { finishSettingsWrite(): void }).finishSettingsWrite());
-  await expect(page.getByRole("alert")).toContainText("test disk full");
+  await expect(page.getByRole("alert")).toContainText("Check access permissions and available disk space");
+  await expect(page.getByRole("alert")).not.toContainText("test disk full");
   await expect(page.locator("#settings-locale")).toHaveValue("en");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "tr");
@@ -258,4 +259,27 @@ test("export default target and registry options persist into the export dialog"
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Dışa aktar", exact: true }).click();
   await expect(page.getByRole("radio", { name: "Godot 4", exact: true })).toBeChecked();
+});
+
+test("settings read and write errors show localized guidance without native exceptions", async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async path => {
+    const { getPlatform, setPlatform } = await import(/* @vite-ignore */ path);
+    const platform = getPlatform();
+    setPlatform({ ...platform, readSettings: async () => { throw Error('private native read failure'); } });
+  }, '/src/platform/index.ts');
+  await page.keyboard.press('Control+k'); await page.locator('[id="command-settings.editShortcuts"]').click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Ayar dosyası okunamadı');
+  await expect(alert).not.toContainText('private'); await expect(alert).not.toContainText('Error:');
+  await page.keyboard.press('Escape');
+  await page.evaluate(async path => {
+    const { getPlatform, setPlatform } = await import(/* @vite-ignore */ path);
+    setPlatform({ ...getPlatform(), readSettings: async () => '{}', writeSettings: async () => { throw Error('private native write failure'); } });
+  }, '/src/platform/index.ts');
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Kaydet ve uygula', exact: true }).click();
+  await expect(alert).toContainText('Ayarlar kaydedilemedi');
+  await expect(alert).not.toContainText('private'); await expect(alert).not.toContainText('Error:');
+  await expect(page.getByRole('dialog')).toBeVisible();
 });

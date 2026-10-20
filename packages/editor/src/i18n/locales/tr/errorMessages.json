@@ -1,0 +1,4 @@
+{
+  "unexpected": "İşlem tamamlanamadı. Erişim izinlerini ve kullanılabilir disk alanını kontrol edip yeniden deneyin.",
+  "invalidJson": "JSON biçimini kontrol edin: tırnak, virgül veya parantez eksik olabilir."
+}
