@@ -128,3 +128,19 @@ test("an occupied MCP port reports failure instead of selecting a different port
   const { host } = await setup();
   await expect(startDevMcp({ port: host.port, token: "another-token" })).rejects.toMatchObject({ code: "EADDRINUSE" });
 });
+
+test("token rotation rejects an initialize whose authenticated body is still arriving (#4)", async () => {
+  const {host}=await setup();
+  const body=JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-11-25",capabilities:{},clientInfo:{name:"delayed",version:"1"}}});
+  let finish!:()=>void;
+  const response=new Promise<number|undefined>((resolve,reject)=>{
+    const req=request(host.url,{method:"POST",headers:{Authorization:"Bearer private-token","Content-Type":"application/json",Accept:"application/json, text/event-stream","Content-Length":Buffer.byteLength(body)}},res=>{res.resume();resolve(res.statusCode);});
+    req.on("error",reject);req.write(body.slice(0,1));finish=()=>req.end(body.slice(1));
+  });
+  // Round trip another connection while the first request waits for its body.
+  await fetch(host.url,{headers:{Authorization:"Bearer private-token"}});
+  host.setToken("replacement-token");finish();
+  expect(await response).toBe(401);expect(host.sessionCount).toBe(0);
+  const fresh=await fetch(host.url,{method:"POST",headers:{Authorization:"Bearer replacement-token","Content-Type":"application/json",Accept:"application/json, text/event-stream"},body});
+  expect(fresh.status).toBe(200);expect(host.sessionCount).toBe(1);
+});

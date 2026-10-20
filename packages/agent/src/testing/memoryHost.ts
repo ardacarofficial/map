@@ -619,7 +619,7 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
       },
     },
     smartSources: {
-      prepare: async (a, call) => {
+      prepare: async (a, call, reserve) => {
         call.signal.throwIfAborted();
         const store = await getStore(a.mapId);
         let stamp: Stamp;
@@ -795,9 +795,11 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
           stamp,
           tilesets: preparedTilesets,
         };
+        reserve?.(prepared.retainedBytes);
         sourceVersions.set(prepared, fingerprint);
         return prepared;
       },
+      discard: (source) => { sources.delete(source.sourceId); },
       get: (id) => sources.get(id),
       assertCurrent: (s) => {
         const signature = hashCanonical([

@@ -44,3 +44,28 @@ describe("independent AI tags persistence",()=>{
     expect(()=>parseTagsSidecar(JSON.stringify({...empty,tiles:[{tilesetId:"a",tileId:0,fingerprint:fp,tags:[],note:""},{tilesetId:"a",tileId:0,fingerprint:fp,tags:[],note:""}]}))).toThrow();
   });
 });
+
+it.each([
+  ['futureVersion', '{"format":"smap-ai-tags","tagFormatVersion":7,"keep":"future"}'],
+  ['malformed', '{broken external bytes'],
+  ['conflict', serializeTagsSidecar({format:"smap-ai-tags",tagFormatVersion:1,tiles:[],stamps:[]})],
+])("checks external %s bytes at the queued write boundary (#3)", async (_reason, external) => {
+  const fs=new MemoryFileSystem(),tags=port(fs);await tags.reload();await tags.set(args,call);
+  await fs.writeText("ai-tags.json",external);
+  await expect(tags.flush()).rejects.toMatchObject({code:"DISK_CONFLICT"});
+  expect(await fs.readText("ai-tags.json")).toBe(external);
+  await tags.flush();expect(await fs.readText("ai-tags.json")).toBe(external);tags.dispose();
+});
+
+it("rechecks disk after a preceding queued write finishes (#3)", async () => {
+  const fs=new MemoryFileSystem(),tags=port(fs);await tags.reload();
+  let resume!:()=>void,entered!:()=>void;
+  const gate=new Promise<void>(resolve=>{resume=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
+  const write=fs.writeText.bind(fs);
+  vi.spyOn(fs,"writeText").mockImplementationOnce(async(path,text)=>{await write(path,text);entered();await gate;});
+  await tags.set(args,call);const first=tags.flush();await started;
+  await tags.set({...args,entries:[{...args.entries[0]!,tags:["second"]}]},call);const second=tags.flush();
+  const external='{"format":"smap-ai-tags","tagFormatVersion":9,"keep":"external"}';await write("ai-tags.json",external);
+  const rejected=expect(second).rejects.toMatchObject({code:"DISK_CONFLICT"});resume();await first;await rejected;
+  expect(await fs.readText("ai-tags.json")).toBe(external);tags.dispose();
+});

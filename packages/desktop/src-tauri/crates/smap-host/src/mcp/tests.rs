@@ -179,10 +179,6 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         assert_eq!(body["result"]["serverInfo"]["name"], "harita");
     }
     assert_eq!(
-        h.init("2099-01-01").await.json::<Value>().await.unwrap()["error"]["code"],
-        -32602
-    );
-    assert_eq!(
         h.post(json!({"jsonrpc":"2.0","id":2,"method":"ping"}))
             .send()
             .await
@@ -897,4 +893,49 @@ async fn config_admission_pause_blocks_reconnects_and_tool_calls() {
         .await
         .unwrap();
     assert_eq!(result["result"]["structuredContent"]["code"], "TIMEOUT");
+}
+
+#[tokio::test]
+async fn unsupported_version_negotiates_fallback_and_enforces_selected_header() {
+    let h = Harness::new().await;
+    let res = h.init("2099-01-01").await;
+    let session = res.headers()["Mcp-Session-Id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        res.json::<Value>().await.unwrap()["result"]["protocolVersion"],
+        "2025-11-25"
+    );
+    assert_eq!(
+        h.message(
+            &session,
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+        )
+        .send()
+        .await
+        .unwrap()
+        .status(),
+        202
+    );
+    assert_eq!(
+        h.post(json!({"jsonrpc":"2.0","id":2,"method":"ping"}))
+            .header("Mcp-Session-Id", &session)
+            .header("MCP-Protocol-Version", "2025-06-18")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(
+        h.message(&session, json!({"jsonrpc":"2.0","id":3,"method":"ping"}))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()["result"],
+        json!({})
+    );
 }

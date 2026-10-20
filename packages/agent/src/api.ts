@@ -449,6 +449,11 @@ export function createAgentApi(host: AgentHost): AgentApi {
       queued++;
       perClient.set(call.clientSessionId, count + 1);
       const signal = new CallSignal();
+      signal.onAbort(() => {
+        if (active === signal && writes.has(call.name as ToolName) &&
+            tx.pending?.summary.owner.clientSessionId === call.clientSessionId)
+          tx.seal("stopped");
+      });
       const off = call.signal.onAbort(() => signal.abort());
       const timeout =
         call.name === "begin_edit"

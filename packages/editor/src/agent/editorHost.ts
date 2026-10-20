@@ -3,6 +3,7 @@ import { createDocument, BUILTIN_ENTITY_TYPES, isBuiltinEntityTypeId, type Proje
 import { getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
+import { onTilesetImage, tilesetImageRevision } from "../state/tilesetImages";
 import { usePixelUi } from "../state/pixelUi";
 import { modalOpen } from "../commands/modal";
 import { useUiStore } from "../ui/uiStore";
@@ -24,14 +25,15 @@ export function createEditorHost(): EditorAgentHost {
   const provisional=new Set<string>(),preparedLevels=new WeakMap<PreparedAgentMap,ProjectLevel>();
   const workspace=()=>{const ws=getLevelWorkspace();if(!ws)throw new AgentError(AgentErrorCode.NO_WORLD,"No open world");return ws;};
   const contentRevision=()=>{
-    const ws=getLevelWorkspace(),signature=JSON.stringify([getAgentWorldSessionId(),ws?.contentRevision??0,useProjectLibrary.getState().revision]);
+    const ws=getLevelWorkspace(),signature=JSON.stringify([getAgentWorldSessionId(),ws?.contentRevision??0,useProjectLibrary.getState().revision,tilesetImageRevision()]);
     if(signature!==lastSignature){lastSignature=signature;revision++;}return revision;
   };
   const subscribeContent=(listener:()=>void)=>{
     let observed=getLevelWorkspace(),off=observed?.subscribeContent(listener);
     const offEditor=useEditorStore.subscribe(()=>{const next=getLevelWorkspace();if(next!==observed){off?.();observed=next;off=next?.subscribeContent(listener);listener();}});
     const offLibrary=useProjectLibrary.subscribe((s,p)=>{if(s.revision!==p.revision)listener();});
-    return()=>{off?.();offEditor();offLibrary();};
+    const offImages=onTilesetImage(listener);
+    return()=>{off?.();offEditor();offLibrary();offImages();};
   };
   const world:AgentWorldPort={
     maps:()=>{

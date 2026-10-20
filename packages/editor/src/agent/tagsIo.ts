@@ -54,11 +54,20 @@ export function createTagsPort(deps:{world:AgentWorldPort;images:AgentImagePort;
     await ready();if(!dirty||state.state!=="ready")return queue;
     const fs=deps.folder(),epoch=worldId;if(!fs)return;
     const text=serializeTagsSidecar(state.sidecar);dirty=false;
-    queue=queue.catch(()=>{}).then(async()=>{
-      if(epoch!==deps.worldId())return;
-      try{await fs.writeText("ai-tags.json",text);if(epoch===deps.worldId())known=text;}
-      catch(error){if(epoch===deps.worldId())dirty=true;throw error;}
-    });return queue;
+    const write=queue.then(async()=>{
+      if(epoch!==deps.worldId()||fs!==deps.folder())return;
+      try{
+        let current:string|null=null;
+        try{current=await fs.readText("ai-tags.json");}catch(error){if(!(error instanceof FileNotFoundError))throw error;}
+        if(epoch!==deps.worldId()||fs!==deps.folder())return;
+        if(current!==known){
+          dirty=false;await reload();
+          throw new AgentError(AgentErrorCode.DISK_CONFLICT,"AI tags changed on disk before writing");
+        }
+        await fs.writeText("ai-tags.json",text);if(epoch===deps.worldId())known=text;
+      }catch(error){if(epoch===deps.worldId()&&!(error instanceof AgentError&&error.code===AgentErrorCode.DISK_CONFLICT))dirty=true;throw error;}
+    });
+    queue=write.catch(()=>{});return write;
   }
   const fingerprint=async(target:TagTarget,call:Parameters<AgentTagsPort["get"]>[1])=>target.kind==="tile"?deps.images.tileFingerprint(target.tilesetId,target.tileId,call.signal):deps.images.stampFingerprint(target.stampId,call.signal);
   return {
@@ -70,7 +79,7 @@ export function createTagsPort(deps:{world:AgentWorldPort;images:AgentImagePort;
       let destination:string|null=null;
       try{destination=await fs.readText("ai-tags.json");}catch(error){if(!(error instanceof FileNotFoundError))throw error;}
       if(destination!==null){try{parseTagsSidecar(destination);}catch{await reload();return;}}
-      dirty=true;await flush();
+      known=destination;dirty=true;await flush();
     },
     subscribe(cb){listeners.add(cb);return()=>{listeners.delete(cb);};},
     dispose(){if(timer)clearTimeout(timer);listeners.clear();},

@@ -845,10 +845,14 @@ async fn handle(
             return error(id, -32600, "Invalid initialize");
         }
         let params = &message["params"];
-        let version = params["protocolVersion"].as_str().unwrap_or("");
-        if !VERSIONS.contains(&version) {
-            return error(id, -32602, "Unsupported protocol version");
-        }
+        let Some(requested_version) = params["protocolVersion"].as_str() else {
+            return error(id, -32602, "Invalid protocol version");
+        };
+        let version = if VERSIONS.contains(&requested_version) {
+            requested_version
+        } else {
+            VERSIONS[0]
+        };
         if !params["clientInfo"]["name"].is_string()
             || !params["clientInfo"]["version"].is_string()
             || !params["capabilities"].is_object()

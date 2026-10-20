@@ -87,3 +87,22 @@ test("pending AI work blocks manual paint, preserves camera pan, and stays visib
     await expect(page.locator("[data-ai-bar]")).toBeHidden();
   } finally { await client.close(); }
 });
+
+for (const phase of ["running", "stopped", "awaitingApproval"] as const) test(`manual tags remain editable during ${phase} AI edits (#10)`, async ({ page }) => {
+  const client = await setup(page);
+  try {
+    const grid = page.locator("[data-tileset-grid]").first(), scale = Number(await grid.getAttribute("data-tileset-scale"));
+    await grid.click({ position: { x: 16 * scale, y: 16 * scale } });
+    const edit = await begin(client);
+    if (phase === "stopped") await page.locator("[data-ai-bar]").getByRole("button", { name: "Durdur", exact: true }).click();
+    if (phase === "awaitingApproval") success(await client.callTool("finish_edit", { context: edit.context }));
+    await page.locator('[data-inspector-section="ai-tags"]').getByRole("button").click();
+    const dialog = page.locator('[data-dialog="ai-tags"]'), words = dialog.locator("#ai-tag-words");
+    await expect(words).toBeEnabled(); await words.fill(`review-${phase}`);
+    await dialog.getByRole("button", { name: "Kaydet", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await page.locator("[data-ai-bar]").getByRole("button", { name: "Vazgeç", exact: true }).click();
+    const tags = success(await client.callTool("get_tags", { context: { worldSessionId: edit.context.worldSessionId }, tilesetId: edit.tilesetId, status: "all" }));
+    expect(tags.data.items.some(item => item.tags.includes(`review-${phase}`))).toBe(true);
+  } finally { await client.close(); }
+});

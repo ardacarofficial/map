@@ -280,7 +280,9 @@ export interface AgentImagePort {
 export interface PreparedSmartSource { sourceId: Id; transactionId: Id; mapId: Id; band: number; usages: SmartUsage[]; detectorVersion: number; fingerprint: string; forced: boolean; generatedTilesetIds: Id[]; layerMapping: LayerMapping[]; retainedBytes: number; stamp: Stamp; tilesets: readonly Tileset[] }
 /** Preparation must stage assets; publication is synchronous under the transaction's edit lease. */
 export interface AgentSmartSourcePort {
-  prepare(args: PrepareSmartSourceArgs, call: AgentCallContext): Promise<PreparedSmartSource>;
+  prepare(args: PrepareSmartSourceArgs, call: AgentCallContext, reserve?: (retainedBytes: number) => void): Promise<PreparedSmartSource>;
+  /** Release a private preparation rejected before publication. */
+  discard(source: PreparedSmartSource): void;
   get(sourceId: Id): PreparedSmartSource | undefined;
   assertCurrent(source: PreparedSmartSource): void;
   publish(source: PreparedSmartSource): void;

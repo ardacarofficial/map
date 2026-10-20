@@ -51,7 +51,8 @@ export function tilesetPngSource(id: string): PngBytes | undefined {
 }
 
 /** World lifetime is independent of the active map/store. */
-let worldVersion = 0;
+let worldVersion = 0, imageRevision = 0;
+export function tilesetImageRevision(): number { return imageRevision; }
 export function tilesetWorldVersion(): number { return worldVersion; }
 export interface SourceVersion { readonly content: string; readonly grid: string }
 const contentVersions = new WeakMap<TilesetImage, string>();
@@ -117,6 +118,7 @@ export function setTilesetImage(image: TilesetImage, pixelRects?: readonly Pixel
   if (!pixelRects) imageContentVersion(image);
   if(previous){retired.add(previous);closeImage(previous);}
   images.set(image.tilesetId, image);
+  imageRevision++;
   // Start provenance hashing alongside image publication, before a user picks a smart source.
   if (image.bytes) void pngHash(image.bytes).catch(() => {});
   for (const l of listeners) l(image.tilesetId, pixelRects);
@@ -124,6 +126,7 @@ export function setTilesetImage(image: TilesetImage, pixelRects?: readonly Pixel
 
 export function clearTilesetImages(): void {
   worldVersion++;
+  imageRevision++;
   pendingFileSources.clear();
   for (const img of images.values()) { retired.add(img); closeImage(img); }
   images.clear();
@@ -142,8 +145,9 @@ export function onTilesetImage(listener: Listener): () => void {
  */
 export function notifyTilesetImage(tilesetId: string): void {
   if (!images.has(tilesetId)) return;
+  imageRevision++;
   for (const l of listeners) l(tilesetId);
 }
 
 /** Releases a staged asset when an atomic bake fails. */
-export function removeTilesetImage(id: string): void { pendingFileSources.delete(id); const image=images.get(id);if(image){retired.add(image);closeImage(image);}images.delete(id);for(const l of listeners)l(id); }
+export function removeTilesetImage(id: string): void { imageRevision++; pendingFileSources.delete(id); const image=images.get(id);if(image){retired.add(image);closeImage(image);}images.delete(id);for(const l of listeners)l(id); }

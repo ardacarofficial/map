@@ -67,3 +67,17 @@ describe("transaction-owned smart sources",()=>{
     expect(atlas!.bitmap.close).toHaveBeenCalledOnce();expect(ws.active.store.document.tilesets).toHaveLength(1);
   });
 });
+
+it.each(["approved", "cancelled"] as const)("closes unpublished preparations on %s (#7)", async outcome => {
+  const {host,ws}=await setup();
+  const source=await host.smartSources.prepare({context:{transactionId:"private"},mapId:ws.activeId,source:{stampId:"road"},force:true} as PrepareSmartSourceArgs,call);
+  const image=await vi.mocked(bakeSmartStamp).mock.results[0]!.value;
+  host.smartSources.releaseTransaction("private",outcome);
+  expect(image.bitmap.close).toHaveBeenCalledOnce();expect(host.smartSources.get(source.sourceId)).toBeUndefined();
+});
+it("reserves all estimated atlas memory before the first bake (#7)", async () => {
+  const {host,ws}=await setup();
+  const reserve=vi.fn((_bytes:number)=>{throw Error("No budget");});
+  await expect(host.smartSources.prepare({context:{transactionId:"private"},mapId:ws.activeId,source:{stampId:"road"},force:true} as PrepareSmartSourceArgs,call,reserve)).rejects.toThrow("No budget");
+  expect(reserve).toHaveBeenCalledOnce();expect(reserve.mock.calls[0]![0]).toBeGreaterThan(0);expect(bakeSmartStamp).not.toHaveBeenCalled();
+});

@@ -560,7 +560,7 @@ export class Transactions {
   ): void {
     const p = this.pending!;
     p.timer();
-    this.host.smartSources.releaseTransaction(p.summary.id, outcome);
+    this.run(() => this.host.smartSources.releaseTransaction(p.summary.id, outcome));
     for (const m of p.participants.values()) {
       m.lease.release();
       m.pin();

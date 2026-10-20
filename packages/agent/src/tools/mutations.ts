@@ -816,27 +816,37 @@ async function prepare(
       );
     }
   }
-  const source = await waitFor(
-    tx.host.smartSources.prepare(a, call),
-    call.signal,
-  );
-  tx.owned(a.context, call);
-  await tx.enlistCached(call);
-  tx.owned(a.context, call);
-  tx.host.smartSources.assertCurrent(source);
-  check(
-    source.transactionId === tx.pending!.summary.id && source.mapId === a.mapId,
-    E.SOURCE_CHANGED,
-    "Foreign prepared source",
-  );
-  tx.charge(0, source.retainedBytes);
-  // Host publication stages metadata/assets. Map additions themselves remain store operations.
-  tx.run(() => {
-    for (const ts of source.tilesets)
-      if (!store.document.getTileset(ts.id))
-        store.dispatch({ type: "addTileset", tileset: ts, undoable: true });
-    tx.host.smartSources.publish(source);
+  const preparation = tx.host.smartSources.prepare(a, call, bytes => {
+    call.signal.throwIfAborted();
+    tx.owned(a.context, call);
+    tx.charge(0, bytes);
+  }).then(source => {
+    try { call.signal.throwIfAborted(); return source; }
+    catch (error) { tx.host.smartSources.discard(source); throw error; }
   });
+  const source = await waitFor(preparation, call.signal);
+  try {
+    tx.owned(a.context, call);
+    await tx.enlistCached(call);
+    tx.owned(a.context, call);
+    tx.host.smartSources.assertCurrent(source);
+    check(
+      source.transactionId === tx.pending!.summary.id && source.mapId === a.mapId,
+      E.SOURCE_CHANGED,
+      "Foreign prepared source",
+    );
+    tx.charge(0, source.retainedBytes);
+    // Host publication stages metadata/assets. Map additions themselves remain store operations.
+    tx.run(() => {
+      for (const ts of source.tilesets)
+        if (!store.document.getTileset(ts.id))
+          store.dispatch({ type: "addTileset", tileset: ts, undoable: true });
+      tx.host.smartSources.publish(source);
+    });
+  } catch (error) {
+    tx.host.smartSources.discard(source);
+    throw error;
+  }
   tx.pending!.sources.push(source);
   const result = change(a.mapId, store);
   tx.record(result, source.retainedBytes);

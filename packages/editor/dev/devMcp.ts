@@ -34,7 +34,7 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
 
 /** JSON-only Streamable HTTP, matching approved O3/O4 (GET intentionally returns 405). */
 export async function startDevMcp(options: DevMcpOptions) {
-  let token = options.token;
+  let token = options.token, tokenGeneration = 0;
   if (!token || /\s/.test(token)) throw new Error("Invalid MCP token");
   const now = options.now ?? Date.now;
   const pages = new Map<string, Page>(), sessions = new Map<string, Session>(), pending = new Map<string, Pending>();
@@ -62,6 +62,7 @@ export async function startDevMcp(options: DevMcpOptions) {
     });
   }
   async function handle(req: IncomingMessage, res: ServerResponse) {
+    const authenticatedGeneration = tokenGeneration;
     // Check credentials before reading any body, including oversized unauthorized traffic.
     if (headerCount(req, "authorization") !== 1 || !sameSecret(req.headers.authorization ?? "", `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
     if (headerCount(req, "host") !== 1 || req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "Invalid Host" });
@@ -89,6 +90,7 @@ export async function startDevMcp(options: DevMcpOptions) {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of req) { size += chunk.length; if (size > BODY_LIMIT) return send(res, 413); chunks.push(Buffer.from(chunk)); }
+    if (authenticatedGeneration !== tokenGeneration) return send(res, 401, { error: "Credentials revoked" });
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return send(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
     if (!depth(body)) return send(res, 413);
@@ -161,7 +163,7 @@ export async function startDevMcp(options: DevMcpOptions) {
       } else call.finish(failure(reply.error.code, reply.error.message));
       return true;
     },
-    setToken(next: string) { for (const session of [...sessions.values()]) control(session, "tokenRegenerated"); token = next; },
+    setToken(next: string) { tokenGeneration++; for (const session of [...sessions.values()]) control(session, "tokenRegenerated"); token = next; },
     close() {
       return closing ??= (async () => {
         clearInterval(timer);

@@ -16,7 +16,7 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
   };
   return {
     get:id=>records.get(id)?.source,assertCurrent,
-    async prepare(args,call){
+    async prepare(args,call,reserve){
       const store=await world.loadMap(args.mapId);call.signal.throwIfAborted();
       let stamp:Stamp;
       let forced:boolean;
@@ -59,16 +59,22 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
       }
       // Each action owns fresh banks; cancelling cannot retire a previous action's bitmap.
       const targets=new Map(stamp.layers.filter(layer=>!layer.grid).map((layer,i)=>[layer.layerId,`agent-${crypto.randomUUID()}-${i}`]));
-      const prepared=await prepareSmartStamp(stamp,undefined,targets,undefined,undefined,store.document.map,{store,recipes:useProjectLibrary.getState().generatedRecipes});
+      let estimatedBytes=0;
+      const prepared=await prepareSmartStamp(stamp,undefined,targets,undefined,undefined,store.document.map,{store,recipes:useProjectLibrary.getState().generatedRecipes,reserve(bytes){estimatedBytes=bytes;reserve?.(bytes);}});
+      const sourceId=crypto.randomUUID();
       try{
         call.signal.throwIfAborted();
-        const source:PreparedSmartSource={sourceId:crypto.randomUUID(),transactionId:args.context.transactionId,mapId:args.mapId,band:prepared.stamp.nineSlice!.border,
+        const source:PreparedSmartSource={sourceId,transactionId:args.context.transactionId,mapId:args.mapId,band:prepared.stamp.nineSlice!.border,
           usages:prepared.stamp.nineSlice?.road?["area","road"]:["area"],detectorVersion:NINE_SLICE_DETECTOR_VERSION,
           fingerprint:await pngHash(new TextEncoder().encode(JSON.stringify([...prepared.sources]))),forced,generatedTilesetIds:prepared.assets.map(a=>a.tileset.id),
-          layerMapping,retainedBytes:prepared.assets.reduce((n,a)=>n+a.image.bitmap.width*a.image.bitmap.height*4,0),stamp:prepared.stamp,tilesets:prepared.assets.map(a=>a.tileset)};
+          layerMapping,retainedBytes:Math.max(estimatedBytes,prepared.assets.reduce((n,a)=>n+a.tileset.columns*a.tileset.rows*a.tileset.tileWidth*a.tileset.tileHeight*4+(a.image.bytes?.byteLength??0),0)),stamp:prepared.stamp,tilesets:prepared.assets.map(a=>a.tileset)};
         call.signal.throwIfAborted();
         records.set(source.sourceId,{source,prepared,published:false});assertCurrent(source);return source;
-      }catch(error){discardSmartStamp(prepared);throw error;}
+      }catch(error){records.delete(sourceId);discardSmartStamp(prepared);throw error;}
+    },
+    discard(source){
+      const record=records.get(source.sourceId);
+      if(record&&!record.published){records.delete(source.sourceId);discardSmartStamp(record.prepared);}
     },
     publish(source){
       assertCurrent(source);const record=records.get(source.sourceId)!;
@@ -81,7 +87,7 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
     },
     releaseTransaction(id,outcome){
       for(const [sourceId,record]of records)if(record.source.transactionId===id){
-        if(outcome==="cancelled")for(const asset of record.prepared.assets){if(record.published&&getTilesetImage(asset.tileset.id)===asset.image)removeTilesetImage(asset.tileset.id);else if(!record.published)asset.image.bitmap.close();}
+        if(outcome==="cancelled"||!record.published)for(const asset of record.prepared.assets){if(record.published&&getTilesetImage(asset.tileset.id)===asset.image)removeTilesetImage(asset.tileset.id);else if(!record.published)asset.image.bitmap.close();}
         // Approved images remain retained for ordinary undo/redo and save from another tab.
         records.delete(sourceId);
       }
