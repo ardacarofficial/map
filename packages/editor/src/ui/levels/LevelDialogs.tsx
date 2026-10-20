@@ -42,23 +42,28 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
   const defaults = useProjectLibrary.getState().settings;
   const [width, setWidth] = useState(String(defaults.newLevel.width));
   const [height, setHeight] = useState(String(defaults.newLevel.height));
-  const [tile, setTile] = useState(String(useLevelUi.getState().newLevelTileSize ?? defaults.tileWidth));
+  const [sourceGrid] = useState(useLevelUi.getState().newLevelGrid);
+  const [tile, setTile] = useState(String(sourceGrid?.tileWidth ?? defaults.tileWidth));
+  const [tileHeight, setTileHeight] = useState(String(sourceGrid?.tileHeight ?? defaults.tileHeight));
   const [touched, setTouched] = useState(false);
 
   const w = parseIntInRange(width, MAP_MIN, MAP_MAX);
   const h = parseIntInRange(height, MAP_MIN, MAP_MAX);
   const ts = parseIntInRange(tile, TILE_MIN, TILE_MAX);
+  const th = parseIntInRange(tileHeight, TILE_MIN, TILE_MAX);
   const nameOk = name.trim().length > 0;
-  const valid = nameOk && w !== null && h !== null && ts !== null;
+  const valid = nameOk && w !== null && h !== null && ts !== null && (!sourceGrid || th !== null);
   const mapErr = t("newProject.errSize", { min: MAP_MIN, max: MAP_MAX });
-  const tilesetSize = useLevelUi.getState().newLevelTileSize ?? doc?.tilesets[0]?.tileWidth;
+  const tilesetSize = sourceGrid?.tileWidth ?? doc?.tilesets[0]?.tileWidth;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (!valid) return;
     onDone();
-    void createLevel({ name: name.trim(), width: w, height: h, tileSize: ts });
+    void createLevel({ name: name.trim(), width: w, height: h, ...(sourceGrid
+      ? { tileWidth: ts, tileHeight: th! }
+      : { tileSize: ts }) });
   };
 
   return (
@@ -105,6 +110,16 @@ function NewLevelForm({ onDone }: { onDone(): void }) {
             numeric
             error={(touched || tile !== "") && ts === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}
           />
+          {sourceGrid && (
+            <LevelField
+              label={t("tilesetImport.tileHeight")}
+              value={tileHeight}
+              onChange={setTileHeight}
+              unit={t("newProject.pxUnit")}
+              numeric
+              error={(touched || tileHeight !== "") && th === null ? t("newProject.errSize", { min: TILE_MIN, max: TILE_MAX }) : null}
+            />
+          )}
           {tilesetSize !== undefined && ts !== null && ts !== tilesetSize && (
             <span className="text-xs text-warning">{t("levels.tileSizeDiffers", { size: tilesetSize })}</span>
           )}

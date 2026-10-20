@@ -7,7 +7,7 @@ import { roadPixels } from '../../editor/src/commands/roadPixels.testHelper';
 import type { Stamp, Tileset } from '../../core/src/index';
 import type { ToolHost } from '../../editor/src/canvas/toolController';
 import type * as BakeModule from '../../editor/src/ui/stamps/smartStampBake';
-import { serializeStamp, parseStamp, serializeLevel, applySmartStampRoad, roadMembership } from '../../core/src/index';
+import { serializeStamp, parseStamp, serializeLevel, applySmartStampRoad, roadMembership, normalizeProjectSettings } from '../../core/src/index';
 import { browserPlatform, setPlatform, getPlatform } from '../../editor/src/platform/index';
 import { newProject, addDecodedTilesets, autosaveNow, installSession, closeProject, getLevelWorkspace, openLevel, saveCurrentProject, openProjectFromPicker } from '../../editor/src/io/session';
 import { reloadTilesetImage, installFileChangeHandling } from '../../editor/src/platform/fileChanges';
@@ -20,6 +20,8 @@ import { saveClipAsStamp } from '../../editor/src/ui/tileset/SelectionSection';
 import { commitTilesetSelection } from '../../editor/src/ui/tileset/tilesetSelect';
 import { useToastStore } from '../../editor/src/ui/toast/toastStore';
 import { bakeSmartStamp } from '../../editor/src/ui/stamps/smartStampBake';
+import { remedyBrushGrid, adoptMapGrid } from '../../editor/src/commands/smartBrushGrid';
+import { createLevel, useLevelUi, openNewLevelDialog } from '../../editor/src/commands/levelActions';
 import { FileNotFoundError } from '../../editor/src/io/fs';
 /* Baseline reproduction evidence (36cd32b / v0.12.0), before these fixed-behavior assertions:
  * - source16/map32 never called bakeSmartStamp; waiting/saving reported
@@ -219,3 +221,37 @@ it('regenerates a published native16 bank while map32 is active, keeping paintin
  expect(await openLevel(oldLevel)).toBe(true);await waitForSelectionBrush(saved);
  expect(useEditorStore.getState().project!.store.document.layers[0]!.getCell(4,4)).not.toBe(0);
 },20_000);
+
+// Review #1: a source grid is an explicit override, independent of future-map defaults.
+it.each([{ tileWidth: 16, tileHeight: 16 }, { tileWidth: 16, tileHeight: 24 }])('new-map remedy preserves source $tileWidth × $tileHeight with rectangular world defaults', async grid => {
+ await newProject({name:'Rectangular defaults',width:24,height:20,tileSize:32,folder:target,settings:normalizeProjectSettings({tileWidth:16,tileHeight:grid.tileHeight===16?24:32})});
+ const store=useEditorStore.getState().project!.store;
+ const [ts]=addDecodedTilesets(store,[{name:'Road',png:{file:{name:'road.png'} as File,bytes:png,bitmap:bitmap()},spec:{...grid,margin:0,spacing:0}}]);
+ const ids=Array.from({length:9},(_,i)=>Math.floor(i/3)*ts!.columns+i%3);
+ commitTilesetSelection(ts!,ids,{anchor:{col:0,row:0},focus:{col:2,row:2}},new Set());
+ const clip=useEditorStore.getState().stamp!;
+ store.dispatch({type:'paintCells',layerId:store.document.layers[0]!.id,cells:[{x:0,y:0,cell:store.getOrAddPaletteIndex(ts!.id,0)}]});
+ remedyBrushGrid();
+ expect(useLevelUi.getState().newLevelGrid).toEqual(grid);
+ expect(await createLevel({name:'Remedy',width:24,height:20,...useLevelUi.getState().newLevelGrid!})).toBe(true);
+ openNewLevelDialog(false);
+ const active=useEditorStore.getState().project!.store;
+ expect(active.document.map).toMatchObject(grid);
+ expect(useEditorStore.getState().stamp).toBe(clip);
+ expect(await waitForSelectionBrush(clip)).toBeDefined();
+ const {ToolController}=await import('../../editor/src/canvas/toolController');
+ const controller=new ToolController({scene:{store:active},entities:{},camera:{cellAt:()=>({x:4,y:4})},toLocal:()=>({x:0,y:0}),pointerCell:()=>({x:4,y:4}),capture(){},release(){},requestRender(){}} as unknown as ToolHost);
+ controller.pointerDown({button:0,buttons:1,pointerId:77,preventDefault(){},shiftKey:false,altKey:false} as unknown as PointerEvent,{x:4,y:4});
+ controller.pointerUp({button:0,buttons:0,pointerId:77,preventDefault(){},shiftKey:false,altKey:false} as unknown as PointerEvent);
+ expect(active.document.tilesets.filter(t=>t.generated)).toHaveLength(1);
+ expect(active.document.palette.get(active.document.layers[0]!.getCell(4,4)&0x1fffffff)!.tilesetId).not.toBe(ts!.id);
+ controller.cancel();
+},60_000);
+it('ordinary new maps retain world defaults; adopting an empty map replaces both dimensions',async()=>{
+ const {store,ts}=await setup(32,16);
+ useProjectLibrary.setState({settings:normalizeProjectSettings({tileWidth:16,tileHeight:24})});
+ store.dispatch({type:'resizeMap',width:24,height:20,tileWidth:16,tileHeight:24});
+ adoptMapGrid(store,ts);expect(store.document.map).toMatchObject({tileWidth:16,tileHeight:16});
+ expect(await createLevel({name:'Ordinary',width:24,height:20,tileSize:16})).toBe(true);
+ expect(useEditorStore.getState().project!.store.document.map).toMatchObject({tileWidth:16,tileHeight:24});
+});

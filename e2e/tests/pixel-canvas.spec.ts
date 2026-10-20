@@ -127,3 +127,21 @@ test('Save As and project Zip include edited PNG revisions and every map', async
   const copied = await page.evaluate(async path => { let dir = await navigator.storage.getDirectory(); for (const p of ['save-as', ...path.split('/').slice(0, -1)]) dir = await dir.getDirectoryHandle(p); const file = await (await dir.getFileHandle(path.split('/').at(-1)!)).getFile(); return [...new Uint8Array(await file.arrayBuffer())]; }, path);
   expect(copied).toEqual([...entries.get(path)!]);
 });
+
+test('English first pixel stroke names the edited tileset and keeps user renames',async({page})=>{
+ test.setTimeout(120_000);await open(page);
+ await page.evaluate(async()=>{const {setLocale}=await import(/* @vite-ignore */String('/src/i18n/index.ts'));setLocale('en');});
+ await key(page,'m');
+ await expect.poll(()=>page.evaluate(()=>(window as unknown as {__smap:Hook}).__smap.pixelUi.getState().pending)).toBe(false);
+ await key(page,'b');await click(page,1,1);
+ const name=()=>page.evaluate(()=>(window as unknown as {__smap:Hook}).__smap.store.document.getTileset('edited-16x16-1')?.name);
+ await expect.poll(name).toBe('Edited');
+ await page.locator('[data-tileset-switcher]').click();
+ const edited=page.locator('[data-tileset-option="edited-16x16-1"]');await expect(edited).toContainText('Edited');await edited.hover();
+ await page.locator('[data-tileset-menu="edited-16x16-1"]').click();await page.locator('[data-tileset-menu-item=rename]').click();
+ const dialog=page.locator('[data-dialog=text-prompt]');await dialog.getByLabel('Name',{exact:true}).fill('My artwork');
+ await dialog.getByRole('button',{name:'Rename',exact:true}).click();
+ await click(page,17,1);await expect.poll(name).toBe('My artwork');
+ await key(page,'Control+z');await key(page,'Control+Shift+z');expect(await name()).toBe('My artwork');
+ await key(page,'Control+s');await expect.poll(()=>readOpfsText(page,'project.smap')).toContain('My artwork');
+});

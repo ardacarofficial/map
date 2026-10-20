@@ -145,6 +145,20 @@ export class LevelWorkspace {
   readonly #removedFiles = new Set<string>();
   /** Levels that stay in memory for the session (see {@link pin}). */
   readonly #pinned = new Set<string>();
+  readonly #contentListeners = new Set<() => void>();
+  readonly #contentSubscriptions = new Map<string, () => void>();
+  #contentRevision = 0;
+
+  /** Content/list changes only: activation, cache eviction, saving and history bookkeeping are neutral. */
+  get contentRevision(): number { return this.#contentRevision; }
+  subscribeContent(listener: () => void): () => void {
+    this.#contentListeners.add(listener);
+    return () => this.#contentListeners.delete(listener);
+  }
+  #contentChanged(): void {
+    this.#contentRevision++;
+    for (const listener of this.#contentListeners) listener();
+  }
 
   constructor(init: WorkspaceInit) {
     if (!init.levels.some((l) => l.id === init.active.id)) throw new Error(`LevelWorkspace: unknown level "${init.active.id}"`);
@@ -164,13 +178,22 @@ export class LevelWorkspace {
     this.#entries.set(entry.id, entry);
     this.history.register(entry.id, entry.store);
     installPixelAssets(entry.store);
-    entry.store.subscribe(event => {
-      if (event.cells.length || event.structure.length || event.pixelRects.length) this.markDirty(entry.id);
-    });
+    this.#contentSubscriptions.get(entry.id)?.();
+    this.#contentSubscriptions.set(entry.id, entry.store.subscribe(event => {
+      if (event.cells.length || event.structure.length || event.pixelRects.length) {
+        this.markDirty(entry.id);
+        this.#contentChanged();
+      }
+    }));
   }
 
   /** End this world's session; stamp editor stores are never registered here. */
-  dispose(): void { this.history.dispose(); }
+  dispose(): void {
+    this.history.dispose();
+    for (const off of this.#contentSubscriptions.values()) off();
+    this.#contentSubscriptions.clear();
+    this.#contentListeners.clear();
+  }
 
   /** Ordered level list. */
   get levels(): readonly ProjectLevel[] {
@@ -236,6 +259,7 @@ export class LevelWorkspace {
     const entry = this.active;
     this.history.reset();
     this.#cache({ ...entry, store, dirty: true });
+    this.#contentChanged();
   }
 
   /**
@@ -262,7 +286,12 @@ export class LevelWorkspace {
     }
     const previous = this.active;
     this.#activeId = id;
-    if (this.#droppable(previous)) { this.history.remove(previous.id); this.#entries.delete(previous.id); }
+    if (this.#droppable(previous)) {
+      this.history.remove(previous.id);
+      this.#entries.delete(previous.id);
+      this.#contentSubscriptions.get(previous.id)?.();
+      this.#contentSubscriptions.delete(previous.id);
+    }
     return entry;
   }
 
@@ -423,6 +452,8 @@ export class LevelWorkspace {
     this.history.remove(id);
     this.#apply(removeLevel(this.#data(), id));
     this.#entries.delete(id);
+    this.#contentSubscriptions.get(id)?.();
+    this.#contentSubscriptions.delete(id);
     this.#pinned.delete(id);
     if (!entry || entry.knownText !== null) this.#removedFiles.add(level.path);
   }
@@ -451,6 +482,7 @@ export class LevelWorkspace {
   #apply(project: { levels: readonly ProjectLevel[]; retiredLevelIds: readonly string[] }): void {
     this.#levels = project.levels;
     this.#retired = project.retiredLevelIds;
+    this.#contentChanged();
   }
 
   /** Portals in the other levels that point at `id` (unloaded levels are read from `fs`). */

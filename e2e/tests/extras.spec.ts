@@ -179,6 +179,16 @@ test('unloaded maps scan in a worker, and palette slots expose the same usage se
   await page.getByRole('option').filter({ hasText: 'Kullanımları bul…' }).click();
   await expect(page.locator('[data-usage-result]')).toHaveCount(2);
   expect(await page.evaluate(async path => { const { getLevelWorkspace } = await import(/* @vite-ignore */ path); return getLevelWorkspace().cachedIds(); }, sessionPath)).toEqual(cached);
+  // Review #8: jump through real uncached activation and clean-store eviction.
+  const results = page.locator('[data-tile-usages]');
+  const target = await results.locator('[data-usage-result]').nth(1).getAttribute('data-usage-map');
+  await results.locator('[data-usage-result]').nth(1).click();
+  await expect.poll(() => activeMap(page)).toBe(target);
+  await centred(page, 32, 24);
+  await expect(results).not.toContainText('Değişti — yenile');
+  await expect(results.locator('[data-usage-result]').first()).toBeEnabled();
+  await page.keyboard.press('F3');await expect.poll(() => activeMap(page)).toBe(cached[0]);await centred(page,32,24);
+  await page.keyboard.press('Shift+F3');await expect.poll(() => activeMap(page)).toBe(target);await centred(page,32,24);
   // Create a reference palette through the existing tileset menu.
   await page.locator('[data-tileset-grid]').first().click({ button: 'right', position: { x: 16, y: 16 } });
   await page.getByRole('menuitem', { name: /Palete ekle/ }).hover();

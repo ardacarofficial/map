@@ -128,3 +128,21 @@ test("failed initial preparation keeps the inline save form and shows only frien
  const errors=await page.evaluate(()=>(window as unknown as {smartErrors:string[]}).smartErrors);expect(errors.length).toBeGreaterThan(0);expect(errors.join(" ")).not.toMatch(/Error:|proje değişti|debug/);
  expect(await page.evaluate(async()=>{const{useProjectLibrary}=await import(/* @vite-ignore */String("/src/io/projectLibrary.ts"));return useProjectLibrary.getState().stamps.length;})).toBe(0);
 });
+
+test("review remedy: 16×24 world defaults cannot override a verified 16×16 road's new map",async({page})=>{
+ test.setTimeout(120_000);await mismatch(page);
+ await page.evaluate(async()=>{
+  const {useProjectLibrary}=await import(/* @vite-ignore */String('/src/io/projectLibrary.ts'));
+  const s=useProjectLibrary.getState().settings;useProjectLibrary.getState().setSettings({...s,tileWidth:16,tileHeight:24});
+ });
+ await dragRoad(page,[[4,4]]);expect((await roadCells(page)).cells).toHaveLength(9);
+ await page.locator('[data-smart-grid-remedy]').click();
+ const dialog=page.locator('[data-dialog=new-level]');await expect(dialog.getByLabel('Tile boyutu',{exact:true})).toHaveValue('16');
+ await dialog.locator("button[type='submit']").click();await expect(dialog).toBeHidden();
+ await expect.poll(()=>page.evaluate(async()=>{const {useEditorStore}=await import(/* @vite-ignore */String('/src/state/editorStore.ts'));const m=useEditorStore.getState().project.store.document.map;return [m.tileWidth,m.tileHeight];})).toEqual([16,16]);
+ await expect(page.locator('[data-smart-brush]')).toBeChecked();
+ await page.locator("canvas[aria-label='map canvas']").first().focus();await page.keyboard.press('b');
+ await dragRoad(page,[[4,4],[7,4]]);
+ const result=await roadCells(page);expect(result.generated).toHaveLength(1);expect(result.cells).toHaveLength(4);
+ expect(result.cells.every(c=>c.tilesetId===result.generated[0]!.id)).toBe(true);await noErrors(page);
+});

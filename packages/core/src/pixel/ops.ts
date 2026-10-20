@@ -21,6 +21,8 @@ export interface EditTilePixelsOp extends PixelDirtyRect {
 }
 export interface AllocateEditedTileOp {
   readonly type: 'allocateEditedTile';
+  /** Initial display name supplied by the caller. Existing atlas names are preserved. */
+  readonly name?: string;
   readonly tileWidth: number;
   readonly tileHeight: number;
   readonly pixels: Uint8Array;

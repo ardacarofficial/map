@@ -374,3 +374,23 @@ it('cached raster hashes own canonical bytes and match SHA-256 after mutation an
   for (let n = 1; n < 20; n++) { const data = new Uint8Array(16 * n * 4).fill(n); expect(rasterContentHash(16, n, data)).toBe(oracle(16, n, data)); }
   expect(rasterContentHash(32, 32, pixels)).toBe(oracle(32, 32, pixels));
 });
+
+it('uses the caller display name only for a new edited atlas and replays it deterministically', () => {
+  fc.assert(fc.property(fc.constantFrom('Edited', 'Düzenlenen', 'My artwork'), name => {
+    const { store } = setup();
+    const allocate = (label: string) => store.dispatch({ type: 'allocateEditedTile', name: label, tileWidth: 1, tileHeight: 1, pixels: rgba(4) });
+    const first = allocate(name);
+    expect(store.document.getTileset(first.assetId)!.name).toBe(name);
+    const firstProject = serializeProject({ name: 'P', levels: [], tilesets: store.document.tilesets });
+    store.undo();store.redo();
+    expect(serializeProject({ name: 'P', levels: [], tilesets: store.document.tilesets })).toBe(firstProject);
+    store.dispatch({ type: 'setTilesetMeta', tilesetId: first.assetId, name: 'User name' });
+    expect(allocate('Another locale').assetId).toBe(first.assetId);
+    expect(store.document.getTileset(first.assetId)!.name).toBe('User name');
+    const final = serializeProject({ name: 'P', levels: [], tilesets: store.document.tilesets });
+    while (store.canUndo) store.undo();
+    expect(store.document.tilesets).toHaveLength(0);
+    while (store.canRedo) store.redo();
+    expect(serializeProject({ name: 'P', levels: [], tilesets: store.document.tilesets })).toBe(final);
+  }), { numRuns: 3 });
+});

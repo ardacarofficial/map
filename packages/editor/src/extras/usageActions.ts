@@ -1,7 +1,7 @@
 import { type PaletteEntry } from '@smap/core';
 import { create } from 'zustand';
 import { useRandomBrush } from '../commands/randomBrush';
-import { getLevelWorkspace, getProjectFolder, onProjectSaved, openLevel } from '../io/session';
+import { getLevelWorkspace, getProjectFolder, openLevel } from '../io/session';
 import { useProjectLibrary } from '../io/projectLibrary';
 import { getPlatform } from '../platform';
 import { useEditorStore } from '../state/editorStore';
@@ -47,6 +47,7 @@ export async function findTileUsages(targets: readonly PaletteEntry[] = brushUsa
   useTileUsages.setState({ ...initial, targets, status: 'loading' });
   if (useUiStore.getState().panelsHidden) useUiStore.getState().togglePanels();
   revealPanel('inspector');
+  const revision = ws.contentRevision;
   const fs = getProjectFolder()?.fs;
   try {
     const results = await scanWorldUsages({
@@ -66,7 +67,7 @@ export async function findTileUsages(targets: readonly PaletteEntry[] = brushUsa
       counts[result.mapId] = (counts[result.mapId] ?? 0) + 1;
       if (performance.now() - start >= 4) { await new Promise(resolve => setTimeout(resolve, 0)); start = performance.now(); }
     }
-    if (!job.signal.aborted && getLevelWorkspace() === ws) useTileUsages.setState({ results, counts, status: 'ready' });
+    if (!job.signal.aborted && getLevelWorkspace() === ws) useTileUsages.setState({ results, counts, status: 'ready', stale: useTileUsages.getState().stale || ws.contentRevision !== revision });
   } catch {
     if (!job.signal.aborted && getLevelWorkspace() === ws) useTileUsages.setState({ status: 'error', stale: true });
   }
@@ -97,13 +98,10 @@ export function cycleTileUsage(direction: 1 | -1): void {
 export function installUsageActions(): () => void {
   const changed = () => { const s = useTileUsages.getState(); if (s.status !== 'idle' && !s.stale) useTileUsages.setState({ stale: true }); };
   let ws = getLevelWorkspace();
-  let offHistory = ws?.history.subscribe(changed);
-  let offStore: (() => void) | undefined;
+  let offContent = ws?.subscribeContent(changed);
   const bind = () => {
-    offStore?.();
-    offStore = useEditorStore.getState().project?.store.subscribe(event => { if (event.cells.length || event.structure.length || event.pixelRects.length) changed(); });
     const next = getLevelWorkspace();
-    if (ws !== next) { offHistory?.(); ws = next; offHistory = ws?.history.subscribe(changed); closeTileUsages(); }
+    if (ws !== next) { offContent?.(); ws = next; offContent = ws?.subscribeContent(changed); closeTileUsages(); }
   };
   bind();
   const offEditor = useEditorStore.subscribe((s, prev) => {
@@ -114,7 +112,6 @@ export function installUsageActions(): () => void {
     }
   });
   const offLibrary = useProjectLibrary.subscribe((s, prev) => { if (s.levels !== prev.levels) { bind(); changed(); } });
-  const offSaved = onProjectSaved(changed);
   const offDisk = getPlatform().onFileChanged(change => { if (change.path.startsWith('levels/') || change.path === 'project.smap') changed(); });
   registerCommands([
     { id: 'usage.find', title: 'tileUsage.find', category: 'tileset', enabled: () => !!getLevelWorkspace() && brushUsageTargets().length > 0, run: () => { void findTileUsages(); } },
@@ -122,5 +119,5 @@ export function installUsageActions(): () => void {
     { id: 'usage.next', title: 'tileUsage.next', category: 'view', enabled: () => !useTileUsages.getState().stale && useTileUsages.getState().results.length > 0, run: () => cycleTileUsage(1) },
     { id: 'usage.previous', title: 'tileUsage.previous', category: 'view', enabled: () => !useTileUsages.getState().stale && useTileUsages.getState().results.length > 0, run: () => cycleTileUsage(-1) },
   ]);
-  return () => { closeTileUsages(); offEditor(); offLibrary(); offSaved(); offDisk(); offHistory?.(); offStore?.(); };
+  return () => { closeTileUsages(); offEditor(); offLibrary(); offDisk(); offContent?.(); };
 }

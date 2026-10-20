@@ -1,7 +1,9 @@
 import { createDocument, MapStore, makeCell, cellPaletteIndex, FLIP_H, serializeLevel, RasterAssets } from '@smap/core';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { planPixelGesture, preparePixelCommit, type PixelGestureOptions } from './pixelEditing';
+import { setLocale } from '../i18n';
+import { WorldEditError } from '@smap/core';
 import { LevelWorkspace } from '../io/levelWorkspace';
 
 function setup(flags = 0) {
@@ -152,4 +154,56 @@ it('uses the moved origin for stroke and fill reflection', () => {
     const plans = planPixelGesture(store, layerId, [{ x: 1, y: 1 }], { ...options, tool, mirrorH: true, mirrorV: true, mirrorOrigin: { x: 9, y: 9 } }, source);
     expect(new Set(plans.map(p => `${p.cellX},${p.cellY}`))).toEqual(new Set(['0,0', '1,0', '0,1', '1,1']));
   }
+});
+
+afterEach(() => setLocale('tr'));
+it('names the first edited tileset in English and preserves a user rename on later allocations and replay', () => {
+ setLocale('en');
+ const {store,layerId,ws,source}=setup();
+ const stroke=(x:number)=>preparePixelCommit(ws,layerId,planPixelGesture(store,layerId,[{x,y:1}],options,source),'cell',source)();
+ stroke(1);
+ const ts=store.document.tilesets.find(t=>t.edited)!;
+ expect(ts.name).toBe('Edited');
+ store.dispatch({type:'setTilesetMeta',tilesetId:ts.id,name:'My artwork'});
+ setLocale('tr');stroke(17);
+ expect(store.document.getTileset(ts.id)!.name).toBe('My artwork');
+ ws.history.undo();ws.history.redo();expect(store.document.getTileset(ts.id)!.name).toBe('My artwork');
+});
+it('reports all hidden/locked world targets and leaves every map, raster and history untouched', () => {
+ const {store,layerId,ws,source}=setup();
+ const b=ws.add({name:'B',width:4,height:4,tileSize:16,layerName:'Ground'}), other=ws.entry(b.id)!.store, bLayer=other.document.layers[0]!.id;
+ other.dispatch({type:'paintCells',layerId:bLayer,cells:[{x:0,y:0,cell:other.getOrAddPaletteIndex('source',0)}]});
+ const plans=planPixelGesture(store,layerId,[{x:1,y:1}],options,source);
+ store.dispatch({type:'setLayerProps',layerId,props:{visible:false,locked:true}});
+ other.dispatch({type:'setLayerProps',layerId:bLayer,props:{visible:false,locked:true}});
+ const before=ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document)), history=ws.history.entries();
+ let error:unknown;try{preparePixelCommit(ws,layerId,plans,'world',source);}catch(e){error=e;}
+ expect(error).toBeInstanceOf(WorldEditError);
+ expect(new Set((error as WorldEditError).blockers.map(b=>`${b.mapId}:${b.layerId}:${b.reason}`)).size).toBe(4);
+ expect(ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document))).toEqual(before);
+ expect(ws.history.entries()).toEqual(history);
+ for(const map of ws.levels){const s=ws.entry(map.id)!.store;expect(s.inTransaction).toBe(false);expect(s.rasterAssets.assetIds()).toEqual([]);}
+});
+it('rejects a prepared commit after a participant store is replaced', () => {
+ const {store,layerId,ws,source}=setup();
+ const commit=preparePixelCommit(ws,layerId,planPixelGesture(store,layerId,[{x:1,y:1}],options,source),'cell',source);
+ ws.replaceActiveStore(new MapStore(createDocument({width:4,height:4,tileWidth:16,tileHeight:16})));
+ expect(commit).toThrow(WorldEditError);expect(store.document.tilesets).toHaveLength(1);
+ expect(ws.history.undoDepth).toBe(0);expect(ws.active.store.document.tilesets).toHaveLength(0);
+});
+
+it('collects unreadable maps and hidden/locked targets before opening any live transaction', () => {
+ const {store,layerId,source}=setup();
+ const ws=new LevelWorkspace({name:'World',levels:[
+  {id:'a',name:'A',path:'levels/a.json',world:{x:0,y:0}},
+  {id:'unreadable',name:'B',path:'levels/missing.json',world:{x:0,y:0}},
+ ],active:{id:'a',store,knownText:null}});
+ const plans=planPixelGesture(store,layerId,[{x:1,y:1}],options,source);
+ store.dispatch({type:'setLayerProps',layerId,props:{visible:false,locked:true}});
+ const before=serializeLevel(store.document), history=ws.history.entries();
+ let error:unknown;try{preparePixelCommit(ws,layerId,plans,'world',source);}catch(e){error=e;}
+ expect(error).toBeInstanceOf(WorldEditError);
+ expect(new Set((error as WorldEditError).blockers.map(b=>b.reason))).toEqual(new Set(['load','locked','hidden']));
+ expect(serializeLevel(store.document)).toBe(before);expect(ws.history.entries()).toEqual(history);
+ expect(store.inTransaction).toBe(false);expect(store.rasterAssets.assetIds()).toEqual([]);
 });
