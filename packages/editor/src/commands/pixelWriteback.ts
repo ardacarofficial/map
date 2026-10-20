@@ -7,6 +7,7 @@ import { scanWorldUsages } from '../extras/usageScan';
 import { scanUsageFile } from '../extras/usageWorker';
 import { applyPngPatch, equalPngBytes, listPngBackups, pngBackupPath, PngChangedError, preparePngPatch, restorePngBackup } from '../io/pngWriteback';
 import { decodeSourcePng } from '../io/sourcePng';
+import { isSnapshotImagePath } from '../io/immutableFiles';
 import { reloadTilesetImage } from '../platform/fileChanges';
 import { useEditorStore } from '../state/editorStore';
 import { pixelSourceGrid } from '../state/pixelProvenance';
@@ -14,7 +15,7 @@ import { toast } from '../ui/toast/toastStore';
 import { registerTilesetModal } from '../ui/tilesetImport/importStore';
 import { registerCommands } from './registry';
 
-type Reason = 'road' | 'missing' | 'size' | 'grid' | 'gridChanged';
+type Reason = 'road' | 'missing' | 'size' | 'grid' | 'gridChanged' | 'snapshot';
 export interface PngVariant {
   readonly key: string;
   readonly edited: Tileset;
@@ -38,7 +39,7 @@ export function collectPngVariants(store: MapStore): PngVariant[] {
       origin=source.edited.origins.find(o=>o.tileId===origin!.sourceTileId);
       source=origin&&store.document.getTileset(origin.sourceTilesetId);
     }
-    const reason:Reason|undefined=!source||!pixels||!origin||origin.sourceTileId>=source.columns*source.rows ? 'missing' : source.generated ? 'road' : pixels.width!==source.tileWidth||pixels.height!==source.tileHeight ? 'size' : !origin.sourcePixelHash.includes('|') ? 'grid' : origin.sourcePixelHash.split('|')[1]!==pixelSourceGrid(source) ? 'gridChanged' : undefined;
+    const reason:Reason|undefined=!source||!pixels||!origin||origin.sourceTileId>=source.columns*source.rows ? 'missing' : isSnapshotImagePath(source.imagePath) ? 'snapshot' : source.generated ? 'road' : pixels.width!==source.tileWidth||pixels.height!==source.tileHeight ? 'size' : !origin.sourcePixelHash.includes('|') ? 'grid' : origin.sourcePixelHash.split('|')[1]!==pixelSourceGrid(source) ? 'gridChanged' : undefined;
     return {key:JSON.stringify([edited.id,tileId]),edited,tileId,source,sourceTileId:origin?.sourceTileId??-1,baseHash:origin?.sourcePixelHash??'',pixels,reason};
   }) : []);
 }
@@ -78,7 +79,7 @@ export async function openPngWriteback(editedId?:string, mode:'apply'|'restore'=
   if(!ws||!folder||!store||usePngWriteback.getState().busy)return;
   const version=++requestVersion;
   const variants=collectPngVariants(store);
-  const all=store.document.tilesets.filter(s=>!s.generated&&!s.edited&&s.imagePath.startsWith('tilesets/')&&s.imagePath.toLowerCase().endsWith('.png'));
+  const all=store.document.tilesets.filter(s=>!s.generated&&!s.edited&&!isSnapshotImagePath(s.imagePath)&&s.imagePath.startsWith('tilesets/')&&s.imagePath.toLowerCase().endsWith('.png'));
   const sources=all.filter((s,i)=>all.findIndex(a=>a.imagePath===s.imagePath)===i);
   const initial=sourceId ? sources.find(s=>s.imagePath===store.document.getTileset(sourceId)?.imagePath)??null : variants.find(v=>v.edited.id===editedId&&!v.reason)?.source??sources[0]??null;
   const draft:PngDraft={ws,folder,historyVersion:ws.history.version,variants,sources,source:initial,snapshot:null,choices:{},counts:{},backupPath:'',backups:[],restore:null,restoreBytes:null,rebased:false,mode};

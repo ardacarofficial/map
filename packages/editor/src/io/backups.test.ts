@@ -5,6 +5,15 @@ import { MemoryFileSystem } from "./memoryFs";
 const at = (minute: number, second = 0) => new Date(2026, 9, 7, 12, minute, second);
 
 describe("backups", () => {
+  it("retains distinct snapshots saved within the same second", async () => {
+    const fs = new MemoryFileSystem();
+    const first = await writeBackup(fs, "main", "red", at(0));
+    const second = await writeBackup(fs, "main", "green", at(0));
+    expect(first).not.toBe(second);
+    expect(await fs.readText(first)).toBe("red");
+    expect(await fs.readText(second)).toBe("green");
+    expect((await listBackups(fs, "main")).map(b => b.path)).toEqual([second, first]);
+  });
   it("names files with a sortable local timestamp and parses them back", () => {
     const name = backupFileName("main", new Date(2026, 0, 2, 3, 4, 5));
     expect(name).toBe("main-2026-01-02_03-04-05.json");

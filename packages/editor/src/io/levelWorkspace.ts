@@ -15,6 +15,7 @@ import {
   renameLevel,
   safeFileName,
   serializeLevel,
+  serializeProject,
   setLevelWorldPosition,
   type MapDocument,
   type NewLayer,
@@ -55,6 +56,8 @@ export interface NewLevelOptions {
 
 /** A level written by {@link LevelWorkspace.save}. */
 export interface SavedLevel {
+  /** Project metadata captured with `text`, including immutable raster revisions. */
+  readonly projectText: string;
   readonly id: string;
   readonly name: string;
   readonly path: string;
@@ -548,8 +551,9 @@ export class LevelWorkspace {
   }
 
   /**
-   * Writes tileset images, stamps, the active level, every other dirty
-   * level and `project.smap` (in that order), then deletes removed levels'
+   * Protects the old complete set, then writes tileset images, stamps, the
+   * active level, every other dirty level and finally commits `project.smap`.
+   * Then deletes removed levels'
    * files. A level edited while the files were written stays dirty.
    */
   async save(fs: ProjectFileSystem, input: SaveLevelsInput): Promise<SavedLevel[]> {
@@ -559,6 +563,13 @@ export class LevelWorkspace {
     const revisions = new Map(entries.map((e) => [e, e.store.revision]));
     const paths = new Map(entries.map((e) => [e, this.level(e.id)!.path]));
     const removed = [...this.#removedFiles];
+    const doc = active.store.document;
+    const projectText = serializeProject({
+      name: this.name, levels: this.#levels, tilesets: doc.tilesets,
+      entityTypes: doc.entityTypes, randomSets: doc.randomSets, collections: doc.collections,
+      colorPalettes: input.colorPalettes ?? [], retiredLevelIds: this.#retired,
+      ...(input.settings ? { settings: input.settings } : {}),
+    });
     const texts = await saveProjectLevels(fs, {
       name: this.name,
       document: active.store.document,
@@ -582,7 +593,7 @@ export class LevelWorkspace {
       if (text === undefined) continue;
       entry.knownText = text;
       if (entry.store.revision === revisions.get(entry) && this.#entries.get(entry.id) === entry) entry.dirty = false;
-      saved.push({ id: entry.id, name: this.level(entry.id)?.name ?? entry.id, path, text, store: entry.store });
+      saved.push({ id: entry.id, name: this.level(entry.id)?.name ?? entry.id, path, text, projectText, store: entry.store });
     }
     return saved;
   }

@@ -20,6 +20,7 @@
   "empty": "No applicable edited copies for this source.",
   "road": "Not applicable: generated provenance has no unambiguous original PNG rectangle.",
   "missing": "Not applicable: source or pixels are missing.",
+  "snapshot": "Not applicable: backup images are read-only.",
   "size": "Not applicable: copy and source tile dimensions differ.",
   "grid": "Not applicable: source grid was not captured. Create a new pixel copy.",
   "changed": "The source PNG, grid or edits changed. The previous confirmation cannot be used. Reload to review current pixels or cancel.",
