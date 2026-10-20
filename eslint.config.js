@@ -32,11 +32,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.{js,ts}", "packages/*/*.{js,ts}"],
+    files: ["*.{js,ts}", "packages/*/*.{js,ts}", "packages/agent/scripts/**/*.ts", "packages/agent/test/**/*.ts", "packages/agent-cli/**/*.ts", "packages/editor/dev/**/*.ts"],
     languageOptions: { globals: globals.node },
   },
   {
-    files: ["packages/core/**/*.ts"],
+    files: ["packages/core/**/*.ts", "packages/agent/src/**/*.ts"],
     languageOptions: { globals: {} },
     rules: {
       "no-restricted-imports": ["error", { patterns: CORE_FORBIDDEN_IMPORTS }],

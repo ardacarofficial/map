@@ -1,0 +1,7 @@
+{
+  "command.stop": "Stop",
+  "command.approve": "Approve",
+  "command.discard": "Discard",
+  "command.activity": "AI activity",
+  "command.openSettings": "AI settings…"
+}

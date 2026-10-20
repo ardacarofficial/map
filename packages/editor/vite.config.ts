@@ -2,8 +2,9 @@ import { defineConfig } from "vitest/config";
 
 import { editorAliases, editorCodeSplitting, editorPlugins } from "./vite.plugins.ts";
 
-export default defineConfig({
-  plugins: editorPlugins(),
+export default defineConfig(async ({ command }) => ({
+  plugins: [...editorPlugins(), ...(command === "serve" && process.env.HARITA_DEV_MCP === "1"
+    ? [(await import("./dev/agentPlugin.ts")).agentPlugin()] : [])],
   // Apply the shared policy to feature-owned popovers without editing their sources.
   resolve: { alias: editorAliases() },
   build: {
@@ -15,4 +16,4 @@ export default defineConfig({
     name: "editor",
     include: ["src/**/*.test.{ts,tsx}"],
   },
-});
+}));

@@ -12,6 +12,7 @@ import { PANEL_IDS, ZONE_IDS } from "../ui/layout/dockModel";
 import { preferReachable } from "../commands/keymap";
 
 export type CommandId =
+  | "ai.stop" | "ai.approve" | "ai.discard" | "view.aiActivity" | "ai.openSettings"
   | "usage.find" | "usage.refresh" | "usage.next" | "usage.previous"
   | "bookmark.add" | "bookmark.rename" | "bookmark.delete" | "bookmark.jump"
   | `bookmark.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
@@ -130,6 +131,7 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
+  ...(["ai.stop", "ai.approve", "ai.discard", "view.aiActivity", "ai.openSettings"] as const).map(command => ({ command, keys: [] })),
   { command: "usage.find", keys: [] },
   { command: "usage.refresh", keys: [] },
   { command: "usage.next", keys: ["F3"] },

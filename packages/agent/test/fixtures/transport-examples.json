@@ -1,0 +1,1276 @@
+{
+  "limits": {
+    "cellsPerCall": 4096,
+    "readCellsPerLayer": 4096,
+    "readCellsTotal": 16384,
+    "readLayers": 8,
+    "fillCells": 4096,
+    "mutationCalls": 256,
+    "transactionPlannedWrites": 262144,
+    "retainedBytes": 67108864,
+    "targetMaps": 8,
+    "metadataParticipants": 256,
+    "mapDimension": 4096,
+    "mapArea": 1048576,
+    "sourceWidth": 32,
+    "sourceHeight": 32,
+    "layersPerMap": 128,
+    "layerNameLength": 128,
+    "catalogPage": 128,
+    "catalogImagePage": 64,
+    "stampsPage": 32,
+    "tagsPage": 128,
+    "tagBatch": 128,
+    "tagWords": 16,
+    "tagWordLength": 48,
+    "imageSide": 2048,
+    "imagePixels": 4194304,
+    "pngBytes": 4194304,
+    "imagesPerCall": 1,
+    "responseBytes": 8388608,
+    "requestBytes": 1048576,
+    "jsonDepth": 32,
+    "callTimeoutMs": 10000,
+    "imageSourceTimeoutMs": 30000,
+    "beginDrainTimeoutMs": 30000,
+    "queuePerClient": 32,
+    "queueTotal": 64,
+    "editLifetimeMs": 1800000,
+    "reviewIdleMs": 600000,
+    "sessionIdleMs": 300000,
+    "clients": 4,
+    "activityEntries": 1000,
+    "entitiesPerRead": 256,
+    "tagsFileBytes": 8388608,
+    "tileTagRecords": 100000,
+    "stampTagRecords": 10000,
+    "tagsDebounceMs": 500,
+    "proxyPingMs": 30000,
+    "defaultDesktopPort": 48765,
+    "defaultDevPort": 48766
+  },
+  "protocolVersions": [
+    "2025-11-25",
+    "2025-06-18"
+  ],
+  "errorCodes": [
+    "NO_WORLD",
+    "STALE_WORLD",
+    "EDITOR_UNAVAILABLE",
+    "WRITER_BUSY",
+    "TRANSACTION_REQUIRED",
+    "TRANSACTION_NOT_OWNED",
+    "TRANSACTION_SEALED",
+    "TRANSACTION_CANCELLED",
+    "REVISION_CONFLICT",
+    "IDEMPOTENCY_CONFLICT",
+    "INVALID_ARGUMENT",
+    "UNKNOWN_ID",
+    "OUT_OF_BOUNDS",
+    "LAYER_LOCKED",
+    "LAYER_HIDDEN",
+    "LAYER_KIND",
+    "GRID_MISMATCH",
+    "SOURCE_NOT_SMART",
+    "SOURCE_CHANGED",
+    "STAMP_MAPPING_REQUIRED",
+    "CROP_REQUIRES_EXPLICIT_ALLOW",
+    "ENTITY_SCHEMA",
+    "TAG_FINGERPRINT_CHANGED",
+    "DISK_CONFLICT",
+    "LIMIT_EXCEEDED",
+    "TIMEOUT",
+    "CANCELLED",
+    "INTERNAL_ERROR"
+  ],
+  "valid": [
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "tools/call",
+      "clientInfo": {
+        "name": "conformance",
+        "version": "1.0.0"
+      },
+      "deadline": 10000,
+      "name": "get_session",
+      "arguments": {}
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"change\":{\"affected\":[{\"bounds\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"layerId\":\"ground\",\"mapId\":\"map-1\",\"mapRevision\":1}],\"changedCells\":1,\"createdEntityIds\":[],\"createdLayerIds\":[],\"plannedCells\":1}},\"instanceId\":\"renderer-1\",\"ok\":true,\"replayed\":false,\"revision\":1,\"tentative\":true,\"transactionId\":\"edit-1\",\"transactionState\":\"running\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "renderer-1",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "tentative": true,
+          "transactionId": "edit-1",
+          "transactionState": "running",
+          "replayed": false,
+          "data": {
+            "change": {
+              "plannedCells": 1,
+              "changedCells": 1,
+              "affected": [
+                {
+                  "mapId": "map-1",
+                  "mapRevision": 1,
+                  "layerId": "ground",
+                  "bounds": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1
+                  }
+                }
+              ],
+              "createdLayerIds": [],
+              "createdEntityIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"image\":{\"cellSize\":{\"height\":1,\"width\":1},\"contentRect\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"coordinates\":false,\"grid\":false,\"height\":1,\"pixelOrigin\":{\"x\":0,\"y\":0},\"scale\":1,\"width\":1},\"mapId\":\"map-1\",\"mapRevision\":1,\"region\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"warnings\":[]},\"instanceId\":\"renderer-1\",\"ok\":true,\"revision\":1,\"tentative\":true,\"worldSessionId\":\"world-1\"}"
+          },
+          {
+            "type": "image",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "renderer-1",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "tentative": true,
+          "data": {
+            "mapId": "map-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 1,
+              "height": 1
+            },
+            "mapRevision": 1,
+            "image": {
+              "width": 1,
+              "height": 1,
+              "scale": 1,
+              "pixelOrigin": {
+                "x": 0,
+                "y": 0
+              },
+              "cellSize": {
+                "width": 1,
+                "height": 1
+              },
+              "contentRect": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 1
+              },
+              "grid": false,
+              "coordinates": false
+            },
+            "warnings": []
+          }
+        }
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "failure",
+      "error": {
+        "code": "TIMEOUT",
+        "message": "Deadline exceeded"
+      }
+    },
+    {
+      "type": "sessionStarted",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "clientInfo": {
+        "name": "conformance",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "type": "sessionEnded",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "reason": "expired"
+    },
+    {
+      "type": "statusRequest",
+      "bridgeEpoch": "renderer-1",
+      "requestId": "status-1"
+    },
+    {
+      "type": "cancel",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "requestId": "request-1",
+      "reason": "timeout"
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"NO_WORLD\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "NO_WORLD",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"STALE_WORLD\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "STALE_WORLD",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"EDITOR_UNAVAILABLE\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "EDITOR_UNAVAILABLE",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"WRITER_BUSY\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "WRITER_BUSY",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TRANSACTION_REQUIRED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TRANSACTION_REQUIRED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TRANSACTION_NOT_OWNED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TRANSACTION_NOT_OWNED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TRANSACTION_SEALED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TRANSACTION_SEALED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TRANSACTION_CANCELLED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TRANSACTION_CANCELLED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"REVISION_CONFLICT\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":true,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "REVISION_CONFLICT",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": true,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"IDEMPOTENCY_CONFLICT\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"INVALID_ARGUMENT\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "INVALID_ARGUMENT",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"UNKNOWN_ID\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "UNKNOWN_ID",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"OUT_OF_BOUNDS\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "OUT_OF_BOUNDS",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"LAYER_LOCKED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "LAYER_LOCKED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"LAYER_HIDDEN\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "LAYER_HIDDEN",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"LAYER_KIND\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "LAYER_KIND",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"GRID_MISMATCH\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "GRID_MISMATCH",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"SOURCE_NOT_SMART\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "SOURCE_NOT_SMART",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"SOURCE_CHANGED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "SOURCE_CHANGED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"STAMP_MAPPING_REQUIRED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "STAMP_MAPPING_REQUIRED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"CROP_REQUIRES_EXPLICIT_ALLOW\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "CROP_REQUIRES_EXPLICIT_ALLOW",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"ENTITY_SCHEMA\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "ENTITY_SCHEMA",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TAG_FINGERPRINT_CHANGED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TAG_FINGERPRINT_CHANGED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"DISK_CONFLICT\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "DISK_CONFLICT",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"LIMIT_EXCEEDED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "LIMIT_EXCEEDED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"TIMEOUT\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "TIMEOUT",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"CANCELLED\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "CANCELLED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"INTERNAL_ERROR\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "INTERNAL_ERROR",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "",
+      "clientSessionId": "client-1",
+      "type": "tools/call",
+      "clientInfo": {
+        "name": "conformance",
+        "version": "1.0.0"
+      },
+      "deadline": 10000,
+      "name": "get_session",
+      "arguments": {}
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "tools/call",
+      "clientInfo": {
+        "name": "conformance",
+        "version": "1.0.0"
+      },
+      "deadline": -1,
+      "name": "get_session",
+      "arguments": {}
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "tools/call",
+      "clientInfo": {
+        "name": "conformance",
+        "version": "1.0.0"
+      },
+      "deadline": 10000,
+      "name": "get_session",
+      "arguments": []
+    },
+    {
+      "type": "sessionStarted",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "clientInfo": {
+        "name": "client"
+      }
+    },
+    {
+      "type": "sessionEnded",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "reason": "autoApprove"
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"change\":{\"affected\":[{\"bounds\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"layerId\":\"ground\",\"mapId\":\"map-1\",\"mapRevision\":1}],\"changedCells\":1,\"createdEntityIds\":[],\"createdLayerIds\":[],\"plannedCells\":1}},\"instanceId\":\"renderer-1\",\"ok\":true,\"replayed\":false,\"revision\":1,\"tentative\":true,\"transactionId\":\"edit-1\",\"transactionState\":\"running\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "renderer-1",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "tentative": true,
+          "transactionId": "edit-1",
+          "transactionState": "running",
+          "replayed": false,
+          "data": {
+            "change": {
+              "plannedCells": 1,
+              "changedCells": 1,
+              "affected": [
+                {
+                  "mapId": "map-1",
+                  "mapRevision": 1,
+                  "layerId": "ground",
+                  "bounds": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1
+                  }
+                }
+              ],
+              "createdLayerIds": [],
+              "createdEntityIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"image\":{\"cellSize\":{\"height\":1,\"width\":1},\"contentRect\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"coordinates\":false,\"grid\":false,\"height\":1,\"pixelOrigin\":{\"x\":0,\"y\":0},\"scale\":1,\"width\":1},\"mapId\":\"map-1\",\"mapRevision\":1,\"region\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"warnings\":[]},\"instanceId\":\"renderer-1\",\"ok\":true,\"revision\":1,\"tentative\":true,\"worldSessionId\":\"world-1\"}"
+          },
+          {
+            "type": "image",
+            "mimeType": "image/png",
+            "data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "renderer-1",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "tentative": true,
+          "data": {
+            "mapId": "map-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 1,
+              "height": 1
+            },
+            "mapRevision": 1,
+            "image": {
+              "width": 1,
+              "height": 1,
+              "scale": 1,
+              "pixelOrigin": {
+                "x": 0,
+                "y": 0
+              },
+              "cellSize": {
+                "width": 1,
+                "height": 1
+              },
+              "contentRect": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 1
+              },
+              "grid": false,
+              "coordinates": false
+            },
+            "warnings": []
+          }
+        }
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"image\":{\"cellSize\":{\"height\":1,\"width\":1},\"contentRect\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"coordinates\":false,\"grid\":false,\"height\":1,\"pixelOrigin\":{\"x\":0,\"y\":0},\"scale\":1,\"width\":1},\"mapId\":\"map-1\",\"mapRevision\":1,\"region\":{\"height\":1,\"width\":1,\"x\":0,\"y\":0},\"warnings\":[]},\"instanceId\":\"renderer-1\",\"ok\":true,\"revision\":1,\"tentative\":true,\"worldSessionId\":\"world-1\"}"
+          },
+          {
+            "type": "image",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="
+          },
+          {
+            "type": "image",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "renderer-1",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "tentative": true,
+          "data": {
+            "mapId": "map-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 1,
+              "height": 1
+            },
+            "mapRevision": 1,
+            "image": {
+              "width": 1,
+              "height": 1,
+              "scale": 1,
+              "pixelOrigin": {
+                "x": 0,
+                "y": 0
+              },
+              "cellSize": {
+                "width": 1,
+                "height": 1
+              },
+              "contentRect": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 1
+              },
+              "grid": false,
+              "coordinates": false
+            },
+            "warnings": []
+          }
+        }
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"INTERNAL_ERROR\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          },
+          {
+            "type": "image",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "INTERNAL_ERROR",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-1",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"INTERNAL_ERROR\",\"details\":{\"mapId\":\"map-1\"},\"message\":\"Stable diagnostic\",\"ok\":false,\"retryable\":false,\"revision\":1,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "AUTH_FAILED",
+          "message": "Stable diagnostic",
+          "worldSessionId": "world-1",
+          "revision": 1,
+          "transactionId": "edit-1",
+          "retryable": false,
+          "details": {
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    }
+  ]
+}

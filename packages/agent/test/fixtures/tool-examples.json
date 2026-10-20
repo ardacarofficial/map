@@ -1,0 +1,1231 @@
+{
+  "catalogueSha256": "d7147d10dc8e2e8b15a0b1840abfcb16533c8b9ae3994b9640df6acffa9a8145",
+  "tools": {
+    "get_session": {
+      "valid": [
+        {},
+        {
+          "transactionId": "edit-1"
+        }
+      ],
+      "invalid": [
+        {
+          "transactionId": ""
+        }
+      ]
+    },
+    "get_map_info": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        }
+      ]
+    },
+    "read_region": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "layerIds": [
+            "ground"
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "layerIds": [
+            "ground",
+            "collision"
+          ],
+          "includeEntities": true
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "layerIds": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "layerIds": [
+            "ground",
+            "ground"
+          ]
+        }
+      ]
+    },
+    "list_tilesets": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "cursor": "page-2",
+          "limit": 128
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "limit": 129
+        }
+      ]
+    },
+    "get_tile_catalog": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "tilesetId": "sheet"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "tilesetId": "sheet",
+          "tileIds": [
+            0,
+            4294967295
+          ],
+          "image": "none"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "tilesetId": "sheet",
+          "image": "sheet",
+          "sheetRegion": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "scale": 4
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "tilesetId": "sheet",
+          "scale": 3
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "tilesetId": "sheet",
+          "tileIds": [
+            -1
+          ]
+        }
+      ]
+    },
+    "list_stamps": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "limit": 32,
+          "previewStampId": "house"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "limit": 33
+        }
+      ]
+    },
+    "begin_edit": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "idempotencyKey": "begin-0001",
+          "expectedRevision": 0,
+          "requestLabel": "Build village",
+          "mapIds": [
+            "map-1"
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "idempotencyKey": "begin-0001",
+          "expectedRevision": 0,
+          "requestLabel": "Build village",
+          "mapIds": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "idempotencyKey": "short",
+          "expectedRevision": 0,
+          "requestLabel": "Build village",
+          "mapIds": [
+            "map-1"
+          ]
+        }
+      ]
+    },
+    "finish_edit": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "summary": "Ready for review"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        }
+      ]
+    },
+    "cancel_edit": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "reason": "Discard"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "idempotencyKey": "tags-0001"
+          }
+        }
+      ]
+    },
+    "paint_cells": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "value": {
+                "tilesetId": "sheet",
+                "tileId": 0,
+                "flags": 7
+              }
+            },
+            {
+              "x": 1,
+              "y": 1,
+              "value": null
+            },
+            {
+              "x": 2,
+              "y": 2,
+              "value": {
+                "collision": 2
+              }
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "cells": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "value": {
+                "tilesetId": "sheet",
+                "tileId": 0,
+                "flags": 8
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "paint_rect": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "value": {
+            "tilesetId": "sheet",
+            "tileId": 0,
+            "flags": 7
+          },
+          "outline": 1
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 2
+          },
+          "value": null
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "value": null,
+          "outline": 17
+        }
+      ]
+    },
+    "paint_line": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "from": {
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "x": 2,
+            "y": 3
+          },
+          "value": null,
+          "width": 2
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "from": {
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "x": 2,
+            "y": 3
+          },
+          "value": null,
+          "width": 0
+        }
+      ]
+    },
+    "fill": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "start": {
+            "x": 0,
+            "y": 0
+          },
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "value": {
+            "collision": 1
+          },
+          "maxCells": 4
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "start": {
+            "x": 0,
+            "y": 0
+          },
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "value": {
+            "collision": 1
+          },
+          "maxCells": 4097
+        }
+      ]
+    },
+    "prepare_smart_source": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "source": {
+            "stampId": "road"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "source": {
+            "tilesetId": "sheet",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            }
+          },
+          "force": true
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "source": {
+            "stampId": "road",
+            "tilesetId": "sheet",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            }
+          }
+        }
+      ]
+    },
+    "smart_brush": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "mode": "area",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "mode": "road",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "erase": true,
+          "orientation": 7
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "mode": "terrain",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "mode": "road",
+          "cells": []
+        }
+      ]
+    },
+    "draw_path": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "kind": "river",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "width": 16
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "kind": "river",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "width": 16
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "kind": "ocean",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "width": 16
+        }
+      ]
+    },
+    "place_stamp": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "stampId": "house",
+          "at": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "stampId": "house",
+          "at": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 3,
+          "flipX": true,
+          "layerMapping": [
+            {
+              "sourceLayerId": "walls",
+              "targetLayerId": "ground"
+            }
+          ],
+          "emptyCells": "erase",
+          "allowCreateLayers": true
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "stampId": "house",
+          "at": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 4
+        }
+      ]
+    },
+    "edit_layer": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "create",
+          "name": "Roof",
+          "kind": "tile"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "update",
+          "layerId": "ground",
+          "props": {
+            "visible": true,
+            "opacity": 0.5
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "reorder",
+          "layerId": "ground",
+          "index": 0
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "update",
+          "layerId": "ground",
+          "props": {}
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "create",
+          "name": "Roof",
+          "kind": "terrain"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "action": "reorder",
+          "layerId": "ground",
+          "index": 0,
+          "name": "extra"
+        }
+      ]
+    },
+    "list_entity_types": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit"
+          }
+        }
+      ]
+    },
+    "place_entity": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "entities",
+          "typeId": "portal",
+          "at": {
+            "x": 0,
+            "y": 0
+          },
+          "fields": {
+            "targetLevel": "map-2",
+            "targetPoint": {
+              "x": 32,
+              "y": 64
+            }
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "entities",
+          "typeId": "spawn",
+          "at": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "entities",
+          "typeId": "portal",
+          "at": {
+            "x": 0,
+            "y": 0
+          },
+          "fields": {
+            "point": {
+              "x": -1,
+              "y": 0
+            }
+          }
+        }
+      ]
+    },
+    "create_map": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "name": "Village",
+          "width": 48,
+          "height": 32,
+          "tileWidth": 32,
+          "tileHeight": 32,
+          "world": {
+            "x": -1536,
+            "y": 0
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "name": "Village",
+          "width": 48,
+          "height": 32,
+          "tileWidth": 32,
+          "tileHeight": 32,
+          "world": {
+            "x": -1536,
+            "y": 0
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "name": "Village",
+          "width": 4097,
+          "height": 32,
+          "tileWidth": 32,
+          "tileHeight": 32,
+          "world": {
+            "x": -1536,
+            "y": 0
+          }
+        }
+      ]
+    },
+    "resize_map": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "width": 64,
+          "height": 48,
+          "allowCrop": false
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "width": 64,
+          "height": 0,
+          "allowCrop": false
+        }
+      ]
+    },
+    "render_preview": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "layerIds": [
+            "ground"
+          ],
+          "maxSide": 2048,
+          "coordinates": true,
+          "grid": true,
+          "entities": false
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "maxSide": 2049
+        }
+      ]
+    },
+    "validate_map": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "limit": 256,
+          "cursor": "page-2",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "limit": 257
+        }
+      ]
+    },
+    "get_tags": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "kind": "stamps",
+          "status": "stale",
+          "limit": 128
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          }
+        }
+      ]
+    },
+    "set_tags": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "idempotencyKey": "tags-0001"
+          },
+          "entries": [
+            {
+              "target": {
+                "kind": "tile",
+                "tilesetId": "sheet",
+                "tileId": 0
+              },
+              "expectedFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tags": [
+                "grass"
+              ]
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "idempotencyKey": "tags-0001"
+          },
+          "entries": [
+            {
+              "target": {
+                "kind": "stamp",
+                "stampId": "house"
+              },
+              "expectedFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "tags": [],
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "entries": [
+            {
+              "target": {
+                "kind": "tile",
+                "tilesetId": "sheet",
+                "tileId": 0
+              },
+              "expectedFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tags": [
+                "grass"
+              ]
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "idempotencyKey": "tags-0001"
+          },
+          "entries": [
+            {
+              "target": {
+                "kind": "tile",
+                "tilesetId": "sheet",
+                "tileId": 0
+              },
+              "expectedFingerprint": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "tags": [
+                "grass"
+              ]
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "idempotencyKey": "tags-0001"
+          },
+          "entries": [
+            {
+              "target": {
+                "kind": "tile",
+                "tilesetId": "sheet",
+                "tileId": 0
+              },
+              "expectedFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tags": [
+                "grass",
+                "grass"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

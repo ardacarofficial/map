@@ -1,3 +1,4 @@
+import type { AgentConnection } from "@smap/agent";
 /**
  * What the editor needs from its host (browser tab or Tauri window). The
  * editor never calls host APIs (File System Access, IndexedDB, Tauri) directly;
@@ -50,6 +51,8 @@ export interface SaveFileFilter {
 }
 
 export interface Platform {
+  /** Optional transport injected by desktop or the serve-only development bridge. */
+  agent?: AgentConnection;
   readonly kind: "browser" | "desktop";
 
   /** Asks for an existing project. `null` = cancelled. */

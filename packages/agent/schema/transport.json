@@ -1,0 +1,529 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "ClientInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "Success": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "instanceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "worldSessionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tentative": {
+          "type": "boolean"
+        },
+        "data": {
+          "type": "object"
+        },
+        "transactionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "transactionState": {
+          "type": "string",
+          "enum": [
+            "preparing",
+            "running",
+            "stopped",
+            "awaitingApproval",
+            "cancelling",
+            "approved",
+            "cancelled"
+          ]
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "instanceId",
+        "worldSessionId",
+        "revision",
+        "tentative",
+        "data"
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "NO_WORLD",
+            "STALE_WORLD",
+            "EDITOR_UNAVAILABLE",
+            "WRITER_BUSY",
+            "TRANSACTION_REQUIRED",
+            "TRANSACTION_NOT_OWNED",
+            "TRANSACTION_SEALED",
+            "TRANSACTION_CANCELLED",
+            "REVISION_CONFLICT",
+            "IDEMPOTENCY_CONFLICT",
+            "INVALID_ARGUMENT",
+            "UNKNOWN_ID",
+            "OUT_OF_BOUNDS",
+            "LAYER_LOCKED",
+            "LAYER_HIDDEN",
+            "LAYER_KIND",
+            "GRID_MISMATCH",
+            "SOURCE_NOT_SMART",
+            "SOURCE_CHANGED",
+            "STAMP_MAPPING_REQUIRED",
+            "CROP_REQUIRES_EXPLICIT_ALLOW",
+            "ENTITY_SCHEMA",
+            "TAG_FINGERPRINT_CHANGED",
+            "DISK_CONFLICT",
+            "LIMIT_EXCEEDED",
+            "TIMEOUT",
+            "CANCELLED",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "worldSessionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "transactionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok",
+        "code",
+        "message",
+        "worldSessionId",
+        "revision",
+        "retryable",
+        "details"
+      ]
+    },
+    "Text": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ]
+    },
+    "Image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "mimeType": {
+          "const": "image/png"
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 5592408,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "required": [
+        "type",
+        "mimeType",
+        "data"
+      ]
+    },
+    "ToolResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "isError": {
+              "const": false
+            },
+            "content": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/Text"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1
+                },
+                {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/Text"
+                    },
+                    {
+                      "$ref": "#/$defs/Image"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              ]
+            },
+            "structuredContent": {
+              "$ref": "#/$defs/Success"
+            }
+          },
+          "required": [
+            "content",
+            "structuredContent"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "isError": {
+              "const": true
+            },
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Text"
+              },
+              "minItems": 1,
+              "maxItems": 1
+            },
+            "structuredContent": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "isError",
+            "content",
+            "structuredContent"
+          ]
+        }
+      ]
+    },
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "bridgeEpoch": {
+          "$ref": "#/$defs/Id"
+        },
+        "clientSessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "type": {
+          "const": "tools/call"
+        },
+        "clientInfo": {
+          "$ref": "#/$defs/ClientInfo"
+        },
+        "deadline": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "arguments": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "requestId",
+        "bridgeEpoch",
+        "clientSessionId",
+        "type",
+        "clientInfo",
+        "deadline",
+        "name",
+        "arguments"
+      ]
+    },
+    "Reply": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "$ref": "#/$defs/Id"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientSessionId": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": {
+              "const": "result"
+            },
+            "result": {
+              "$ref": "#/$defs/ToolResult"
+            }
+          },
+          "required": [
+            "requestId",
+            "bridgeEpoch",
+            "clientSessionId",
+            "type",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "$ref": "#/$defs/Id"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientSessionId": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": {
+              "const": "failure"
+            },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "EDITOR_UNAVAILABLE",
+                    "TIMEOUT",
+                    "CANCELLED",
+                    "LIMIT_EXCEEDED",
+                    "STALE_EPOCH",
+                    "INTERNAL_ERROR"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "required": [
+            "requestId",
+            "bridgeEpoch",
+            "clientSessionId",
+            "type",
+            "error"
+          ]
+        }
+      ]
+    },
+    "Control": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "sessionStarted"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientSessionId": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientInfo": {
+              "$ref": "#/$defs/ClientInfo"
+            }
+          },
+          "required": [
+            "type",
+            "bridgeEpoch",
+            "clientSessionId",
+            "clientInfo"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "sessionEnded"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientSessionId": {
+              "$ref": "#/$defs/Id"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "delete",
+                "expired",
+                "disabled",
+                "tokenRegenerated",
+                "disconnect",
+                "shutdown"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "bridgeEpoch",
+            "clientSessionId",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "statusRequest"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "type",
+            "bridgeEpoch",
+            "requestId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "cancel"
+            },
+            "bridgeEpoch": {
+              "$ref": "#/$defs/Id"
+            },
+            "clientSessionId": {
+              "$ref": "#/$defs/Id"
+            },
+            "requestId": {
+              "$ref": "#/$defs/Id"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "timeout",
+                "clientCancelled"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "bridgeEpoch",
+            "clientSessionId",
+            "requestId",
+            "reason"
+          ]
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Request"
+    },
+    {
+      "$ref": "#/$defs/Reply"
+    },
+    {
+      "$ref": "#/$defs/Control"
+    }
+  ]
+}
