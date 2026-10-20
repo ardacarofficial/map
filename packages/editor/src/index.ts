@@ -19,3 +19,9 @@ export {
   type SaveFileFilter,
 } from "./platform";
 export { FileNotFoundError, type ProjectFileSystem, type GuardedPngRequest } from "./io/fs";
+
+export { installAgentRuntime, getAgentRuntime } from "./agent/runtime";
+export type { AgentRuntime } from "./agent/runtime";
+export { createEditorHost } from "./agent/editorHost";
+export { useAgentUiState, getAgentApi, getAgentConnection } from "./agent/agentUiState";
+export { agentActivity } from "./agent/activity";

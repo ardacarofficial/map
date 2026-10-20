@@ -1,0 +1,116 @@
+import { AgentError, AgentErrorCode, type AgentHost, type AgentSessionSnapshot, type AgentWorldPort, type EditLease, type LeaseableMapStore, type PendingWorldHistoryPort, type PreparedAgentMap, type SessionClient } from "@smap/agent";
+import { createDocument, BUILTIN_ENTITY_TYPES, isBuiltinEntityTypeId, type ProjectLevel } from "@smap/core";
+import { getLevelWorkspace, getProjectFolder, publishLevelState } from "../io/session";
+import { useProjectLibrary } from "../io/projectLibrary";
+import { useEditorStore } from "../state/editorStore";
+import { usePixelUi } from "../state/pixelUi";
+import { modalOpen } from "../commands/modal";
+import { useUiStore } from "../ui/uiStore";
+import { useSaveStatus } from "../io/saveStatus";
+import { t } from "../i18n";
+import { agentActivity } from "./activity";
+import { agentWorldChanging, editGate, getAgentWorldSessionId } from "./editGate";
+import { createMetadataJournal } from "./metadataJournal";
+import { createImagePort } from "./images";
+import { createSmartSourcePort } from "./smartSources";
+import { createTagsPort, type TagsIoPort } from "./tagsIo";
+
+export interface EditorAgentHost extends AgentHost { tags: TagsIoPort; setClients(clients: SessionClient[]): void }
+export function createEditorHost(): EditorAgentHost {
+  const instanceId=crypto.randomUUID();
+  let clients:SessionClient[]=[],revision=0,lastSignature="";
+  let baselineContent=0,baselineLibrary=0;
+  const provisional=new Set<string>(),preparedLevels=new WeakMap<PreparedAgentMap,ProjectLevel>();
+  const workspace=()=>{const ws=getLevelWorkspace();if(!ws)throw new AgentError(AgentErrorCode.NO_WORLD,"No open world");return ws;};
+  const contentRevision=()=>{
+    const ws=getLevelWorkspace(),signature=JSON.stringify([getAgentWorldSessionId(),ws?.contentRevision??0,useProjectLibrary.getState().revision]);
+    if(signature!==lastSignature){lastSignature=signature;revision++;}return revision;
+  };
+  const subscribeContent=(listener:()=>void)=>{
+    let observed=getLevelWorkspace(),off=observed?.subscribeContent(listener);
+    const offEditor=useEditorStore.subscribe(()=>{const next=getLevelWorkspace();if(next!==observed){off?.();observed=next;off=next?.subscribeContent(listener);listener();}});
+    const offLibrary=useProjectLibrary.subscribe((s,p)=>{if(s.revision!==p.revision)listener();});
+    return()=>{off?.();offEditor();offLibrary();};
+  };
+  const world:AgentWorldPort={
+    maps:()=>{
+      const ws=getLevelWorkspace();return ws?.levels.map(level=>{
+        const entry=ws.entry(level.id),map=entry?.store.document.map;
+        return{id:level.id,name:level.name,world:level.world,loaded:!!entry,dirty:entry?.dirty??false,...(map?{width:map.width,height:map.height,tileWidth:map.tileWidth,tileHeight:map.tileHeight}:{})};
+      })??[];
+    },
+    tilesets:()=>{
+      const ws=getLevelWorkspace();if(!ws)return[];
+      const all=new Map(ws.active.store.document.tilesets.map(ts=>[ts.id,ts]));
+      for(const id of ws.cachedIds())for(const ts of ws.entry(id)!.store.document.tilesets)if(!all.has(ts.id))all.set(ts.id,ts);
+      return [...all.values()];
+    },
+    stamps:()=>useProjectLibrary.getState().stamps,
+    settings:()=>useProjectLibrary.getState().settings,
+    entityTypes:()=>[...BUILTIN_ENTITY_TYPES,...(getLevelWorkspace()?.active.store.document.entityTypes??[])].map(type=>({id:type.id,name:type.name,builtin:isBuiltinEntityTypeId(type.id),fields:type.fields.map(field=>({name:field.name,type:field.type,default:field.default,...(field.enumValues?{enumValues:[...field.enumValues]}:{})}))})),
+    async loadMap(id){const ws=workspace(),entry=await ws.load(id,getProjectFolder()?.fs??null);if(getLevelWorkspace()!==ws)throw new AgentError(AgentErrorCode.STALE_WORLD,"World changed while loading map");return entry.store;},
+    pinMap(id){workspace().pin(id);return()=>{};},
+    async prepareAgentMap(args,signal){
+      const ws=workspace(),folder=getProjectFolder();signal.throwIfAborted();
+      const files=folder?await folder.fs.list("levels"):[];signal.throwIfAborted();
+      if(ws!==getLevelWorkspace())throw new AgentError(AgentErrorCode.STALE_WORLD,"World changed during map preparation");
+      const prepared=ws.prepareAgentLevel({name:args.name,width:args.width,height:args.height,tileSize:args.tileWidth,tileHeight:args.tileHeight,layerName:t("layers.defaultName")},files);
+      const level=args.world?{...prepared.level,world:args.world}:prepared.level;
+      const result:PreparedAgentMap={store:prepared.store,map:{id:level.id,name:level.name,path:level.path,width:args.width,height:args.height,tileWidth:args.tileWidth,tileHeight:args.tileHeight,world:level.world}};
+      preparedLevels.set(result,level);return result;
+    },
+    stageAgentMap(prepared){
+      const level=preparedLevels.get(prepared);if(!level)throw new AgentError(AgentErrorCode.INVALID_ARGUMENT,"Map was not prepared by this runtime");
+      workspace().pin(workspace().activeId);
+      workspace().stageAgentLevel(level,prepared.store);provisional.add(level.id);preparedLevels.delete(prepared);publishLevelState({listChanged:true});
+    },
+    removeProvisionalMap(id){
+      if(!provisional.has(id))return;const ws=workspace();ws.removeProvisionalLevel(id);provisional.delete(id);
+      const project=useEditorStore.getState().project;
+      if(project?.levelId===id){const level=ws.activeLevel;useEditorStore.getState().switchLevel({name:ws.name,store:ws.active.store,levelPath:level.path,levelId:level.id},null);}
+      publishLevelState({listChanged:true});
+    },
+    approveProvisionalMap(id){provisional.delete(id);},subscribeContent,
+  };
+  const metadata=createMetadataJournal(),images=createImagePort(world,contentRevision);
+  const host:EditorAgentHost={
+    session():AgentSessionSnapshot {
+      const ws=getLevelWorkspace(),project=useEditorStore.getState().project,folder=getProjectFolder();
+      return{instanceId,worldSessionId:ws?getAgentWorldSessionId():null,revision:contentRevision(),world:ws?{name:ws.name,locationLabel:folder?.label??"",saved:!!folder,dirty:useEditorStore.getState().dirty||ws.hasUnsavedLevels}:null,maps:[...world.maps()],activeMapId:ws?.activeId??null,activeLayerId:project?.levelId?.startsWith("stamp:")?null:useEditorStore.getState().activeLayerId,clients};
+    },
+    setClients(value){clients=value;},
+    loadMap:world.loadMap,subscribeWorldContent:subscribeContent,world,metadata,images,
+    smartSources:createSmartSourcePort(world,metadata),
+    tags:createTagsPort({world,images,folder:()=>getProjectFolder()?.fs??null,worldId:getAgentWorldSessionId}),
+    activity:agentActivity,
+    clock:{now:Date.now,schedule(delay,cb){const timer=setTimeout(cb,delay);return()=>clearTimeout(timer);}},
+    ids:{next:kind=>`${kind}-${crypto.randomUUID()}`},
+    transactions:{
+      writeGate:editGate,
+      history:{beginPending(origin,label){const history=workspace().history as unknown as PendingWorldHistoryPort;if(!history.beginPending)throw new AgentError(AgentErrorCode.EDITOR_UNAVAILABLE,"Core pending world history is unavailable");return history.beginPending(origin,label);}},
+      acquireLease(id,store,owner):EditLease {
+        if(workspace().entry(id)?.store!==store)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Lease target is not the live map");
+        const leaseable=store as typeof store & LeaseableMapStore;
+        if(!leaseable.acquireEditLease)throw new AgentError(AgentErrorCode.EDITOR_UNAVAILABLE,"Core map edit leases are unavailable");
+        return leaseable.acquireEditLease(owner);
+      },
+      assertCanBegin(){
+        const ws=workspace(),project=useEditorStore.getState().project;
+        if(agentWorldChanging()||modalOpen()||project?.levelId?.startsWith("stamp:")||useUiStore.getState().busy||useSaveStatus.getState().diskConflict||usePixelUi.getState().pending||ws.cachedIds().some(id=>ws.entry(id)!.store.inTransaction))throw new AgentError(AgentErrorCode.WRITER_BUSY,"Finish the current editor operation first");
+      },
+      captureBaseline(){
+        const ws=workspace(),snapshot=metadata.snapshot();
+        baselineContent=ws.contentRevision;baselineLibrary=snapshot.libraryRevision;
+        ws.setPendingProjectData(createDocument({...ws.active.store.document.map,tilesets:snapshot.project.tilesets,entityTypes:snapshot.project.entityTypes,randomSets:snapshot.project.randomSets,collections:snapshot.project.collections}));
+        return{worldSessionId:getAgentWorldSessionId()!,editorDirty:useEditorStore.getState().dirty,metadata:snapshot,maps:ws.cachedIds().map(mapId=>({mapId,...ws.entry(mapId)!}))};
+      },
+      restoreBaseline(baseline){
+        if(baseline.worldSessionId!==getAgentWorldSessionId())throw new AgentError(AgentErrorCode.STALE_WORLD,"Cannot restore a different world");
+        metadata.restore(baseline.metadata);workspace().restorePersistence(baseline.maps,baseline.metadata.pendingRemovals);
+        useEditorStore.getState().setDirty(baseline.editorDirty);publishLevelState();
+      },
+      finalized(outcome){workspace().setPendingProjectData(null);publishLevelState();if(outcome==="approved" && (workspace().contentRevision!==baselineContent || useProjectLibrary.getState().revision!==baselineLibrary))useEditorStore.getState().setDirty(true);},
+    },
+  };
+  return host;
+}

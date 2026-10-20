@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { useProjectLibrary } from "../io/projectLibrary";
 /** Pointer samples only collect geometry. Planning/preview run once per animation frame;
  * a release prepares one guarded COW/world transaction. No PNG encoding on this path.
@@ -50,6 +51,7 @@ export class PixelController {
     return { x: Math.floor((p.x - off.x) / cam.camera.zoom), y: Math.floor((p.y - off.y) / cam.camera.zoom) };
   }
   down(e: PointerEvent): void {
+    if (!manualEditAllowed()) return;
     if (!this.enabled() || (e.button !== 0 && e.button !== 2) || this.busy) return;
     e.preventDefault();
     const p = this.point(e), s = useEditorStore.getState(), store = this.#host.scene?.store;
@@ -82,6 +84,7 @@ export class PixelController {
     for (const sample of events.length ? events : [e]) { const p = this.point(sample), last = g.samples.at(-1)!; if (last.x !== p.x || last.y !== p.y) { g.samples.push(p); g.dirty = true; } } this.#host.requestRender();
   }
   up(e: PointerEvent): void {
+    if (!manualEditAllowed(false)) { this.cancel(); return; }
     if (this.#originDrag && e.pointerId === this.#originDrag.pointerId && e.button === 0) { this.move(e); this.#originDrag = null; this.#host.release(e.pointerId); return; }
     const g = this.#gesture; if (!g || e.pointerId !== g.pointerId || e.button !== g.button) return;
     this.move(e); this.flush();

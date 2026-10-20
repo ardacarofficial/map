@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../../agent/editGate";
 /**
  * Harita ayarları (map settings) — what "Uygula" changes. Pure so it is
  * testable without a DOM.
@@ -81,6 +82,7 @@ export function cropsMap(current: Pick<MapSettingsCurrent, "width" | "height">, 
  * Geçmiş). Rolls back and rethrows when an op fails, so nothing half-applies.
  */
 export function applyMapOps(store: Pick<MapStore, "beginTransaction" | "dispatch" | "commit" | "rollback">, ops: readonly Op[], label?: string): boolean {
+  if (!manualEditAllowed()) return false;
   if (ops.length === 0) return false;
   store.beginTransaction(label);
   try {

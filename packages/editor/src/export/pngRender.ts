@@ -22,7 +22,7 @@ export interface Replay2D {
 }
 
 /** Draws `ops` onto `ctx`; ops whose image is missing are skipped. */
-export function replayOps(ctx: Replay2D, ops: readonly CanvasOp[], image: (tilesetId: string) => CanvasImageSource | undefined): void {
+export function replayOps(ctx: Replay2D, ops: Iterable<CanvasOp>, image: (tilesetId: string) => CanvasImageSource | undefined): void {
   ctx.imageSmoothingEnabled = false;
   for (const op of ops) {
     if (op.kind === "alpha") {

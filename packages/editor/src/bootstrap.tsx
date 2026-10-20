@@ -106,6 +106,21 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   const mark = (name: string) => marks.push(`${name} ${Math.round(performance.now())}`);
   const platform = options.platform ?? browserPlatform;
   setPlatform(platform);
+  if (platform.agent) {
+    const { installAgentRuntime } = await import("./agent/runtime");
+    await installAgentRuntime({ connection: platform.agent });
+  } else if (import.meta.env.DEV) {
+    const pairingId = new URLSearchParams(window.location.search).get("agent");
+    if (pairingId) {
+      const { connectDevAgent } = await import("./agent/devConnection");
+      const connection = await connectDevAgent(pairingId);
+      if (connection) {
+        const { installAgentRuntime } = await import("./agent/runtime");
+        await installAgentRuntime({ connection });
+      }
+    }
+  }
+
   installErrorLogging();
   installContextMenuGuard();
   // Shortcut labels follow the keyboard layout ("Ğ" for "[" on Turkish-Q); never waits long.

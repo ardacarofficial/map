@@ -1,3 +1,4 @@
+import { admitEditorSave, saveDeferred } from "../agent/editGate";
 /**
  * Export actions wired to the app: the open project, the tileset image
  * registry, folder pickers, downloads, toasts and the after-save hook.
@@ -6,7 +7,7 @@
  */
 import { exportBaseName, exportGameJson, exportLayerSummaries, parseLevel, serializeLevel, type MapDocument } from "@smap/core";
 
-import type { ProjectFileSystem } from "../io/fs";
+import { FileNotFoundError, type ProjectFileSystem } from "../io/fs";
 import { getLocale, t } from "../i18n";
 import { getPlatform, type SaveFileFilter } from "../platform";
 import { DirectoryHandleFileSystem, ensureReadWrite, UnsupportedError } from "../io/browserFs";
@@ -107,6 +108,12 @@ export function previewFiles(kind: "unity" | "tmj", source: ExportSource, settin
 }
 
 async function withExportBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
+  if (saveDeferred()) return undefined;
+  const admission = admitEditorSave();
+  try { return await withAdmittedExportBusy(work); } finally { admission.release(); }
+}
+
+async function withAdmittedExportBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
   const store = useExportStore.getState();
   if (store.busy) return undefined;
   store.setBusy(true);
@@ -359,8 +366,14 @@ export function previewZipFiles(project: OpenProject) {
 
 /** {@link previewZipFiles} with the levels that are only on disk read from the project folder. */
 async function zipFiles(project: OpenProject) {
+  const { getAgentRuntime } = await import("../agent/runtime");
+  await getAgentRuntime()?.host.tags.flush();
   const files = previewZipFiles(project);
   const fs = getProjectFolder()?.fs;
+  if (fs) {
+    try { files.splice(Math.max(0, files.length - 1), 0, { path: "ai-tags.json", data: await fs.readText("ai-tags.json") }); }
+    catch (error) { if (!(error instanceof FileNotFoundError)) throw error; }
+  }
   const cached = new Set(getLevelWorkspace()?.cachedIds().map((id) => getLevelWorkspace()?.level(id)?.path) ?? []);
   const levelPaths = new Set(useProjectLibrary.getState().levels.map((l) => l.path));
   return Promise.all(
@@ -445,8 +458,7 @@ export function installAutoExport(): () => void {
   });
   // v1.0: every level the save wrote is exported (not just the open one).
   return onProjectSaved(({ project, manual, levels }) => {
-    for (const level of levels) {
-      void exporter.onSaved({
+    return Promise.all(levels.map(level => exporter.onSaved({
         name: project.name,
         document: level.store.document,
         levelName: levelName(level.path),
@@ -454,7 +466,6 @@ export function installAutoExport(): () => void {
         levelPath: level.path,
         levelId: level.id,
         manual,
-      });
-    }
+      }))).then(() => undefined);
   });
 }

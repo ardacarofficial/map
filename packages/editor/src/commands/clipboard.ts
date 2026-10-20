@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { attachPreparedBrush } from "./smartBrushActions";
 /**
  * Copy / cut / paste / delete of the marquee region on the captured selection layers.
@@ -57,6 +58,7 @@ export function copySelection(): boolean {
 }
 
 export function cutSelection(): boolean {
+  if (!manualEditAllowed()) return false;
   const c = contextOf(useEditorStore.getState());
   const rect = mapRegion(c);
   if (!canUseSelectionScope() || !rect || !c.store) return false;
@@ -71,6 +73,7 @@ export function cutSelection(): boolean {
 
 /** Clears the region on the captured selection layers (one undo step). */
 export function deleteSelection(): boolean {
+  if (!manualEditAllowed()) return false;
   const c = contextOf(useEditorStore.getState());
   const rect = mapRegion(c);
   if (!canUseSelectionScope() || !rect || !c.store) return false;
@@ -122,6 +125,7 @@ function startPlacing(clip: TileClip): boolean {
  * a clip there wins (it may come from another window), else the in-memory clip.
  */
 export function pasteText(text: string | null | undefined): boolean {
+  if (!manualEditAllowed()) return false;
   const clip = clipFromText(text) ?? memoryClip;
   if (!clip) {
     toast.info(t("toast.clipboardEmpty"));
@@ -132,12 +136,14 @@ export function pasteText(text: string | null | undefined): boolean {
 
 /** Paste from the command palette / toolbar: reads the system clipboard if allowed. */
 export async function pasteFromSystem(): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const text = await Promise.resolve(navigator.clipboard?.readText()).catch(() => null);
   return pasteText(text ?? null);
 }
 
 /** X / Y: flips the stamp, or turns the selected tile into a flipped 1×1 stamp. */
 export function flipStampOrTile(axis: "x" | "y"): boolean {
+  if (!manualEditAllowed()) return false;
   const state = useEditorStore.getState();
   if (state.stamp) {
     const flipped = flipClip(state.stamp, axis);

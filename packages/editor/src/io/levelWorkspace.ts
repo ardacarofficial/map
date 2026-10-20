@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { installPixelAssets } from "./pixelAssetIo";
 import type { GeneratedRecipe } from "./smartStampRecipes";
 
@@ -151,6 +152,10 @@ export class LevelWorkspace {
   readonly #contentListeners = new Set<() => void>();
   readonly #contentSubscriptions = new Map<string, () => void>();
   #contentRevision = 0;
+  #pendingProjectData: MapDocument | null = null;
+
+  /** Unopened maps must never inherit tentative project metadata through navigation. */
+  setPendingProjectData(source: MapDocument | null): void { this.#pendingProjectData = source; }
 
   /** Content/list changes only: activation, cache eviction, saving and history bookkeeping are neutral. */
   get contentRevision(): number { return this.#contentRevision; }
@@ -160,7 +165,7 @@ export class LevelWorkspace {
   }
   #contentChanged(): void {
     this.#contentRevision++;
-    for (const listener of this.#contentListeners) listener();
+    for (const listener of this.#contentListeners) { try { listener(); } catch { console.warn("Workspace content observer failed"); } }
   }
 
   constructor(init: WorkspaceInit) {
@@ -272,14 +277,14 @@ export class LevelWorkspace {
    * history; otherwise it is dropped (its file is identical).
    * @throws on an unknown id, a level that is neither cached nor readable.
    */
-  async activate(id: string, fs: ProjectFileSystem | null): Promise<LevelEntry> {
+  async activate(id: string, fs: ProjectFileSystem | null, options: { pending?: boolean } = {}): Promise<LevelEntry> {
     const level = this.level(id);
     if (!level) throw new Error(`activate: unknown level "${id}"`);
     if (id === this.#activeId) return this.active;
     const source = this.active.store.document;
     let entry = this.#entries.get(id);
     if (entry) {
-      entry.store = withProjectData(entry.store, source);
+      if (!options.pending) entry.store = withProjectData(entry.store, source);
     } else {
       if (!fs) throw new FileNotFoundError(level.path);
       const text = await fs.readText(level.path);
@@ -301,7 +306,7 @@ export class LevelWorkspace {
 
   /** A level file's text parsed with the active level's project data (tilesets, entity types). */
   #parse(text: string): MapDocument {
-    const current = this.active.store.document;
+    const current = this.#pendingProjectData ?? this.active.store.document;
     return parseLevel(text, current.tilesets, current.entityTypes, projectDataOf(current));
   }
 
@@ -375,6 +380,54 @@ export class LevelWorkspace {
     return this.#insert(options.name, store, this.#levels.length, diskFiles);
   }
 
+  /** Agent preparation is private until all asynchronous work has succeeded. */
+  prepareAgentLevel(options: NewLevelOptions, diskFiles: readonly string[] = []): { level: ProjectLevel; store: MapStore } {
+    const source = this.#pendingProjectData ?? this.active.store.document;
+    const store = this.active.store.createSibling(createDocument({
+      width: options.width, height: options.height, tileWidth: options.tileSize,
+      tileHeight: options.tileHeight ?? options.tileSize, tilesets: source.tilesets,
+      entityTypes: source.entityTypes, ...projectDataOf(source),
+    }));
+    const path = this.#freePath(options.name, diskFiles);
+    const project = addLevel(this.#data(), { name: options.name, path, world: this.#freeWorldSpot(store.document) });
+    return { level: project.levels.find(l => l.path === path)!, store };
+  }
+
+  stageAgentLevel(level: ProjectLevel, store: MapStore): void {
+    if (this.level(level.id) || this.#levels.some(l => l.path.toLowerCase() === level.path.toLowerCase())) throw new Error("Agent map path is occupied");
+    this.#levels = [...this.#levels, level];
+    this.#cache({ id: level.id, store, knownText: null, dirty: true });
+    this.#contentChanged();
+  }
+
+  /** O1: cancellation never retires an id or queues a deletion for an unsaved map. */
+  removeProvisionalLevel(id: string): void {
+    const entry = this.#entries.get(id);
+    if (!entry || entry.knownText !== null) throw new Error("Only never-saved maps can be removed provisionally");
+    const remaining = this.#levels.filter(l => l.id !== id);
+    if (!remaining.length) throw new Error("Cannot remove the last map");
+    if (this.#activeId === id) {
+      const fallback = remaining.find(l => this.#entries.has(l.id));
+      if (!fallback) throw new Error("No loaded fallback map");
+      this.#activeId = fallback.id;
+    }
+    this.history.remove(id);
+    this.#contentSubscriptions.get(id)?.();
+    this.#contentSubscriptions.delete(id);
+    this.#entries.delete(id); this.#pinned.delete(id);
+    this.#levels = remaining;
+    this.#contentChanged();
+  }
+
+  restorePersistence(entries: readonly { mapId: string; store: MapStore; dirty: boolean; knownText: string | null }[], removals: readonly string[]): void {
+    for (const saved of entries) {
+      const entry = this.#entries.get(saved.mapId);
+      if (entry?.store === saved.store) { entry.dirty = saved.dirty; entry.knownText = saved.knownText; }
+    }
+    this.#removedFiles.clear();
+    for (const path of removals) this.#removedFiles.add(path);
+  }
+
   /**
    * Copies a level (its current state, unsaved edits included) under a new
    * id and file, right after the original. Portals inside keep their targets.
@@ -395,6 +448,7 @@ export class LevelWorkspace {
   }
 
   #insert(name: string, store: MapStore, index: number, diskFiles: readonly string[]): ProjectLevel {
+    if (!manualEditAllowed()) throw new Error("AI edit pending approval");
     const path = this.#freePath(name, diskFiles);
     const world = this.#freeWorldSpot(store.document);
     const project = addLevel(this.#data(), { name, path, world }, index);

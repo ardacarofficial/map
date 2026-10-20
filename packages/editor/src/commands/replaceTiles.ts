@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { cellPaletteIndex, isTileLayer, planTileReplacement, type MapStore, type PaletteEntry, type TileReplacementWrites } from "@smap/core";
 import { create } from "zustand";
 
@@ -98,6 +99,7 @@ export function replacementPlan(draft: ReplacementDraft): TileReplacementWrites[
 }
 
 export function commitTileReplacement(): boolean {
+  if (!manualEditAllowed()) return false;
   const draft = useTileReplacement.getState().draft;
   if (!draft?.to || draft.picking || draft.store.inTransaction || replacementPlan(draft).length === 0) return false;
   const { store, to } = draft;

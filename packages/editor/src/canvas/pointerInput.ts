@@ -1,3 +1,4 @@
+import { editGate, manualEditAllowed } from "../agent/editGate";
 import type { PixelController } from "./pixelController";
 import { usePixelUi } from "../state/pixelUi";
 import { activeSmartStamp, useSmartStampSession } from "../ui/stamps/smartStampSession";
@@ -378,6 +379,7 @@ export class PointerInput {
     if (e.ctrlKey || e.metaKey || e.altKey || !this.#canvasFocused() || this.#host.world()) return;
     const off = nudgeOffset(e.key, e.shiftKey);
     if (!off) return;
+    if (editGate.blocked) { manualEditAllowed(); return; }
     if (!this.#host.tools.nudgeSelection(off.x, off.y)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -423,6 +425,7 @@ export class PointerInput {
       this.#startPan(e);
       return;
     }
+    if (!manualEditAllowed()) return;
     const cell = this.pointerCell();
     if (!cell) return;
     this.#syncModifiers(e);

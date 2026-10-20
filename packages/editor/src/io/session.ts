@@ -1,3 +1,5 @@
+import { admitEditorSave, cancelPendingEdit, clearAgentWorld, editGate, manualEditAllowed, enterAgentWorldChange, hasAgentWorldFlush, prepareAgentWorldChange, resetAgentWorld, saveDeferred } from "../agent/editGate";
+import type { SaveAdmission } from "@smap/agent";
 import { formatUiError } from "../platform/errorMessages";
 import { EditedAssetError } from "./editedPng";
 import { usePixelUi } from "../state/pixelUi";
@@ -20,6 +22,7 @@ import {
   FormatError,
   isTileLayer,
   MapStore,
+  PROJECT_FILE_NAME,
   normalizeProjectSettings,
   type MapDocument,
   type ProjectLevel,
@@ -75,6 +78,7 @@ type ProjectFolder = ProjectLocation;
 
 /** Where the open project lives on disk; `null` until first saved. */
 let folder: ProjectFolder | null = null;
+let knownProjectText: string | null = null;
 /**
  * v1.0: the open project's levels (list, cached stores, per-level dirty
  * state and the file text last read / written for change detection).
@@ -91,9 +95,13 @@ let writeQueue: Promise<unknown> = Promise.resolve();
 
 /** Explicit file actions serialize with manual save/autosave and suppress focus checks. */
 export function withProjectWriteGate<T>(run: () => Promise<T>): Promise<T> {
+  const admission = admitEditorSave();
   const guarded = async () => {
-    writesInFlight++;
-    try { return await run(); } finally { writesInFlight--; }
+    try {
+      admission.assertAllowed();
+      writesInFlight++;
+      try { return await run(); } finally { writesInFlight--; }
+    } finally { admission.release(); }
   };
   const next = writeQueue.then(guarded, guarded);
   writeQueue = next.catch(() => undefined);
@@ -102,6 +110,7 @@ export function withProjectWriteGate<T>(run: () => Promise<T>): Promise<T> {
 
 function setFolder(next: ProjectFolder | null): void {
   folder = next;
+  knownProjectText = null;
   lastBackupText.clear();
   useSaveStatus.setState({ hasFolder: next !== null, lastSavedAt: null, failed: false, diskConflict: null });
   getPlatform().watchProject(next);
@@ -124,7 +133,13 @@ export function getLevelWorkspace(): LevelWorkspace | null {
 export function publishLevelState(options: { listChanged?: boolean } = {}): void {
   const ws = workspace;
   if (!ws) return;
-  if (options.listChanged) useProjectLibrary.getState().setLevels(ws.levels);
+  if (options.listChanged) {
+    const current = useProjectLibrary.getState().levels;
+    if (current.length !== ws.levels.length || current.some((level, i) => {
+      const next = ws.levels[i]!;
+      return level.id !== next.id || level.name !== next.name || level.path !== next.path || level.world.x !== next.world.x || level.world.y !== next.world.y;
+    })) useProjectLibrary.getState().setLevels(ws.levels);
+  }
   useProjectLibrary.getState().setDirtyLevels(ws.dirtyIds());
 }
 
@@ -184,6 +199,7 @@ function activate(
   const level = library.levels.find((l) => l.id === project.levelId) ?? library.levels.find((l) => l.path === project.levelPath);
   if (!level) throw new Error(`activate: level ${project.levelPath} is not in the project`);
   recentThumbnails.cancel();
+  resetAgentWorld();
   project = { ...project, levelId: level.id, levelPath: level.path };
   workspace?.dispose();
   workspace = new LevelWorkspace({
@@ -275,6 +291,7 @@ export function notifyUnsavedGuards(): void {
  * Returns true when it is fine to continue (saved or discarded).
  */
 export async function confirmDiscard(): Promise<boolean> {
+  await prepareAgentWorldChange();
   for (const guard of unsavedGuards) if (guard.dirty() && !(await guard.settle())) return false;
   const project = useEditorStore.getState().project;
   if (!project || !readSaveIndicator().unsaved) return true;
@@ -293,6 +310,12 @@ export async function confirmDiscard(): Promise<boolean> {
  * the layer template are part of the initial state, not undo steps.
  */
 export async function newProject(options: NewProjectSetup): Promise<void> {
+  const leave = enterAgentWorldChange();
+  try { await newProjectNow(options); } finally { leave(); }
+}
+
+async function newProjectNow(options: NewProjectSetup): Promise<void> {
+  await prepareAgentWorldChange();
   const reservedIds = options.tilesets?.length ? await sourceIdsOnDisk(options.folder?.fs ?? null) : new Set<string>();
   const project = createProjectDocument(options);
   const settings = options.settings ?? DEFAULT_PROJECT_SETTINGS;
@@ -329,6 +352,7 @@ export async function newProject(options: NewProjectSetup): Promise<void> {
 
 /** Replaces the open project's settings (project settings dialog); saved with the next (auto)save. */
 export function updateProjectSettings(settings: ProjectSettings): void {
+  if (!manualEditAllowed()) return;
   if (!useEditorStore.getState().project) return;
   useProjectLibrary.getState().setSettings(settings);
 }
@@ -352,7 +376,7 @@ function addRecent(target: ProjectFolder, project: OpenProject): void {
   const active = useEditorStore.getState().project;
   if (!active || active.store !== project.store) return;
   project = active; // activate normalizes the level ID into a new OpenProject object
-  const current = () => useEditorStore.getState().project === project && folder === target;
+  const current = () => !editGate.blocked && useEditorStore.getState().project === project && folder === target;
   recentThumbnails.request({
     tag: { project, level: project.levelId ?? project.levelPath, revision: project.store.revision },
     isCurrent: current,
@@ -366,6 +390,16 @@ function addRecent(target: ProjectFolder, project: OpenProject): void {
 }
 
 export function closeProject(): void {
+  if (editGate.blocked || hasAgentWorldFlush()) {
+    const leave = enterAgentWorldChange();
+    void prepareAgentWorldChange().then(closeProjectNow).finally(leave);
+    return;
+  }
+  closeProjectNow();
+}
+
+function closeProjectNow(): void {
+  clearAgentWorld();
   recentThumbnails.cancel();
   setFolder(null);
   selectMajorGridProject(null);
@@ -385,6 +419,7 @@ export function closeProject(): void {
  * has a folder); the folder keeps its name. Returns false when nothing changed.
  */
 export function renameProject(name: string): boolean {
+  if (!manualEditAllowed()) return false;
   const project = useEditorStore.getState().project;
   const next = name.replace(/\s+/g, " ").trim();
   if (!project || next === "" || next === project.name) return false;
@@ -505,6 +540,7 @@ async function sourceIdsOnDisk(fs: ProjectFileSystem | null): Promise<ReadonlySe
  * registered (its removal can be undone) are not reused.
  */
 export function addDecodedTilesets(store: MapStore, items: readonly PlannedTileset[], group: string | null = null, reservedIds: ReadonlySet<string> = new Set()): Tileset[] {
+  if (!manualEditAllowed()) { for (const item of items) item.png.bitmap.close(); return []; }
   const doc: MapDocument = store.document;
   const taken = new Set([...doc.tilesets.map((ts) => ts.id), ...reservedIds]);
   for (const image of allTilesetImages()) taken.add(image.tilesetId);
@@ -616,6 +652,7 @@ async function promptBulk(pngs: readonly DecodedPng[], mode: BulkRequest["mode"]
  * for all of them, added as one undo step.
  */
 export async function addTilesetFiles(files: readonly File[]): Promise<void> {
+  if (!manualEditAllowed()) return;
   if (!useEditorStore.getState().project) return;
   const pngs = await decodeAll(files);
   const project = useEditorStore.getState().project;
@@ -626,7 +663,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
   let reservedIds: ReadonlySet<string>;
   try { reservedIds = await sourceIdsOnDisk(getProjectFolder()?.fs ?? null); }
   catch (error) { for (const png of pngs) png.bitmap.close(); toast.error(t("toast.saveFailed", { detail: describeError(error) })); return; }
-  if (useEditorStore.getState().project !== project) { for (const png of pngs) png.bitmap.close(); return; }
+  if (useEditorStore.getState().project !== project || !manualEditAllowed()) { for (const png of pngs) png.bitmap.close(); return; }
   const map = project.store.document.map;
   const mapTile = { tileWidth: map.tileWidth, tileHeight: map.tileHeight };
   if (pngs.length === 1) {
@@ -639,7 +676,7 @@ export async function addTilesetFiles(files: readonly File[]): Promise<void> {
     }
     const choice = await promptTilesetGrid(png, { kind: "add" }, mapTile);
     const store = useEditorStore.getState().project?.store;
-    if (!choice || !store) {
+    if (!choice || !store || !manualEditAllowed()) {
       png.bitmap.close();
       return;
     }
@@ -719,7 +756,15 @@ export function onProjectSaved(listener: (event: ProjectSavedEvent) => void | Pr
  * Writes the project into `target` (queued behind other writes), then a
  * backup of the level. Updates the remembered disk text and the save status.
  */
-async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false): Promise<void> {
+async function writeProjectFiles(target: ProjectFolder, project: OpenProject, manual = false, existingAdmission?: SaveAdmission): Promise<void> {
+  const admission = existingAdmission ?? admitEditorSave();
+  try {
+    admission.assertAllowed();
+    await writeAdmittedProjectFiles(target, project, manual, admission);
+  } finally { if (!existingAdmission) admission.release(); }
+}
+
+async function writeAdmittedProjectFiles(target: ProjectFolder, project: OpenProject, manual: boolean, admission: SaveAdmission): Promise<void> {
   await waitForSmartStampRegeneration();
   const ws = workspace;
   if (!ws) return;
@@ -729,6 +774,7 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
   if (recentThumbnails.cancel()) lastThumbnailAt = 0;
   const run = async () => {
     if(workspace!==ws)return;
+    admission.assertAllowed();
     await publishSavedBrushAssets();
     if(workspace!==ws)return;
     writesInFlight++;
@@ -738,6 +784,7 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
       ws.name = project.name;
       const allLevels = folder !== target;
       if (allLevels) for (const level of ws.levels) await ws.load(level.id, folder?.fs ?? null);
+      admission.assertAllowed();
       const levels = await ws.save(target.fs, {
         allLevels,
         colorPalettes: lib.colorPalettes,
@@ -749,9 +796,21 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
       });
       if (workspace !== ws) return;
       if (folder !== target) {
+        // O2 sidecars are independent; preserve opaque bytes on Save As, too.
+        const sourceFs = folder?.fs;
+        if (sourceFs) {
+          let tags: string | null = null;
+          try { tags = await sourceFs.readText("ai-tags.json"); } catch (error) { if (!(error instanceof FileNotFoundError)) throw error; }
+          if (tags !== null) {
+            let destinationExists = true;
+            try { await target.fs.readText("ai-tags.json"); } catch (error) { if (error instanceof FileNotFoundError) destinationExists = false; else throw error; }
+            if (!destinationExists) await target.fs.writeText("ai-tags.json", tags);
+          }
+        }
         setFolder(target);
         selectMajorGridProject(typeof target.ref === "string" ? target.ref : `browser:${target.label}`, true);
       }
+      knownProjectText = await target.fs.readText(PROJECT_FILE_NAME);
       useSaveStatus.setState({ lastSavedAt: Date.now(), failed: false });
       publishLevelState();
       for (const listener of savedListeners) {
@@ -798,6 +857,12 @@ function settleDirty(libRevision: number): void {
  * later saves reuse it without asking. Returns true on success.
  */
 export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
+  if (saveDeferred()) return false;
+  const admission = admitEditorSave();
+  try { return await saveAdmittedCurrentProject(saveAs, admission); } finally { admission.release(); }
+}
+
+async function saveAdmittedCurrentProject(saveAs: boolean, admission: SaveAdmission): Promise<boolean> {
   const project = useEditorStore.getState().project;
   if (!project) return false;
   const result = await withBusy(async () => {
@@ -810,7 +875,7 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
       }
       const ws = workspace;
       const libRevision = useProjectLibrary.getState().revision;
-      await writeProjectFiles(target, project, true);
+      await writeProjectFiles(target, project, true, admission);
       // The user may still be drawing (or switching levels) while files are written.
       if (workspace !== ws) return true;
       settleDirty(libRevision);
@@ -837,6 +902,12 @@ export async function saveCurrentProject(saveAs: boolean): Promise<boolean> {
  * on disk since we last read or wrote it.
  */
 export async function autosaveNow(): Promise<void> {
+  if (editGate.blocked) return;
+  const admission = admitEditorSave();
+  try { await autosaveAdmitted(admission); } finally { admission.release(); }
+}
+
+async function autosaveAdmitted(admission: SaveAdmission): Promise<void> {
   const { project, dirty } = useEditorStore.getState();
   const target = folder;
   const ws = workspace;
@@ -854,7 +925,7 @@ export async function autosaveNow(): Promise<void> {
   }
   const libRevision = useProjectLibrary.getState().revision;
   const saved = useEditorStore.getState().project ?? project;
-  await writeProjectFiles(target, saved);
+  await writeProjectFiles(target, saved, false, admission);
   if (workspace !== ws) return;
   settleDirty(libRevision);
   // Keep the welcome screen's picture roughly current without redrawing it on every autosave.
@@ -878,7 +949,7 @@ export async function checkDiskForChanges(): Promise<void> {
     const change = await ws.activeDiskChange(target.fs);
     // Ignore the result when a write started meanwhile (it may be our own file).
     if (writesInFlight > 0 || folder !== target || useEditorStore.getState().project !== project) return;
-    if (change) useSaveStatus.setState({ diskConflict: change });
+    if (change) { await cancelPendingEdit(); useSaveStatus.setState({ diskConflict: change }); }
   } catch (error) {
     console.warn("Disk check failed", error);
   } finally {
@@ -886,8 +957,20 @@ export async function checkDiskForChanges(): Promise<void> {
   }
 }
 
+/** A confirmed external root edit cancels before its conflict is shown. */
+export async function checkProjectRootChange(): Promise<void> {
+  const target = folder, ws = workspace;
+  if (!target || !ws || knownProjectText === null || writesInFlight > 0) return;
+  let text: string | null = null;
+  try { text = await target.fs.readText(PROJECT_FILE_NAME); } catch { /* Removed root. */ }
+  if (target !== folder || ws !== workspace || writesInFlight > 0 || text === knownProjectText) return;
+  await cancelPendingEdit();
+  useSaveStatus.setState({ diskConflict: { path: PROJECT_FILE_NAME, diskText: text ?? "" } });
+}
+
 /** "Diskten yükle": reopens the project from its folder. */
 export async function reloadFromDisk(): Promise<void> {
+  await cancelPendingEdit();
   const target = folder;
   useSaveStatus.setState({ diskConflict: null });
   if (!target) return;
@@ -924,6 +1007,7 @@ export async function listProjectBackups(): Promise<BackupEntry[]> {
  * saving it makes it the current version (undo history starts fresh).
  */
 export async function openBackup(entry: BackupEntry): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const project = useEditorStore.getState().project;
   const target = folder;
   if (!project || !target) return false;
@@ -972,6 +1056,7 @@ async function openFromFolder(target: ProjectFolder, levelId?: string): Promise<
   });
   for (const path of loaded.brokenStamps) toast.warning(t("toast.stampUnreadable", { path }));
   for (const path of loaded.missingImages) toast.warning(t("toast.missingTilesetImage", { path }));
+  knownProjectText = loaded.projectText;
   warnPalette(loaded.levels.find((l) => l.id === loaded.levelId)?.name ?? levelName(loaded.levelPath), loaded.document);
   return loaded.name;
 }
@@ -1086,12 +1171,12 @@ async function switchToLevel(levelId: string): Promise<boolean> {
   if (!ws || !project) return false;
   if (levelId === ws.activeId) return true;
   const level = ws.level(levelId);
-  if (!level || project.store.inTransaction) return false;
+  if (!level || (project.store.inTransaction && !editGate.blocked)) return false;
   activeLayerMemory.set(ws.activeId, state.activeLayerId);
   let entry;
   const fromDisk = !ws.entry(levelId);
   try {
-    entry = await ws.activate(levelId, folder?.fs ?? null);
+    entry = await ws.activate(levelId, folder?.fs ?? null, { pending: editGate.blocked });
     if (fromDisk) warnPalette(level.name, entry.store.document);
     if (fromDisk && entry.store.document.migrations.length > 0) announceFormatMigration(entry.store.document, levelId);
   } catch (error) {
@@ -1126,6 +1211,10 @@ export function installSession(): () => void {
     },
   });
   autosave = scheduler;
+  const unsubscribeGate = editGate.subscribe(() => {
+    if (editGate.blocked) { scheduler.cancel(); recentThumbnails.cancel(); }
+    else if (folder && (useEditorStore.getState().dirty || workspace?.hasUnsavedLevels)) scheduler.notifyChange();
+  });
   let unsubscribeStore: (() => void) | null = null;
   const watch = (project: OpenProject | null) => {
     unsubscribeStore?.();
@@ -1186,6 +1275,7 @@ export function installSession(): () => void {
     unsubscribeStore?.();
     unsubscribeEditor();
     unsubscribeLibrary();
+    unsubscribeGate();
     scheduler.dispose();
     if (autosave === scheduler) autosave = null;
     window.removeEventListener("beforeunload", onBeforeUnload);

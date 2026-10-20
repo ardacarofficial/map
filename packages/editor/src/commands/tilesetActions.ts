@@ -1,3 +1,4 @@
+import { editGate, manualEditAllowed } from "../agent/editGate";
 import { setTilesetFileSource } from '../state/tilesetImages';
 import { pngHash } from '../state/pngHash';
 import { isGeneratedAsset } from "@smap/core";
@@ -84,6 +85,7 @@ function currentTilesetId(): string | null {
  * project the first PNG starts one (like the welcome drop).
  */
 export async function openTilesetImport(): Promise<void> {
+  if (!manualEditAllowed()) return;
   const files = await pickFiles("image/png");
   if (files.length === 0) return;
   await importTilesetFiles(files);
@@ -102,6 +104,7 @@ export function importTilesetFiles(files: readonly File[]): Promise<void> {
  * dropdown context menu, "Tileset ayarları…".
  */
 export async function openTilesetSettings(tilesetId: string | null = currentTilesetId()): Promise<void> {
+  if (!manualEditAllowed()) return;
   const store = activeStore();
   const tileset = tilesetId ? store?.document.getTileset(tilesetId) : undefined;
   if (!store || !tileset) return;
@@ -146,6 +149,7 @@ export async function openTilesetSettings(tilesetId: string | null = currentTile
  * was applied.
  */
 export async function applyTilesetGrid(tilesetId: string, spec: TileGridSpec): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const fixed = activeStore()?.document.getTileset(tilesetId);
   if (fixed && isGeneratedAsset(fixed)) { toast.info(t(fixed.edited ? "pixel.fixedAsset" : "smartStamp.fixedGrid")); return false; }
   const image = getTilesetImage(tilesetId);
@@ -180,6 +184,7 @@ const seenImagePaths = new Map<string, string>();
  * follows. Undo brings the old image back.
  */
 export async function replaceTilesetImage(tilesetId: string | null = currentTilesetId()): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   if (!tilesetId || !activeStore()?.document.getTileset(tilesetId)) return false;
   const fixed = activeStore()?.document.getTileset(tilesetId);
   if (fixed && isGeneratedAsset(fixed)) { toast.info(t(fixed.edited ? "pixel.fixedAsset" : "smartStamp.fixedGrid")); return false; }
@@ -191,6 +196,7 @@ export async function replaceTilesetImage(tilesetId: string | null = currentTile
   const { width, height } = png.bitmap;
   const imagePath = `tilesets/image-${tilesetId}-${await pngHash(png.bytes)}.png`;
   let swapped = false;
+  if (!manualEditAllowed()) { png.bitmap.close(); return false; }
   const outcome = await runProjectRegrid(tilesetId, (store) => {
     const result = store.dispatch({ type: "replaceTilesetImage", tilesetId, imageWidth: width, imageHeight: height, imagePath });
     // The new pixels go in right away (same grid, other image), before the levels follow.
@@ -274,7 +280,7 @@ async function runProjectRegrid(tilesetId: string, edit: (store: MapStore) => Ti
     return null;
   }
   // The user may have switched level or project while files were read.
-  if (getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tilesetId)) return null;
+  if (!manualEditAllowed() || getLevelWorkspace() !== ws || activeStore() !== store || !store.document.getTileset(tilesetId)) return null;
   const before = store.revision;
   const grid = gridCopy(store.document.getTileset(tilesetId)!);
   let result!: TilesetRemapResult;
@@ -336,7 +342,7 @@ export function syncProject(): SyncStats {
   const stats: SyncStats = { levels: 0, clearedCells: 0, keptCells: 0, stamps: 0 };
   const ws = getLevelWorkspace();
   const store = activeStore();
-  if (!ws || !store || suspended || ws.history.applyingPlan) return stats;
+  if (editGate.blocked || !ws || !store || suspended || ws.history.applyingPlan) return stats;
   const doc = store.document;
   const regridded: { tilesetId: string; before: TileGrid; after: TileGrid }[] = [];
   for (const tileset of doc.tilesets) {
@@ -497,6 +503,7 @@ function listStep(edit: (store: MapStore) => void): boolean {
 
 /** Renames a tileset (all levels; undoable). */
 export function renameTileset(tilesetId: string, name: string): void {
+  if (!manualEditAllowed()) return;
   const trimmed = name.trim();
   const tileset = activeStore()?.document.getTileset(tilesetId);
   if (!tileset || trimmed === "" || trimmed === tileset.name) return;
@@ -514,6 +521,7 @@ export async function promptRenameTileset(tilesetId: string | null = currentTile
 
 /** Moves a tileset into `group` (null = ungrouped), at the group's end. */
 export function setTilesetGroup(tilesetId: string, group: string | null): void {
+  if (!manualEditAllowed()) return;
   const doc = activeStore()?.document;
   if (!doc) return;
   const plan = planTilesetMove(doc.tilesets, tilesetId, { group: group ?? "", beforeId: null });
@@ -522,6 +530,7 @@ export function setTilesetGroup(tilesetId: string, group: string | null): void {
 
 /** Drag and drop in the library: reorder and / or regroup (one undo step). */
 export function dropTileset(tilesetId: string, target: DropTarget): void {
+  if (!manualEditAllowed()) return;
   const doc = activeStore()?.document;
   if (!doc) return;
   const plan = planTilesetMove(doc.tilesets, tilesetId, target);
@@ -539,6 +548,7 @@ function applyMove(tilesetId: string, plan: { index: number; group: string | nul
 
 /** "Gruba taşı ▸ Yeni grup…": asks for a name, then moves the tileset there. */
 export async function moveTilesetToNewGroup(tilesetId: string): Promise<void> {
+  if (!manualEditAllowed()) return;
   const doc = activeStore()?.document;
   if (!doc?.getTileset(tilesetId)) return;
   const name = await askText({
@@ -552,6 +562,7 @@ export async function moveTilesetToNewGroup(tilesetId: string): Promise<void> {
 
 /** Renames a group (every tileset in it; one undo step). An existing name merges the two. */
 export function renameTilesetGroup(from: string, to: string): void {
+  if (!manualEditAllowed()) return;
   const name = to.trim();
   const doc = activeStore()?.document;
   if (!doc || name === "" || name === from) return;
@@ -581,6 +592,7 @@ export function gotoTileset(tilesetId: string): void {
  * (their cells come back exactly on undo).
  */
 export async function removeTileset(tilesetId: string | null = currentTilesetId()): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   const store = activeStore();
   const tileset = tilesetId ? store?.document.getTileset(tilesetId) : undefined;

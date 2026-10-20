@@ -1,3 +1,4 @@
+import { editGate } from "../agent/editGate";
 /**
  * World map view (v1.2): the canvas' second view, not a separate editor
  * (CLAUDE.md: "mevcut tuvalin ikinci görünümü"). Every level of the project
@@ -322,6 +323,7 @@ export class WorldView {
   pointerMove(e: PointerEvent, p: Point): void {
     const press = this.#press;
     if (!press || e.pointerId !== press.pointerId) return;
+    if (editGate.blocked) return;
     press.alt = e.altKey;
     if (!press.dragging && !exceedsDragThreshold(press.downScreen, p)) return;
     press.dragging = true;

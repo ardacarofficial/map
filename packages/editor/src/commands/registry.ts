@@ -1,3 +1,4 @@
+import { editGate, manualEditAllowed } from "../agent/editGate";
 /**
  * Command registry. A command is something the user can do; shortcuts
  * (`shortcuts.ts`), the command palette, toolbar buttons and menus all run
@@ -36,7 +37,12 @@ export function allCommands(): Command[] {
   return [...commands.values()];
 }
 
+export function commandAllowedDuringEdit(command: Command): boolean {
+  return command.id.startsWith("ai.") || command.category === "view" || command.category === "general" || command.category === "tool" || ["file.save", "file.saveAs", "file.close", "file.new", "file.open", "level.next", "level.previous", "edit.copy"].includes(command.id);
+}
+
 export function isEnabled(command: Command): boolean {
+  if (editGate.blocked && !commandAllowedDuringEdit(command)) return false;
   return command.enabled?.() ?? true;
 }
 
@@ -76,6 +82,7 @@ export function paletteEntries(): PaletteEntry[] {
 /** Runs a command if it exists and is enabled. Returns true when it ran. */
 export function runCommand(id: CommandId): boolean {
   const command = commands.get(id);
+  if (command && editGate.blocked && !commandAllowedDuringEdit(command)) { manualEditAllowed(); return false; }
   if (!command || !isEnabled(command)) return false;
   command.run();
   return true;

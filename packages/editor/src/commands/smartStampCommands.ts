@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { remedyBrushGrid } from "./smartBrushGrid";
 import { SmartBrushError } from "./smartBrushErrors";
 import { reportSmartBrushError } from "./smartBrushErrors";
@@ -22,13 +23,13 @@ class SmartStampChangedError extends SmartBrushError {
 }
 export interface PreparedSmartStamp { readonly store: MapStore; readonly source: Stamp; readonly stamp: Stamp; readonly assets: readonly { tileset: Tileset; image: TilesetImage }[]; readonly worldVersion: number; readonly recipeVersion:string; readonly sources: ReadonlyMap<string, SourceVersion> }
 
-export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInnerCorner | null, targets?: ReadonlyMap<string, string>, profile?: BrushProfile, ready?: (prepared: PreparedSmartStamp) => void, targetGrid?: {readonly tileWidth:number;readonly tileHeight:number}): Promise<PreparedSmartStamp> {
+export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInnerCorner | null, targets?: ReadonlyMap<string, string>, profile?: BrushProfile, ready?: (prepared: PreparedSmartStamp) => void, targetGrid?: {readonly tileWidth:number;readonly tileHeight:number}, context?: { readonly store: MapStore; readonly recipes: ReturnType<typeof useProjectLibrary.getState>["generatedRecipes"] }): Promise<PreparedSmartStamp> {
   const gate = smartBrushPreparationDebug?.gate;
   if (gate) {
     smartBrushPreparationDebug!.entered++;
     if (await gate) throw new Error("Brush preparation failed (debug)");
   }
-  const store = useEditorStore.getState().project?.store;
+  const store = context?.store ?? useEditorStore.getState().project?.store;
   if (!store) throw new SmartBrushError("cancelled");
   const problem = nineSliceProblem(stamp);
   if (problem) throw new SmartBrushError("invalidSource");
@@ -55,7 +56,7 @@ export async function prepareSmartStamp(stamp: Stamp, innerCorner?: NineSliceInn
   let road: StampNineSlice["road"];
   try {
     for (const layer of stamp.layers.filter(l => !l.grid && (!targets || targets.has(l.layerId)))) {
-      const old = doc.tilesets.find(t => (!targets || t.id === targets.get(layer.layerId)) && t.generated?.stampId === stamp.id && t.generated.layerId === layer.layerId && t.generated.sourceWidth === stamp.width && t.generated.sourceHeight === stamp.height && (targets || innerCorner === undefined || JSON.stringify(t.generated.innerCorner ?? null) === JSON.stringify(innerCorner)) && (targets || !useProjectLibrary.getState().generatedRecipes.some(r => r.tilesetId === t.id && !sameBakeRecipe(r.stamp, stamp))));
+      const old = doc.tilesets.find(t => (!targets || t.id === targets.get(layer.layerId)) && t.generated?.stampId === stamp.id && t.generated.layerId === layer.layerId && t.generated.sourceWidth === stamp.width && t.generated.sourceHeight === stamp.height && (targets || innerCorner === undefined || JSON.stringify(t.generated.innerCorner ?? null) === JSON.stringify(innerCorner)) && (targets || !(context?.recipes ?? useProjectLibrary.getState().generatedRecipes).some(r => r.tilesetId === t.id && !sameBakeRecipe(r.stamp, stamp))));
       const id = old?.id ?? targets?.get(layer.layerId) ?? makeStampId(`generated-${stamp.id}-${assets.length + 1}`, [...doc.tilesets.map(t => t.id), ...[...allTilesetImages()].map(i => i.tilesetId)]);
       let tileset = profileSpan(profile, "metadata", () => prepareNineSliceTileset(stamp, layer.layerId, { id, imagePath: old?.imagePath ?? `tilesets/${id}.png`, tileWidth: grid.tileWidth, tileHeight: grid.tileHeight, tilesets: doc.tilesets, imageHashes: hashes, ...(innerCorner !== undefined ? { innerCorner } : {}) }));
       if (!nineSliceProblem(stamp, { roadLayerId: layer.layerId })) {
@@ -128,6 +129,7 @@ export function acceptSmartStamp(prepared: PreparedSmartStamp, regeneration = fa
   if (activeStampId(editor.stamp) === prepared.stamp.id) editor.setStamp(publishedStamp);
 }
 export function disableSmartStamp(id: string): void {
+  if (!manualEditAllowed()) return;
   const stamp = useProjectLibrary.getState().stamps.find(s => s.id === id);
   if (!stamp?.nineSlice) return;
   const flat = { ...stamp, smartDisabled: true };
