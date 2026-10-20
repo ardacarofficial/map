@@ -6,6 +6,7 @@
 import { FolderTakenError, folderNameFor, RecentGoneError, type Platform, type ProjectLocation, type RecentEntry } from "@smap/editor";
 
 import * as bridge from "./desktopBridge";
+import { createAgentConnection } from "./agentBridge";
 import { DesktopFsError, joinPath, TauriFileSystem, toProjectPath, writeFileAbsolute, readFileAbsolute } from "./tauriFileSystem";
 
 const PROJECT_FILE = "project.smap";
@@ -78,6 +79,7 @@ export function createDesktopPlatform(): Platform {
 
   return {
     kind: "desktop",
+    agent: createAgentConnection(),
 
     async openProjectDialog() {
       const path = await bridge.openProjectDialog();

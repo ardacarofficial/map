@@ -1,6 +1,8 @@
 //! Tauri yapıştırıcısı: pencere, eklentiler ve `smap_host::Host`'u çağıran
 //! ince komutlar. Mantık `crates/smap-host`'tadır ve orada test edilir.
 
+mod ai;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -401,9 +403,18 @@ pub fn run() {
             install_panic_hook();
             log::info!("starting v{}", app.package_info().version);
 
-            let config_dir = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let config_dir = app.path().app_config_dir()?;
             let recent_file = config_dir.join("recent.json");
-            app.manage(SettingsFile::new(config_dir.join("settings.json")));
+            let settings = SettingsFile::new(config_dir.join("settings.json"));
+            let ai_emitter = handle.clone();
+            let ai_service = Arc::new(smap_host::mcp::Service::new(
+                settings.clone(),
+                smap_host::mcp::SecretFile::new(config_dir.join("ai-secret.json")),
+                Arc::new(move |event, payload| ai_emitter.emit_to(MAIN, event, payload).map_err(|_| "renderer unavailable".into())),
+            )?);
+            app.manage(ai_service.clone());
+            tauri::async_runtime::spawn(async move { ai_service.start().await; });
+            app.manage(settings);
             let emitter = handle.clone();
             let host = Host::new(
                 recent_file,
@@ -431,6 +442,13 @@ pub fn run() {
             });
             log::info!("setup done in {} ms", started.elapsed().as_millis());
             Ok(())
+        })
+        .on_page_load(|window, payload| {
+            if window.label() == MAIN && matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(service) = window.try_state::<Arc<smap_host::mcp::Service>>() {
+                    service.transport().renderer_lost();
+                }
+            }
         })
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -464,9 +482,21 @@ pub fn run() {
             recent_remove,
             log_write,
             app_ready,
+            ai::ai_get_status,
+            ai::ai_set_config,
+            ai::ai_reveal_token,
+            ai::ai_regenerate_token,
+            ai::agent_ready,
+            ai::agent_reply,
+            ai::agent_publish_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Harita Tasarlayıcı");
+        .build(tauri::generate_context!())
+        .expect("error while building Harita Tasarlayıcı")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(service) = app.try_state::<Arc<smap_host::mcp::Service>>() { service.shutdown(); }
+            }
+        });
 }
 
 fn install_panic_hook() {
