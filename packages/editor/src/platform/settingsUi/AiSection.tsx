@@ -7,7 +7,7 @@ import { TextField } from "../../ui/primitives/TextField";
 import { DialogToggle, FormField } from "../../ui/dialogs/DialogFrame";
 import { toast } from "../../ui/toast/toastStore";
 import { agentEndpoint, connectionSnippet, validAgentPort, type AgentClientFormat } from "../../ui/agent/connectionSnippet";
-import { useAgentUi } from "../../ui/agent/agentUiAdapter";
+import { useAgentUiState } from "../../agent/agentUiState";
 import type { AiSettingsDraft } from "./aiSettingsDraft";
 
 export function AiSection({ draft, onBusyChange }: { draft: AiSettingsDraft; onBusyChange(busy: boolean): void }) {
@@ -15,7 +15,8 @@ export function AiSection({ draft, onBusyChange }: { draft: AiSettingsDraft; onB
   return <ConnectedAiSection draft={draft} connection={draft.connection} onBusyChange={onBusyChange} />;
 }
 function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSettingsDraft; connection: AgentConnection; onBusyChange(busy: boolean): void }) {
-  const agentState = useAgentUi(s => s.state);
+  const agentState = useAgentUiState();
+  const transaction = agentState.phase === "ready" || agentState.phase === "disabled" ? null : agentState.transaction;
   const status = useSyncExternalStore(listener => connection.subscribeStatus(listener), () => connection.status);
   const [client, setClient] = useState<AgentClientFormat>("claude");
   const [token, setToken] = useState<string | null>(null);
@@ -35,8 +36,8 @@ function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSett
         <TextField id="ai-port" inputMode="numeric" value={draft.port} aria-invalid={!validAgentPort(draft.port)} onChange={event => draft.setPort(event.target.value)} />
       </FormField>
       <FormField label={t("ai.settings.endpoint")}><p className="break-all text-sm text-text" data-ai-endpoint>{agentEndpoint(status.port)}</p></FormField>
-      <p role="status" aria-live="polite" className={`text-sm ${status.state === "failed" || status.state === "portInUse" ? "text-danger" : "text-muted"}`}>{agentState.transaction ? t(`ai.status.${agentState.phase}`) : connectionStatusText(status)}</p>
-      {agentState.transaction && <p className="truncate text-sm text-muted">{t("ai.client.writer")}: {agentState.transaction.owner.clientInfo.name}</p>}
+      <p role="status" aria-live="polite" className={`text-sm ${status.state === "failed" || status.state === "portInUse" ? "text-danger" : "text-muted"}`}>{transaction ? t(`ai.status.${agentState.phase}`) : connectionStatusText(status)}</p>
+      {transaction && <p className="truncate text-sm text-muted">{t("ai.client.writer")}: {transaction.owner.clientInfo.name}</p>}
       {status.clients.length > 0 && <ul aria-label={t("ai.client.count", { count: status.clients.length })} className="text-sm text-text">{status.clients.map((entry, index) => <li key={index} className="truncate" title={t("ai.client.nameVersion", { ...entry })}>{t("ai.client.nameVersion", { name: entry.name.slice(0, 128), version: entry.version.slice(0, 64) })}</li>)}</ul>}
       <FormField label={t("ai.settings.token")}>
         <div className="flex flex-wrap items-center gap-2">

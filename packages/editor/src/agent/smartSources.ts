@@ -1,5 +1,5 @@
 import { AgentError, AgentErrorCode, type AgentMetadataPort, type AgentSmartSourcePort, type AgentWorldPort, type PreparedSmartSource, type LayerMapping } from "@smap/agent";
-import { detectNineSliceSelection, isEntityLayer, isGridLayer, makeCell, NINE_SLICE_DETECTOR_VERSION, nineSliceProblem, type Stamp } from "@smap/core";
+import { detectNineSliceSelection, isEntityLayer, isGridLayer, makeCell, NINE_SLICE_DETECTOR_VERSION, nineSliceProblem, type Stamp, type MapStore } from "@smap/core";
 import { prepareSmartStamp, discardSmartStamp, type PreparedSmartStamp } from "../commands/smartStampCommands";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { getTilesetImage, removeTilesetImage, setTilesetImage, sourceVersionMatches, tilesetWorldVersion } from "../state/tilesetImages";
@@ -7,7 +7,7 @@ import { pngHash } from "../state/pngHash";
 import { imagePixels } from "./images";
 
 /** This preparation never selects a brush, stamp, layer, map tab or source rectangle. */
-export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMetadataPort): AgentSmartSourcePort {
+export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMetadataPort, followers: () => readonly MapStore[] = () => []): AgentSmartSourcePort {
   const records=new Map<string,{source:PreparedSmartSource;prepared:PreparedSmartStamp;published:boolean}>();
   const assertCurrent=(source:PreparedSmartSource)=>{
     const record=records.get(source.sourceId);
@@ -72,7 +72,10 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
     },
     publish(source){
       assertCurrent(source);const record=records.get(source.sourceId)!;
-      for(const asset of record.prepared.assets){if(!record.prepared.store.document.getTileset(asset.tileset.id))record.prepared.store.dispatch({type:"addTileset",tileset:asset.tileset});setTilesetImage(asset.image);}
+      for(const asset of record.prepared.assets){
+        for(const store of new Set([record.prepared.store,...followers()]))if(!store.document.getTileset(asset.tileset.id))store.dispatch({type:"addTileset",tileset:asset.tileset,undoable:true});
+        setTilesetImage(asset.image);
+      }
       const before=useProjectLibrary.getState().generatedRecipes,add=record.prepared.assets.map(a=>({tilesetId:a.tileset.id,stamp:record.prepared.source}));
       metadata.stage({kind:"recipes",before,after:[...before.filter(r=>!add.some(a=>a.tilesetId===r.tilesetId)),...add]});record.published=true;
     },

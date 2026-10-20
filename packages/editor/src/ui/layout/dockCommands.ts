@@ -1,3 +1,4 @@
+import { editGate } from "../../agent/editGate";
 import { useWorldView } from "../../commands/worldActions";
 import { isEntityLayer } from "@smap/core";
 import { allCommands, registerCommands, registerPaletteProvider, runCommand } from "../../commands/registry";
@@ -9,7 +10,7 @@ import { revealPanel, useDockStore } from "./dockStore";
 import { PANELS, panelListed } from "./panels";
 import { panelMenu } from "./PanelGroup";
 
-const ready = () => useEditorStore.getState().project !== null && !useEditorStore.getState().project?.store.inTransaction;
+const ready = () => useEditorStore.getState().project !== null && (!useEditorStore.getState().project?.store.inTransaction || editGate.blocked);
 const readyForPanel = (panel: PanelId) => {
   const s = useEditorStore.getState();
   return ready() && panelListed(panel, isEntityLayer(s.activeLayerId ? s.project?.store.document.getLayer(s.activeLayerId) : undefined), useWorldView.getState().view === "world");
@@ -27,7 +28,7 @@ export function registerDockCommands(): void {
     ]),
     ...PANEL_IDS.flatMap(panel => [
       ...ZONE_IDS.map(zone => ({ id: `panel.${panel}.${zone}` as const, title: moveTitles[zone], category: "view" as const, inPalette: false, enabled: () => readyForPanel(panel) && locatePanel(useDockStore.getState().layout, panel)?.zone !== zone, run: () => useDockStore.getState().move(panel, { zone }) })),
-      { id: `panel.${panel}.show` as const, title: panel === "color" ? "colorPanel.show" : `docking.show_${panel}` as MessageKey, category: "view" as const, enabled: () => readyForPanel(panel), run: () => { revealPanel(panel); } },
+      { id: `panel.${panel}.show` as const, title: panel === "color" ? "colorPanel.show" : panel === "aiActivity" ? "ai.activity.title" : `docking.show_${panel}` as MessageKey, category: "view" as const, enabled: () => readyForPanel(panel), run: () => { revealPanel(panel); } },
       ...(["forward", "backward", "split", "merge", "hide"] as const).map(action => ({
         id: `panel.${panel}.${action}` as const, title: `docking.${action}` as MessageKey, category: "view" as const, inPalette: false,
         enabled: () => readyForPanel(panel) && panelMenu(panel).some(item => item.type === "item" && item.id === action && !item.disabled),

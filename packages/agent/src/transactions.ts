@@ -386,7 +386,13 @@ export class Transactions {
         locked: layer.locked,
         hidden: !layer.visible,
       });
-    this.run(() => store.beginTransaction(p.summary.label));
+    this.run(() => {
+      store.beginTransaction(p.summary.label);
+      for (const source of p.sources)
+        for (const tileset of source.tilesets)
+          if (!store.document.getTileset(tileset.id))
+            store.dispatch({ type: "addTileset", tileset, undoable: true });
+    });
   }
   async enlistCached(call: AgentCallContext): Promise<void> {
     for (const map of this.host.world.maps())

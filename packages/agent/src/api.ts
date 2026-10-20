@@ -478,7 +478,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
     userAction: (action) => {
       if (action === "stop" || action === "approve") tx.seal("stopped");
       else interrupt();
-      return enqueue(() => {
+      return enqueue(async () => {
+        const pending = tx.pending;
+        // Navigation can load approved metadata followers during review. Enlist them
+        // before the synchronous finalizer so saving from that tab sees the same world.
+        if (action === "approve" && pending)
+          await tx.enlistCached({ ...pending.summary.owner, bridgeEpoch: pending.epoch, deadline: host.clock.now() + L.callTimeoutMs, signal: new CallSignal() });
         const transaction = tx.pending?.summary;
         if (action === "stop") {
           if (tx.phase === "preparing") tx.cancel();

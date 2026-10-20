@@ -63,7 +63,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     }
     previousPhase=state.phase;updateClients();void publish();
   });
-  const offUi=bindAgentUiState(api,connection);
+  let offUi=()=>{};
   const offFlush=registerAgentWorldFlush(()=>live?.tags.flush()??Promise.resolve());
   const offCancellation=registerPendingCancellation(()=>api.userAction("discard"));
   const offUnsaved=registerUnsavedGuard({dirty:()=>editGate.blocked,settle:async()=>{await cancelPendingEdit();return true;}});
@@ -85,6 +85,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     if(installed===runtime)installed=null;
   }};
   installed=runtime;
+  offUi=bindAgentUiState(api,connection);
   try{await connection.ready(bridgeEpoch);await publish();}catch(error){await runtime.dispose();throw error;}
   return runtime;
 }

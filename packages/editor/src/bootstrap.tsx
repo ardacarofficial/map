@@ -115,6 +115,7 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
       const { connectDevAgent } = await import("./agent/devConnection");
       const connection = await connectDevAgent(pairingId);
       if (connection) {
+        setPlatform({ ...platform, agent: connection });
         const { installAgentRuntime } = await import("./agent/runtime");
         await installAgentRuntime({ connection });
       }

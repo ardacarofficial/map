@@ -12,22 +12,6 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
   await page.routeWebSocket(/.*/, (route) => { bridge = route; upstreamBridge = route.connectToServer(); });
   await page.goto(`/?agent=${pair}`);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await page.evaluate(async () => {
-    const path = "/src/agent/devConnection.ts";
-    const module = await import(/* @vite-ignore */ path) as { connectDevAgent(): Promise<AgentConnection | undefined> };
-    const connection = await module.connectDevAgent();
-    if (!connection) throw new Error("Dev connection not available");
-    // Before lane 2 is merged, install a transport-only responder using the frozen port.
-    // Once the live runtime has registered readiness, the same test uses its get_session.
-    if (connection.status.state === "starting") {
-      const unsubscribe = connection.onRequest((request) => {
-        const result = { ok: false as const, code: "NO_WORLD" as never, message: "No world is open", worldSessionId: null, revision: 0, retryable: false, details: {} };
-        void connection.reply({ type: "result", requestId: request.requestId, bridgeEpoch: request.bridgeEpoch, clientSessionId: request.clientSessionId, result: { isError: true, content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result } });
-      });
-      try { await connection.ready(crypto.randomUUID()); }
-      catch (error) { unsubscribe(); if (!String(error).includes("epoch changed")) throw error; }
-    }
-  });
   const agent = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
   try {
     expect((await agent.listTools()).tools.map((tool) => tool.name)).toContain("get_session");

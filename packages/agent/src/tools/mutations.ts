@@ -578,6 +578,10 @@ export async function mutate<N extends ToolName>(
         tx.host.world.stageAgentMap(prepared);
         participant.pin = tx.host.world.pinMap(prepared.map.id);
         prepared.store.beginTransaction(tx.pending!.summary.label);
+        // A new map starts from approved metadata, then joins staged atlas changes reversibly.
+        for (const tileset of tx.host.world.tilesets())
+          if (!prepared.store.document.getTileset(tileset.id))
+            prepared.store.dispatch({ type: "addTileset", tileset, undoable: true });
         const templates = tx.host.world.settings().layerTemplate;
         for (const template of templates.length
           ? templates

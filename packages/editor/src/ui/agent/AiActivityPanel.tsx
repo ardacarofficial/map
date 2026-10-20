@@ -1,14 +1,14 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useSyncExternalStore } from "react";
 import type { ActivityLogEntry } from "@smap/agent";
 import { getLocale, t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/TextField";
-import { useAgentUi } from "./agentUiAdapter";
+import { agentActivity } from "../../agent/activity";
 import { activityOutcome, groupActivity } from "./selectors";
 import { agentErrorMessage } from "./errorMessages";
 
 export function AiActivityPanel() {
-  const entries = useAgentUi(s => s.entries);
+  const entries = useSyncExternalStore(agentActivity.subscribe, agentActivity.entries);
   const [cleared, setCleared] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
   const rows = useMemo(() => entries.filter(row => !cleared.has(row.id) && `${row.tool ?? ""} ${row.clientInfo?.name ?? ""} ${row.mapIds.join(" ")}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(-500), [entries, cleared, query]);

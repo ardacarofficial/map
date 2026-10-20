@@ -3,7 +3,7 @@ import type { TagRecord, TagTarget } from "@smap/agent";
 import { t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { Segmented } from "../primitives/Segmented";
-import type { AiTagsAccess } from "./agentUiAdapter";
+import type { AiTagsAccess } from "../../agent/uiTags";
 import { tagTargetId, useAiTagsDialog } from "./tagsSelection";
 
 type Filter = "all" | "missing" | "stale";
