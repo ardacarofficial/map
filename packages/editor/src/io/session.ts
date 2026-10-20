@@ -1211,8 +1211,12 @@ export function installSession(): () => void {
     },
   });
   autosave = scheduler;
+  let wasEditBlocked = editGate.blocked;
   const unsubscribeGate = editGate.subscribe(() => {
-    if (editGate.blocked) { scheduler.cancel(); recentThumbnails.cancel(); }
+    const blocked = editGate.blocked;
+    if (blocked === wasEditBlocked) return;
+    wasEditBlocked = blocked;
+    if (blocked) { scheduler.cancel(); recentThumbnails.cancel(); }
     else if (folder && (useEditorStore.getState().dirty || workspace?.hasUnsavedLevels)) scheduler.notifyChange();
   });
   let unsubscribeStore: (() => void) | null = null;

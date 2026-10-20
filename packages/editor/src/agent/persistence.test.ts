@@ -3,6 +3,7 @@ import type { AgentSignal } from "@smap/agent";
 import { browserPlatform, setPlatform, type ProjectLocation } from "../platform";
 import { MemoryFileSystem } from "../io/memoryFs";
 import { closeProject, getLevelWorkspace, installSession, newProject, saveCurrentProject, waitForWrites } from "../io/session";
+import { useEditorStore } from "../state/editorStore";
 import { editGate, getAgentWorldSessionId } from "./editGate";
 const signal:AgentSignal={aborted:false,throwIfAborted(){},onAbort:()=>()=>{}};
 let off=()=>{},release=()=>{};
@@ -39,4 +40,20 @@ describe("live pending-edit persistence races",()=>{
     release();await vi.advanceTimersByTimeAsync(2100);await waitForWrites();
     expect(await fs.readText("levels/main.json")).toContain("Existing unsaved work");
   });
+});
+
+it("finishing a read-only export admission does not autosave a passive legacy migration", async () => {
+  vi.useFakeTimers(); vi.stubGlobal("window", {addEventListener(){},removeEventListener(){}});
+  const fs=new MemoryFileSystem();
+  await newProject({name:"Legacy",width:8,height:8,tileSize:16,folder:{fs,label:"Legacy",ref:"legacy"}});
+  off=installSession();
+  // Opening a legacy world marks conversion dirty without scheduling an overwrite.
+  getLevelWorkspace()!.markDirty(getLevelWorkspace()!.activeId);
+  useEditorStore.getState().setDirty(true);
+  const writes=vi.spyOn(fs,"writeText");
+  const exportAdmission=editGate.admitSave(getAgentWorldSessionId()!);
+  exportAdmission.release();
+  await vi.advanceTimersByTimeAsync(31000); await waitForWrites();
+  expect(writes).not.toHaveBeenCalled();
+  expect(useEditorStore.getState().dirty).toBe(true);
 });
