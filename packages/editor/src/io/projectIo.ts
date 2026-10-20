@@ -30,8 +30,9 @@ import {
 
 import type { TilesetImage } from "../state/tilesetImages";
 import { resolveFileData, type FileData, type PngBytes } from "./fileData";
-import { FileNotFoundError, type ProjectFileSystem } from "./fs";
+import { FileNotFoundError, splitPath, type ProjectFileSystem } from "./fs";
 import { loadStamps, removeStaleStamps } from "./stampsIo";
+import { discardSaveBackups, protectSavedProject, recoverSavedProject } from "./saveRecovery";
 
 /** The single level of a v0.1 project. */
 export const DEFAULT_LEVEL_PATH = "levels/main.json";
@@ -90,10 +91,12 @@ export interface ProjectFile {
 }
 
 /**
- * The files a save writes, in write order: tileset images first, then the
+ * The new files a save writes, in write order: tileset images first, then the
  * level, and `project.smap` last, so a project file only ever points at files
  * that exist. Tilesets without bytes are left out. Shared by the save
- * pipeline and the zip export.
+ * pipeline and the zip export. The folder writer first publishes a complete
+ * backup of an existing project (see saveRecovery.ts), so replacing a level
+ * never invalidates the previously committed root.
  */
 export function projectFiles(input: SaveProjectInput): ProjectFile[] {
   const doc = input.document;
@@ -140,13 +143,23 @@ export async function saveProject(fs: ProjectFileSystem, input: SaveProjectInput
  * (`removeFiles`) are deleted after `project.smap` no longer lists them.
  */
 export async function saveProjectLevels(fs: ProjectFileSystem, input: SaveProjectInput): Promise<Map<string, string>> {
-  for (const dir of PROJECT_DIRS) await fs.mkdir(dir);
+  // Serialize before the first await: cells, raster revisions and metadata belong
+  // to the same logical save, even if editing continues during IO.
+  const files = projectFiles(input);
+  const sourcePaths = new Set(input.document.tilesets.filter(ts => !ts.generated && !ts.edited).map(ts => ts.imagePath));
+  const dirs = new Set<string>(PROJECT_DIRS);
+  for (const file of files) {
+    const parent = splitPath(file.path).dirs.join("/");
+    if (parent) dirs.add(parent);
+  }
+  for (const dir of dirs) await fs.mkdir(dir);
+
+  await protectSavedProject(fs);
 
   const levelTexts = new Map<string, string>();
   const levelPaths = new Set([input.levelPath, ...(input.otherLevels ?? []).map((l) => l.path)]);
   const stampFiles = new Set((input.stamps ?? []).map((s) => stampPath(s.id)));
-  const sourcePaths = new Set(input.document.tilesets.filter(ts => !ts.generated && !ts.edited).map(ts => ts.imagePath));
-  for (const file of projectFiles(input)) {
+  for (const file of files) {
     // Existing user sources belong to the disk, including external edits that
     // the watcher has not delivered yet. Only confirmed PNG write-back may
     // replace them. Imports and image replacements use new revision paths.
@@ -170,6 +183,7 @@ export async function saveProjectLevels(fs: ProjectFileSystem, input: SaveProjec
   }
   // Deleted stamps lose their file (after project.smap, which never refers to stamps).
   if (input.stamps) await removeStaleStamps(fs, input.stamps, input.keepStampFiles);
+  await discardSaveBackups(fs);
   return levelTexts;
 }
 
@@ -251,6 +265,7 @@ export async function loadProject(
   decode: ImageDecoder,
   options: { readonly levelId?: string } = {},
 ): Promise<LoadedProject> {
+  await recoverSavedProject(fs);
   let projectText: string;
   try {
     projectText = await fs.readText(PROJECT_FILE_NAME);

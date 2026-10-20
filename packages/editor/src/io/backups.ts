@@ -64,7 +64,8 @@ export async function rotateBackups(fs: ProjectFileSystem, level: string, keep =
 
 /**
  * Writes a backup of `level` taken at `date`, then rotates. Two backups in
- * the same second share a name; the later one wins. Returns the path written.
+ * the same second get consecutive seconds; existing snapshots are never
+ * overwritten. Returns the path written.
  */
 export async function writeBackup(
   fs: ProjectFileSystem,
@@ -74,7 +75,9 @@ export async function writeBackup(
   keep = BACKUP_KEEP,
 ): Promise<string> {
   await fs.mkdir(BACKUP_DIR);
-  const path = `${BACKUP_DIR}/${backupFileName(level, date)}`;
+  const newest = (await listBackups(fs, level))[0];
+  const uniqueDate = newest && newest.date.getTime() >= Math.floor(date.getTime() / 1000) * 1000 ? new Date(newest.date.getTime() + 1000) : date;
+  const path = `${BACKUP_DIR}/${backupFileName(level, uniqueDate)}`;
   await fs.writeText(path, text);
   await rotateBackups(fs, level, keep);
   return path;

@@ -20,6 +20,7 @@
   "empty": "Bu kaynak için uygulanabilir düzenlenen kopya yok.",
   "road": "Uygulanamaz: üretilen kaynağın özgün PNG dikdörtgeni belirsiz.",
   "missing": "Uygulanamaz: kaynak veya piksel verisi yok.",
+  "snapshot": "Uygulanamaz: yedek görselleri salt okunur.",
   "size": "Uygulanamaz: kopyanın ölçüsü kaynak tile ile aynı değil.",
   "grid": "Uygulanamaz: kaynak ızgarası kaydedilmemiş. Yeni bir piksel kopyası oluştur.",
   "changed": "Kaynak PNG, ızgara veya düzenlemeler değişti. Eski onayla yazılamaz. Yeniden yükleyip güncel pikselleri incele veya vazgeç.",

@@ -20,7 +20,6 @@ import {
   isTileLayer,
   MapStore,
   normalizeProjectSettings,
-  parseLevel,
   type MapDocument,
   type ProjectLevel,
   type ProjectSettings,
@@ -50,9 +49,10 @@ import { getPlatform, FolderTakenError, RecentGoneError, type ProjectLocation, t
 import { UnsupportedError } from "./browserFs";
 import { AutosaveScheduler } from "./autosave";
 import { listBackups, writeBackup, type BackupEntry } from "./backups";
+import { captureLevelBackup, restoreLevelBackup } from "./pixelBackups";
 import { FileNotFoundError, type ProjectFileSystem } from "./fs";
 import { useProjectLibrary } from "./projectLibrary";
-import { LevelWorkspace, paletteProblems, projectDataOf, type SavedLevel } from "./levelWorkspace";
+import { LevelWorkspace, paletteProblems, type SavedLevel } from "./levelWorkspace";
 import { DEFAULT_LEVEL_PATH, decodePng, defaultLevels, levelName, loadProject, ProjectOpenError } from "./projectIo";
 import { useSaveStatus } from "./saveStatus";
 import { readSaveIndicator, subscribeSaveIndicator } from "./saveIndicator";
@@ -763,10 +763,11 @@ async function writeProjectFiles(target: ProjectFolder, project: OpenProject, ma
       }
       const now = new Date();
       for (const level of levels) {
-        if (level.text === lastBackupText.get(level.path)) continue;
         try {
-          await writeBackup(target.fs, levelName(level.path), level.text, now);
-          lastBackupText.set(level.path, level.text);
+          const text = await captureLevelBackup(target.fs, level.text, level.projectText);
+          if (text === lastBackupText.get(level.path)) continue;
+          await writeBackup(target.fs, levelName(level.path), text, now);
+          lastBackupText.set(level.path, text);
         } catch (error) {
           // A failed backup must not fail the save itself.
           console.warn("Backup failed", error);
@@ -927,8 +928,17 @@ export async function openBackup(entry: BackupEntry): Promise<boolean> {
   if (!project || !target) return false;
   try {
     const text = await target.fs.readText(entry.path);
-    const document = parseLevel(text, project.store.document.tilesets, project.store.document.entityTypes, projectDataOf(project.store.document));
+    const { document, images } = await restoreLevelBackup(target.fs, text, project.store.document, decodePng, project.store.rasterAssets.assetIds());
+    if (useEditorStore.getState().project !== project || folder !== target) {
+      for (const image of images) image.bitmap.close();
+      return false;
+    }
     const store = project.store.createSibling(document);
+    for (const image of images) {
+      const tileset = document.getTileset(image.tilesetId)!;
+      if (tileset.edited) loadEditedRaster(store, tileset, image.bytes!);
+    }
+    for (const image of images) setTilesetImage(image);
     store.clearHistory();
     workspace?.replaceActiveStore(store);
     useEditorStore.getState().switchLevel({ ...project, store }, useEditorStore.getState().activeLayerId);

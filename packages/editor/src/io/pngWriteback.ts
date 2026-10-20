@@ -2,10 +2,12 @@ import { rasterContentHash, tileRect, type RgbaImage, type Tileset } from '@smap
 import { pixelSourceGrid } from '../state/pixelProvenance';
 import { FileNotFoundError, type ProjectFileSystem, type GuardedPngRequest } from './fs';
 import { decodeSourcePng, encodeSourcePng } from './sourcePng';
+import { isSnapshotImagePath } from './immutableFiles';
 
 export class PngChangedError extends Error { constructor() { super('PNG changed'); } }
 export function equalPngBytes(a: Uint8Array, b: Uint8Array): boolean { return a.length === b.length && a.every((v,i)=>v===b[i]); }
 export function assertPngPaths(path: string, backupPath: string): void {
+  if (isSnapshotImagePath(path)) throw Error('Backup raster revisions are immutable');
   if (!/^tilesets\/(?:[^/]+\/)*[^/]+\.png$/i.test(path) || !/^backups\/png\/[^/]+\.png$/.test(backupPath) || [path,backupPath].some(p=>p.split('/').some(s=>s==='.'||s==='..'||s.includes('\\')||s.includes('\0')))) throw Error('Invalid PNG path');
 }
 export function pngBackupPrefix(path: string): string { return `${encodeURIComponent(path)}--`; }

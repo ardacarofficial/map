@@ -6,6 +6,9 @@ the editor's save format (`smap-level`): no palette, no chunks, no editor
 state (locks, grid layers, seeds). One format serves "JSON dışa aktarma"
 and the Unity importer (`unity/com.smap.mapimporter`).
 
+Editor saves and historical raster backups are specified separately in
+[`../../FORMAT.md`](../../FORMAT.md); their document version remains 6.
+
 ## Files
 
 ```text
