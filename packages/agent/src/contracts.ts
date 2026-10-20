@@ -119,7 +119,8 @@ export class AgentError extends Error {
 export type AgentPhase = "disabled" | "ready" | "preparing" | "running" | "stopped" | "awaitingApproval" | "cancelling";
 export type TransactionState = "preparing" | "running" | "stopped" | "awaitingApproval" | "cancelling" | "approved" | "cancelled";
 export interface ClientInfo { name: string; version: string }
-export interface TransactionOwner { clientSessionId: Id; clientInfo: ClientInfo }
+/** A null session detaches sealed review from the client; its name remains for the user. */
+export interface TransactionOwner { clientSessionId: Id | null; clientInfo: ClientInfo }
 export interface TransactionCounters { mutationCalls: number; plannedWrites: number; changedCells: number; retainedBytes: number }
 export interface TransactionSummary {
   id: Id; state: TransactionState; label: string; owner: TransactionOwner; startedAt: number;

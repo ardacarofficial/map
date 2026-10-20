@@ -394,7 +394,7 @@ export class Transactions {
             store.dispatch({ type: "addTileset", tileset, undoable: true });
     });
   }
-  async enlistCached(call: AgentCallContext): Promise<void> {
+  async enlistCached(call: Pick<AgentCallContext, "signal">): Promise<void> {
     for (const map of this.host.world.maps())
       if (map.loaded && !this.pending!.participants.has(map.id)) {
         const store = await waitFor(this.host.loadMap(map.id), call.signal);

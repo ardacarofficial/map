@@ -55,22 +55,69 @@ it("Durdur keeps prior writes, blocks future writes, and permits user approval o
   h.host.history.undo();
   expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(before);
 });
-it("owner session end rolls back running/stopped/review work; another session cannot cancel it", async () => {
-  for (const phase of ["running", "stopped", "awaitingApproval"] as const) {
-    const h = harness(),
-      before = h.host.snapshot();
-    await h.begin();
-    success(await h.edit("paint_cells", paint));
-    if (phase === "stopped") await h.api.userAction("stop");
-    if (phase === "awaitingApproval") success(await h.edit("finish_edit"));
-    await h.api.sessionEnded("observer");
-    expect(h.api.getState().transaction!.state).toBe(phase);
-    await h.api.sessionEnded("client-1");
-    expect(h.host.snapshot()).toEqual(before);
-    expect(h.host.pins.size).toBe(0);
-    expect(h.api.getState().transaction!.outcome).toBe("cancelled");
-  }
+it("owner session end rolls back running work; another session cannot cancel it", async () => {
+  const h = harness(), before = h.host.snapshot();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  await h.api.sessionEnded("observer");
+  expect(h.api.getState().phase).toBe("running");
+  await h.api.sessionEnded("client-1");
+  expect(h.host.snapshot()).toEqual(before);
+  expect(h.host.pins.size).toBe(0);
+  expect(h.api.getState().transaction!.outcome).toBe("cancelled");
 });
+for (const phase of ["stopped", "awaitingApproval"] as const)
+  for (const action of ["approve", "discard"] as const)
+    it(`${phase} survives session end and lifetime expiry until user ${action}`, async () => {
+      const h = harness(), before = h.host.snapshot();
+      const original = serializeLevel(h.host.stores.get("map-1")!.document);
+      await h.begin();
+      success(await h.edit("paint_cells", paint));
+      if (phase === "stopped") await h.api.userAction("stop");
+      else success(await h.edit("finish_edit"));
+      const painted = serializeLevel(h.host.stores.get("map-1")!.document);
+      await h.api.sessionEnded("client-1");
+      await h.api.sessionEnded("client-1"); // duplicate transport controls are harmless
+      h.host.clock.advance(L.editLifetimeMs + L.reviewIdleMs);
+      await flush();
+      expect(h.api.getState().phase).toBe(phase);
+      expect(h.host.transactions.writeGate.blocked).toBe(true);
+      expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(painted);
+      const observer = (name: string, args: unknown) => h.api.executeTool(memoryCall(name, args, { clientSessionId: "new-client" }));
+      const session = success(await observer("get_session", {}));
+      if (!("transaction" in session.data)) throw Error("Expected session");
+      expect(session.data.transaction).toMatchObject({ state: phase, owner: { clientSessionId: null, clientInfo: { name: "Test client" } } });
+      error(await observer("begin_edit", { context: h.context(), expectedRevision: h.api.getState().revision, idempotencyKey: "new-begin-request", requestLabel: "Other", mapIds: ["map-1"] }), "WRITER_BUSY");
+      error(await observer("cancel_edit", { context: h.writeContext() }), "TRANSACTION_NOT_OWNED");
+      error(await observer("paint_cells", { context: h.writeContext(), ...paint }), "TRANSACTION_NOT_OWNED");
+      error(await h.edit("cancel_edit"), "CANCELLED");
+      await h.api.userAction(action);
+      expect(h.host.transactions.writeGate.blocked).toBe(false);
+      expect(h.host.pins.size).toBe(0);
+      if (action === "discard") expect(h.host.snapshot()).toEqual(before);
+      else {
+        expect(h.host.history.undoDepth).toBe(1);
+        h.host.history.undo();
+        expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(original);
+        h.host.history.redo();
+        expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(painted);
+      }
+    });
+
+it("session end during begin preparation releases admission and ignores late loading", async () => {
+  const h = harness(), before = h.host.snapshot(), loaded = deferred<MapStore>();
+  h.host.loadMap = () => loaded.promise;
+  const task = h.run("begin_edit", { context: h.context(), expectedRevision: 0, idempotencyKey: "begin-preparing", requestLabel: "Preparing", mapIds: ["map-1"] });
+  await flush();
+  expect(h.api.getState().phase).toBe("preparing");
+  await h.api.sessionEnded("client-1");
+  error(await task, "CANCELLED");
+  loaded.resolve(h.host.stores.get("map-1")!);
+  await flush();
+  expect(h.host.transactions.writeGate.blocked).toBe(false);
+  expect(h.host.snapshot()).toEqual(before);
+});
+
 it("rejects stale world/revision, unknown targets and foreign client/epoch with no mutation", async () => {
   const h = harness();
   await h.begin();
