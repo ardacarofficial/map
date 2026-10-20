@@ -28,3 +28,14 @@ describe("agent catalog images and fingerprints",()=>{
     expect(await port.tileFingerprint("art",0,call.signal)).not.toBe(before[0]);expect(await port.tileFingerprint("art",1,call.signal)).toBe(before[1]);
   });
 });
+
+it("catalog IDs have a readable ten-pixel glyph height outside the sprite", async () => {
+  image(encodeRgbaPng(7,4,pixels()));
+  const result = await createImagePort(world,()=>1).tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",tileIds:[1],image:"tiles",scale:2},call);
+  const png=decodeWorkingSourcePng(result.png),label=result.image.placements[0]!.labelRect;
+  const inkRows=new Set<number>();
+  for(let y=label.y;y<label.y+label.height;y++)for(let x=label.x;x<label.x+label.width;x++){
+    const i=(y*png.width+x)*4;if(png.data[i]===215&&png.data[i+1]===225)inkRows.add(y);
+  }
+  expect(inkRows.size).toBeGreaterThanOrEqual(10);
+});

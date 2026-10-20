@@ -19,7 +19,7 @@
   "settings.clientCodex": "Codex",
   "settings.hostRequired": "Masaüstü uygulamasında kullanılabilir",
   "settings.previewsShared": "Harita önizlemeleri bağlı istemciyle paylaşılır.",
-  "settings.invalidPort": "1–65535 arasında bir tam sayı girin.",
+  "settings.invalidPort": "1024–65535 arasında bir tam sayı girin.",
   "settings.portInUse": "{port} portu kullanımda. Başka bir port seçin.",
   "settings.bindFailed": "Bağlantı başlatılamadı. Portu kontrol edin.",
   "settings.secretUnavailable": "Erişim anahtarı okunamadı.",

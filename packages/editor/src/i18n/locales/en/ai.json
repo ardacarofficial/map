@@ -19,7 +19,7 @@
   "settings.clientCodex": "Codex",
   "settings.hostRequired": "Available in the desktop application",
   "settings.previewsShared": "Map previews are shared with the connected client.",
-  "settings.invalidPort": "Enter an integer between 1 and 65535.",
+  "settings.invalidPort": "Enter an integer between 1024 and 65535.",
   "settings.portInUse": "Port {port} is in use. Choose another port.",
   "settings.bindFailed": "Could not start the connection. Check the port.",
   "settings.secretUnavailable": "Could not read the access token.",

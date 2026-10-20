@@ -7,7 +7,7 @@ import { RasterReplay } from "./raster";
 export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pick<RenderPreviewArgs, "grid" | "coordinates" | "maxSide" | "layerIds" | "entities">, source: (id: string) => RgbaImage | undefined): RgbaImage & { image: PreviewImage; missing: string[] } {
   const map = doc.map;
   if (region.x < 0 || region.y < 0 || region.width < 1 || region.height < 1 || region.x+region.width>map.width || region.y+region.height>map.height) throw new AgentError(AgentErrorCode.OUT_OF_BOUNDS, "Preview region outside map");
-  const gutter = options.coordinates ? 24 : 0;
+  const gutter = options.coordinates ? 40 : 0;
   const maxSide = Math.min(options.maxSide ?? 1536, AGENT_LIMITS.imageSide);
   const nativeWidth = region.width*map.tileWidth, nativeHeight=region.height*map.tileHeight;
   const scale = Math.min(1, (maxSide-gutter)/Math.max(nativeWidth,nativeHeight));
@@ -42,9 +42,10 @@ export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pic
     if(ch>=3)for(let y=0;y<=region.height;y++)canvas.fill({x:gutter,y:gutter+Math.min(contentRect.height-1,Math.round(y*ch)),width:contentRect.width,height:1},[155,175,185,100]);
   }
   if(options.coordinates){
-    const xStep=Math.max(1,Math.ceil(24/cw)),yStep=Math.max(1,Math.ceil(10/ch));
-    for(let x=0;x<region.width;x+=xStep)canvas.text(String(region.x+x),gutter+x*cw+1,8);
-    for(let y=0;y<region.height;y+=yStep)canvas.text(String(region.y+y),2,gutter+y*ch+1);
+    const xLabelWidth=8*String(region.x+region.width-1).length;
+    const xStep=Math.max(1,Math.ceil((xLabelWidth+8)/cw)),yStep=Math.max(1,Math.ceil(16/ch));
+    for(let x=0;x<region.width;x+=xStep)canvas.text(String(region.x+x),gutter+x*cw+1,12);
+    for(let y=0;y<region.height;y+=yStep)canvas.text(String(region.y+y),4,gutter+y*ch+1);
   }
   if(options.entities!==false)for(const layer of doc.layers){
     if(!isEntityLayer(layer)||!layer.visible||(options.layerIds&&!options.layerIds.includes(layer.id)))continue;

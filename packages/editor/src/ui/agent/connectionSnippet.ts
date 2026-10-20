@@ -2,7 +2,7 @@ export type AgentClientFormat = "claude" | "codex";
 export function validAgentPort(value: number | string): boolean {
   if (typeof value === "string" && !/^\d+$/.test(value)) return false;
   const port = Number(value);
-  return Number.isInteger(port) && port >= 1 && port <= 65535;
+  return Number.isInteger(port) && port >= 1024 && port <= 65535;
 }
 export function agentEndpoint(port: number): string { return `http://127.0.0.1:${port}/mcp`; }
 /** Tokens are generated secrets, never arbitrary shell/TOML input. */

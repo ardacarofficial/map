@@ -71,9 +71,9 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
       if(ids.length>AGENT_LIMITS.catalogImagePage)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Too many image tiles");
       ids.forEach(id=>assertTile(tileset,id));
       const pixels=await imagePixels(tileset.id,call.signal),scale=args.scale??1;
-      const gutter=12,gap=4,tw=tileset.tileWidth*scale,th=tileset.tileHeight*scale;
+      const gutter=18,gap=4,tw=tileset.tileWidth*scale,th=tileset.tileHeight*scale;
       const sheet=args.image==="sheet",region=args.sheetRegion??{x:0,y:0,width:tileset.columns,height:tileset.rows};
-      const cellWidth=Math.max(tw,4*String(tileset.columns*tileset.rows-1).length);
+      const cellWidth=Math.max(tw,8*String(tileset.columns*tileset.rows-1).length);
       const cols=sheet?region.width:Math.max(1,Math.min(ids.length,Math.floor((AGENT_LIMITS.imageSide-gap)/(cellWidth+gap))));
       const rows=sheet?region.height:Math.ceil(ids.length/cols);
       const width=cols*(cellWidth+gap)+gap,height=rows*(th+gutter+gap)+gap;

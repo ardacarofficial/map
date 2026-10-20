@@ -48,12 +48,12 @@ export class RasterReplay implements Replay2D {
       this.blend(x,y,[shade,shade,shade,255]);
     }
   }
-  text(value: string, x: number, y: number): void {
+  text(value: string, x: number, y: number, scale = 2): void {
     const digits = ["111101101101111","010110010010111","111001111100111","111001111001111","101101111001001","111100111001111","111100111101111","111001001001001","111101111101111","111101111001111"];
     for (const ch of value) {
       const glyph = ch === "-" ? "000000111000000" : digits[Number(ch)];
-      if (glyph) for(let row=0;row<5;row++)for(let col=0;col<3;col++)if(glyph[row*3+col]==="1")this.blend(Math.floor(x)+col,Math.floor(y)+row,[215,225,228,255]);
-      x += 4;
+      if (glyph) for(let row=0;row<5;row++)for(let col=0;col<3;col++)if(glyph[row*3+col]==="1")this.fill({x:Math.floor(x)+col*scale,y:Math.floor(y)+row*scale,width:scale,height:scale},[215,225,228,255]);
+      x += 4*scale;
     }
   }
 }
