@@ -1,6 +1,7 @@
 import { isEntityLayer, isGridLayer, isTileLayer, type MapDocument, type TileLayer } from "@smap/core";
 import { useSyncExternalStore } from "react";
 
+import { AiTagsSection } from "../agent/AiTagsSection";
 import { UsageResults } from "../../extras/UsageResults";
 import { clampRegion } from "../../commands/enablement";
 import { useRandomBrush } from "../../commands/randomBrush";
@@ -77,6 +78,7 @@ function InspectorSections({ doc }: { doc: MapDocument }) {
           <Component ctx={ctx} />
         </div>
       ))}
+      <AiTagsSection ctx={ctx} />
     </div>
   );
 }

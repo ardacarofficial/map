@@ -22,6 +22,7 @@ interface AppSettingsState {
   revision: number;
   /** The settings-file dialog is open. */
   dialogOpen: boolean;
+  settingsCategory: "ai" | null;
   setDialogOpen(open: boolean): void;
 }
 
@@ -29,7 +30,8 @@ export const useAppSettings = create<AppSettingsState>()((set) => ({
   locale: getLocale(),
   revision: 0,
   dialogOpen: false,
-  setDialogOpen: (dialogOpen) => set({ dialogOpen }),
+  settingsCategory: null,
+  setDialogOpen: (dialogOpen) => set(dialogOpen ? { dialogOpen } : { dialogOpen, settingsCategory: null }),
 }));
 
 /** The settings text we last applied (focus reload skips unchanged files). */
