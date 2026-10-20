@@ -25,7 +25,7 @@ import { registerPaletteProvider } from "./registry";
 interface LevelUiState {
   /** "Yeni level" dialog. */
   newLevelOpen: boolean;
-  newLevelTileSize?: number | undefined;
+  newLevelGrid?: { tileWidth: number; tileHeight: number } | undefined;
   /** Level whose delete confirmation is open, or `null`. */
   removeLevelId: string | null;
   /** Active target-point pick (v1.1), or `null`. */
@@ -44,7 +44,7 @@ export interface PointPick {
 export const useLevelUi = create<LevelUiState>()(() => ({ newLevelOpen: false, removeLevelId: null, pick: null }));
 
 export function openNewLevelDialog(open = true): void {
-  useLevelUi.setState({ newLevelOpen: open, newLevelTileSize: undefined });
+  useLevelUi.setState({ newLevelOpen: open, newLevelGrid: undefined });
 }
 
 export function askRemoveLevel(id: string | null): void {
@@ -80,12 +80,16 @@ export function nextLevelName(): string {
   }
 }
 
-export interface NewLevelInput {
+export type NewLevelInput = {
   name: string;
   width: number;
   height: number;
-  tileSize: number;
-}
+} & (
+  // Ordinary new maps retain the world's default height when its width is chosen.
+  | { tileSize: number; tileWidth?: never; tileHeight?: never }
+  // A source-grid remedy supplies both dimensions; world defaults cannot override it.
+  | { tileWidth: number; tileHeight: number; tileSize?: never }
+);
 
 /** Adds an empty level at the end of the list and opens it. */
 export async function createLevel(input: NewLevelInput): Promise<boolean> {
@@ -95,8 +99,9 @@ export async function createLevel(input: NewLevelInput): Promise<boolean> {
     // The project's layer template (project settings), if any.
     const defaults = useProjectLibrary.getState().settings;
     const layers = defaults.layerTemplate.map(newLayerFor);
-    const tileHeight = input.tileSize === defaults.tileWidth ? defaults.tileHeight : input.tileSize;
-    const level = ws.add({ ...input, tileHeight, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
+    const tileSize = input.tileWidth ?? input.tileSize;
+    const tileHeight = input.tileHeight ?? (tileSize === defaults.tileWidth ? defaults.tileHeight : tileSize);
+    const level = ws.add({ ...input, tileSize, tileHeight, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
     publishLevelState({ listChanged: true });
     return await openLevel(level.id);
   } catch (error) {

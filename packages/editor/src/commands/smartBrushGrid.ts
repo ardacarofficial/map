@@ -19,7 +19,7 @@ export function remedyBrushGrid():void {
  const editor=useEditorStore.getState(),store=editor.project?.store,source=brushSource(editor.stamp);
  if(!store||!source||brushUnavailable(editor.stamp)?.code!=="gridMismatch")return;
  if(emptyMap(store))adoptMapGrid(store,source);
- else useLevelUi.setState({newLevelOpen:true,newLevelTileSize:source.tileWidth});
+ else useLevelUi.setState({newLevelOpen:true,newLevelGrid:{tileWidth:source.tileWidth,tileHeight:source.tileHeight}});
 }
 interface GridQuestion {readonly store:MapStore;readonly source:Tileset}
 export const useSmartGridQuestion=create<{question:GridQuestion|null}>(()=>({question:null}));

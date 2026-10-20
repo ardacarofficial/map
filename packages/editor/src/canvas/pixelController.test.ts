@@ -6,10 +6,13 @@ import { LevelWorkspace } from '../io/levelWorkspace';
 import { useEditorStore } from '../state/editorStore';
 import { usePixelUi } from '../state/pixelUi';
 import { usePixelColors } from '../state/pixelColors';
-import { getLevelWorkspace } from '../io/session';
+import { MemoryFileSystem } from '../io/memoryFs';
+import { planPixelGesture, preparePixelCommit, type PixelGestureOptions } from './pixelEditing';
+import { serializeLevel, cellPaletteIndex, WorldEditError } from '@smap/core';
+import { getLevelWorkspace, getProjectFolder } from '../io/session';
 import { toast } from '../ui/toast/toastStore';
 
-vi.mock('../io/session', () => ({ getLevelWorkspace: vi.fn(), getProjectFolder: () => null, publishLevelState: vi.fn() }));
+vi.mock('../io/session', () => ({ getLevelWorkspace: vi.fn(), getProjectFolder: vi.fn(() => null), publishLevelState: vi.fn() }));
 vi.mock('../ui/toast/toastStore', () => ({ toast: { error: vi.fn() } }));
 vi.mock('../io/pixelAssetIo', () => ({ installPixelAssets: () => () => {}, readPixelSource: () => undefined }));
 function setup() {
@@ -58,4 +61,35 @@ it('lists every map whose preload failed and leaves no edit pending', async () =
   expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('A:'));
   expect(usePixelUi.getState().pending).toBe(false); expect(ws.history.undoDepth).toBe(0);
   controller.destroy();
+});
+
+it('loads and pins a disk-only world participant before the real commit path, with atomic undo/redo', async () => {
+ const {store,layerId,ws,controller}=setup(), fs=new MemoryFileSystem();
+ const ts={id:'source',name:'Source',imagePath:'tilesets/source.png',tileWidth:16,tileHeight:16,columns:1,rows:1,margin:0,spacing:0};
+ store.dispatch({type:'addTileset',tileset:ts});
+ store.dispatch({type:'paintCells',layerId,cells:[{x:0,y:0,cell:store.getOrAddPaletteIndex(ts.id,0)}]});
+ const source=()=>({width:16,height:16,data:new Uint8Array(16*16*4).fill(255),revision:0});
+ const options:PixelGestureOptions={tool:'brush',color:{r:255,g:0,b:0,a:255},size:1,shape:'square',scope:'world',fillMode:'contiguous',filled:false,mirrorH:false,mirrorV:false};
+ const b=ws.add({name:'B',width:4,height:4,tileSize:16,layerName:'Ground'}), other=ws.entry(b.id)!.store, bLayer=other.document.layers[0]!.id;
+ other.dispatch({type:'paintCells',layerId:bLayer,cells:[{x:2,y:0,cell:other.getOrAddPaletteIndex('source',0)}]});
+ store.clearHistory();other.clearHistory();ws.history.reset();
+ await ws.save(fs,{tilesetBytes:()=>new Uint8Array([1])});
+ await ws.activate(b.id,fs);await ws.activate('a',fs);expect(ws.entry(b.id)).toBeUndefined();
+ const plans=planPixelGesture(ws.active.store,layerId,[{x:1,y:1}],options,source);
+ expect(()=>preparePixelCommit(ws,layerId,plans,'world',source)).toThrow(WorldEditError);
+ vi.mocked(getProjectFolder).mockReturnValue({fs,ref:'world',label:'world'});
+ await controller.warm();
+ expect(usePixelUi.getState().pending).toBe(false);
+ expect(ws.entry(b.id)).toBeDefined();
+ for(const map of ws.levels)expect(ws.entry(map.id)!.store.inTransaction).toBe(false);
+ const before=ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document));
+ preparePixelCommit(ws,layerId,plans,'world',source)();
+ expect(ws.history.undoDepth).toBe(1);expect(ws.history.peekUndo()!.participants).toHaveLength(2);
+ const cell=ws.entry(b.id)!.store.document.getLayer(bLayer)!.getCell(2,0), ref=ws.entry(b.id)!.store.document.palette.get(cellPaletteIndex(cell))!;
+ expect(ref.tilesetId).toBe('edited-16x16-1');
+ const after=ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document));
+ ws.history.undo();expect(ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document))).toEqual(before);
+ ws.history.redo();expect(ws.levels.map(m=>serializeLevel(ws.entry(m.id)!.store.document))).toEqual(after);
+ await ws.activate(b.id,fs);expect(ws.entry('a')).toBeDefined();
+ controller.destroy();
 });

@@ -878,7 +878,7 @@ export class MapStore {
     for (let y = 0; y < op.tileHeight; y++) data.set(pixels.subarray(y * op.tileWidth * 4, (y + 1) * op.tileWidth * 4), ((Math.floor(tileId / 16) * op.tileHeight + y) * width + (tileId % 16) * op.tileWidth) * 4);
     const contentHash = rasterContentHash(width, height, data);
     const origins = [...(ts?.edited?.origins ?? []), ...(op.source ? [{ tileId, sourceTilesetId: op.source.tilesetId, sourceTileId: op.source.tileId, sourcePixelHash: op.source.pixelHash }] : [])];
-    const next = normalizeTileset({ ...(ts ?? { id: assetId!, name: 'Düzenlenen', tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, margin: 0, spacing: 0 }), rows, imagePath: editedImagePath(assetId!, contentHash), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: tileId + 1, contentHash, origins } });
+    const next = normalizeTileset({ ...(ts ?? { id: assetId!, name: op.name ?? assetId!, tileWidth: op.tileWidth, tileHeight: op.tileHeight, columns: EDITED_ATLAS_COLUMNS, margin: 0, spacing: 0 }), rows, imagePath: editedImagePath(assetId!, contentHash), edited: { kind: 'pixel', layoutVersion: 1, nextTileId: tileId + 1, contentHash, origins } });
     const problem = tilesetProblem(next);
     if (problem) throw new Error(problem);
     // Preflight palette capacity before any raster/metadata mutation.

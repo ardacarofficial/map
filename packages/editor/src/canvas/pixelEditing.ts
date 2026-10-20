@@ -5,7 +5,7 @@ import {
   pixelStrokePoints, pixelRectangle, mirrorPixels, pixelDirtyRect, planPixelFill, placedPixelSize,
   placedToSourcePixel, sourceToPlacedPixel, rasterContentHash, prepareWorldEdit, applyWorldEdit, WorldEditError,
   type RasterImage, type Rgba8, type PixelPoint, type PixelRect, type PixelWrite, type TilePixelPlan,
-  type PixelRectPatch, type WorldEditOperation, type WorldEditInput, type MapDocument, type Tileset, type TileClip,
+  type PixelRectPatch, type WorldEditBlocker, type WorldEditOperation, type WorldEditInput, type MapDocument, type Tileset, type TileClip,
 } from '@smap/core';
 import type { LevelWorkspace } from '../io/levelWorkspace';
 
@@ -134,8 +134,9 @@ function mapOwnerWrite(w: PixelWrite, from: PixelOwner, to: PixelOwner): PixelWr
 export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: readonly PixelCellPlan[], scope: PixelScope, source: PixelSource, clips: readonly TileClip[] = []): () => void {
   if (!plans.length) return () => {};
   const origin = ws.activeId, live = ws.active.store;
-  const maps = [...ws.levels].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-  if (maps.some(m => !ws.entry(m.id))) throw new WorldEditError(maps.filter(m => !ws.entry(m.id)).map(m => ({ mapId: m.id, reason: 'load' })));
+  const worldMaps = [...ws.levels].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const blockers: WorldEditBlocker[] = worldMaps.filter(m => !ws.entry(m.id)).map(m => ({ mapId: m.id, reason: 'load' }));
+  const maps = worldMaps.filter(m => ws.entry(m.id));
   let scratch: MapStore | undefined;
   const reusedPatches: PixelRectPatch[] = [];
   const inputs: WorldEditInput[] = [{ mapId: origin, store: live, operations: [] }];
@@ -156,8 +157,16 @@ export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: r
     processed.add(key);
     const all = o.tilesetId ? maps.flatMap(m => tileUsages(ws.entry(m.id)!.store.document, o.tilesetId!, o.tileId!).map(u => ({ ...u, mapId: m.id }))) : [];
     const targets = scope === 'world' && o.tilesetId ? all : [{ mapId: origin, layerId, x: o.cellX, y: o.cellY }];
-    const blockers = targets.flatMap(t => { const l = ws.entry(t.mapId)!.store.document.getLayer(t.layerId)!; return [...(l.locked ? [{ mapId: t.mapId, layerId: t.layerId, reason: 'locked' as const }] : []), ...(!l.visible ? [{ mapId: t.mapId, layerId: t.layerId, reason: 'hidden' as const }] : [])]; });
-    if (blockers.length) throw new WorldEditError(blockers);
+    for (const target of targets) {
+      const { mapId, layerId: targetLayerId } = target;
+      const layer = ws.entry(mapId)!.store.document.getLayer(targetLayerId);
+      if (!layer) blockers.push({ mapId, layerId: targetLayerId, reason: 'missingLayer' });
+      else {
+        if (layer.locked) blockers.push({ mapId, layerId: targetLayerId, reason: 'locked' });
+        if (!layer.visible) blockers.push({ mapId, layerId: targetLayerId, reason: 'hidden' });
+      }
+    }
+    if (blockers.length) continue;
     // Group canonical destination rasters by native dimensions. Each placement retains its flags.
     const groups = new Map<string, { owner: PixelOwner; writes: readonly PixelWrite[]; targets: typeof targets }>();
     for (const t of targets) {
@@ -184,13 +193,14 @@ export function preparePixelCommit(ws: LevelWorkspace, layerId: string, plans: r
         reusedPatches.push({ assetId, tileId, ...rect, before: crop(owner.data), after: crop(after) });
         continue;
       } else {
-        const op = { type: 'allocateEditedTile', tileWidth: owner.width, tileHeight: owner.height, pixels: after, ...(o.tilesetId && o.original ? { source: { tilesetId: o.tilesetId, tileId: o.tileId!, pixelHash: rasterContentHash(o.original.width, o.original.height, o.original.data) } } : {}) } as const;
+        const op = { type: 'allocateEditedTile', name: t('pixel.edited'), tileWidth: owner.width, tileHeight: owner.height, pixels: after, ...(o.tilesetId && o.original ? { source: { tilesetId: o.tilesetId, tileId: o.tileId!, pixelHash: rasterContentHash(o.original.width, o.original.height, o.original.data) } } : {}) } as const;
         scratch ??= detached(live);
         const slot = scratch.dispatch(op); assetId = slot.assetId; tileId = slot.tileId; originOps.push(op);
       }
       for (const t of group.targets) ops.get(t.mapId)!.push({ type: 'remapCells', layerId: t.layerId, cells: [{ x: t.x, y: t.y }], tilesetId: assetId, tileId });
     }
   }
+  if (blockers.length) throw new WorldEditError(blockers);
   if (reusedPatches.length) originOps.push({ type: "patchPixels", patches: reusedPatches });
   const prepared = prepareWorldEdit(origin, inputs, t('pixel.stroke'));
   return () => applyWorldEdit(ws.history, prepared);
