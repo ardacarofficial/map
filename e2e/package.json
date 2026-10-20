@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.20.5"
   }

@@ -1,9 +1,9 @@
-/** Transaction properties live beside core history tests to use core's existing fast-check dependency. */
+/** Agent transaction properties exercise core history through the public API. */
 import fc from "fast-check";
 import { expect, it } from "vitest";
-import { serializeLevel } from "../src";
-import { harness, success, error, stamp, tile } from "../../agent/test/helpers";
-import type { ToolName } from "../../agent/src/contracts";
+import { serializeLevel } from "@smap/core";
+import { harness, success, error, stamp, tile } from "./helpers";
+import type { ToolName } from "../src/contracts";
 
 const action = fc.record({
   kind: fc.integer({ min: 0, max: 10 }),
