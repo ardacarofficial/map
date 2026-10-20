@@ -48,6 +48,11 @@ export default defineConfig({
   ],
   webServer: {
     command: `pnpm --filter @smap/editor dev --port ${PORT} --strictPort`,
+    env: {
+      HARITA_DEV_MCP: "1",
+      HARITA_MCP_TOKEN: process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol",
+      HARITA_DEV_MCP_PORT: process.env.E2E_MCP_PORT ?? "48766",
+    },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
