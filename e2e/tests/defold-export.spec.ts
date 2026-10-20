@@ -84,3 +84,29 @@ test("Defold preflight explains unsupported opacity before files are written", a
   expect(result.rejected).toBe(true);
   expect(result.messages.join(" ")).toContain("%100");
 });
+
+test('sequential registry exports retain equal-name and case-colliding maps independently', async ({ page }) => {
+  await page.goto('/'); await startWithTileset(page);
+  const result = await page.evaluate(async () => {
+    const { useEditorStore } = await import(/* @vite-ignore */ String('/src/state/editorStore.ts'));
+    const { tilesetPngSource } = await import(/* @vite-ignore */ String('/src/state/tilesetImages.ts'));
+    const { prepareTarget } = await import(/* @vite-ignore */ String('/src/export/targetRegistry.ts'));
+    const { writeExportFiles } = await import(/* @vite-ignore */ String('/src/export/exportFiles.ts'));
+    const { DirectoryHandleFileSystem } = await import(/* @vite-ignore */ String('/src/io/browserFs.ts'));
+    const { defaultExportSettings } = await import(/* @vite-ignore */ String('/src/export/exportSettings.ts'));
+    const fs = new DirectoryHandleFileSystem(await (await navigator.storage.getDirectory()).getDirectoryHandle('sequential', { create: true }));
+    const store = useEditorStore.getState().project.store, plans = [];
+    const layerId = store.document.layers.find((l: { type: string }) => l.type === 'tile').id;
+    const ts = store.document.tilesets[0], pi = store.getOrAddPaletteIndex(ts.id, 0);
+    for (const [i, [levelId, levelName]] of [['a','Same'], ['b','Same'], ['A','same']].entries()) {
+      store.dispatch({ type: 'paintCells', layerId, cells: [{ x: i, y: 0, cell: pi }] });
+      const plan = await prepareTarget('defold', { doc: store.document, levelName, levelId, bytes: tilesetPngSource }, defaultExportSettings('World'));
+      if (plan.problems.length || !plan.set) throw Error('preflight failed');
+      await writeExportFiles(fs, plan.set.files); plans.push(plan.set);
+    }
+    return Promise.all(plans.map(async plan => ({ entry: plan.files.find((f: { path: string }) => f.path.endsWith('map.collection')).path, game: JSON.parse(await fs.readText(plan.files.find((f: { path: string }) => f.path.endsWith('game.json')).path)), present: await Promise.all(plan.files.map((f: { path: string }) => fs.readBytes(f.path).then(() => true))) })));
+  });
+  expect(new Set(result.map(r => r.entry.toLowerCase())).size).toBe(3);
+  expect(new Set(result.map(r => JSON.stringify(r.game))).size).toBe(3);
+  for (const item of result) expect(item.present.every(Boolean)).toBe(true);
+});

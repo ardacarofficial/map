@@ -10,11 +10,11 @@ import type { ProjectFileSystem } from "../io/fs";
 import { getLocale, t } from "../i18n";
 import { getPlatform, type SaveFileFilter } from "../platform";
 import { DirectoryHandleFileSystem, ensureReadWrite, UnsupportedError } from "../io/browserFs";
-import { levelName, projectFiles } from "../io/projectIo";
+import { decodePng, levelName, projectFiles } from "../io/projectIo";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { describeError, getLevelWorkspace, getProjectFolder, onProjectSaved } from "../io/session";
 import { useEditorStore, type OpenProject } from "../state/editorStore";
-import { getTilesetImage, tilesetPngSource, retainTilesetImage } from "../state/tilesetImages";
+import { getTilesetImage, tilesetPngSource, retainTilesetImage, pendingTilesetFileSource } from "../state/tilesetImages";
 import { resolveFileData } from "../io/fileData";
 import { toast } from "../ui/toast/toastStore";
 import { AutoExporter, type SavedProject } from "./autoExport";
@@ -275,9 +275,17 @@ export async function exportPng(scale: PngScale, from?: ExportSource, draft?: Ex
   if (!project) return false;
   const source = from ?? activeSource(project);
   const images = new Map(source.document.tilesets.map(ts => [ts.id, getTilesetImage(ts.id)]));
+  const pending = source.document.tilesets.flatMap(ts => {
+    const bytes = pendingTilesetFileSource(ts.id); return bytes ? [{ id: ts.id, bytes }] : [];
+  });
   const release = [...images.values()].filter(image => image !== undefined).map(retainTilesetImage);
   const result = await withExportBusy(async () => {
     try {
+      // A replay's exact file revision is available before its UI bitmap.
+      for (const { id, bytes: file } of pending) {
+        const bytes = await resolveFileData(file) as Uint8Array, bitmap = await decodePng(bytes);
+        images.set(id, { tilesetId: id, bytes, bitmap }); release.push(() => bitmap.close());
+      }
       const layers = sourceLayers(draft ?? await loadExportSettings(project.name), source);
       const png = await renderMapPng(source.document, scale, (id) => images.get(id)?.bitmap, { layers });
       const fileName = `${exportBaseName(sourceLevelName(source))}.png`;

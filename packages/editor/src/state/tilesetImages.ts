@@ -18,6 +18,13 @@ export interface TilesetImage {
   bytes: Uint8Array | undefined;
 }
 
+const pendingFileSources = new Map<string, PngBytes>();
+export function pendingTilesetFileSource(id: string): PngBytes | undefined { return pendingFileSources.get(id); }
+export function setTilesetFileSource(id: string, source: PngBytes): void { pendingFileSources.set(id, source); }
+
+const bitmapSnapshots = new WeakMap<TilesetImage, () => TilesetBitmap>();
+/** Mutable retained view surfaces become immutable at async consumer boundaries. */
+export function setTilesetBitmapSnapshot(image: TilesetImage, snapshot: () => TilesetBitmap): void { bitmapSnapshots.set(image, snapshot); }
 const bitmapClosers = new WeakMap<TilesetImage, () => void>();
 const encoders = new WeakMap<TilesetImage, () => Promise<Uint8Array>>();
 const encoding = new WeakMap<TilesetImage, Promise<Uint8Array>>();
@@ -39,6 +46,7 @@ export function tilesetImageBytes(image: TilesetImage): Promise<Uint8Array> {
 }
 /** The deferred supplier captures this revision, even if a newer image replaces the registry entry. */
 export function tilesetPngSource(id: string): PngBytes | undefined {
+  const pending = pendingFileSources.get(id); if (pending) return pending;
   const image = getTilesetImage(id); return image ? image.bytes ?? (() => tilesetImageBytes(image)) : undefined;
 }
 
@@ -57,6 +65,12 @@ function closeImage(image: TilesetImage): void {
   if (close) close(); else if ("close" in image.bitmap) image.bitmap.close();
 }
 export function retainTilesetImage(image: TilesetImage): () => void {
+  const snapshot = bitmapSnapshots.get(image);
+  if (snapshot) {
+    const bitmap = snapshot();
+    Object.defineProperty(image, 'bitmap', { value: bitmap, configurable: true });
+    bitmapClosers.set(image, () => bitmap.close()); bitmapSnapshots.delete(image);
+  }
   leases.set(image, (leases.get(image) ?? 0) + 1);
   let released=false;
   return () => { if(released)return;released=true;leases.set(image, (leases.get(image) ?? 1)-1);if(retired.has(image))closeImage(image); };
@@ -97,6 +111,7 @@ export function allTilesetImages(): IterableIterator<TilesetImage> {
 }
 
 export function setTilesetImage(image: TilesetImage, pixelRects?: readonly PixelDirtyRect[]): void {
+  pendingFileSources.delete(image.tilesetId);
   const previous=images.get(image.tilesetId);
   if(previous === image)return;
   if (!pixelRects) imageContentVersion(image);
@@ -109,6 +124,7 @@ export function setTilesetImage(image: TilesetImage, pixelRects?: readonly Pixel
 
 export function clearTilesetImages(): void {
   worldVersion++;
+  pendingFileSources.clear();
   for (const img of images.values()) { retired.add(img); closeImage(img); }
   images.clear();
 }
@@ -130,4 +146,4 @@ export function notifyTilesetImage(tilesetId: string): void {
 }
 
 /** Releases a staged asset when an atomic bake fails. */
-export function removeTilesetImage(id: string): void { const image=images.get(id);if(image){retired.add(image);closeImage(image);}images.delete(id);for(const l of listeners)l(id); }
+export function removeTilesetImage(id: string): void { pendingFileSources.delete(id); const image=images.get(id);if(image){retired.add(image);closeImage(image);}images.delete(id);for(const l of listeners)l(id); }

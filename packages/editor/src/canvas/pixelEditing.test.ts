@@ -207,3 +207,20 @@ it('collects unreadable maps and hidden/locked targets before opening any live t
  expect(serializeLevel(store.document)).toBe(before);expect(ws.history.entries()).toEqual(history);
  expect(store.inTransaction).toBe(false);expect(store.rasterAssets.assetIds()).toEqual([]);
 });
+
+// First-touch preparation must depend on touched cells, including with cached followers.
+it.each([32, 512])('first-touch cell edit never enumerates %i-square maps', size => {
+  const { store, layerId, ws, source } = setup();
+  store.dispatch({ type: 'resizeMap', width: size, height: size });
+  const cells = Array.from({ length: size * size }, (_, i) => ({ x: i % size, y: Math.floor(i / size), cell: 1 }));
+  store.dispatch({ type: 'paintCells', layerId, cells });
+  const other = ws.add({ name: 'Unrelated', width: size, height: size, tileSize: 16, layerName: 'Ground' });
+  const follower = ws.entry(other.id)!.store;
+  for (const s of [store, follower]) for (const layer of s.document.layers) {
+    layer.chunks = () => { throw Error('whole map traversal on stroke path'); };
+  }
+  const plans = planPixelGesture(store, layerId, [{ x: 1, y: 1 }], options, source);
+  preparePixelCommit(ws, layerId, plans, 'cell', source)();
+  expect(store.document.getLayer(layerId)!.getCell(0, 0)).not.toBe(1);
+  expect(follower.document.tilesets.some(t => t.edited)).toBe(false);
+});

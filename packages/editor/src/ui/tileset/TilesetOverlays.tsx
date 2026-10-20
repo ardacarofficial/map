@@ -25,14 +25,15 @@ export function drawMarks(
   cellH: number,
   cssW: number,
   cssH: number,
+  dirty?: readonly number[],
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_OVERLAY_PX / Math.max(1, cssW), MAX_OVERLAY_PX / Math.max(1, cssH));
-  const nothing = empty.size === 0;
-  canvas.width = nothing ? 1 : Math.max(1, Math.round(cssW * dpr));
-  canvas.height = nothing ? 1 : Math.max(1, Math.round(cssH * dpr));
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const nothing = empty.size === 0 && (!dirty || canvas.width === 1);
+  const width = nothing ? 1 : Math.max(1, Math.round(cssW * dpr)), height = nothing ? 1 : Math.max(1, Math.round(cssH * dpr));
+  const partial = dirty && canvas.width === width && canvas.height === height;
+  if (!partial) { canvas.width = width; canvas.height = height; ctx.clearRect(0, 0, width, height); }
   if (nothing) return;
   const cw = cellW * dpr;
   const ch = cellH * dpr;
@@ -43,10 +44,12 @@ export function drawMarks(
     const y0 = Math.round(row * ch);
     return { x0, y0, x1: Math.round((col + 1) * cw), y1: Math.round((row + 1) * ch) };
   };
+  if (partial) for (const id of dirty) { const { x0, y0, x1, y1 } = box(id); ctx.clearRect(x0, y0, x1 - x0, y1 - y0); }
   if (empty.size > 0) {
     const [r, g, b] = colorChannels("--color-bg");
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.62)`;
-    for (const id of empty) {
+    for (const id of partial ? dirty : empty) {
+      if (!empty.has(id)) continue;
       const { x0, y0, x1, y1 } = box(id);
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     }

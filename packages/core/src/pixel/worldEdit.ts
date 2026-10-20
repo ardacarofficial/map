@@ -1,7 +1,6 @@
 import { normalizeTileset } from '../tileset';
-import { createDocument } from '../document';
+import { pixelEditSnapshot } from './snapshot';
 import { isTileLayer } from '../layer';
-import { parseLevel, serializeLevel } from '../serialize';
 import { MapStore } from '../store';
 import type { AddPaletteEntryOp, AddTilesetOp } from '../ops';
 import type { RasterAssets } from './assets';
@@ -72,9 +71,6 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
   const writesRaster = participants.some(p => p.operations.some(op => ['allocateEditedTile', 'patchPixels', 'editTilePixels'].includes(op.type)));
   if (writesRaster && participants.some(p => p.store.rasterAssets !== shared)) throw new WorldEditError([{ mapId: originMapId, reason: 'invalid', detail: 'participants must share RasterAssets' }]);
   const rasterVersions = participants.flatMap(p => p.store.rasterAssets.assetIds().map(assetId => ({ mapId: p.mapId, assetId, revision: p.store.rasterAssets.info(assetId)!.revision })));
-  // Pixel-only preparation must not serialize unrelated map chunks or copy
-  // unrelated raster pages. The same version guards still cover the complete registry.
-  const rasterOnly = participants.every(p => p.operations.every(op => op.type === 'editTilePixels' || op.type === 'patchPixels' || op.type === 'setEditedTileset'));
   // Each shared view has one detached backing store for the simulation.
   const copies = new Map<typeof shared, RasterAssets>();
   const simulated = participants.map(p => {
@@ -83,7 +79,7 @@ export function prepareWorldEdit(originMapId: string, inputs: readonly WorldEdit
       rasters = p.store.rasterAssets.fork(); copies.set(p.store.rasterAssets, rasters);
     }
     const doc = p.store.document;
-    const snapshot = rasterOnly ? createDocument({ ...doc.map, tilesets: doc.tilesets }) : parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes, { randomSets: doc.randomSets, collections: doc.collections });
+    const snapshot = pixelEditSnapshot(doc, p.operations.flatMap(op => op.type === 'remapCells' ? op.cells.map(c => ({ ...c, layerId: op.layerId })) : []));
     const store = new MapStore(snapshot, { rasterAssets: rasters });
     return store;
   });

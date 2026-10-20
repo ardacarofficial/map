@@ -1,10 +1,11 @@
-import { decodeSourcePng } from './sourcePng';
+import { RasterSheet, attachRasterSheet } from './rasterSheet';
+import { decodeWorkingSourcePng as decodeSourcePng } from './sourcePng';
 import { decodeEditedPng } from "./editedPng";
 /** Raster → immutable canvas/PNG snapshots. Encoding is deferred until save/export.
  * Old content-addressed files are deliberately retained: backups and undo can refer to them.
  */
 import { encodeRgbaPng, tileRect, type MapStore, type PixelDirtyRect, type RasterImage, type Tileset } from '@smap/core';
-import { allTilesetImages, deferredTilesetImage, getTilesetImage, onTilesetImage, setTilesetImage, type TilesetImage } from '../state/tilesetImages';
+import { allTilesetImages, deferredTilesetImage, setTilesetBitmapSnapshot, getTilesetImage, onTilesetImage, setTilesetImage, type TilesetImage } from '../state/tilesetImages';
 import { tilesetPixels } from '../state/tilesetPixels';
 import type { PixelSource } from '../canvas/pixelEditing';
 
@@ -41,9 +42,24 @@ export function loadEditedRaster(store: MapStore, tileset: Tileset, bytes: Uint8
   if (pixels.width !== width || pixels.height !== height) throw new Error(`Invalid edited PNG dimensions: ${tileset.imagePath}`);
   store.dispatch({ type: 'loadRasterAsset', asset: { assetId: tileset.id, tileWidth: tileset.tileWidth, tileHeight: tileset.tileHeight, columns: tileset.columns, rows: tileset.rows, data: new Uint8Array(pixels.data) } });
 }
+const sharedSheets = new WeakMap<object, Map<string, RasterSheet>>();
 /** Publish synchronously before canvas subscribers run; this also handles undo/redo/rollback. */
 export function installPixelAssets(store: MapStore): () => void {
-  return store.subscribe(event => {
+  let sheets = sharedSheets.get(store.rasterAssets);
+  if (!sheets) { sheets = new Map(); sharedSheets.set(store.rasterAssets, sheets); }
+  const retainedSheets = sheets;
+  const offImage = onTilesetImage(id => {
+    const image = getTilesetImage(id), ts = store.document.getTileset(id);
+    if (typeof document === 'undefined' || !image?.bytes || !ts?.edited) return;
+    const retained = retainedSheets.get(id);
+    if (retained) { attachRasterSheet(image, retained); return; }
+    const info = store.rasterAssets.info(id); if (!info) return;
+    const sheet = new RasterSheet(id); retainedSheets.set(id, sheet);
+    sheet.update(store.rasterAssets.fork(), Array.from({ length: info.tileCount }, (_, tileId) => ({ assetId: id, tileId, x: 0, y: 0, width: info.tileWidth, height: info.tileHeight })));
+    // Warm a loaded sheet before any pointer gesture, including its alpha index.
+    sheet.bitmap(); sheet.emptyTiles(); attachRasterSheet(image, sheet);
+  });
+  const offStore = store.subscribe(event => {
     if (!event.pixelRects.length || typeof document === 'undefined') return;
     const byAsset = new Map<string, PixelDirtyRect[]>();
     for (const rect of event.pixelRects) { const list = byAsset.get(rect.assetId) ?? []; list.push(rect); byAsset.set(rect.assetId, list); }
@@ -53,14 +69,20 @@ export function installPixelAssets(store: MapStore): () => void {
       // Only tile-map references are captured here. No atlas assembly, hashing,
       // ImageData or PNG encoding runs while handling a pointer release.
       const raster = () => snapshot.getAsset(id)!;
-      setTilesetImage(deferredTilesetImage(id, () => {
-        const image = raster(), canvas = document.createElement('canvas');
-        canvas.width = image.width; canvas.height = image.height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) throw new Error('2D canvas context unavailable');
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+      let sheet = retainedSheets.get(id);
+      if (!sheet) { sheet = new RasterSheet(id); retainedSheets.set(id, sheet); }
+      sheet.update(snapshot, rects);
+      const image = deferredTilesetImage(id, () => sheet.bitmap(), async () => { const image = raster(); return encodeRgbaPng(image.width, image.height, image.data); });
+      attachRasterSheet(image, sheet);
+      setTilesetBitmapSnapshot(image, () => {
+        const revision = raster(), canvas = document.createElement('canvas');
+        canvas.width = revision.width; canvas.height = revision.height;
+        const ctx = canvas.getContext('2d'); if (!ctx) throw Error('2D canvas context unavailable');
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(revision.data), revision.width, revision.height), 0, 0);
         return Object.assign(canvas, { close() {} });
-      }, async () => { const image = raster(); return encodeRgbaPng(image.width, image.height, image.data); }), rects);
+      });
+      setTilesetImage(image, rects);
     }
   });
+  return () => { offImage(); offStore(); };
 }

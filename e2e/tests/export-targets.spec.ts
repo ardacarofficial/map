@@ -151,7 +151,7 @@ test("engine and legacy folder targets include painted road and edited PNGs and 
     await dialog.getByTestId("export-submit").click();
     await expect(dialog).toBeHidden();
     const output = await files(page);
-    const prefix = target === "Godot 4" ? "smap/" : target === "Defold" ? "exported/Ana harita/" : "";
+    const prefix = target === "Godot 4" ? "smap/" : target === "Defold" ? "exported/Ana harita--id-" : "";
     expect(output.filter(f => f.path.startsWith(prefix) && f.path.endsWith(".png") && (prefix !== "" || !f.path.includes("/")))).toHaveLength(2);
     if (target === "Unity") {
       const map = JSON.parse((await readOpfsText(page, "Ana harita.smapmap"))!);

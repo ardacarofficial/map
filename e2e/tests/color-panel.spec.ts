@@ -87,3 +87,20 @@ test('panel remembers its moved home and hidden state; mirror origin drags, canc
   const cancel = await point(page, 20, 20); await page.mouse.move(moved.x, moved.y); await page.mouse.down(); await page.mouse.move(cancel.x, cancel.y); await page.keyboard.press('Escape'); await page.mouse.up();
   await page.getByRole('button', { name: 'Ayna merkezini sıfırla', exact: true }).click(); await click(page, 7, 7); expect(await rgba(page, 3, 3, 8, 8)).toEqual([0, 0, 0, 255]);
 });
+
+test('mirror preferences and half-pixel origin survive save, reopen and map-store replacement', async ({ page }) => {
+  await open(page); await key(page, 'm');
+  await page.getByRole('switch', { name: 'Yatay eksen', exact: true }).click();
+  await page.getByRole('switch', { name: 'Dikey eksen', exact: true }).click();
+  await page.evaluate(() => {
+    const h = (window as unknown as { __smap: Hook }).__smap;
+    h.pixelUi.getState().mirrorOrigins.set(h.store, { x: 10.5, y: 12 });
+    h.pixelUi.setState(s => ({ originRevision: s.originRevision + 1 }));
+  });
+  await key(page, 'Control+s'); await page.reload(); await page.getByRole('button', { name: /^Aç/ }).click();
+  await page.waitForFunction(() => !!(window as unknown as { __smap?: Hook }).__smap?.store);
+  await expect.poll(() => page.evaluate(() => {
+    const h = (window as unknown as { __smap: Hook }).__smap, s = h.pixelUi.getState();
+    return { h: s.mirrorH, v: s.mirrorV, origin: s.mirrorOrigins.get(h.store) };
+  })).toEqual({ h: true, v: true, origin: { x: 10.5, y: 12 } });
+});

@@ -1,3 +1,4 @@
+import { drawRasterSheet, rasterEmptyTiles } from '../../io/rasterSheet';
 import { findTileUsages } from "../../extras/usageActions";
 import { ContextMenu } from "../primitives/Overlays";
 import { type Tileset } from "@smap/core";
@@ -63,9 +64,16 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
   const randomSet = useEditorStore((s) => s.randomSet);
   const panelSelection = useTilesetView((s) => s.selection);
   const reveal = useTilesetView((s) => s.reveal);
-  const empty = useEmptyTiles(tileset, image?.bitmap);
+  const sourceEmpty = useEmptyTiles(tileset, tileset.edited ? undefined : image?.bitmap);
+  const empty = rasterEmptyTiles(image) ?? sourceEmpty;
   const [imageVersion, setImageVersion] = useState(0);
-  useEffect(() => onTilesetImage((id) => id === tileset.id && setImageVersion((v) => v + 1)), [tileset.id]);
+  const markChanges = useRef<{ full: boolean; ids: Set<number> }>({ full: true, ids: new Set() });
+  useEffect(() => onTilesetImage((id, rects) => {
+    if (id !== tileset.id) return;
+    if (!rects) markChanges.current.full = true;
+    else for (const rect of rects) markChanges.current.ids.add(rect.tileId);
+    setImageVersion(v => v + 1);
+  }), [tileset.id]);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,12 +110,16 @@ export function TilesetGrid({ tileset, scale }: { tileset: Tileset; scale: numbe
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas && image && visible) drawTiles(canvas, tileset, image.bitmap, raw);
+    if (canvas && image && visible && !drawRasterSheet(image, canvas)) drawTiles(canvas, tileset, image.bitmap, raw);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw only when the image or the grid changes
   }, [visible, raw, image, imageVersion, tileset.tileWidth, tileset.tileHeight, tileset.margin, tileset.spacing, tileset.columns, tileset.rows]);
 
   useEffect(() => {
-    if (marksRef.current && visible) drawMarks(marksRef.current, tileset, empty, cellW, cellH, tileset.columns * cellW, tileset.rows * cellH);
+    if (marksRef.current && visible) {
+      const changes = markChanges.current;
+      drawMarks(marksRef.current, tileset, empty, cellW, cellH, tileset.columns * cellW, tileset.rows * cellH, tileset.edited && !changes.full ? [...changes.ids] : undefined);
+      changes.full = false; changes.ids.clear();
+    }
   }, [visible, tileset, empty, cellW, cellH, cssW, cssH, image, imageVersion]);
 
   // ---- hit testing

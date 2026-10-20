@@ -69,3 +69,12 @@ it("versions decoded premultiplied pixels independently of PNG encoding and invi
   expect(imageContentVersion(image([1,2,3]))).not.toBe(a);
  }finally{vi.unstubAllGlobals();}
 });
+
+it('freezes a retained mutable sheet once at the async consumer boundary', async () => {
+  const { setTilesetBitmapSnapshot, retainTilesetImage } = await import('./tilesetImages');
+  const live = { close: vi.fn() } as unknown as ImageBitmap, frozen = { close: vi.fn() } as unknown as ImageBitmap;
+  const image = deferredTilesetImage('edited', live, async () => Uint8Array.of(1));
+  const freeze = vi.fn(() => frozen); setTilesetBitmapSnapshot(image, freeze);
+  const off = retainTilesetImage(image), off2 = retainTilesetImage(image);
+  expect(freeze).toHaveBeenCalledTimes(1); expect(image.bitmap).toBe(frozen); off(); off2();
+});

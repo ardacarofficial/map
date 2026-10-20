@@ -11,6 +11,8 @@
  */
 import {
   CHUNK_SIZE,
+  cellPaletteIndex,
+  type PixelDirtyRect,
   isTileLayer,
   parseChunkKey,
   tileCount,
@@ -65,6 +67,10 @@ export class MapThumbnail {
   #overviewImage: ImageData | null = null;
   #unpublish: (() => void) | null = null;
   #missingImages = false;
+  #sourceKey = '';
+  readonly #paletteChunks = new Map<number, Set<ChunkKey>>();
+  readonly #chunkPalette = new Map<ChunkKey, Set<number>>();
+  readonly #tilePalette = new Map<string, Set<number>>();
   /**
    * CPU copy of the picture at 1 px per {@link #overviewCells}² cells (≤ 1024 px a
    * side, straight alpha), filled from the same chunk composites. The minimap
@@ -87,6 +93,7 @@ export class MapThumbnail {
   /** `maxPx`: longest side of the picture (default `THUMB_MAX_PX`; the world view uses smaller ones). */
   constructor(store: MapStore, images: ThumbImageLookup, onChange: () => void, maxPx?: number) {
     this.#store = store;
+    this.#sourceKey = this.#sourceAppearanceKey();
     this.#maxPx = maxPx;
     this.#images = images;
     this.#onChange = onChange;
@@ -111,7 +118,18 @@ export class MapThumbnail {
   }
 
   /** A tileset image (re)arrived: its blocks are rebuilt and the whole picture redrawn. */
-  imageChanged(tilesetId: string): void {
+  imageChanged(tilesetId: string, pixelRects?: readonly PixelDirtyRect[]): void {
+    if (pixelRects) {
+      let changed = false;
+      for (const tileId of new Set(pixelRects.map(r => r.tileId))) {
+        for (const index of this.#tilePalette.get(JSON.stringify([tilesetId,tileId])) ?? []) {
+          delete this.#blocks[index]; delete this.#overviewBlocks[index];
+          for (const key of this.#paletteChunks.get(index) ?? []) { this.#queue.add(key); changed = true; }
+        }
+      }
+      if (changed) this.#onChange();
+      return;
+    }
     this.#tilesetPixels.delete(tilesetId);
     this.#blocks = [];
     this.#overviewBlocks = [];
@@ -203,10 +221,17 @@ export class MapThumbnail {
   #handle(e: StoreChangeEvent): void {
     const doc = this.#store.document;
     if (e.structure.includes("map")) this.#resize();
-    if (e.structure.includes("layers") || e.structure.includes("map") || e.structure.includes("tilesets")) {
+    let sourceChanged = false;
+    if (e.structure.includes('tilesets')) {
+      const next = this.#sourceAppearanceKey(); sourceChanged = next !== this.#sourceKey; this.#sourceKey = next;
+    }
+    if (e.structure.includes("layers") || e.structure.includes("map") || sourceChanged) {
       this.#rebuildAll();
       return;
     }
+    const byAsset = new Map<string, PixelDirtyRect[]>();
+    for (const rect of e.pixelRects) { const list = byAsset.get(rect.assetId) ?? []; list.push(rect); byAsset.set(rect.assetId,list); }
+    for (const [id,rects] of byAsset) this.imageChanged(id,rects);
     let changed = false;
     for (const { layerId, chunks } of e.cells) {
       if (!isTileLayer(doc.getLayer(layerId))) continue;
@@ -237,7 +262,14 @@ export class MapThumbnail {
     this.sizeVersion++;
   }
 
+  #sourceAppearanceKey(): string {
+    // Edited atlas metadata follows pixel/cell patches. Neither its lazy path nor
+    // a new empty slot changes any other cell's appearance.
+    return JSON.stringify(this.#store.document.tilesets.filter(ts => !ts.edited));
+  }
+
   #rebuildAll(): void {
+    this.#paletteChunks.clear(); this.#chunkPalette.clear(); this.#tilePalette.clear();
     this.#clearAll = true;
     this.#missingImages = false;
     this.#blocks = [];
@@ -255,14 +287,18 @@ export class MapThumbnail {
     const map = doc.map;
     const { cx, cy } = parseChunkKey(key);
     if (cx < 0 || cy < 0 || cx * CHUNK_SIZE >= map.width || cy * CHUNK_SIZE >= map.height) return;
+    for (const index of this.#chunkPalette.get(key) ?? []) this.#paletteChunks.get(index)?.delete(key);
+    const used = new Set<number>();
     const inputs: ChunkLayerInput[] = [];
     let any = false;
     for (const layer of doc.layers) {
       if (!isTileLayer(layer) || !layer.visible || layer.opacity <= 0) continue;
       const data = layer.getChunkByKey(key)?.data;
-      if (data) any = true;
+      if (data) { any = true; for (const cell of data) { const index = cellPaletteIndex(cell); if (index) used.add(index); } }
       inputs.push({ data, opacity: layer.opacity });
     }
+    if (used.size) this.#chunkPalette.set(key,used); else this.#chunkPalette.delete(key);
+    for (const index of used) { const keys = this.#paletteChunks.get(index) ?? new Set<ChunkKey>(); keys.add(key); this.#paletteChunks.set(index,keys); }
     const xs = chunkSpan(cx, CHUNK_SIZE, this.#scale, map.width);
     const ys = chunkSpan(cy, CHUNK_SIZE, this.#scale, map.height);
     const ctx = this.#ctx;
@@ -397,6 +433,7 @@ export class MapThumbnail {
     if (cached !== undefined) return cached ?? undefined;
     const doc = this.#store.document;
     const entry = doc.palette.get(paletteIndex);
+    if (entry) { const key = JSON.stringify([entry.tilesetId,entry.tileId]), indices = this.#tilePalette.get(key) ?? new Set<number>(); indices.add(paletteIndex); this.#tilePalette.set(key,indices); }
     let block: Uint8ClampedArray | null = null;
     const tileset = entry ? doc.getTileset(entry.tilesetId) : undefined;
     if (entry && tileset && entry.tileId >= 0 && entry.tileId < tileCount(tileset)) {

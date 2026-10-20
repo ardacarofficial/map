@@ -38,3 +38,13 @@ describe("Defold target plugin", () => {
     expect(files.some((file) => file.path.endsWith(".tilemap"))).toBe(false);
   });
 });
+
+it('namespaces duplicate, sanitized and Windows case-colliding names by stable map identity', async () => {
+  const source = input();
+  const paths: Set<string>[] = [];
+  for (const [levelId, levelName] of [['a', 'Same'], ['b', 'Same'], ['A', 'same'], ['a-b', 'same?']] as const) {
+    const files = await defoldTarget.planFiles({ ...source, levelId, levelName }, {});
+    paths.push(new Set(files.map(f => f.path.toLowerCase())));
+  }
+  for (let i = 0; i < paths.length; i++) for (let j = 0; j < i; j++) expect([...paths[i]!].filter(p => paths[j]!.has(p))).toEqual([]);
+});

@@ -1,3 +1,4 @@
+import { installPixelViewSettings } from '../state/pixelViewSettings';
 import { SmartGridDialog } from "./toolOptions/SmartGridDialog";
 /**
  * React panels (toolbar, layers, tileset, properties, status bar).
@@ -61,6 +62,7 @@ export function App() {
     const uninstallWorldActions = installWorldActions();
     const uninstallUsageActions = installUsageActions();
     const uninstallBookmarks = installBookmarkActions();
+    const uninstallPixelViews = installPixelViewSettings();
     const uninstallTilesetActions = installTilesetActions();
     return () => {
       uninstallShortcuts();
@@ -70,6 +72,7 @@ export function App() {
       uninstallWorldActions();
       uninstallUsageActions();
       uninstallBookmarks();
+      uninstallPixelViews();
       uninstallTilesetActions();
     };
   }, []);
