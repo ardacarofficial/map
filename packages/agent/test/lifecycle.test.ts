@@ -1,0 +1,541 @@
+import { expect, it } from "vitest";
+import { MapStore, createDocument, serializeLevel } from "@smap/core";
+import { harness, success, error, tile } from "./helpers";
+import { CallSignal } from "../src/transactions";
+import { memoryCall } from "../src/testing/memoryHost";
+import { AGENT_LIMITS as L } from "../src/contracts";
+
+const paint = {
+  mapId: "map-1",
+  layerId: "ground",
+  cells: [{ x: 1, y: 1, value: tile }],
+};
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+async function flush() {
+  for (let i = 0; i < 15; i++) await Promise.resolve();
+}
+
+it("finish seals writes; only a user can approve and ordinary cancel works with a stale revision", async () => {
+  const h = harness(),
+    before = h.host.snapshot();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  success(await h.edit("finish_edit", { summary: "Ready for review" }));
+  expect(h.api.getState().phase).toBe("awaitingApproval");
+  expect(h.host.history.undoDepth).toBe(0);
+  error(await h.edit("paint_cells", paint), "TRANSACTION_SEALED");
+  success(
+    await h.run("cancel_edit", {
+      context: { ...h.writeContext(), expectedRevision: 0 },
+      reason: "Discard",
+    }),
+  );
+  expect(h.host.snapshot()).toEqual(before);
+});
+it("Durdur keeps prior writes, blocks future writes, and permits user approval or discard", async () => {
+  const h = harness(),
+    before = serializeLevel(h.host.stores.get("map-1")!.document);
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  await h.api.userAction("stop");
+  expect(h.api.getState().phase).toBe("stopped");
+  expect(h.host.transactions.writeGate.blocked).toBe(true);
+  error(await h.edit("paint_cells", paint), "TRANSACTION_SEALED");
+  h.host.clock.advance(L.editLifetimeMs + L.reviewIdleMs);
+  await flush();
+  expect(h.api.getState().phase).toBe("stopped");
+  await h.api.userAction("approve");
+  expect(h.host.history.undoDepth).toBe(1);
+  h.host.history.undo();
+  expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(before);
+});
+it("owner session end rolls back running/stopped/review work; another session cannot cancel it", async () => {
+  for (const phase of ["running", "stopped", "awaitingApproval"] as const) {
+    const h = harness(),
+      before = h.host.snapshot();
+    await h.begin();
+    success(await h.edit("paint_cells", paint));
+    if (phase === "stopped") await h.api.userAction("stop");
+    if (phase === "awaitingApproval") success(await h.edit("finish_edit"));
+    await h.api.sessionEnded("observer");
+    expect(h.api.getState().transaction!.state).toBe(phase);
+    await h.api.sessionEnded("client-1");
+    expect(h.host.snapshot()).toEqual(before);
+    expect(h.host.pins.size).toBe(0);
+    expect(h.api.getState().transaction!.outcome).toBe("cancelled");
+  }
+});
+it("rejects stale world/revision, unknown targets and foreign client/epoch with no mutation", async () => {
+  const h = harness();
+  await h.begin();
+  const context = h.writeContext(),
+    before = h.host.snapshot();
+  error(
+    await h.api.executeTool(
+      memoryCall(
+        "paint_cells",
+        { context, ...paint },
+        { clientSessionId: "other" },
+      ),
+    ),
+    "TRANSACTION_NOT_OWNED",
+  );
+  error(
+    await h.api.executeTool(
+      memoryCall(
+        "paint_cells",
+        { context, ...paint },
+        { bridgeEpoch: "epoch-old" },
+      ),
+    ),
+    "TRANSACTION_NOT_OWNED",
+  );
+  error(
+    await h.run("paint_cells", {
+      context: { ...context, worldSessionId: "old" },
+      ...paint,
+    }),
+    "STALE_WORLD",
+  );
+  error(
+    await h.run("paint_cells", {
+      context: { ...context, expectedRevision: 100 },
+      ...paint,
+    }),
+    "REVISION_CONFLICT",
+  );
+  error(
+    await h.edit("paint_cells", { ...paint, mapId: "missing" }),
+    "UNKNOWN_ID",
+  );
+  expect(h.host.snapshot()).toEqual(before);
+});
+it("replays begin/paint/finish after approval and reports cancelled retries without double applying", async () => {
+  const h = harness();
+  const begin = {
+    context: h.context(),
+    idempotencyKey: "begin-key",
+    expectedRevision: h.api.getState().revision,
+    requestLabel: "Retry",
+    mapIds: ["map-1"],
+  };
+  success(await h.run("begin_edit", begin));
+  const context = h.writeContext(),
+    args = { context, ...paint };
+  success(await h.run("paint_cells", args));
+  error(
+    await h.run("paint_cells", {
+      ...args,
+      cells: [{ x: 2, y: 2, value: tile }],
+    }),
+    "IDEMPOTENCY_CONFLICT",
+  );
+  expect(success(await h.run("begin_edit", begin))).toMatchObject({
+    replayed: true,
+  });
+  const finish = { context: h.writeContext() };
+  success(await h.run("finish_edit", finish));
+  await h.api.userAction("approve");
+  for (const [name, a] of [
+    ["begin_edit", begin],
+    ["paint_cells", args],
+    ["finish_edit", finish],
+  ] as const)
+    expect(success(await h.run(name, a))).toMatchObject({
+      replayed: true,
+      transactionState: "approved",
+    });
+  expect(h.host.history.undoDepth).toBe(1);
+  await h.begin();
+  const cancelled = { context: h.writeContext(), ...paint };
+  success(await h.run("paint_cells", cancelled));
+  await h.api.userAction("discard");
+  error(await h.run("paint_cells", cancelled), "TRANSACTION_CANCELLED");
+});
+it("empty edits and cancellations preserve earlier dirty content and the redo tail", async () => {
+  const h = harness(),
+    s = h.host.stores.get("map-1")!;
+  const index = s.getOrAddPaletteIndex("tiles", 0);
+  s.dispatch({
+    type: "paintCells",
+    layerId: "ground",
+    cells: [{ x: 0, y: 0, cell: index }],
+  });
+  s.dispatch({
+    type: "paintCells",
+    layerId: "ground",
+    cells: [{ x: 2, y: 2, cell: index }],
+  });
+  h.host.history.undo();
+  const before = h.host.snapshot();
+  await h.begin();
+  await h.api.userAction("approve");
+  expect(h.host.snapshot()).toEqual(before);
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  await h.api.userAction("discard");
+  expect(h.host.snapshot()).toEqual(before);
+});
+it("approval survives throwing commit subscribers and dispatch errors rollback the entire action", async () => {
+  const h = harness();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  h.host.stores.get("map-1")!.subscribe((e) => {
+    if (e.cause === "commit") throw new Error("observer");
+  });
+  await h.api.userAction("approve");
+  expect(h.api.getState().transaction!.outcome).toBe("approved");
+  expect(h.host.history.undoDepth).toBe(1);
+  const k = harness(),
+    before = k.host.snapshot();
+  await k.begin();
+  k.host.stores.get("map-1")!.subscribe((e) => {
+    if (e.cause === "dispatch") throw new Error("observer");
+  });
+  error(await k.edit("paint_cells", paint), "INTERNAL_ERROR");
+  expect(k.host.snapshot()).toEqual(before);
+  expect(k.host.transactions.writeGate.blocked).toBe(false);
+});
+it("Stop/discard/timeouts during asynchronous preparation never publish late results", async () => {
+  for (const action of ["stop", "discard", "timeout", "disconnect"] as const) {
+    const h = harness(),
+      before = h.host.snapshot();
+    await h.begin();
+    success(await h.edit("paint_cells", paint));
+    const prepare = h.host.smartSources.prepare,
+      gate = deferred<void>();
+    let entered = false;
+    h.host.smartSources.prepare = async (a, call) => {
+      entered = true;
+      await gate.promise;
+      return prepare(a, call);
+    };
+    const task = h.edit("prepare_smart_source", {
+      mapId: "map-1",
+      source: {
+        tilesetId: "tiles",
+        region: { x: 0, y: 0, width: 3, height: 3 },
+      },
+      force: true,
+    });
+    await flush();
+    expect(entered).toBe(true);
+    if (action === "timeout") h.host.clock.advance(L.imageSourceTimeoutMs + 1);
+    else if (action === "disconnect") await h.api.sessionEnded("client-1");
+    else await h.api.userAction(action);
+    error(await task, action === "timeout" ? "TIMEOUT" : "CANCELLED");
+    gate.resolve();
+    await flush();
+    if (action === "stop" || action === "timeout")
+      await h.api.userAction("discard");
+    expect(h.host.snapshot()).toEqual(before);
+  }
+});
+it("running lifetime expires; review inactivity and stopped lifetime never auto-approve or rollback", async () => {
+  const h = harness(),
+    before = h.host.snapshot();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  h.host.clock.advance(L.editLifetimeMs);
+  await flush();
+  expect(h.host.snapshot()).toEqual(before);
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  success(await h.edit("finish_edit"));
+  h.host.clock.advance(L.editLifetimeMs * 2);
+  await flush();
+  expect(h.api.getState().phase).toBe("awaitingApproval");
+  await h.api.userAction("discard");
+});
+it("a source change cancels pending work and a replacement world rejects every old retry", async () => {
+  const h = harness(),
+    before = h.host.snapshot();
+  await h.begin();
+  const args = { context: h.writeContext(), ...paint };
+  success(await h.run("paint_cells", args));
+  h.host.contentChanged();
+  await flush();
+  expect(h.host.snapshot()).toEqual(before);
+  h.host.changeWorld("world-2");
+  error(await h.run("paint_cells", args), "STALE_WORLD");
+});
+it("begin cancellation releases admission after a timed-out write drain and retries can begin afresh", async () => {
+  const h = harness(),
+    gate = h.host.transactions.writeGate,
+    acquire = gate.acquireEdit;
+  gate.acquireEdit = (id) => {
+    const admission = acquire(id);
+    return { ...admission, waitForWrites: () => new Promise(() => {}) };
+  };
+  const task = h.run("begin_edit", {
+    context: h.context(),
+    idempotencyKey: "begin-timeout",
+    expectedRevision: 0,
+    requestLabel: "Drain",
+    mapIds: ["map-1"],
+  });
+  await flush();
+  expect(gate.blocked).toBe(true);
+  h.host.clock.advance(L.beginDrainTimeoutMs + 1);
+  error(await task, "TIMEOUT");
+  expect(gate.blocked).toBe(false);
+  gate.acquireEdit = acquire;
+  await h.begin();
+  await h.api.userAction("discard");
+});
+it("aborted, expired, overdeep and non-JSON calls reject at the edge", async () => {
+  const h = harness(),
+    signal = new CallSignal();
+  signal.abort();
+  error(
+    await h.api.executeTool(memoryCall("get_session", {}, { signal })),
+    "CANCELLED",
+  );
+  error(
+    await h.api.executeTool(memoryCall("get_session", {}, { deadline: 0 })),
+    "TIMEOUT",
+  );
+  let deep: unknown = {};
+  for (let i = 0; i < 40; i++) deep = { deep };
+  error(await h.run("get_session", deep), "LIMIT_EXCEEDED");
+  error(await h.run("get_session", { value: NaN }), "INVALID_ARGUMENT");
+});
+it("a multi-map approval stays one chronological row and can include metadata-only cached followers", async () => {
+  const a = new MapStore(
+      createDocument({
+        width: 8,
+        height: 8,
+        tilesets: [
+          {
+            id: "tiles",
+            name: "Tiles",
+            tileWidth: 32,
+            tileHeight: 32,
+            columns: 1,
+            rows: 1,
+            margin: 0,
+            spacing: 0,
+            imagePath: "tiles.png",
+          },
+        ],
+      }),
+    ),
+    b = a.createSibling(
+      createDocument({ width: 8, height: 8, tilesets: a.document.tilesets }),
+    );
+  for (const s of [a, b]) {
+    s.dispatch({ type: "addLayer", layer: { id: "ground", name: "Ground" } });
+    s.clearHistory();
+  }
+  const h = harness({
+      maps: [
+        { id: "map-1", store: a },
+        { id: "map-2", store: b },
+      ],
+      tilesets: a.document.tilesets,
+    }),
+    before = [a, b].map((s) => serializeLevel(s.document));
+  await h.begin(["map-1", "map-2"]);
+  success(await h.edit("paint_cells", paint));
+  success(await h.edit("paint_cells", { ...paint, mapId: "map-2" }));
+  await h.api.userAction("approve");
+  expect(h.host.history.undoDepth).toBe(1);
+  h.host.history.undo();
+  expect([a, b].map((s) => serializeLevel(s.document))).toEqual(before);
+});
+it("cached metadata followers join the pending collector and rollback together", async () => {
+  for (const outcome of ["approve", "discard"] as const) {
+    const tileset = {
+      id: "tiles",
+      name: "Tiles",
+      tileWidth: 32,
+      tileHeight: 32,
+      columns: 8,
+      rows: 8,
+      margin: 0,
+      spacing: 0,
+      imagePath: "tiles.png",
+    };
+    const maps = ["map-1", "map-2"].map((id) => {
+      const store = new MapStore(
+        createDocument({ width: 8, height: 8, tilesets: [tileset] }),
+      );
+      store.dispatch({
+        type: "addLayer",
+        layer: { id: "ground", name: "Ground" },
+      });
+      store.clearHistory();
+      return { id, store };
+    });
+    const h = harness({ maps, tilesets: [tileset] }),
+      before = h.host.snapshot(),
+      documents = maps.map((m) => serializeLevel(m.store.document));
+    await h.begin(["map-1"]);
+    const publish = h.host.smartSources.publish;
+    h.host.smartSources.publish = (source) => {
+      for (const ts of source.tilesets)
+        maps[1]!.store.dispatch({
+          type: "addTileset",
+          tileset: ts,
+          undoable: true,
+        });
+      publish(source);
+    };
+    success(
+      await h.edit("prepare_smart_source", {
+        mapId: "map-1",
+        source: {
+          tilesetId: "tiles",
+          region: { x: 0, y: 0, width: 3, height: 3 },
+        },
+        force: true,
+      }),
+    );
+    expect(maps[1]!.store.transactionDepth).toBe(1);
+    await h.api.userAction(outcome);
+    if (outcome === "discard") expect(h.host.snapshot()).toEqual(before);
+    else {
+      expect(h.host.history.undoDepth).toBe(1);
+      expect(h.host.history.peekUndo()!.participants).toHaveLength(2);
+      h.host.history.undo();
+      expect(maps.map((m) => serializeLevel(m.store.document))).toEqual(
+        documents,
+      );
+    }
+  }
+});
+
+it("sessionEnded rejects delayed commands from that authenticated session even after rollback", async () => {
+  const h = harness(),
+    before = h.host.snapshot();
+  await h.begin();
+  await h.api.sessionEnded("client-1");
+  error(
+    await h.run("begin_edit", {
+      context: h.context(),
+      idempotencyKey: "late-begin",
+      expectedRevision: h.api.getState().revision,
+      requestLabel: "Late",
+      mapIds: ["map-1"],
+    }),
+    "CANCELLED",
+  );
+  expect(h.host.snapshot()).toEqual(before);
+});
+
+it("host world-position changes share the approved row and restore on undo", async () => {
+  const h = harness();
+  await h.begin();
+  const publish = h.host.smartSources.publish;
+  h.host.smartSources.publish = (s) => {
+    h.host.metadata.stage({
+      kind: "mapPosition",
+      mapId: "map-1",
+      before: { x: 0, y: 0 },
+      after: { x: 100, y: 200 },
+    });
+    publish(s);
+  };
+  success(
+    await h.edit("prepare_smart_source", {
+      mapId: "map-1",
+      source: {
+        tilesetId: "tiles",
+        region: { x: 0, y: 0, width: 3, height: 3 },
+      },
+      force: true,
+    }),
+  );
+  await h.api.userAction("approve");
+  expect(h.host.history.undoDepth).toBe(1);
+  h.host.history.undo();
+  expect(h.host.world.maps()[0]!.world).toEqual({ x: 0, y: 0 });
+  h.host.history.redo();
+  expect(h.host.world.maps()[0]!.world).toEqual({ x: 100, y: 200 });
+});
+
+it("preparation time counts toward the disclosed running edit lifetime", async () => {
+  const h = harness(),
+    gate = h.host.transactions.writeGate,
+    acquire = gate.acquireEdit;
+  gate.acquireEdit = (id) => {
+    const admission = acquire(id);
+    return {
+      ...admission,
+      waitForWrites: async () => {
+        h.host.clock.advance(10000);
+      },
+    };
+  };
+  await h.begin();
+  h.host.clock.advance(L.editLifetimeMs - 10000);
+  await flush();
+  expect(h.api.getState().phase).toBe("ready");
+  expect(gate.blocked).toBe(false);
+});
+
+it("reference-host IDs avoid existing maps and entities supplied by an integration fixture", async () => {
+  const seed = harness(),
+    store = seed.host.stores.get("map-1")!;
+  store.dispatch({
+    type: "addEntity",
+    layerId: "entities",
+    entity: { id: "entity-1", typeId: "portal", x: 0, y: 0 },
+  });
+  store.clearHistory();
+  const h = harness({
+    maps: [{ id: "map-1", store }],
+    tilesets: store.document.tilesets,
+  });
+  await h.begin();
+  success(
+    await h.edit("create_map", {
+      name: "Fresh",
+      width: 4,
+      height: 4,
+      tileWidth: 32,
+      tileHeight: 32,
+    }),
+  );
+  expect(h.host.stores.size).toBe(2);
+  success(
+    await h.edit("place_entity", {
+      mapId: "map-1",
+      layerId: "entities",
+      typeId: "portal",
+      at: { x: 1, y: 1 },
+    }),
+  );
+  expect(store.document.entityLayers()[0]!.entities.map((e) => e.id)).toEqual([
+    "entity-1",
+    "entity-2",
+  ]);
+});
+
+it("releases save admission before notifying persistence and reports post-commit observer diagnostics", async () => {
+  const h = harness();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  let admitted = false;
+  h.host.transactions.finalized = () => {
+    h.host.transactions.writeGate.assertSaveAllowed("world-1");
+    admitted = true;
+  };
+  h.host.stores.get("map-1")!.subscribe((e) => {
+    if (e.cause === "commit") throw new Error("observer");
+  });
+  await h.api.userAction("approve");
+  expect(admitted).toBe(true);
+  expect(h.host.history.undoDepth).toBe(1);
+  expect(
+    h.host.activity
+      .entries()
+      .some((e) => e.status === "failed" && e.code === "INTERNAL_ERROR"),
+  ).toBe(true);
+});
