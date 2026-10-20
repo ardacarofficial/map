@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /**
  * Entity layer / entity / entity type actions (v0.6). Every change is a core
  * op, so all of them are undoable. Errors core reports (a second spawn point,
@@ -49,6 +50,7 @@ export function uniqueEntityLayerName(doc: MapDocument): string {
 
 /** Adds an entity layer right above the active layer and makes it active. */
 export function addEntityLayer(): string | null {
+  if (!manualEditAllowed()) return null;
   const store = currentStore();
   if (!store) return null;
   const { activeLayerId } = useEditorStore.getState();
@@ -65,6 +67,7 @@ export function addEntityLayer(): string | null {
 
 /** The active layer when it is an entity layer, else the topmost entity layer, else a new one. */
 export function ensureEntityLayer(): string | null {
+  if (!manualEditAllowed()) return null;
   const store = currentStore();
   if (!store) return null;
   const doc = store.document;
@@ -97,6 +100,7 @@ export function chooseEntityType(typeId: string): void {
  * A second spawn point is refused: the existing one is selected instead.
  */
 export function placeEntity(layerId: string, typeId: string, cellX: number, cellY: number): string | null {
+  if (!manualEditAllowed()) return null;
   const store = currentStore();
   if (!store) return null;
   const doc = store.document;
@@ -130,6 +134,7 @@ export function placeEntity(layerId: string, typeId: string, cellX: number, cell
 
 /** Moves an entity so its top-left corner is on cell (`cellX`, `cellY`). Returns false (toast shown) on failure. */
 export function moveEntityToCell(entityId: string, cellX: number, cellY: number): boolean {
+  if (!manualEditAllowed()) return false;
   const store = currentStore();
   if (!store) return false;
   const { tileWidth, tileHeight } = store.document.map;
@@ -144,6 +149,7 @@ export function moveEntityToCell(entityId: string, cellX: number, cellY: number)
 
 /** Sets one field of an entity (one undo step). Returns false (toast shown) on failure. */
 export function setEntityField(entityId: string, field: string, value: EntityFieldValue): boolean {
+  if (!manualEditAllowed()) return false;
   const store = currentStore();
   if (!store) return false;
   try {
@@ -157,6 +163,7 @@ export function setEntityField(entityId: string, field: string, value: EntityFie
 
 /** Deletes an entity (undoable) and clears the selection when it was selected. */
 export function deleteEntity(entityId: string): void {
+  if (!manualEditAllowed()) return;
   const store = currentStore();
   if (!store?.document.findEntity(entityId)) return;
   try {
@@ -170,6 +177,7 @@ export function deleteEntity(entityId: string): void {
 
 /** Adds or replaces a user-defined type (undoable). Returns false (toast shown) on failure. */
 export function saveEntityType(type: EntityType): boolean {
+  if (!manualEditAllowed()) return false;
   const store = currentStore();
   if (!store) return false;
   try {
@@ -183,6 +191,7 @@ export function saveEntityType(type: EntityType): boolean {
 
 /** Removes a user-defined type (undoable); its entities stay on the map. */
 export function removeEntityType(typeId: string): boolean {
+  if (!manualEditAllowed()) return false;
   const store = currentStore();
   if (!store) return false;
   try {

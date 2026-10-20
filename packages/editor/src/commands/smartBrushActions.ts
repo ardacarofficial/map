@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { pngHash } from "../state/pngHash";
 import { tilesetImageBytes } from "../state/tilesetImages";
 import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
@@ -259,6 +260,7 @@ export function attachPreparedBrush(clip: TileClip, from: TileClip): void {
   const selection=selections.get(from);if(selection)selections.set(clip,selection);
 }
 export function setBrushSmartEnabled(enabled: boolean): void {
+  if (!manualEditAllowed()) return;
   const editor = useEditorStore.getState(), clip = editor.stamp;
   if (!clip || !brushCanEnable(clip) || (brushUnavailable(clip)&&autoBrush(clip)?.state.status!=="failed")) return;
   if (!brushCandidate(clip)) {
@@ -279,7 +281,7 @@ export function setBrushSmartEnabled(enabled: boolean): void {
     // ordinary recipe, preserving any off/name edits made while it prepared.
     const saved=useProjectLibrary.getState().stamps.find(s=>s.id===stamp.id&&autoBrush(s)===record);
     const nineSlice=record.prepared?.stamp.nineSlice;
-    if (!saved || !nineSlice) return;
+    if (!saved || !nineSlice || !manualEditAllowed(false)) return;
     const updated={...saved,nineSlice};
     attachPreparedBrush(updated,saved);useProjectLibrary.getState().addStamp(updated);
     if (useEditorStore.getState().stamp===saved) useEditorStore.getState().setStamp(updated);

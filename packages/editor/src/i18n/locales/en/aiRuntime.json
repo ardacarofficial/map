@@ -1,0 +1,5 @@
+{
+  "saveDeferred": "AI changes are awaiting approval",
+  "editLocked": "Approve or discard the AI changes before editing",
+  "tagsUnavailable": "AI tags could not be loaded: {detail}"
+}

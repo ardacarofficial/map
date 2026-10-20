@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import type { CanvasColors } from './colors';
 import { reportSmartBrushError } from "../commands/smartBrushErrors";
 import { autoBrush, brushDisabled, brushUnavailable, brushCandidate, brushPending, publishBrushAssets, waitForSelectionBrush } from "../commands/smartBrushActions";
@@ -304,6 +305,7 @@ export class ToolController {
 
   /** Left / right button down on a map cell (pan already handled). */
   pointerDown(e: PointerEvent, cell: CellPoint): void {
+    if (!manualEditAllowed()) return;
     if (e.button === 2) {
       e.preventDefault();
       this.#rightDown(e, cell);
@@ -898,6 +900,7 @@ export class ToolController {
   async #resumeSmart(buffered: PendingSmartGesture): Promise<void> {
     try {
       const prepared = await waitForSelectionBrush(buffered.clip);
+      if (!manualEditAllowed(false)) { this.cancel(); return; }
       if (this.#gesture !== buffered && !this.#releasedSmart.includes(buffered)) return;
       const state = useEditorStore.getState();
       if (!prepared || state.stamp !== buffered.clip || state.project?.store !== buffered.store || this.#host.scene?.store !== buffered.store || state.tool !== buffered.tool || state.activeLayerId !== buffered.layerId) { this.cancel(); return; }
@@ -1245,6 +1248,7 @@ export class ToolController {
    * there is nothing to move (no selection, a gesture running, blocked).
    */
   nudgeSelection(dx: number, dy: number): boolean {
+    if (!manualEditAllowed()) return false;
     const s = useEditorStore.getState();
     const store = this.#host.scene?.store;
     const layer = this.#activeLayer();

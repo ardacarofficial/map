@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /**
  * Layer operations used by the layers panel and the command registry. All go
  * through core ops, so every one of them is undoable.
@@ -11,6 +12,7 @@ import { toast } from "../ui/toast/toastStore";
 import { undoStepAction } from "./undoStepAction";
 
 function current(): { store: MapStore; activeLayerId: string | null } | null {
+  if (!manualEditAllowed(false)) return null;
   const { project, activeLayerId } = useEditorStore.getState();
   return project ? { store: project.store, activeLayerId } : null;
 }
@@ -26,6 +28,7 @@ export function newLayerName(doc: MapDocument): string {
 
 /** Adds an empty tile layer right above the active one and makes it active. */
 export function addLayer(): string | null {
+  if (!manualEditAllowed()) return null;
   const c = current();
   if (!c) return null;
   const layers = c.store.document.layers;
@@ -38,6 +41,7 @@ export function addLayer(): string | null {
 
 /** Deletes a layer (undoable, so no confirmation) and offers "Geri al" in a toast. */
 export function removeLayer(layerId: string): boolean {
+  if (!manualEditAllowed()) return false;
   const c = current();
   if (!c) return false;
   const { store } = c;
@@ -61,12 +65,14 @@ export function removeLayer(layerId: string): boolean {
 }
 
 export function setLayerProps(layerId: string, props: LayerPropsPatch): void {
+  if (!manualEditAllowed()) return;
   const store = current()?.store;
   if (!store?.document.getLayer(layerId)) return;
   store.dispatch({ type: "setLayerProps", layerId, props });
 }
 
 export function renameLayer(layerId: string, name: string): void {
+  if (!manualEditAllowed()) return;
   const trimmed = name.trim();
   const layer = current()?.store.document.getLayer(layerId);
   if (!layer || trimmed.length === 0 || trimmed === layer.name) return;
@@ -75,6 +81,7 @@ export function renameLayer(layerId: string, name: string): void {
 
 /** Moves a layer to `index` (from the bottom, core order). */
 export function moveLayer(layerId: string, index: number): void {
+  if (!manualEditAllowed()) return;
   const store = current()?.store;
   const layers = store?.document.layers;
   if (!store || !layers) return;
@@ -158,6 +165,7 @@ export function moveUnitOrder(units: readonly LayerUnit[], from: number, to: num
 
 /** Reorders the layers to `order` (layer ids, bottom first; a permutation of the current ids) as one undo step. */
 export function applyLayerOrder(order: readonly string[]): void {
+  if (!manualEditAllowed()) return;
   const store = current()?.store;
   if (!store || store.inTransaction) return;
   const ids = store.document.layers.map((l) => l.id);
@@ -176,6 +184,7 @@ export function canMoveUnit(doc: MapDocument | undefined, layerId: string | null
 
 /** Moves the layer `layerId` one step up / down, one undo step. */
 export function moveUnit(layerId: string, dir: "up" | "down"): boolean {
+  if (!manualEditAllowed()) return false;
   const store = current()?.store;
   if (!store || store.inTransaction) return false;
   const { units, index } = unitOf(store.document, layerId);
@@ -207,6 +216,7 @@ export function copyLayerName(doc: MapDocument, name: string): string {
 
 /** Duplicates the layer `layerId` right above it and makes the copy active. One undo step. */
 export function duplicateLayer(layerId: string): string | null {
+  if (!manualEditAllowed()) return null;
   const store = current()?.store;
   if (!store || store.inTransaction) return null;
   const doc = store.document;
@@ -236,6 +246,7 @@ export function mergeDownProblem(doc: MapDocument | undefined, layerId: string |
 
 /** Merges a tile layer into the one below (one undo step); the lower layer becomes active. */
 export function mergeLayerDown(layerId: string): boolean {
+  if (!manualEditAllowed()) return false;
   const store = current()?.store;
   if (!store || store.inTransaction || mergeDownProblem(store.document, layerId) !== null) return false;
   const name = store.document.getLayer(layerId)?.name ?? "";
@@ -253,6 +264,7 @@ export function mergeLayerDown(layerId: string): boolean {
 
 /** Same props on the layer `layerId`, one undo step. */
 export function setUnitProps(layerId: string, props: LayerPropsPatch): void {
+  if (!manualEditAllowed()) return;
   const store = current()?.store;
   if (!store || store.inTransaction) return;
   const { unit } = unitOf(store.document, layerId);
@@ -281,6 +293,7 @@ export function isSolo(doc: MapDocument, layerId: string): boolean {
  * again. One undo step.
  */
 export function soloLayer(layerId: string): void {
+  if (!manualEditAllowed()) return;
   const store = current()?.store;
   if (!store || store.inTransaction) return;
   const doc = store.document;
@@ -319,6 +332,7 @@ export function selectLayerContent(layerId: string): boolean {
 
 /** Removes the layer `layerId`, with "Geri al" in the toast. */
 export function removeUnit(layerId: string): boolean {
+  if (!manualEditAllowed()) return false;
   const doc = current()?.store.document;
   if (!doc) return false;
   const { unit } = unitOf(doc, layerId);

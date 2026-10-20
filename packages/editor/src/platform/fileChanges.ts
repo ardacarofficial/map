@@ -1,3 +1,4 @@
+import { cancelPendingEdit, editGate } from "../agent/editGate";
 /**
  * Reacts to "a project file changed on disk" hints from the platform
  * (desktop: file watcher; browser: window focus).
@@ -11,7 +12,7 @@ import { PROJECT_FILE_NAME, type Tileset } from "@smap/core";
 
 import { t } from "../i18n";
 import { decodePng } from "../io/projectIo";
-import { checkDiskForChanges, getProjectFolder } from "../io/session";
+import { checkDiskForChanges, checkProjectRootChange, getLevelWorkspace, getProjectFolder } from "../io/session";
 import { hasPngSignature } from "../io/tilesetImport";
 import { useEditorStore } from "../state/editorStore";
 import { getTilesetImage, setTilesetImage } from "../state/tilesetImages";
@@ -84,6 +85,8 @@ async function reloadOnce(path: string): Promise<void> {
       bitmap.close();
       return;
     }
+    try { await cancelPendingEdit(); } catch { bitmap.close(); return; }
+    if (getProjectFolder() !== folder) { bitmap.close(); return; }
     setTilesetImage({ tilesetId: tileset.id, bitmap, bytes });
     getPlatform().log("info", `tileset reloaded ${path} (${bitmap.width}x${bitmap.height})`);
     if (sizeChanged(tileset, bitmap)) {
@@ -113,22 +116,43 @@ export function classifyChange(change: ProjectFileChange): "level" | "tileset" |
 /** Subscribes to the platform's change hints. Call once; returns an uninstall function. */
 export function installFileChangeHandling(): () => void {
   let levelCheckQueued = false;
+  const changedPaths = new Set<string>();
   return getPlatform().onFileChanged((change) => {
+    if (change.kind === "removed" && change.path.startsWith("tilesets/") && change.path.endsWith(".png") && editGate.blocked) { void cancelPendingEdit(); return; }
     switch (classifyChange(change)) {
       case "tileset":
         void reloadTilesetImage(change.path);
         break;
       case "level":
-        // Several level files in one burst → one check.
+        // Keep each path: an unchanged level echo must not hide a changed root.
+        changedPaths.add(change.path);
         if (levelCheckQueued) return;
         levelCheckQueued = true;
         queueMicrotask(() => {
           levelCheckQueued = false;
-          void checkDiskForChanges();
+          const paths = [...changedPaths]; changedPaths.clear();
+          void (async () => { for (const path of paths) await checkExternalLevel(path); })();
         });
         break;
       case "ignore":
         break;
     }
   });
+}
+
+/** Confirm content before cancelling; an echo of our own save is neutral. */
+async function checkExternalLevel(path: string): Promise<void> {
+  const ws = getLevelWorkspace(), folder = getProjectFolder();
+  if (!ws || !folder) return;
+  if (editGate.blocked && path.startsWith("levels/")) {
+    const level = ws.levels.find(l => l.path === path), entry = level && ws.entry(level.id);
+    if (entry?.knownText !== null && entry?.knownText !== undefined) {
+      let text: string | null = null;
+      try { text = await folder.fs.readText(path); } catch { /* A confirmed removal is also a conflict. */ }
+      if (ws !== getLevelWorkspace() || folder !== getProjectFolder()) return;
+      if (text !== entry.knownText) await cancelPendingEdit();
+    }
+  }
+  if (path === PROJECT_FILE_NAME) await checkProjectRootChange();
+  await checkDiskForChanges();
 }

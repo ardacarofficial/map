@@ -2,7 +2,7 @@ import type { AgentConnection, AgentConnectionStatus, AgentSettingsSnapshot, Bri
 
 let connection: Promise<AgentConnection | undefined> | undefined;
 /** Lane 2 lazily calls this only in DEV; a page without ?agent never attaches. */
-export function connectDevAgent(): Promise<AgentConnection | undefined> {
+export function connectDevAgent(_pairingId?: string): Promise<AgentConnection | undefined> {
   if (!import.meta.env.DEV) return Promise.resolve(undefined);
   return connection ??= openConnection();
 }

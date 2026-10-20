@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { buildRoadProfile, cellFlags, cellPaletteIndex, flipClip, isTileLayer, makeCell, mapBorder, planSmartStampArea, planSmartStampRoad, type MapBorderOptions, type MapStore, type Stamp, type Tileset, type CellRect } from "@smap/core";
 import { create } from "zustand";
 import { t, type MessageKey } from "../i18n";
@@ -141,6 +142,7 @@ function buildBorderPlan(draft: BorderDraft, previewTilesets: readonly Tileset[]
 }
 
 export function commitMapBorder(): boolean {
+  if (!manualEditAllowed()) return false;
   const draft = useMapBorder.getState().draft;
   if (!draft || draft.store.inTransaction) return false;
   const state = useEditorStore.getState(), plan = borderPlan(draft), layerId = state.activeLayerId;

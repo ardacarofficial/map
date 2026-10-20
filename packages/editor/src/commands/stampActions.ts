@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { autoBrush, attachPreparedBrush } from "./smartBrushActions";
 import { cellPaletteIndex, cellFlags } from "@smap/core";
 /**
@@ -60,6 +61,7 @@ export function defaultStampName(stamps: readonly Stamp[]): string {
 
 /** Saves the marquee of all layers as a stamp named `name`. Returns it, or null (nothing saved). */
 export function saveSelectionAsStamp(name: string): Stamp | null {
+  if (!manualEditAllowed()) return null;
   const { project } = useEditorStore.getState();
   const region = stampRegion();
   const trimmed = name.trim();
@@ -113,6 +115,7 @@ export function activeStampId(stamp: unknown): string | null {
 }
 
 export function renameStamp(id: string, name: string): void {
+  if (!manualEditAllowed()) return;
   const trimmed = name.trim();
   const library = useProjectLibrary.getState();
   const stamp = library.stamps.find((s) => s.id === id);
@@ -129,6 +132,7 @@ export function renameStamp(id: string, name: string): void {
 
 /** Removes a stamp from the library (its file goes on the next save); "Geri al" in the toast restores it. */
 export function deleteStamp(id: string): void {
+  if (!manualEditAllowed()) return;
   const removed = useProjectLibrary.getState().removeStamp(id);
   if (!removed) return;
   const editor = useEditorStore.getState();
@@ -143,6 +147,7 @@ export function deleteStamp(id: string): void {
 
 /** "Çoğalt": a copy of a library stamp under a new id and "<ad> kopya" name, right after it in the list. */
 export function duplicateStamp(id: string): Stamp | null {
+  if (!manualEditAllowed()) return null;
   const library = useProjectLibrary.getState();
   const stamp = library.stamps.find((s) => s.id === id);
   if (!stamp) return null;
@@ -162,6 +167,7 @@ export function duplicateStamp(id: string): Stamp | null {
  * Returns the updated stamp, or null (unknown id, invalid or unchanged meta).
  */
 export function setStampMeta(id: string, meta: StampMeta): Stamp | null {
+  if (!manualEditAllowed()) return null;
   const library = useProjectLibrary.getState();
   const stamp = library.stamps.find((s) => s.id === id);
   if (!stamp) return null;
@@ -186,6 +192,7 @@ function sameTags(a: readonly string[] | undefined, b: readonly string[] | undef
 
 /** ★ on / off. */
 export function toggleStampFavorite(id: string): void {
+  if (!manualEditAllowed()) return;
   const stamp = useProjectLibrary.getState().stamps.find((s) => s.id === id);
   if (stamp) setStampMeta(id, { favorite: !stamp.favorite });
 }
@@ -196,6 +203,7 @@ export function toggleStampFavorite(id: string): void {
  * it do not change: stamps are flat copies. Returns the saved stamp, or null.
  */
 export function replaceStampContent(id: string, content: Stamp): Stamp | null {
+  if (!manualEditAllowed()) return null;
   const library = useProjectLibrary.getState();
   const stamp = library.stamps.find((s) => s.id === id);
   if (!stamp) return null;

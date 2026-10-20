@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../../agent/editGate";
 /**
  * The stamp editor session (round 5): one stamp open in its own document
  * tab ("Stamp: <ad>"). While its tab is active the editor store's project
@@ -159,6 +160,7 @@ function showSession(session: StampEditSession): void {
  * Another stamp's open tab is closed first (asks when it has unsaved changes).
  */
 export async function openStampEditor(stampId: string): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const stamp = libraryStamp(stampId);
   const editor = useEditorStore.getState();
   if (!stamp || !editor.project) return false;
@@ -227,6 +229,7 @@ export async function showLevelFromStamp(levelId: string): Promise<boolean> {
  * Returns true when saved.
  */
 export function saveStampEditor(): boolean {
+  if (!manualEditAllowed()) return false;
   const session = useStampEditor.getState().session;
   if (!session) return false;
   const stamp = libraryStamp(session.stampId);

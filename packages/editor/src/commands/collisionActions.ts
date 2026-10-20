@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /** Manual Collision layer actions. */
 import { COLLISION_PASSABLE, COLLISION_SOLID, isGridLayer, uniqueLayerName, type MapDocument, type TileLayer } from "@smap/core";
 import { t } from "../i18n";
@@ -14,6 +15,7 @@ function uniqueCollisionName(doc: MapDocument): string {
 
 /** Adds a collision (exceptions) layer right above the active one and makes it active. */
 export function addCollisionLayer(): string | null {
+  if (!manualEditAllowed()) return null;
   const state = useEditorStore.getState();
   const store = state.project?.store;
   if (!store || store.inTransaction) return null;

@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /**
  * Level list actions (v1.0) and portal navigation / target point picking
  * (v1.1), wired to the session, the stores and toasts.
@@ -93,6 +94,7 @@ export type NewLevelInput = {
 
 /** Adds an empty level at the end of the list and opens it. */
 export async function createLevel(input: NewLevelInput): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   if (!ws) return false;
   try {
@@ -101,7 +103,9 @@ export async function createLevel(input: NewLevelInput): Promise<boolean> {
     const layers = defaults.layerTemplate.map(newLayerFor);
     const tileSize = input.tileWidth ?? input.tileSize;
     const tileHeight = input.tileHeight ?? (tileSize === defaults.tileWidth ? defaults.tileHeight : tileSize);
-    const level = ws.add({ ...input, tileSize, tileHeight, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, await diskLevelFiles());
+    const files = await diskLevelFiles();
+    if (ws !== getLevelWorkspace() || !manualEditAllowed()) return false;
+    const level = ws.add({ ...input, tileSize, tileHeight, name: input.name.trim(), layerName: t("layers.defaultName"), layers }, files);
     publishLevelState({ listChanged: true });
     return await openLevel(level.id);
   } catch (error) {
@@ -112,6 +116,7 @@ export async function createLevel(input: NewLevelInput): Promise<boolean> {
 
 /** Copies a level (with its unsaved edits) under a new id, right after it, and opens the copy. */
 export async function duplicateLevel(id: string): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   const source = ws?.level(id);
   if (!ws || !source) return false;
@@ -127,6 +132,7 @@ export async function duplicateLevel(id: string): Promise<boolean> {
 
 /** Renames a level (id and file path stay). Empty or unchanged names are ignored. */
 export function renameLevel(id: string, name: string): void {
+  if (!manualEditAllowed()) return;
   const ws = getLevelWorkspace();
   const trimmed = name.trim();
   if (!ws || trimmed.length === 0 || ws.level(id)?.name === trimmed) return;
@@ -140,6 +146,7 @@ export function renameLevel(id: string, name: string): void {
 
 /** Moves a level to `index` in the list. */
 export function moveLevel(id: string, index: number): void {
+  if (!manualEditAllowed()) return;
   const ws = getLevelWorkspace();
   if (!ws) return;
   const from = ws.levels.findIndex((l) => l.id === id);
@@ -186,6 +193,7 @@ export async function portalsTo(id: string): Promise<PortalReferences> {
  * open level, its neighbour opens first. Portals pointing at it turn red.
  */
 export async function removeLevel(id: string): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   const level = ws?.level(id);
   if (!ws || !level) return false;
@@ -199,6 +207,7 @@ export async function removeLevel(id: string): Promise<boolean> {
     if (!neighbour || !(await openLevel(neighbour.id))) return false;
   }
   try {
+    if (ws !== getLevelWorkspace() || !manualEditAllowed()) return false;
     ws.remove(id);
   } catch (error) {
     fail(error);
@@ -244,6 +253,7 @@ export async function navigateTo(levelId: string, point: EntityPoint | null): Pr
  * source level as one undo step there.
  */
 export async function startPointPick(entityId: string, field: string = PORTAL_TARGET_POINT): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   const state = useEditorStore.getState();
   const entity = state.project?.store.document.findEntity(entityId)?.entity;
@@ -284,6 +294,7 @@ export async function cancelPointPick(): Promise<void> {
 
 /** A cell of the target level was clicked: write its top-left pixel as the portal's target point. */
 export async function finishPointPick(cell: { x: number; y: number }): Promise<boolean> {
+  if (!manualEditAllowed()) return false;
   const pick = useLevelUi.getState().pick;
   const map = useEditorStore.getState().project?.store.document.map;
   if (!pick || !map) return false;

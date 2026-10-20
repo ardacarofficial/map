@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../../agent/editGate";
 import { PORTAL_TARGET_POINT, SPAWN_TYPE_ID, isEntityPoint, portalTarget, type EntityPoint, type NewEntity } from "@smap/core";
 import { useEffect, useState } from "react";
 
@@ -24,6 +25,7 @@ export function revealProperties(): void {
 
 /** A copy of an entity one cell to the right (same type and fields), selected. One undo step. */
 export function duplicateEntity(entityId: string): string | null {
+  if (!manualEditAllowed()) return null;
   const state = useEditorStore.getState();
   const store = state.project?.store;
   const found = store?.document.findEntity(entityId);

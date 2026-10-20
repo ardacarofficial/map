@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /**
  * Random brush. Pure functions of the editor state so the rules are
  * testable; the store actions below apply them.
@@ -460,6 +461,7 @@ export function savedRandomSets(): readonly RandomSet[] {
 }
 
 function dispatchSafe(run: () => void): boolean {
+  if (!manualEditAllowed()) return false;
   const store = activeStore();
   if (!store || store.inTransaction) return false;
   try {

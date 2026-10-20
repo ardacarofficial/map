@@ -3,7 +3,7 @@
  * canvas operations (alpha changes and transformed image draws), and guards
  * the output size. `pngRender.ts` replays the list on a real canvas.
  */
-import type { DrawList } from "@smap/core";
+import { cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V, isTileLayer, isValidTileId, tileRect, type DrawList, type MapDocument } from "@smap/core";
 
 /** Export scale factors offered in the dialog. */
 export const PNG_SCALES = [1, 2, 4] as const;
@@ -123,4 +123,43 @@ export function opsTilesets(ops: readonly CanvasOp[]): Set<string> {
   const ids = new Set<string>();
   for (const op of ops) if (op.kind === "draw") ids.add(op.tilesetId);
   return ids;
+}
+
+/** Region replay without a full-map cell/item/operation array. Oversized art can
+ * originate left of or below the crop. Chunk rows are merged in row-major order,
+ * preserving the normal exporter order even where oversized sprites overlap. */
+export function* regionCompositeOps(doc: MapDocument, region: { x:number; y:number; width:number; height:number }, scale: number, layerIds?: readonly string[]): Generator<CanvasOp> {
+  const map=doc.map,left=region.x*map.tileWidth,top=region.y*map.tileHeight;
+  const right=(region.x+region.width)*map.tileWidth,bottom=(region.y+region.height)*map.tileHeight;
+  const reach=doc.tilesets.reduce((n,t)=>Math.max(n,t.tileWidth,t.tileHeight),0);
+  const xMin=Math.max(0,region.x-Math.ceil(reach/map.tileWidth)),xMax=Math.min(map.width,region.x+region.width);
+  const yMin=Math.max(0,region.y),yMax=Math.min(map.height,region.y+region.height+Math.ceil(reach/map.tileHeight));
+  for(const layer of doc.layers){
+    if(!isTileLayer(layer)||!layer.visible||layer.opacity<=0||(layerIds&&!layerIds.includes(layer.id)))continue;
+    const chunks=[...layer.chunks()].filter(c=>c.cx*32<xMax&&(c.cx+1)*32>xMin&&c.cy*32<yMax&&(c.cy+1)*32>yMin).sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
+    yield {kind:"alpha",alpha:layer.opacity};
+    for(let start=0;start<chunks.length;){
+      let end=start+1;while(end<chunks.length&&chunks[end]!.cy===chunks[start]!.cy)end++;
+      const cy=chunks[start]!.cy;
+      for(let row=0;row<32;row++){
+        const y=cy*32+row;if(y<yMin||y>=yMax)continue;
+        for(let c=start;c<end;c++){
+          const chunk=chunks[c]!;
+          for(let col=0;col<32;col++){
+            const x=chunk.cx*32+col;if(x<xMin||x>=xMax)continue;
+            const cell=chunk.data[row*32+col]!;if(!cell)continue;
+            const entry=doc.palette.get(cellPaletteIndex(cell));if(!entry)continue;
+            const tileset=doc.getTileset(entry.tilesetId);if(!tileset||!isValidTileId(tileset,entry.tileId))continue;
+            const diagonal=(cell&FLIP_D)!==0,w=diagonal?tileset.tileHeight:tileset.tileWidth,h=diagonal?tileset.tileWidth:tileset.tileHeight;
+            const dx=x*map.tileWidth,dy=(y+1)*map.tileHeight-h;
+            if(dx>=right||dy>=bottom||dx+w<=left||dy+h<=top)continue;
+            const src=tileRect(tileset,entry.tileId);
+            yield {kind:"draw",tilesetId:tileset.id,sx:src.x,sy:src.y,sw:src.width,sh:src.height,
+              transform:tileTransform(dx,dy,w,h,(cell&FLIP_H)!==0,(cell&FLIP_V)!==0,scale,diagonal),dw:diagonal?h:w,dh:diagonal?w:h};
+          }
+        }
+      }
+      start=end;
+    }
+  }
 }

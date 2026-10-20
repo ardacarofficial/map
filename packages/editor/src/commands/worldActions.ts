@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 /**
  * World map view (v1.2) wiring: the canvas' second view ("Harita | Dünya").
  *
@@ -46,6 +47,7 @@ export function toggleWorldView(): void {
  * level list, publishes the list and marks the project dirty.
  */
 export function moveLevelOnWorld(event: LevelMovedEvent): boolean {
+  if (!manualEditAllowed()) return false;
   const ws = getLevelWorkspace();
   if (!ws) return false;
   try {

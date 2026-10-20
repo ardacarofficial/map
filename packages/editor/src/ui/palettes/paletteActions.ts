@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../../agent/editGate";
 /**
  * Palette actions on the open project (core `Collection`s, undoable
  * `setCollection` / `removeCollection` ops of the active level; several
@@ -50,6 +51,7 @@ function markDirty(): void {
 
 /** Writes changed palettes as one undo step. */
 export function applyPalettes(changed: readonly PaletteData[]): boolean {
+  if (!manualEditAllowed()) return false;
   const store = activeStore();
   if (!store || store.inTransaction || changed.length === 0) return false;
   const before = store.revision;
@@ -75,6 +77,7 @@ export function showPalette(id: string | null): void {
 
 /** "+ Yeni palet": asks for a name, creates an empty palette and shows it. */
 export async function createPalette(): Promise<string | null> {
+  if (!manualEditAllowed()) return null;
   const store = activeStore();
   if (!store) return null;
   const name = await askText({
@@ -91,6 +94,7 @@ export async function createPalette(): Promise<string | null> {
 }
 
 export async function renamePalette(id: string): Promise<void> {
+  if (!manualEditAllowed()) return;
   const palette = activeStore()?.document.getCollection(id);
   if (!palette) return;
   const name = await askText({ title: t("palettes.renameTitle"), label: t("palettes.name"), initial: palette.name, confirm: t("palettes.rename") });
@@ -101,6 +105,7 @@ export async function renamePalette(id: string): Promise<void> {
 
 /** Removes a palette (one undo step; toast with "Geri al"). Its tiles stay in their tilesets. */
 export function deletePalette(id: string): boolean {
+  if (!manualEditAllowed()) return false;
   const store = activeStore();
   const palette = store?.document.getCollection(id);
   if (!store || !palette || store.inTransaction) return false;
@@ -121,6 +126,7 @@ export function deletePalette(id: string): boolean {
 }
 
 export function setPaletteColumnCount(id: string, columns: number): void {
+  if (!manualEditAllowed()) return;
   const palette = activeStore()?.document.getCollection(id);
   if (!palette) return;
   let next: Collection;
@@ -133,6 +139,7 @@ export function setPaletteColumnCount(id: string, columns: number): void {
 
 /** Resize never drops occupied slots unless the separate confirmation supplied trim=true. */
 export function setPaletteRowCount(id: string, rows: number, trim = false): boolean {
+  if (!manualEditAllowed()) return false;
   const palette = activeStore()?.document.getCollection(id);
   if (!palette) return false;
   try {
@@ -149,6 +156,7 @@ export function setPaletteRowCount(id: string, rows: number, trim = false): bool
 
 /** Empties slots `ids` of palette `id`. */
 export function clearPaletteSlots(id: string, ids: readonly number[]): void {
+  if (!manualEditAllowed()) return;
   const palette = activeStore()?.document.getCollection(id);
   if (!palette) return;
   const next = clearSlots(palette, ids);
@@ -170,6 +178,7 @@ function selectSlots(palette: PaletteData, at: Cell, items: readonly PaletteItem
 
 /** Drops dragged tiles on palette `targetId` (at a slot, or appended); copy, or move with Shift. */
 export function dropTiles(targetId: string, items: readonly PaletteItem[], slot: Cell | null, source: DragSource, move: boolean): boolean {
+  if (!manualEditAllowed()) return false;
   const doc = activeStore()?.document;
   if (!doc) return false;
   let changed: PaletteData[];
@@ -205,6 +214,7 @@ export function copyPaletteSlots(palette: PaletteData, ids: readonly number[]): 
 
 /** Ctrl+V in a palette: the copied tiles at `at` (the focused slot), or appended. */
 export function pasteIntoPalette(paletteId: string, at: Cell | null): boolean {
+  if (!manualEditAllowed()) return false;
   const items = usePaletteStore.getState().clipboard;
   const palette = activeStore()?.document.getCollection(paletteId);
   if (!palette) return false;

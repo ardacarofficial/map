@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { isEntityLayer, type MapStore, type Tileset } from "@smap/core";
 import { create } from "zustand";
 import { useEditorStore } from "../state/editorStore";
@@ -9,6 +10,7 @@ export function emptyMap(store:MapStore):boolean {
  return store.document.layers.every(l=>l.chunkCount===0&&(!isEntityLayer(l)||l.entities.length===0));
 }
 export function adoptMapGrid(store:MapStore,source:Tileset):void {
+ if(!manualEditAllowed())return;
  if(!emptyMap(store)||store.inTransaction||useEditorStore.getState().project?.store!==store)return;
  const {width,height}=store.document.map;
  store.dispatch({type:"resizeMap",width,height,tileWidth:source.tileWidth,tileHeight:source.tileHeight});
@@ -16,6 +18,7 @@ export function adoptMapGrid(store:MapStore,source:Tileset):void {
  logSmartBrush("adopt-grid",{level:useEditorStore.getState().project?.levelId,native:[source.tileWidth,source.tileHeight]});
 }
 export function remedyBrushGrid():void {
+ if(!manualEditAllowed())return;
  const editor=useEditorStore.getState(),store=editor.project?.store,source=brushSource(editor.stamp);
  if(!store||!source||brushUnavailable(editor.stamp)?.code!=="gridMismatch")return;
  if(emptyMap(store))adoptMapGrid(store,source);

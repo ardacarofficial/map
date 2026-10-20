@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { usePixelUi } from "../state/pixelUi";
 import { FLIP_H, FLIP_V, flipRegion } from "@smap/core";
 import { brushCandidate, attachPreparedBrush } from "./smartBrushActions";
@@ -111,6 +112,7 @@ export function rotatesSelection(state: Pick<EditorState, "tool" | "region" | "a
  * otherwise turns the brush 90°.
  */
 export function rotateBrush(dir: RotateDir): boolean {
+  if (!manualEditAllowed()) return false;
   const state = useEditorStore.getState();
   if (rotatesSelection(state)) {
     const handle = getCanvasHandle();
@@ -125,6 +127,7 @@ export function rotateBrush(dir: RotateDir): boolean {
 
 /** X / Y: mirrors the brush (random sets mirror their candidates; the rest as before). */
 export function flipBrush(axis: "x" | "y"): boolean {
+  if (!manualEditAllowed()) return false;
   const state = useEditorStore.getState();
   if (rotatesSelection(state)) {
     const store = state.project!.store;

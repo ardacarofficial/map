@@ -1,3 +1,4 @@
+import { manualEditAllowed } from "../agent/editGate";
 import { UnsupportedPngError } from '../io/sourcePngFormat';
 /** Explicit file action; never participates in paint undo or remaps cells. */
 import { create } from 'zustand';
@@ -77,6 +78,7 @@ function pngFailure(error: unknown, fallback: MessageKey): MessageKey { return e
 function changedError(error:unknown):boolean { return error instanceof PngChangedError || (typeof error==='object'&&error!==null&&'kind' in error&&error.kind==='Changed'); }
 export function closePngWriteback():void { if(usePngWriteback.getState().writing)return; ++requestVersion;usePngWriteback.setState({draft:null,busy:false,error:null,changed:false}); }
 export async function openPngWriteback(editedId?:string, mode:'apply'|'restore'='apply', sourceId?:string):Promise<void> {
+  if (!manualEditAllowed()) return;
   const ws=getLevelWorkspace(),folder=getProjectFolder(),store=useEditorStore.getState().project?.store;
   if(!ws||!folder||!store||usePngWriteback.getState().busy)return;
   const version=++requestVersion;
@@ -139,6 +141,7 @@ export function pngCanConfirm(draft:PngDraft):boolean {
 }
 export function pngUsageCount(draft:PngDraft,tilesetId:string,tileId:number):number { return draft.counts[refKey(tilesetId,tileId)]??0; }
 export async function confirmPngWriteback():Promise<void> {
+  if (!manualEditAllowed()) return;
   const state=usePngWriteback.getState(),draft=state.draft;
   if(!draft||state.busy||state.changed||!pngCanConfirm(draft))return;
   usePngWriteback.setState({busy:true,writing:true,error:null});

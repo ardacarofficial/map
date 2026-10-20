@@ -1,3 +1,4 @@
+import { editGate } from "../agent/editGate";
 import type { WorldHistory } from '@smap/core';
 
 import { useEditorStore } from '../state/editorStore';
@@ -12,7 +13,7 @@ export function activeWorldHistory(): WorldHistory | null {
   return project && !project.levelId?.startsWith('stamp:') && ws?.entry(project.levelId ?? ws.activeId)?.store === project.store ? ws.history : null;
 }
 export function canMoveHistory(move: 'undo' | 'redo'): boolean {
-  if (moving) return false;
+  if (moving || editGate.blocked) return false;
   const store = useEditorStore.getState().project?.store;
   const history = activeWorldHistory();
   return move === 'undo' ? (history?.canUndo ?? store?.canUndo ?? false) : (history?.canRedo ?? store?.canRedo ?? false);

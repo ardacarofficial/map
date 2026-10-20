@@ -1,0 +1,48 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CameraController } from "../canvas/cameraController";
+import { PointerInput, type InputHost } from "../canvas/pointerInput";
+import type { ToolController } from "../canvas/toolController";
+import { serializeLevel } from "@smap/core";
+import { browserPlatform, setPlatform } from "../platform";
+import { closeProject, newProject } from "../io/session";
+import { useEditorStore } from "../state/editorStore";
+import { addLayer, setLayerProps } from "../commands/layerActions";
+import { addEntityLayer } from "../commands/entityActions";
+import { createLevel } from "../commands/levelActions";
+import { moveLevelOnWorld } from "../commands/worldActions";
+import { registerCommands, runCommand } from "../commands/registry";
+import { editGate, getAgentWorldSessionId } from "./editGate";
+let release=()=>{};
+afterEach(()=>{release();closeProject();setPlatform(browserPlatform);vi.unstubAllGlobals();});
+describe("pending edit locks manual mutation entrypoints",()=>{
+  it("refuses canvas painting while middle-button panning and wheel zoom remain available",async()=>{
+    setPlatform({...browserPlatform,watchProject(){}});await newProject({name:"Lock",width:8,height:8,tileSize:16});
+    const store=useEditorStore.getState().project!.store,before=serializeLevel(store.document),map=store.document.map;
+    const handlers=new Map<string,(event:unknown)=>void>(),doc:{activeElement:unknown}={activeElement:null};
+    const canvas={style:{cursor:""},focus(){doc.activeElement=canvas;},getBoundingClientRect:()=>({left:0,top:0,width:200,height:200}),setPointerCapture(){},hasPointerCapture:()=>false,releasePointerCapture(){},addEventListener:(name:string,handler:(event:unknown)=>void)=>{handlers.set(name,handler);}};
+    vi.stubGlobal("document",doc);vi.stubGlobal("window",{addEventListener(){},removeEventListener(){}});
+    const camera=new CameraController(()=>map,()=>{});camera.resize(200,200,1);camera.setZoom(1,{x:100,y:100});
+    const tools={gesture:null,pointerDown:vi.fn(),pointerMove:vi.fn(),pointerUp:vi.fn(),setModifiers:vi.fn(),isCancelable:()=>false} as unknown as ToolController;
+    const host:InputHost={world:()=>null,camera,tools,map:()=>map,paintable:()=>true,entityCursor:()=>null,regionCursor:()=>null,doubleClick(){},requestRender(){}};
+    const input=new PointerInput(canvas as unknown as HTMLCanvasElement,host),controller=new AbortController();input.attach(controller.signal);
+    const edit=editGate.acquireEdit(getAgentWorldSessionId()!);release=()=>edit.release("cancelled");
+    const event={button:0,pointerId:1,clientX:20,clientY:20,shiftKey:false,altKey:false,preventDefault(){}};
+    handlers.get("pointerdown")!(event);expect(tools.pointerDown).not.toHaveBeenCalled();
+    const x=camera.camera.x;handlers.get("pointerdown")!({...event,button:1});handlers.get("pointermove")!({...event,button:1,clientX:45});handlers.get("pointerup")!({...event,button:1});expect(camera.camera.x).toBe(x+25);
+    const zoom=camera.camera.zoom;input.wheel({deltaX:0,deltaY:-40,deltaMode:0,ctrlKey:true,metaKey:false,shiftKey:false} as WheelEvent,{x:100,y:100});expect(camera.camera.zoom).toBeGreaterThan(zoom);
+    expect(serializeLevel(store.document)).toBe(before);camera.dispose();controller.abort();
+  });
+  it("refuses panel/command map mutations while view commands still run",async()=>{
+    setPlatform({...browserPlatform,watchProject(){}});await newProject({name:"Lock",width:8,height:8,tileSize:16});
+    const store=useEditorStore.getState().project!.store,before=serializeLevel(store.document);
+    const edit=editGate.acquireEdit(getAgentWorldSessionId()!);release=()=>edit.release("cancelled");
+    expect(addLayer()).toBeNull();expect(addEntityLayer()).toBeNull();
+    setLayerProps(store.document.layers[0]!.id,{name:"Forbidden"});
+    expect(await createLevel({name:"Forbidden",width:4,height:4,tileSize:16})).toBe(false);
+    expect(moveLevelOnWorld({levelId:useEditorStore.getState().project!.levelId!,x:32,y:32})).toBe(false);
+    let edits=0,views=0;
+    registerCommands([{id:"layer.add",category:"layer",title:"layers.add",run:()=>{edits++;}},{id:"view.toggleGrid",category:"view",title:"commands.view.toggleGrid",run:()=>{views++;}}]);
+    expect(runCommand("layer.add")).toBe(false);expect(runCommand("view.toggleGrid")).toBe(true);
+    expect(edits).toBe(0);expect(views).toBe(1);expect(serializeLevel(store.document)).toBe(before);
+  });
+});

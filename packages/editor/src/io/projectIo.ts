@@ -229,6 +229,8 @@ export class ProjectOpenError extends Error {
 }
 
 export interface LoadedProject {
+  /** Exact approved root bytes, for external-change echo detection. */
+  projectText: string;
   name: string;
   colorPalettes?: readonly ColorPalette[];
   document: MapDocument;
@@ -310,6 +312,7 @@ export async function loadProject(
   const { stamps, broken } = await loadStamps(fs, project.tilesets);
 
   return {
+    projectText,
     name: project.name,
     colorPalettes: project.colorPalettes ?? [],
     document,

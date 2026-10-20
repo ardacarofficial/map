@@ -1,0 +1,5 @@
+{
+  "saveDeferred": "AI değişikliği onay bekliyor",
+  "editLocked": "Düzenlemek için AI değişikliğini onaylayın veya vazgeçin",
+  "tagsUnavailable": "AI etiketleri yüklenemedi: {detail}"
+}

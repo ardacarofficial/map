@@ -1,3 +1,4 @@
+import { editGate } from "../agent/editGate";
 /**
  * When edit / layer commands can run. Pure functions of the editor state so
  * they are testable without a DOM.
@@ -38,13 +39,13 @@ export function mapRegion(c: EditContext): CellRegion | null {
   return map ? clampRegion(c.region, map.width, map.height) : null;
 }
 
-export const canUndo = (c: EditContext): boolean => c.store?.canUndo ?? false;
-export const canRedo = (c: EditContext): boolean => c.store?.canRedo ?? false;
+export const canUndo = (c: EditContext): boolean => !editGate.blocked && (c.store?.canUndo ?? false);
+export const canRedo = (c: EditContext): boolean => !editGate.blocked && (c.store?.canRedo ?? false);
 export const canCopy = (c: EditContext): boolean => activeLayer(c) !== undefined && mapRegion(c) !== null;
 /** Cut / delete change the layer: it must not be locked, and no stroke may be in progress. */
 export const canErase = (c: EditContext): boolean =>
-  canCopy(c) && !activeLayer(c)?.locked && !(c.store?.inTransaction ?? true);
-export const canPaste = (c: EditContext): boolean => c.store !== null && activeLayer(c) !== undefined;
+  !editGate.blocked && canCopy(c) && !activeLayer(c)?.locked && !(c.store?.inTransaction ?? true);
+export const canPaste = (c: EditContext): boolean => !editGate.blocked && c.store !== null && activeLayer(c) !== undefined;
 export const canSelectAll = (c: EditContext): boolean => c.store !== null;
 export const canDeselect = (c: EditContext): boolean => c.region !== null || c.stamp !== null || hasSelectedEntity(c);
 /** An entity is selected and still exists (Delete removes it, Esc deselects it). */
@@ -53,4 +54,4 @@ export const hasSelectedEntity = (c: EditContext): boolean =>
 export const canFlip = (c: EditContext): boolean =>
   c.stamp !== null || (c.selection !== null && activeLayer(c) !== undefined);
 export const canRemoveLayer = (c: EditContext): boolean =>
-  activeLayer(c) !== undefined && (c.store?.document.layers.length ?? 0) > 1 && !(c.store?.inTransaction ?? true);
+  !editGate.blocked && activeLayer(c) !== undefined && (c.store?.document.layers.length ?? 0) > 1 && !(c.store?.inTransaction ?? true);
