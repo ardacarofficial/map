@@ -79,11 +79,21 @@ struct Inner {
     ending: HashMap<String, PendingEnd>,
     heartbeat: Option<(String, Instant)>,
     last_heartbeat: Instant,
+    admission_pauses: usize,
 }
 pub struct Transport {
     inner: Mutex<Inner>,
     sink: BridgeSink,
     options: Options,
+}
+/// Keeps configuration persistence and cancellation one admission boundary.
+pub struct AdmissionPause<'a> {
+    transport: &'a Transport,
+}
+impl Drop for AdmissionPause<'_> {
+    fn drop(&mut self) {
+        self.transport.inner.lock().unwrap().admission_pauses -= 1;
+    }
 }
 pub struct RunningServer {
     pub addr: SocketAddr,
@@ -115,6 +125,10 @@ impl Drop for RunningServer {
 }
 
 impl Transport {
+    pub fn pause_admission(&self) -> AdmissionPause<'_> {
+        self.inner.lock().unwrap().admission_pauses += 1;
+        AdmissionPause { transport: self }
+    }
     pub fn new(token: String, sink: BridgeSink, options: Options) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(Inner {
@@ -129,6 +143,7 @@ impl Transport {
                 ending: HashMap::new(),
                 heartbeat: None,
                 last_heartbeat: Instant::now(),
+                admission_pauses: 0,
             }),
             sink,
             options,
@@ -529,7 +544,7 @@ impl Transport {
     async fn call(&self, session: &str, rpc_id: Value, params: &Value) -> Value {
         let (id, rx, envelope, duration) = {
             let mut inner = self.inner.lock().unwrap();
-            if !inner.ending.is_empty() {
+            if inner.admission_pauses > 0 || !inner.ending.is_empty() {
                 return failure(&inner, "EDITOR_UNAVAILABLE");
             }
             let Some(epoch) = inner.epoch.clone() else {
@@ -849,7 +864,7 @@ async fn handle(
             if inner.generation != generation || inner.token_revision != token_revision {
                 return response(StatusCode::UNAUTHORIZED, None);
             }
-            if !inner.ending.is_empty() {
+            if inner.admission_pauses > 0 || !inner.ending.is_empty() {
                 return error(id, -32000, "Editor cancellation pending");
             }
             if inner.sessions.len() >= 4 {

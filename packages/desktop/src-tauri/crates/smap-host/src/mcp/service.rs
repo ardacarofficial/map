@@ -169,6 +169,7 @@ impl Service {
                 };
             candidate = Some((listener, token));
         }
+        let _pause = (endpoint_changed || needs_bind).then(|| self.transport.pause_admission());
         if endpoint_changed || needs_bind {
             self.transport.end_sessions("disabled");
             if self.transport.wait_for_ends().await.is_err() {
@@ -218,6 +219,7 @@ impl Service {
         if expected_revision != config.snapshot.revision {
             return Err("CONFLICT".into());
         }
+        let _pause = self.transport.pause_admission();
         self.transport.end_sessions("tokenRegenerated");
         self.transport
             .wait_for_ends()

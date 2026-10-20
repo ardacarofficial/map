@@ -31,7 +31,9 @@ epoch cannot acknowledge it.
 
 While this confirmation is pending, initialize and tool execution are blocked.
 DELETE waits for confirmation (503 on timeout). Configuration/credential changes
-wait before replacing the endpoint/secret. A renderer reload explicitly revokes
+wait before replacing the endpoint/secret. New initialize/tool calls also remain
+paused across persistence, so a client cannot reconnect between rollback
+confirmation and publication of a new endpoint or credential. A renderer reload explicitly revokes
 the old epoch; its in-memory state is gone and cannot acknowledge a new epoch.
 Controls never enter the bounded tool request queue. The same status query
 checks renderer liveness every five seconds; a missing reply for fifteen seconds

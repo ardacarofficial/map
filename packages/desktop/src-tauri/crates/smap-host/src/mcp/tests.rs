@@ -858,3 +858,43 @@ async fn lost_renderer_heartbeat_revokes_epoch_and_sessions() {
         404
     );
 }
+
+#[tokio::test]
+async fn config_admission_pause_blocks_reconnects_and_tool_calls() {
+    let h = Harness::new().await;
+    let session = h.session().await;
+    h.transport.ready("epoch".into()).unwrap();
+    let pause = h.transport.pause_admission();
+    assert!(h
+        .init("2025-11-25")
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()
+        .get("error")
+        .is_some());
+    let call = json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"get_session","arguments":{}}});
+    let result: Value = h
+        .message(&session, call.clone())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        result["result"]["structuredContent"]["code"],
+        "EDITOR_UNAVAILABLE"
+    );
+    drop(pause);
+    assert_eq!(h.init("2025-11-25").await.status(), 200);
+    let result: Value = h
+        .message(&session, call)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(result["result"]["structuredContent"]["code"], "TIMEOUT");
+}
