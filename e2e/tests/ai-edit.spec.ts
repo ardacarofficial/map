@@ -58,10 +58,22 @@ for (const action of ["approve", "discard"] as const) test(`AI ${action} restore
 test("pending AI work blocks manual paint, preserves camera pan, and stays visible under Tab", async ({ page }) => {
   const client = await setup(page);
   try {
+    const session = success(await client.getSession());
+    const readManual = async () => success(await client.callTool("read_region", { context: { worldSessionId: session.worldSessionId! }, mapId: session.data.activeMapId!, layerIds: [session.data.activeLayerId!], region: { x: 0, y: 0, width: 8, height: 8 } })).data.layers;
+    const beforeManual = await readManual();
+    const grid = page.locator("[data-tileset-grid]").first();
+    const scale = Number(await grid.getAttribute("data-tileset-scale"));
+    await grid.click({ position: { x: 16 * scale, y: 16 * scale } });
+    await page.keyboard.press("b");
+    const point = () => page.evaluate(() => (window as unknown as { __smap: { cellCenter(x: number, y: number): { x: number; y: number } } }).__smap.cellCenter(5, 5));
+    const unlocked = await point();
+    await page.mouse.click(unlocked.x, unlocked.y);
+    await expect.poll(readManual).not.toEqual(beforeManual);
+    await page.keyboard.press("Control+z");
+    await expect.poll(readManual).toEqual(beforeManual);
     const edit = await begin(client);
     await paint(client, edit);
     const original = await cells(client, edit);
-    const point = () => page.evaluate(() => (window as unknown as { __smap: { cellCenter(x: number, y: number): { x: number; y: number } } }).__smap.cellCenter(5, 5));
     const at = await point();
     await page.mouse.click(at.x, at.y);
     expect(await cells(client, edit)).toEqual(original);

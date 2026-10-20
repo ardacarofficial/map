@@ -255,7 +255,8 @@ test("stamp cards arm with click or Enter, yield to a marquee at pointer-down, a
   });
   const stampCard = card(page, "Marquee test");
   await stampCard.click();
-  await expect(page.locator("[data-inspector-section]")).toHaveCount(1);
+  await expect(page.locator('[data-inspector-section="stamps.selected"]')).toHaveCount(1);
+  await expect(page.locator('[data-inspector-section="ai-tags"]')).toHaveCount(1);
   await expect.poll(() => page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     return useEditorStore.getState().tool;
@@ -276,7 +277,8 @@ test("stamp cards arm with click or Enter, yield to a marquee at pointer-down, a
   await page.mouse.move(b.x, b.y, { steps: 5 });
   await page.mouse.up();
   await expect(page.locator("[data-inspector]")).toHaveAttribute("data-inspector-mode", "region");
-  await expect(page.locator("[data-inspector-section]")).toHaveCount(1);
+  await expect(page.locator('[data-inspector-section="builtin.region"]')).toHaveCount(1);
+  await expect(page.locator('[data-inspector-section="stamps.selected"], [data-inspector-section="ai-tags"]')).toHaveCount(0);
   await stampCard.focus();
   await stampCard.press("Enter");
   await expect(page.locator("[data-stamp-inspector]")).toBeVisible();
