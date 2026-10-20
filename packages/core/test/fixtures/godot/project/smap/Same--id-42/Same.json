@@ -1,0 +1,38 @@
+{
+  "smapExport": 1,
+  "width": 2,
+  "height": 2,
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "yUp": false,
+  "tilesets": [
+    {
+      "name": "blue",
+      "image": "art.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 1,
+      "rows": 1,
+      "margin": 0,
+      "spacing": 0
+    }
+  ],
+  "layers": [
+    {
+      "id": "art",
+      "name": "Art",
+      "visible": true,
+      "opacity": 1,
+      "cells": [
+        0, 0, 0, 0, 0
+      ]
+    }
+  ],
+  "collision": {
+    "solid": [
+      2, 1, 1
+    ]
+  },
+  "entities": [],
+  "spawn": null
+}

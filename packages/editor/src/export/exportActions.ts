@@ -185,7 +185,7 @@ async function exportToFolder(kind: FolderKind, from?: ExportSource, draft?: Exp
   const result = await withExportBusy(async () => {
     try {
       const settings = draft ?? await loadExportSettings(project.name);
-      const plan = prepared ?? await prepareTarget(kind, { doc: source.document, levelName: sourceLevelName(source), bytes: tilesetBytes, layers: sourceLayers(settings, source) }, settings);
+      const plan = prepared ?? await prepareTarget(kind, { doc: source.document, levelName: sourceLevelName(source), levelId: source.levelId ?? source.levelPath, bytes: tilesetBytes, layers: sourceLayers(settings, source) }, settings);
       if (plan.problems.some(p => p.severity === "error")) throw new Error(plan.problems.map(p => t(p.key, p.params)).join("\n"));
       const set = plan.set;
       if (!set) return null;

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="TileSet" path="res://smap/tileset.tres" id="tileset"]
+[ext_resource type="TileSet" path="res://smap/fixture/tileset.tres" id="tileset"]
 
 [node name="fixture" type="Node2D"]
 metadata/smap_map_name = "fixture"

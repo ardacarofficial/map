@@ -6,6 +6,8 @@ import type { ExportFile, TilesetBytes } from "../exportFiles";
 export interface ExportTargetInput {
   readonly doc: MapDocument;
   readonly levelName: string;
+  /** Stable map identity for targets with independently published resources. */
+  readonly levelId?: string;
   readonly bytes: TilesetBytes;
   readonly layers?: readonly string[];
 }

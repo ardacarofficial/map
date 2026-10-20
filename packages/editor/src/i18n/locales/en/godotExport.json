@@ -1,7 +1,7 @@
 {
   "label": "Godot 4",
   "resourceRoot": "Resource folder",
-  "resourceRootHint": "Folder relative to the Godot project root, for example smap or levels/world. Leave empty for the project root.",
+  "resourceRootHint": "Parent folder relative to the Godot project root, for example smap or levels/world. Each map owns a subfolder. Leave empty for the project root.",
   "collision": "Collision",
   "invalidRoot": "The resource folder must be a valid relative path: {path}",
   "missingImage": "Required PNG is missing: {path}",

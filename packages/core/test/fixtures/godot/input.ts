@@ -25,3 +25,24 @@ export function godotFixture() {
   const bytes = (_id: string) => fixturePng(36, 36);
   return { store, bytes };
 }
+
+/** Mixed native extents, including one small axis and odd pixel dimensions. */
+export const nativeSizes = [[16,16], [32,32], [48,64], [16,48], [17,35]] as const;
+export function nativeFixture() {
+  const tilesets: Tileset[] = nativeSizes.map(([tileWidth,tileHeight], i) => ({ id: `native-${i}`, name: `Native ${tileWidth}x${tileHeight}`, imagePath: `native-${i}.png`, tileWidth, tileHeight, columns: 2, rows: 2, margin: 1, spacing: 2 }));
+  const store = new MapStore(createDocument({ width: 24, height: 20, tileWidth: 32, tileHeight: 32, tilesets }));
+  store.dispatch({ type: "addLayer", layer: { id: "art", name: "Art" } });
+  for (const [row,t] of tilesets.entries()) store.dispatch({ type: "paintCells", layerId: "art", cells: Array.from({ length: 8 }, (_, i) => ({ x: i * 3, y: row * 4 + 2, cell: makeCell(store.getOrAddPaletteIndex(t.id, 3), (i & 1 ? FLIP_H : 0) | (i & 2 ? FLIP_V : 0) | (i & 4 ? FLIP_D : 0)) })) });
+  return store;
+}
+
+export function sequentialFixture(id: "red" | "blue") {
+  const tilesets: Tileset[] = [{ id, name: id, imagePath: "art.png", tileWidth: 32, tileHeight: 32, columns: 1, rows: 1, margin: 0, spacing: 0 }];
+  if (id === "red") tilesets.push({ ...tilesets[0]!, id: "white", name: "white", imagePath: "white.png" });
+  const store = new MapStore(createDocument({ width: 2, height: 2, tilesets }));
+  store.dispatch({ type: "addLayer", layer: { id: "art", name: "Art" } });
+  store.dispatch({ type: "paintCells", layerId: "art", cells: tilesets.map((t,x) => ({ x, y: 0, cell: makeCell(store.getOrAddPaletteIndex(t.id, 0)) })) });
+  store.dispatch({ type: "addLayer", layer: { id: "collision", name: "Collision", type: "grid", role: "collision" } });
+  store.dispatch({ type: "paintGrid", layerId: "collision", cells: [{ x: 0, y: 1, value: COLLISION_SOLID }] });
+  return store;
+}

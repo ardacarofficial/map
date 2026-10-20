@@ -1,0 +1,25 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="TileSet" path="res://smap/Same--id-42/tileset.tres" id="tileset"]
+
+[node name="Same" type="Node2D"]
+metadata/smap_map_name = "Same"
+
+[node name="Art" type="TileMapLayer" parent="."]
+visible = true
+modulate = Color(1, 1, 1, 1)
+texture_filter = 1
+tile_set = ExtResource("tileset")
+collision_enabled = false
+tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+metadata/smap_layer_name = "Art"
+metadata/smap_layer_id = "art"
+
+[node name="Collision" type="TileMapLayer" parent="."]
+visible = true
+modulate = Color(1, 1, 1, 1)
+texture_filter = 1
+tile_set = ExtResource("tileset")
+collision_enabled = true
+tile_map_data = PackedByteArray(0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0)
+metadata/smap_layer_name = "Collision"

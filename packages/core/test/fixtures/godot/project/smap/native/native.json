@@ -1,0 +1,117 @@
+{
+  "smapExport": 1,
+  "width": 24,
+  "height": 20,
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "yUp": false,
+  "tilesets": [
+    {
+      "name": "Native 16x16",
+      "image": "native-0.png",
+      "tileWidth": 16,
+      "tileHeight": 16,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    },
+    {
+      "name": "Native 32x32",
+      "image": "native-1.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    },
+    {
+      "name": "Native 48x64",
+      "image": "native-2.png",
+      "tileWidth": 48,
+      "tileHeight": 64,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    },
+    {
+      "name": "Native 16x48",
+      "image": "native-3.png",
+      "tileWidth": 16,
+      "tileHeight": 48,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    },
+    {
+      "name": "Native 17x35",
+      "image": "native-4.png",
+      "tileWidth": 17,
+      "tileHeight": 35,
+      "columns": 2,
+      "rows": 2,
+      "margin": 1,
+      "spacing": 2
+    }
+  ],
+  "layers": [
+    {
+      "id": "art",
+      "name": "Art",
+      "visible": true,
+      "opacity": 1,
+      "cells": [
+        0, 2, 0, 3, 0,
+        3, 2, 0, 3, 1,
+        6, 2, 0, 3, 2,
+        9, 2, 0, 3, 3,
+        12, 2, 0, 3, 4,
+        15, 2, 0, 3, 5,
+        18, 2, 0, 3, 6,
+        21, 2, 0, 3, 7,
+        0, 6, 1, 3, 0,
+        3, 6, 1, 3, 1,
+        6, 6, 1, 3, 2,
+        9, 6, 1, 3, 3,
+        12, 6, 1, 3, 4,
+        15, 6, 1, 3, 5,
+        18, 6, 1, 3, 6,
+        21, 6, 1, 3, 7,
+        0, 10, 2, 3, 0,
+        3, 10, 2, 3, 1,
+        6, 10, 2, 3, 2,
+        9, 10, 2, 3, 3,
+        12, 10, 2, 3, 4,
+        15, 10, 2, 3, 5,
+        18, 10, 2, 3, 6,
+        21, 10, 2, 3, 7,
+        0, 14, 3, 3, 0,
+        3, 14, 3, 3, 1,
+        6, 14, 3, 3, 2,
+        9, 14, 3, 3, 3,
+        12, 14, 3, 3, 4,
+        15, 14, 3, 3, 5,
+        18, 14, 3, 3, 6,
+        21, 14, 3, 3, 7,
+        0, 18, 4, 3, 0,
+        3, 18, 4, 3, 1,
+        6, 18, 4, 3, 2,
+        9, 18, 4, 3, 3,
+        12, 18, 4, 3, 4,
+        15, 18, 4, 3, 5,
+        18, 18, 4, 3, 6,
+        21, 18, 4, 3, 7
+      ]
+    }
+  ],
+  "collision": {
+    "solid": [
+      480
+    ]
+  },
+  "entities": [],
+  "spawn": null
+}

@@ -5,7 +5,7 @@ export interface GodotCell {
   readonly sourceId: number;
   readonly atlasX: number;
   readonly atlasY: number;
-  /** Base alternative 0, plus transpose-before-mirrors bits 4096/8192/16384. */
+  /** Alternative 0…4095, plus transpose-before-mirrors bits 4096/8192/16384. */
   readonly alternative: number;
 }
 
@@ -13,7 +13,7 @@ export interface GodotCell {
 export function godotCellProblem(cell: GodotCell): boolean {
   return !([cell.x, cell.y].every(n => Number.isInteger(n) && n >= -32768 && n <= 32767)
     && [cell.sourceId, cell.atlasX, cell.atlasY].every(n => Number.isInteger(n) && n >= 0 && n <= 32767)
-    && Number.isInteger(cell.alternative) && cell.alternative >= 0 && cell.alternative <= 28672 && (cell.alternative & ~28672) === 0);
+    && Number.isInteger(cell.alternative) && cell.alternative >= 0 && cell.alternative <= 32767);
 }
 
 /** Version 0 LE uint16, then six LE 16-bit words per occupied cell, sorted y/x. */

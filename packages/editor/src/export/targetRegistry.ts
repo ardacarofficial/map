@@ -56,7 +56,7 @@ export async function snapshotTarget(input: ExportTargetInput): Promise<ExportTa
   });
   const images = await Promise.all(pending.map(async ([id, data]) => [id, data === undefined ? undefined : (await resolveFileData(data) as Uint8Array).slice()] as const));
   const bytes = new Map(images);
-  return { doc, levelName: input.levelName, bytes: id => bytes.get(id), ...(input.layers ? { layers: [...input.layers] } : {}) };
+  return { doc, levelName: input.levelName, ...(input.levelId === undefined ? {} : { levelId: input.levelId }), bytes: id => bytes.get(id), ...(input.layers ? { layers: [...input.layers] } : {}) };
 }
 
 /** Common preflight/planning contract; PNG and Zip retain their existing raster/project delivery. */
