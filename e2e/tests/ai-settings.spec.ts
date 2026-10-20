@@ -30,10 +30,10 @@ test("AI settings copy each O7 client format with one clipboard write per activa
   });
   const copy = page.getByRole("button", { name: "Bağlantı ayarlarını kopyala", exact: true });
   await copy.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`claude mcp add --transport http harita http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp --header "Authorization: Bearer ${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`claude mcp add --transport http harita http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp --header "Authorization: Bearer ${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
   await page.getByRole("radio", { name: "Codex", exact: true }).click();
   await copy.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.harita]\nurl = "http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp"\nbearer_token_env_var = "HARITA_MCP_TOKEN"\n\n$env:HARITA_MCP_TOKEN="${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"\nsetx HARITA_MCP_TOKEN "${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.harita]\nurl = "http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp"\nbearer_token_env_var = "HARITA_MCP_TOKEN"\n\n$env:HARITA_MCP_TOKEN="${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"\nsetx HARITA_MCP_TOKEN "${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
   expect(await page.evaluate(() => (navigator.clipboard as Clipboard & { writeCount: number }).writeCount)).toBe(2);
   await expect(page.getByLabel("Erişim anahtarı", { exact: true })).toHaveAttribute("type", "password");
   await expect(page.getByRole("button", { name: "Kaydet ve uygula", exact: true })).toBeInViewport();
