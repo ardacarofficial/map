@@ -6,7 +6,7 @@
 import { FolderTakenError, folderNameFor, RecentGoneError, type Platform, type ProjectLocation, type RecentEntry } from "@smap/editor";
 
 import * as bridge from "./desktopBridge";
-import { DesktopFsError, joinPath, TauriFileSystem, toProjectPath, writeFileAbsolute } from "./tauriFileSystem";
+import { DesktopFsError, joinPath, TauriFileSystem, toProjectPath, writeFileAbsolute, readFileAbsolute } from "./tauriFileSystem";
 
 const PROJECT_FILE = "project.smap";
 
@@ -207,6 +207,12 @@ export function createDesktopPlatform(): Platform {
 
     settingsLocation() {
       return settingsLocation;
+    },
+
+    async openFile(filter) {
+      const [path] = await bridge.pickFilesDialog({ filter });
+      if (!path) return null;
+      return { name: path.split(/[\\/]/).at(-1) ?? path, bytes: await readFileAbsolute(path) };
     },
 
     async saveFile(fileName, bytes, filter) {

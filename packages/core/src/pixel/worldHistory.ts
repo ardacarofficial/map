@@ -13,6 +13,8 @@ export interface WorldHistoryEntry {
   readonly pixelPatches: readonly PixelRectPatch[];
   readonly item: HistoryListItem;
   readonly changes: HistoryEntry["changes"];
+  /** Project metadata shares chronological history without inventing map cell changes. */
+  readonly projectEdit?: { readonly apply: (side: "before" | "after") => void };
 }
 export interface WorldHistoryRow extends WorldHistoryEntry { readonly state: 'done' | 'undone' }
 
@@ -46,7 +48,7 @@ export class WorldHistory {
   entries(): readonly WorldHistoryRow[] {
     return [...this.#done.map(e => ({ ...e, state: 'done' as const })), ...[...this.#undone].reverse().map(e => ({ ...e, state: 'undone' as const }))];
   }
-  dependsOn(mapId: string): boolean { return this.entries().some(e => e.participants.some(p => p.mapId === mapId)); }
+  dependsOn(mapId: string): boolean { return this.entries().some(e => (e.originMapId === mapId || e.participants.some(p => p.mapId === mapId))); }
 
   /** Register before the first user action. Registering again with the same store is harmless. */
   register(mapId: string, store: MapStore): void {
@@ -111,6 +113,16 @@ export class WorldHistory {
       }
       return result;
     } finally { this.#batch = null; this.#bump(); }
+  }
+
+  /** Apply a validated pure project operation as one chronological action. */
+  projectEdit(originMapId: string, apply: (side: "before" | "after") => void, label?: string): void {
+    if (this.busy || !this.#stores.has(originMapId)) throw new Error('world history is busy or origin is missing');
+    apply('after');
+    this.#clearRedo();
+    const id = this.#next++;
+    this.#done.push(Object.freeze({ id, originMapId, participants: Object.freeze([]), pixelPatches: Object.freeze([]), changes: Object.freeze([]), item: Object.freeze({ id, kind: 'palette', state: 'done', ...(label ? { label } : {}) }), projectEdit: Object.freeze({ apply }) }));
+    this.#bump();
   }
 
   undo(): WorldHistoryEntry | null { return this.#move('undo'); }
@@ -202,6 +214,7 @@ export class WorldHistory {
     try {
       const participants = move === 'undo' ? [...entry!.participants].reverse() : entry!.participants;
       for (const p of participants) this.#stores.get(p.mapId)![move]();
+      entry!.projectEdit?.apply(move === "undo" ? "before" : "after");
       from.pop(); to.push(entry!);
     } finally { this.#replaying = false; this.#bump(); }
     return entry!;

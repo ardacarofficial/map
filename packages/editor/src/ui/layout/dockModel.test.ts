@@ -7,10 +7,10 @@ const storage = (entries: Record<string, string> = {}) => ({ getItem: (key: stri
 const homes = (layout: ReturnType<typeof defaultDockLayout>) => [...ZONE_IDS.flatMap(z => layout.zones[z].groups.flatMap(g => g.tabs)), ...layout.hiddenPanels];
 
 describe("dock model", () => {
-  it("defaults to Tileset left, inspector/history over layers, Recent bottom", () => {
+  it("defaults to Tileset left, inspector/history/color over layers, Recent bottom", () => {
     const l = defaultDockLayout();
     expect(l.zones.left.groups[0]?.tabs).toEqual(["tileset", "stamps", "project", "entities"]);
-    expect(l.zones.right.groups.map(g => g.tabs)).toEqual([["inspector", "history"], ["layers"]]);
+    expect(l.zones.right.groups.map(g => g.tabs)).toEqual([["inspector", "history", "color"], ["layers"]]);
     expect(l.zones.bottom.expandedPx).toBe(68);
     expect(homes(l).sort()).toEqual([...PANEL_IDS].sort());
   });

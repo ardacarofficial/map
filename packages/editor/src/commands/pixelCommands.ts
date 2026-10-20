@@ -1,9 +1,11 @@
+import { registerColorCommands } from './colorCommands';
 import { registerCommands } from './registry';
 import { useEditorStore } from '../state/editorStore';
 import { usePixelUi } from '../state/pixelUi';
 import { usePixelColors } from '../state/pixelColors';
 import { isWorldView } from './worldActions';
 export function registerPixelCommands(): void {
+  registerColorCommands();
   const ready = () => !!useEditorStore.getState().project && !useEditorStore.getState().project?.levelId?.startsWith('stamp:') && !isWorldView();
   const pixel = () => ready() && usePixelUi.getState().mode === 'pixel';
   registerCommands([

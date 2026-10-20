@@ -72,7 +72,7 @@ subscribeLocale(bump);
 export function applySettingsText(text: string, applyLayout = true): SettingsProblem[] {
   appliedText = text;
   const { settings, problems } = parseSettings(text, SHORTCUTS, getLocale());
-  if (settings.pixelColors) { applyingPixelColors = true; usePixelColors.setState(settings.pixelColors); applyingPixelColors = false; }
+  if (settings.pixelColors) { applyingPixelColors = true; usePixelColors.setState(settings.pixelColors); usePixelColors.getState().setFg(settings.pixelColors.fg); usePixelColors.getState().setBg(settings.pixelColors.bg); applyingPixelColors = false; }
   if (applyLayout && settings.layout) useDockStore.getState().applyExternal(settings.layout);
   const previousLocale = getLocale();
   setShortcutOverrides(settings.shortcuts);

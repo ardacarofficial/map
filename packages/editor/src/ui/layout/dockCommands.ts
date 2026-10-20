@@ -27,7 +27,7 @@ export function registerDockCommands(): void {
     ]),
     ...PANEL_IDS.flatMap(panel => [
       ...ZONE_IDS.map(zone => ({ id: `panel.${panel}.${zone}` as const, title: moveTitles[zone], category: "view" as const, inPalette: false, enabled: () => readyForPanel(panel) && locatePanel(useDockStore.getState().layout, panel)?.zone !== zone, run: () => useDockStore.getState().move(panel, { zone }) })),
-      { id: `panel.${panel}.show` as const, title: `docking.show_${panel}` as MessageKey, category: "view" as const, enabled: () => readyForPanel(panel), run: () => { revealPanel(panel); } },
+      { id: `panel.${panel}.show` as const, title: panel === "color" ? "colorPanel.show" : `docking.show_${panel}` as MessageKey, category: "view" as const, enabled: () => readyForPanel(panel), run: () => { revealPanel(panel); } },
       ...(["forward", "backward", "split", "merge", "hide"] as const).map(action => ({
         id: `panel.${panel}.${action}` as const, title: `docking.${action}` as MessageKey, category: "view" as const, inPalette: false,
         enabled: () => readyForPanel(panel) && panelMenu(panel).some(item => item.type === "item" && item.id === action && !item.disabled),

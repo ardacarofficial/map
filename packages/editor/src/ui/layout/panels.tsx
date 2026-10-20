@@ -1,3 +1,5 @@
+import { ColorPanel } from '../pixel/ColorPanel';
+import { usePixelUi } from '../../state/pixelUi';
 import { useSyncExternalStore } from "react";
 import { isEntityLayer } from "@smap/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
@@ -22,6 +24,7 @@ import { RecentTilesStrip } from "./RecentTilesStrip";
 
 interface PanelDefinition { label: MessageKey; Component: ComponentType; focus: string; visible?(context: { entity: boolean; world: boolean }): boolean }
 export const PANELS: Record<PanelId, PanelDefinition> = {
+  color: { label: "colorPanel.title", Component: ColorPanel, focus: "[data-color-control=square]" },
   tileset: { label: "tilesetDock.title", Component: TilesetView, focus: "[data-tileset-viewport], [data-tileset-empty]" },
   stamps: { label: "panels.stamps", Component: StampsPanel, focus: "input, button" },
   project: { label: "project.title", Component: () => <ProjectTree fill />, focus: "[role=treeitem], button" },
@@ -53,6 +56,9 @@ export function PanelHosts() {
   const visibility = useRef(new Map<PanelId, boolean>());
   const entity = useEntityContext();
   const beforeEntity = useRef(false);
+  const pixel = usePixelUi(s => s.mode === "pixel");
+  const beforePixel = useRef(false);
+  useEffect(() => { if (pixel && !beforePixel.current) revealPanel("color"); beforePixel.current = pixel; }, [pixel]);
   const world = useWorldView(s => s.view === "world");
   const beforeWorld = useRef(false);
   const parking = useRef<HTMLDivElement>(null);

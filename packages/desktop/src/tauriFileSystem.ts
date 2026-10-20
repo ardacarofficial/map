@@ -128,3 +128,8 @@ export class TauriFileSystem implements ProjectFileSystem {
     return call<void>("create_dir_all", dir, { path: this.resolve(dir) });
   }
 }
+
+/** Reads a file explicitly granted by the native open-file dialog. */
+export async function readFileAbsolute(path: string): Promise<Uint8Array> {
+  return new Uint8Array(await call<ArrayBuffer>('read_file', path, { path }));
+}

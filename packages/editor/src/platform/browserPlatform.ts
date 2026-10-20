@@ -1,3 +1,4 @@
+import { openBrowserFile } from './browserFiles';
 /**
  * The browser host: File System Access API folders, recents in IndexedDB,
  * settings in localStorage. There is no file watcher in a browser, so
@@ -146,6 +147,7 @@ const onVisibility = () => {
 // ------------------------------------------------------------------ platform
 
 export const browserPlatform: Platform = {
+  openFile: openBrowserFile,
   kind: "browser",
 
   async openProjectDialog() {

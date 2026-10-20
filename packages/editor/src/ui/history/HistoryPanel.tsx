@@ -78,6 +78,7 @@ export function HistoryPanel() {
   const names = new Map(levels.map(level => [level.id, level.name]));
   const rows = entries ? historyRows(entries.map(e => ({ ...e.item, state: e.state })), id => {
     const entry = byId.get(id)!;
+    if (!entry.participants.length) return null;
     const p = entry.participants.find(p => p.mapId === entry.originMapId) ?? entry.participants[0]!;
     return historyLabelsFor(world!.store(p.mapId)!).labelOf(p.entryId);
   }, id => verbForChanges(byId.get(id)!.changes)).map(row => {
