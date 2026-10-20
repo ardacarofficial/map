@@ -96,3 +96,23 @@ it('reads edited tile pages without reading the complete atlas bitmap', () => {
   expect(thumb.snapshot()).toBeDefined();
   thumb.destroy();
 });
+
+it('first-touch allocation and pixel replay invalidate only dependent thumbnail chunks', () => {
+  const { store, layerId, thumb } = fixture();
+  while(thumb.pending)thumb.update(50);
+  const layer = store.document.getLayer(layerId)!;
+  const chunks = vi.spyOn(layer,'chunks');
+  const slot = store.dispatch({type:'allocateEditedTile',tileWidth:4,tileHeight:4,pixels:new Uint8Array(64).fill(255)});
+  store.dispatch({type:'remapCells',layerId,cells:[{x:0,y:0}],tilesetId:slot.assetId,tileId:0});
+  const rect={assetId:slot.assetId,tileId:0,x:0,y:0,width:1,height:1};
+  thumb.imageChanged(slot.assetId,[rect]);
+  expect(chunks).not.toHaveBeenCalled();
+  while(thumb.pending)thumb.update(50); expect(thumb.snapshot()).toBeDefined();
+  for(const move of [null,'undo','redo'] as const){
+    if(move)store[move]();else store.dispatch({type:'editTilePixels',...rect,after:Uint8Array.of(12,34,56,255)});
+    expect(thumb.pending).toBe(true); while(thumb.pending)thumb.update(50);
+    expect(chunks).not.toHaveBeenCalled(); expect(thumb.snapshot()).toBeDefined();
+    expect([...thumb.overview.data.slice(0,4)]).toEqual(move === 'undo' ? [255,255,255,255] : [12,34,56,255]);
+  }
+  chunks.mockRestore(); thumb.destroy();
+});

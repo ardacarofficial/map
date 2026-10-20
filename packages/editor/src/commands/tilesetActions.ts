@@ -1,3 +1,4 @@
+import { setTilesetFileSource } from '../state/tilesetImages';
 import { pngHash } from '../state/pngHash';
 import { isGeneratedAsset } from "@smap/core";
 /**
@@ -229,6 +230,7 @@ function followImage(doc: MapDocument, tilesetId: string): void {
   if (previousPath) rememberImage(tilesetId, current.bytes, current.bitmap.width, current.bitmap.height, previousPath);
   const bytes = version ? Promise.resolve(version.bytes) : getProjectFolder()?.fs.readBytes(wantedPath);
   if (!bytes) return;
+  setTilesetFileSource(tilesetId, version ? version.bytes : () => bytes);
   void bytes.then(async bytes => ({ bytes, bitmap: await decodePng(bytes) })).then(({ bytes, bitmap }) => {
     if (getTilesetImage(tilesetId) === current && activeStore()?.document.getTileset(tilesetId)?.imagePath === wantedPath) {
       imagePaths.set(tilesetId, wantedPath);
@@ -338,6 +340,9 @@ export function syncProject(): SyncStats {
   const doc = store.document;
   const regridded: { tilesetId: string; before: TileGrid; after: TileGrid }[] = [];
   for (const tileset of doc.tilesets) {
+    // Edited revisions are restored by pixel history; reading imagePath here
+    // would resolve a whole-atlas content hash on redo.
+    if (tileset.edited) continue;
     const seen = seenGrids.get(tileset.id);
     if (seen && (!sameGrid(seen, tileset) || seenImagePaths.get(tileset.id) !== tileset.imagePath)) {
       followImage(doc, tileset.id);
@@ -434,6 +439,7 @@ function resetSync(): void {
   const doc = activeStore()?.document;
   if (!doc) return;
   for (const tileset of doc.tilesets) {
+    if (tileset.edited) continue;
     seenGrids.set(tileset.id, gridCopy(tileset));
     stampGrids.set(tileset.id, gridCopy(tileset));
     imagePaths.set(tileset.id, tileset.imagePath);

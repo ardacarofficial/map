@@ -17,7 +17,7 @@
  * device-pixel lines at every zoom). Rendering stays on demand: nothing here
  * runs unless the canvas draws a frame.
  */
-import { MapStore, worldLinks, type MapDocument, type ProjectLevel } from "@smap/core";
+import { MapStore, worldLinks, type MapDocument, type ProjectLevel, type PixelDirtyRect } from "@smap/core";
 import { CanvasSource, CanvasTextMetrics, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
 
 import { screenToWorld, snappedOffset, type Point } from "./camera";
@@ -242,12 +242,12 @@ export class WorldView {
   }
 
   /** A tileset image (re)arrived: thumbnails that use it are redrawn. */
-  imageChanged(tilesetId: string): void {
+  imageChanged(tilesetId: string, pixelRects?: readonly PixelDirtyRect[]): void {
     const snapshots: string[] = [];
     for (const level of this.levels()) {
       const t = this.#cache.get(level.id);
       if (!t) continue;
-      if (t.thumb) t.thumb.imageChanged(tilesetId);
+      if (t.thumb) t.thumb.imageChanged(tilesetId, pixelRects);
       else snapshots.push(level.id);
     }
     if (snapshots.length > 0) this.#cache.invalidate(snapshots);

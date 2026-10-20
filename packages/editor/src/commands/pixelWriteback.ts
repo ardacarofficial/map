@@ -1,3 +1,4 @@
+import { UnsupportedPngError } from '../io/sourcePngFormat';
 /** Explicit file action; never participates in paint undo or remaps cells. */
 import { create } from 'zustand';
 import { rasterContentHash, tileRect, type MapStore, type RasterImage, type Tileset } from '@smap/core';
@@ -6,7 +7,7 @@ import { getLevelWorkspace, getProjectFolder, withProjectWriteGate } from '../io
 import { scanWorldUsages } from '../extras/usageScan';
 import { scanUsageFile } from '../extras/usageWorker';
 import { applyPngPatch, equalPngBytes, listPngBackups, pngBackupPath, PngChangedError, preparePngPatch, restorePngBackup } from '../io/pngWriteback';
-import { decodeSourcePng } from '../io/sourcePng';
+import { decodeWorkingSourcePng, decodeSourcePng } from '../io/sourcePng';
 import { isSnapshotImagePath } from '../io/immutableFiles';
 import { reloadTilesetImage } from '../platform/fileChanges';
 import { useEditorStore } from '../state/editorStore';
@@ -72,6 +73,7 @@ registerTilesetModal(()=>usePngWriteback.getState().draft!==null);
 let requestVersion=0;
 const refKey=(tilesetId:string,tileId:number)=>JSON.stringify([tilesetId,tileId]);
 export const pngReasonKey=(reason:Reason):MessageKey=>`pngWriteback.${reason}`;
+function pngFailure(error: unknown, fallback: MessageKey): MessageKey { return error instanceof UnsupportedPngError ? `pngWriteback.unsupported${error.reason[0]!.toUpperCase()}${error.reason.slice(1)}` as MessageKey : fallback; }
 function changedError(error:unknown):boolean { return error instanceof PngChangedError || (typeof error==='object'&&error!==null&&'kind' in error&&error.kind==='Changed'); }
 export function closePngWriteback():void { if(usePngWriteback.getState().writing)return; ++requestVersion;usePngWriteback.setState({draft:null,busy:false,error:null,changed:false}); }
 export async function openPngWriteback(editedId?:string, mode:'apply'|'restore'='apply', sourceId?:string):Promise<void> {
@@ -91,7 +93,7 @@ export async function openPngWriteback(editedId?:string, mode:'apply'|'restore'=
     const counts:Record<string,number>={}; for(const result of results) { const key=refKey(result.tilesetId,result.tileId);counts[key]=(counts[key]??0)+1; }
     usePngWriteback.setState({draft:{...draft,counts},busy:false});
     if(initial)await selectPngSource(initial.id);
-  }catch { if(version===requestVersion)usePngWriteback.setState({busy:false,error:'pngWriteback.readFailed'}); }
+  }catch(error) { if(version===requestVersion)usePngWriteback.setState({busy:false,error:pngFailure(error, 'pngWriteback.readFailed')}); }
 }
 export function pngTileBefore(draft:PngDraft,tileId:number):RasterImage|undefined {
   if(!draft.source||!draft.snapshot||tileId<0||tileId>=draft.source.columns*draft.source.rows)return;
@@ -114,13 +116,13 @@ export async function selectPngSource(id:string,rebase=false):Promise<void> {
   try {
     // Reload is a new review/confirmation against current disk pixels; never retries a write.
     if(rebase)await reloadTilesetImage(source.imagePath);
-    const bytes=await draft.folder.fs.readBytes(source.imagePath),pixels=decodeSourcePng(bytes),backups=await listPngBackups(draft.folder.fs,source.imagePath);
+    const bytes=await draft.folder.fs.readBytes(source.imagePath),pixels=(draft.mode==='apply'?decodeWorkingSourcePng(bytes):decodeSourcePng(bytes)),backups=await listPngBackups(draft.folder.fs,source.imagePath);
     if(version!==requestVersion||getLevelWorkspace()!==draft.ws||getProjectFolder()!==draft.folder)return;
     const fits = Math.floor((pixels.width-source.margin*2+source.spacing)/(source.tileWidth+source.spacing))===source.columns && Math.floor((pixels.height-source.margin*2+source.spacing)/(source.tileHeight+source.spacing))===source.rows;
     const choices:Record<number,string|null>={}; for(const group of variantGroups(draft.variants,source))choices[group.tileId]=group.choice;
     const next:PngDraft={...draft,source,snapshot:{bytes,pixels:{...pixels,data:new Uint8Array(pixels.data),revision:0},grid:pixelSourceGrid(source)},choices,backupPath:pngBackupPath(source.imagePath),backups,restore:null,restoreBytes:null,rebased:rebase&&fits};
     usePngWriteback.setState({draft:next,busy:false,changed:(!fits&&next.mode==='apply') || (!rebase&&next.mode==='apply'&&variantGroups(next.variants,source).some(g=>g.variants.some(v=>pngVariantChanged(next,v))))});
-  }catch { if(version===requestVersion)usePngWriteback.setState({busy:false,error:'pngWriteback.readFailed'}); }
+  }catch(error) { if(version===requestVersion)usePngWriteback.setState({busy:false,error:pngFailure(error, 'pngWriteback.readFailed')}); }
 }
 export function choosePngVariant(tileId:number,key:string|null):void { const {draft,busy}=usePngWriteback.getState();if(draft&&!busy)usePngWriteback.setState({draft:{...draft,choices:{...draft.choices,[tileId]:key}}}); }
 export async function choosePngBackup(path:string):Promise<void> {
@@ -160,7 +162,7 @@ export async function confirmPngWriteback():Promise<void> {
     });
     usePngWriteback.setState({busy:false,writing:false,draft:null});
     toast.success(t('pngWriteback.success'));
-  }catch(error) { usePngWriteback.setState({busy:false,writing:false,error:changedError(error)?null:'pngWriteback.writeFailed',changed:changedError(error)}); }
+  }catch(error) { usePngWriteback.setState({busy:false,writing:false,error:changedError(error)?null:pngFailure(error, 'pngWriteback.writeFailed'),changed:changedError(error)}); }
 }
 export function registerPngWritebackCommands():void {
   const ready=()=>!!getProjectFolder()&&!!getLevelWorkspace()&&!useEditorStore.getState().project?.levelId?.startsWith('stamp:');

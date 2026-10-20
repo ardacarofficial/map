@@ -2,7 +2,7 @@ import { capturedPixelHash } from '../state/pixelProvenance';
 import { t } from "../i18n";
 /** Pixel planning/COW boundary. No DOM, UI state, disk IO or live mutation until commit. */
 import {
-  cellPaletteIndex, cellFlags, isTileLayer, MapStore, parseLevel, serializeLevel,
+  cellPaletteIndex, cellFlags, isTileLayer, MapStore, pixelEditSnapshot,
   pixelStrokePoints, pixelRectangle, mirrorPixels, pixelDirtyRect, planPixelFill, placedPixelSize,
   placedToSourcePixel, sourceToPlacedPixel, rasterContentHash, prepareWorldEdit, applyWorldEdit, WorldEditError,
   type RasterImage, type Rgba8, type PixelPoint, type PixelRect, type PixelWrite, type TilePixelPlan,
@@ -100,7 +100,7 @@ export function applyPixelWrites(owner: PixelOwner, writes: readonly PixelWrite[
 }
 function detached(store: MapStore): MapStore {
   const doc = store.document;
-  return new MapStore(parseLevel(serializeLevel(doc), doc.tilesets, doc.entityTypes), { rasterAssets: store.rasterAssets.fork() });
+  return new MapStore(pixelEditSnapshot(doc), { rasterAssets: store.rasterAssets.fork() });
 }
 export function tileUsages(doc: MapDocument, tilesetId: string, tileId: number) {
   const indices = new Set<number>();

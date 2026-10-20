@@ -27,7 +27,12 @@ test('dense-map previews and scaled-atlas commits stay bounded and save the same
   }, corePath);
   await page.keyboard.press('Control+o');
   await page.waitForFunction(() => !!(window as unknown as { __smap?: Hook }).__smap?.store);
-  await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.setCamera(24, 48, 2));
+  await page.evaluate(async () => {
+    (window as unknown as { __smap: Hook }).__smap.setCamera(24, 48, 2);
+    const { useUiStore } = await import(/* @vite-ignore */ String('/src/ui/uiStore.ts'));
+    useUiStore.getState().setActiveTileset('edited-32x32-1');
+  });
+  await expect(page.locator('[data-tileset-grid="edited-32x32-1"]')).toBeVisible();
   await key(page, 'm');
   await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.pixelUi.getState().pending)).toBe(false);
   const work = await page.evaluate(async path => {
@@ -46,11 +51,16 @@ test('dense-map previews and scaled-atlas commits stay bounded and save the same
       await frame(); const previewScans = scans;
       atlasReads = 0; reads.length = 0;
       canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 9, button: 0, buttons: 0, clientX: p.x + 2, clientY: p.y }));
-      const commitAtlasReads = atlasReads;
+      await frame(); await frame();
+      h.store.undo(); await frame(); await frame();
+      h.store.redo(); await frame(); await frame();
       // Move the cursor keyline away before reading the painted framebuffer pixel.
       canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, button: -1, buttons: 0, clientX: p.x + 100, clientY: p.y + 100 }));
       await frame();
       const raster = h.store.rasterAssets.getTile('edited-32x32-1', 0)!;
+      // readPixels needs a fresh rendered frame: idle RAFs may discard the non-preserved drawing buffer.
+      h.setCamera(24, 48, 2); await frame();
+      const commitAtlasReads = atlasReads;
       const gl = canvas.getContext('webgl2')!, pixel = new Uint8Array(4), box = canvas.getBoundingClientRect(), scale = canvas.width / box.width;
       gl.readPixels(Math.floor((p.x + 2 - box.left) * scale), canvas.height - 1 - Math.floor((p.y - box.top) * scale), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
       return { previewScans, commitAtlasReads, reads, rgba: [...raster.data.slice((16 * 32 + 17) * 4, (16 * 32 + 18) * 4)], gpu: [...pixel], slots: h.store.document.getTileset('edited-32x32-1')!.edited!.nextTileId };
@@ -66,4 +76,47 @@ test('dense-map previews and scaled-atlas commits stay bounded and save the same
   await page.reload(); await page.getByRole('button', { name: /^Aç/ }).click();
   await page.waitForFunction(() => !!(window as unknown as { __smap?: Hook }).__smap?.store);
   expect(await page.evaluate(() => [...(window as unknown as { __smap: Hook }).__smap.store.rasterAssets.getTile('edited-32x32-1', 0)!.data.slice((16 * 32 + 17) * 4, (16 * 32 + 18) * 4)])).toEqual(work.rgba);
+});
+
+for (const size of [32,512]) test(`first-touch source-cell stroke stays bounded with ${size}-square cached world maps`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const { open } = await import('../support/pixelHarness'); await open(page);
+  await page.evaluate(async size => {
+    const h = (window as unknown as { __smap: Hook }).__smap;
+    const { getLevelWorkspace } = await import(/* @vite-ignore */ String('/src/io/session.ts'));
+    const ws = getLevelWorkspace();
+    const { getProjectFolder } = await import(/* @vite-ignore */ String('/src/io/session.ts'));
+    await ws.load('b', getProjectFolder().fs);
+    const layerId = h.editor.getState().activeLayerId!;
+    h.store.dispatch({type:'resizeMap',width:size,height:size});
+    const pi = h.store.getOrAddPaletteIndex('source',0);
+    const cells = Array.from({length:size*size},(_,i)=>({x:i%size,y:Math.floor(i/size),cell:pi}));
+    h.store.dispatch({type:'paintCells',layerId,cells});
+    const b = ws.entry('b').store;
+    b.dispatch({type:'resizeMap',width:size,height:size}); const index = b.getOrAddPaletteIndex('source',0);
+    b.dispatch({type:'paintCells',layerId:b.document.layers[0].id,cells:cells.map(c=>({...c,cell:index}))});
+  }, size);
+  await key(page,'m'); await expect.poll(() => page.evaluate(() => (window as unknown as {__smap: Hook}).__smap.pixelUi.getState().pending)).toBe(false);
+  const result = await page.evaluate(async () => {
+    const h = (window as unknown as {__smap: Hook}).__smap;
+    const { getLevelWorkspace } = await import(/* @vite-ignore */ String('/src/io/session.ts'));
+    const ws = getLevelWorkspace(), restores: (()=>void)[] = [], stacks: string[] = []; let slots = 0;
+    for (const id of ws.cachedIds()) for (const layer of ws.entry(id).store.document.layers) {
+      const chunks = layer.chunks.bind(layer); restores.push(()=>{layer.chunks=chunks;});
+      layer.chunks=function*(){stacks.push(new Error('chunk scan').stack!);for(const chunk of chunks()){slots+=chunk.data.length;yield chunk;}};
+    }
+    try {
+      h.pixelColors.getState().setFg('#123456ff');
+      const p=h.cellCenter(0,0), canvas=document.querySelector<HTMLCanvasElement>('canvas[aria-label="map canvas"]')!;
+      canvas.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:9,button:0,buttons:1,clientX:p.x,clientY:p.y}));
+      await new Promise<void>(r=>requestAnimationFrame(()=>r())); slots=0; stacks.length=0;
+      const start=performance.now();
+      canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:9,button:0,buttons:0,clientX:p.x,clientY:p.y}));
+      const ms=performance.now()-start, commitSlots=slots;
+      await new Promise<void>(r=>requestAnimationFrame(()=>r()));
+      return {slots:commitSlots,stacks,ms,assets:h.store.rasterAssets.assetIds().length};
+    } finally { for(const restore of restores)restore(); }
+  });
+  expect(result.slots,result.stacks.join('\n')).toBe(0); expect(result.assets).toBe(1);
+  await test.info().attach('first-touch.json',{body:JSON.stringify({size,...result}),contentType:'application/json'});
 });

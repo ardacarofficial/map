@@ -13,6 +13,8 @@ export { DEFOLD_SHAPES_PER_OBJECT } from "./collision";
 export type DefoldExportFile = { readonly path: string; readonly text: string } | { readonly path: string; readonly bytes: Uint8Array };
 export type DefoldImageBytes = (tilesetId: string) => Uint8Array | undefined;
 export interface DefoldExportOptions extends GameExportOptions {
+  /** Stable map identity; encoded losslessly for case-insensitive destinations. */
+  readonly levelId?: string;
   /** Folder inside the Defold project, default "exported"; the map name is appended.
    * Leading resource slash and Windows separators are accepted; OS roots and .. are rejected.
    */
@@ -92,7 +94,8 @@ function nativeCells(cells: readonly ExportCell[]): string[] {
 export function exportDefold(doc: MapDocument, levelName: string, bytes: DefoldImageBytes, options: DefoldExportOptions = {}): DefoldExportFile[] {
   const problems = defoldPreflight(doc, bytes, options);
   if (problems.length) throw new DefoldExportError(problems);
-  const base = `${projectFolder(options.projectSubfolder)!}/${exportBaseName(levelName)}`;
+  const identity = options.levelId === undefined ? "" : `--id-${[...options.levelId].map(c => c.codePointAt(0)!.toString(16)).join("-")}`;
+  const base = `${projectFolder(options.projectSubfolder)!}/${exportBaseName(levelName)}${identity}`;
   const files: DefoldExportFile[] = [];
   const add = (path: string, text: string) => files.push({ path: `${base}/${path}`, text });
   const resource = (path: string) => quote(`/${base}/${path}`);

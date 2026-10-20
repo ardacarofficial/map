@@ -73,7 +73,23 @@ test('image replacement uses a separate revision, keeps original PNG bytes, and 
   await expect.poll(path).toMatch(/^tilesets\/image-/);const revision=(await path())!;await key(page,'Control+s');await expect.poll(()=>read(page,revision).catch(()=>null)).toEqual(replacement);expect(await read(page,'tilesets/source.png')).toEqual(original);
   await key(page,'Control+z');await expect.poll(path).toBe('tilesets/source.png');
   const registered=()=>page.evaluate(async()=>{const m=await import(/* @vite-ignore */ String('/src/state/tilesetImages.ts'));return [...(m.getTilesetImage('source')?.bytes??[])];});
-  await expect.poll(registered).toEqual(original);await key(page,'Control+Shift+z');await expect.poll(path).toBe(revision);await expect.poll(registered).toEqual(replacement);
+  await expect.poll(registered).toEqual(original);
+  // Hold bitmap decoding while redo and autosave-style production save select the revision.
+  await page.evaluate(async () => {
+    const root = window as unknown as { releaseDecode: () => void };
+    const decode = window.createImageBitmap;
+    let release!: () => void; const gate = new Promise<void>(r => { release = r; });
+    root.releaseDecode = () => { window.createImageBitmap = decode; release(); };
+    window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => { await gate; return decode(...args); }) as typeof createImageBitmap;
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('tilesets');
+    const files = []; for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) if (name.startsWith('image-')) files.push(name);
+    for (const name of files) await dir.removeEntry(name);
+  });
+  await key(page,'Control+Shift+z');await expect.poll(path).toBe(revision);
+  expect(await page.evaluate(async () => (await import(/* @vite-ignore */ String('/src/io/session.ts'))).saveCurrentProject(false))).toBe(true);
+  expect(await read(page,revision)).toEqual(replacement);
+  await page.evaluate(() => (window as unknown as { releaseDecode: () => void }).releaseDecode());
+  await expect.poll(registered).toEqual(replacement);
   await key(page,'Control+s');await page.reload();await page.getByRole('button',{name:/^Aç/}).click();await expect(page.locator('canvas[aria-label="map canvas"]').first()).toBeVisible();await expect.poll(path).toBe(revision);await expect.poll(registered).toEqual(replacement);expect(await read(page,'tilesets/source.png')).toEqual(original);
 });
 
@@ -93,4 +109,48 @@ test('import reserves an orphan source PNG name and saves the new pixels under a
   const imported=await page.evaluate(()=>(window as unknown as {__smap:Hook}).__smap.store.document.tilesets.find(t=>t.name==='reimport')!);expect(imported.imagePath).not.toBe('tilesets/reimport.png');
   await key(page,'Control+s');await expect.poll(()=>read(page,imported.imagePath).catch(()=>null)).toEqual(replacement);expect(await read(page,'tilesets/reimport.png')).toEqual(original);
   await page.reload();await page.getByRole('button',{name:/^Aç/}).click();await page.waitForFunction(()=>!!(window as unknown as {__smap:Hook}).__smap?.store);expect(await page.evaluate(id=>(window as unknown as {__smap:Hook}).__smap.store.document.getTileset(id)!.imagePath,imported.id)).toBe(imported.imagePath);expect(await read(page,imported.imagePath)).toEqual(replacement);
+});
+
+test('gamma write-back preserves untouched rendered colors, raw samples and color chunks', async ({ page }) => {
+  test.setTimeout(180_000); await open(page);
+  const original = await page.evaluate(async () => {
+    const { encodeSourcePng } = await import(/* @vite-ignore */ String('/src/io/sourcePng.ts'));
+    const { pngChunk, withPngChunks } = await import(/* @vite-ignore */ String('/src/io/sourcePng.testHelper.ts'));
+    const data = new Uint8Array(35 * 18 * 4); for (let p = 0; p < data.length; p += 4) data.set([128,128,128,255], p);
+    return [...withPngChunks(encodeSourcePng({ width: 35, height: 18, data }), pngChunk('gAMA', Uint8Array.of(0,1,134,160)))];
+  });
+  await write(page, 'tilesets/source.png', original);
+  await page.reload(); await page.getByRole('button', { name: /^Aç/ }).click();
+  await page.waitForFunction(() => !!(window as unknown as { __smap?: Hook }).__smap?.store);
+  await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.setCamera(24,48,6));
+  await key(page, 'm'); await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.pixelUi.getState().pending)).toBe(false);
+  await edit(page, 0, '#ffffffff'); const d = await dialog(page); await d.locator('[data-png-confirm]').click(); await expect(d).toBeHidden();
+  const result = await page.evaluate(async original => {
+    const { decodeSourcePng } = await import(/* @vite-ignore */ String('/src/io/sourcePng.ts'));
+    const { pngChunks } = await import(/* @vite-ignore */ String('/src/io/sourcePng.testHelper.ts'));
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('tilesets');
+    const bytes = new Uint8Array(await (await (await dir.getFileHandle('source.png')).getFile()).arrayBuffer());
+    const before = Uint8Array.from(original), raw = decodeSourcePng(bytes).data, rendered = async (data: Uint8Array) => {
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(data)], { type: 'image/png' }));
+      const canvas = document.createElement('canvas'); canvas.width = 35; canvas.height = 18;
+      const ctx = canvas.getContext('2d')!; ctx.drawImage(bitmap,0,0); bitmap.close();
+      return [...ctx.getImageData(18,2,1,1).data];
+    };
+    return { profile: [...pngChunks(bytes).get('gAMA')!], originalProfile: [...pngChunks(before).get('gAMA')!], before: await rendered(before), after: await rendered(bytes), untouched: [...raw.slice((2*35+18)*4,(2*35+18)*4+4)], changed: [...raw.slice((2*35+2)*4,(2*35+2)*4+4)] };
+  }, original);
+  expect(result.profile).toEqual(result.originalProfile); expect(result.before).toEqual([188,188,188,255]); expect(result.after).toEqual(result.before);
+  expect(result.untouched).toEqual([128,128,128,255]); expect(result.changed).toEqual([255,255,255,255]);
+});
+
+test('unsupported PNG profiles explain the refusal before confirmation in Turkish and English', async ({ page }) => {
+  await open(page); await edit(page);
+  const bytes = await page.evaluate(async () => {
+    const { encodeSourcePng } = await import(/* @vite-ignore */ String('/src/io/sourcePng.ts'));
+    const { pngChunk, withPngChunks } = await import(/* @vite-ignore */ String('/src/io/sourcePng.testHelper.ts'));
+    return [...withPngChunks(encodeSourcePng({ width:35,height:18,data:new Uint8Array(35*18*4).fill(255) }),pngChunk('iCCP',Uint8Array.of(112,0,0,120,156,99,0,0,0,1,0,1)))];
+  });
+  await write(page,'tilesets/source.png',bytes); const d = await dialog(page);
+  await expect(d.getByRole('alert')).toContainText('renk profili'); await expect(d.locator('[data-png-confirm]')).toBeDisabled();
+  await page.evaluate(async () => (await import(/* @vite-ignore */ String('/src/i18n/index.ts'))).setLocale('en'));
+  await expect(d.getByRole('alert')).toContainText('color profile'); expect(await read(page,'tilesets/source.png')).toEqual(bytes);
 });

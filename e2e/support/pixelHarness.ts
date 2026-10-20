@@ -1,9 +1,10 @@
+import type { usePixelUi } from '../../packages/editor/src/state/pixelUi';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect } from './fixtures';
 import type * as Core from '../../packages/core/src/index';
 const corePath = `/@fs${fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url))}`;
-export interface Hook { pixelMetrics: { planMs: number[]; commitMs: number[]; pageBytesTouched: number; geometryBuilds: number }; store: Core.MapStore; editor: { getState(): { activeLayerId: string | null } }; pixelUi: { getState(): { pending: boolean; setSize(size: number): void } }; pixelColors: { getState(): { fg: string; bg: string; setFg(hex: string): void } }; cellCenter(x: number, y: number): { x: number; y: number }; setCamera(x: number, y: number, zoom: number): void }
+export interface Hook { pixelMetrics: { planMs: number[]; commitMs: number[]; pageBytesTouched: number; geometryBuilds: number }; store: Core.MapStore; editor: { getState(): { activeLayerId: string | null } }; pixelUi: typeof usePixelUi; pixelColors: { getState(): { fg: string; bg: string; setFg(hex: string): void } }; cellCenter(x: number, y: number): { x: number; y: number }; setCamera(x: number, y: number, zoom: number): void }
 export async function open(page: Page) {
   await page.goto('/');
   const source = await page.evaluate(async path => {

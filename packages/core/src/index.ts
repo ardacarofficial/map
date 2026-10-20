@@ -516,3 +516,5 @@ export type { WorldEditOperation, WorldEditInput, WorldEditParticipant, WorldEdi
 export { tileUsageBatches, type TileUsage } from "./tileUsage";
 
 export { ColorPaletteStore, type ColorPaletteOp } from './pixel/palettes';
+
+export { pixelEditSnapshot } from './pixel/snapshot';

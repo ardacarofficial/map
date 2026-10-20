@@ -1,3 +1,4 @@
+import { UnsupportedPngError, workingSource, sourceGamma } from './sourcePngFormat';
 /** Lossless PNG decoding without canvas premultiplication or colour conversion. */
 import { convertIndexedToRgb, decode, encode } from 'fast-png';
 import { assertRasterSize, type RgbaImage } from '@smap/core';
@@ -6,12 +7,12 @@ export function decodeSourcePng(bytes: Uint8Array): RgbaImage {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   assertRasterSize(view.getUint32(16), view.getUint32(20));
   // A single RGBA8 edit cannot preserve a 16-bit or animated source faithfully.
-  if (bytes[24] === 16) throw Error('Unsupported PNG depth');
+  if (bytes[24] === 16) throw new UnsupportedPngError('depth');
   let input=bytes, transparency:Uint16Array|undefined;
   for (let p=8;p+12<=bytes.length;) {
     const n=view.getUint32(p), type=String.fromCharCode(...bytes.subarray(p+4,p+8));
     if(p+n+12>bytes.length)throw Error('Invalid PNG chunk');
-    if(type==='acTL')throw Error('Unsupported animated PNG');
+    if(type==='acTL')throw new UnsupportedPngError('animation');
     if(type==='tRNS' && (bytes[25]===0||bytes[25]===2)) {
       // fast-png 8 incorrectly bounds RGB tRNS by pixel count. Parse this small
       // standards-defined chunk ourselves, retaining its CRC check even when removed.
@@ -49,3 +50,5 @@ export function decodeSourcePng(bytes: Uint8Array): RgbaImage {
 export function encodeSourcePng(image: RgbaImage): Uint8Array {
   return encode({ width: image.width, height: image.height, data: image.data, channels: 4, depth: 8 });
 }
+
+export function decodeWorkingSourcePng(bytes: Uint8Array): RgbaImage { sourceGamma(bytes); return workingSource(decodeSourcePng(bytes), bytes); }

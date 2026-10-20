@@ -548,8 +548,8 @@ export class MapCanvas {
     this.#unsubs.push(
       onTilesetImage((id, pixelRects) => {
         this.#scene?.imageChanged(id, pixelRects);
-        this.#thumb?.imageChanged(id);
-        this.#worldView.imageChanged(id);
+        this.#thumb?.imageChanged(id, pixelRects);
+        this.#worldView.imageChanged(id, pixelRects);
         this.#requestRender();
       }),
     );

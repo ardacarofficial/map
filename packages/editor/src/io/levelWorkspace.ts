@@ -180,14 +180,15 @@ export class LevelWorkspace {
   #cache(entry: LevelEntry): void {
     this.#entries.set(entry.id, entry);
     this.history.register(entry.id, entry.store);
-    installPixelAssets(entry.store);
     this.#contentSubscriptions.get(entry.id)?.();
-    this.#contentSubscriptions.set(entry.id, entry.store.subscribe(event => {
+    const offPixel = installPixelAssets(entry.store);
+    const offContent = entry.store.subscribe(event => {
       if (event.cells.length || event.structure.length || event.pixelRects.length) {
         this.markDirty(entry.id);
         this.#contentChanged();
       }
-    }));
+    });
+    this.#contentSubscriptions.set(entry.id, () => { offPixel(); offContent(); });
   }
 
   /** End this world's session; stamp editor stores are never registered here. */

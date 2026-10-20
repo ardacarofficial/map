@@ -1,7 +1,8 @@
+import { encodePatchedSource, workingSource, sourceSamplePixels } from './sourcePngFormat';
 import { rasterContentHash, tileRect, type RgbaImage, type Tileset } from '@smap/core';
 import { pixelSourceGrid } from '../state/pixelProvenance';
 import { FileNotFoundError, type ProjectFileSystem, type GuardedPngRequest } from './fs';
-import { decodeSourcePng, encodeSourcePng } from './sourcePng';
+import { decodeSourcePng, type encodeSourcePng } from './sourcePng';
 import { isSnapshotImagePath } from './immutableFiles';
 
 export class PngChangedError extends Error { constructor() { super('PNG changed'); } }
@@ -34,9 +35,9 @@ export async function browserPngReplace(fs: ProjectFileSystem, request: GuardedP
 }
 export interface PngTilePatch { readonly tileId: number; readonly baseHash: string; readonly pixels: RgbaImage }
 export interface PngPatchPlan extends GuardedPngRequest { readonly source: Tileset }
-export async function preparePngPatch(fs: ProjectFileSystem, source: Tileset, patches: readonly PngTilePatch[], encode = encodeSourcePng): Promise<PngPatchPlan> {
+export async function preparePngPatch(fs: ProjectFileSystem, source: Tileset, patches: readonly PngTilePatch[], encode?: typeof encodeSourcePng): Promise<PngPatchPlan> {
   assertPngPaths(source.imagePath, pngBackupPath(source.imagePath));
-  const expected = await fs.readBytes(source.imagePath), image = decodeSourcePng(expected);
+  const expected = await fs.readBytes(source.imagePath), raw = decodeSourcePng(expected), image = workingSource(raw, expected);
   if (Math.floor((image.width-source.margin*2+source.spacing)/(source.tileWidth+source.spacing))!==source.columns || Math.floor((image.height-source.margin*2+source.spacing)/(source.tileHeight+source.spacing))!==source.rows) throw Error('PNG grid changed');
   const data = new Uint8Array(image.data), seen=new Set<number>();
   if (!patches.length) throw Error('No patches');
@@ -57,10 +58,11 @@ export async function preparePngPatch(fs: ProjectFileSystem, source: Tileset, pa
       for(let c=0;c<4;c++)data[to+c]=pixels.data[from+c]!;
     }
   }
-  const replacement=encode({width:image.width,height:image.height,data});
+  const pixels = {width:image.width,height:image.height,data};
+  const replacement=encode ? encode(pixels) : encodePatchedSource(pixels, expected, raw);
   // Verify the encoder before any filesystem mutation, including exact untouched RGBA.
   const decoded=decodeSourcePng(replacement);
-  if(decoded.width!==image.width||decoded.height!==image.height||!equalPngBytes(new Uint8Array(decoded.data),data)) throw Error('PNG encode verification failed');
+  if(decoded.width!==image.width||decoded.height!==image.height||!equalPngBytes(new Uint8Array(decoded.data),sourceSamplePixels(pixels,raw,expected))) throw Error('PNG encode verification failed');
   return { source, path:source.imagePath,backupPath:pngBackupPath(source.imagePath),expected,replacement };
 }
 export async function applyPngPatch(fs: ProjectFileSystem, plan: PngPatchPlan): Promise<void> { await guardedPngReplace(fs,plan); }

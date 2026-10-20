@@ -33,5 +33,10 @@
   "confirm": "Onayla ve PNG'ye uygula",
   "confirmRestore": "Onayla ve geri yükle",
   "gridChanged": "Uygulanamaz: kaynak ızgarası değişmiş; özgün tile dikdörtgeni artık doğrulanamıyor.",
-  "saveFirst": "Önce dünyayı bir klasöre kaydet."
+  "saveFirst": "Önce dünyayı bir klasöre kaydet.",
+  "unsupportedProfile": "Bu PNG’nin renk profili kayıpsız düzenleme için desteklenmiyor. PNG değiştirilmedi.",
+  "unsupportedDepth": "16 bit PNG örnekleri kayıpsız korunamıyor. PNG değiştirilmedi.",
+  "unsupportedAnimation": "Hareketli PNG kayıpsız düzenlenemiyor. PNG değiştirilmedi.",
+  "unsupportedRepresentation": "Seçilen renk veya alfa kaynak PNG’nin paleti ya da renk türüyle kayıpsız gösterilemiyor. PNG değiştirilmedi.",
+  "unsupportedMetadata": "Bu PNG’nin ek verileri kayıpsız korunamıyor. PNG değiştirilmedi."
 }

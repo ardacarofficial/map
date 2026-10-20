@@ -5,6 +5,7 @@ import type { ExportTargetInput, ExportTargetOptions, ExportTargetPlugin } from 
 
 function coreOptions(input: ExportTargetInput, options: ExportTargetOptions): DefoldExportOptions {
   return {
+    ...(input.levelId === undefined ? {} : { levelId: input.levelId }),
     ...(input.layers ? { layers: input.layers } : {}),
     ...(typeof options.projectSubfolder === "string" ? { projectSubfolder: options.projectSubfolder } : {}),
     collision: options.collision !== false,

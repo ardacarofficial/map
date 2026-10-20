@@ -33,5 +33,10 @@
   "confirm": "Confirm and apply to PNG",
   "confirmRestore": "Confirm and restore",
   "gridChanged": "Not applicable: the source grid changed; the original tile rectangle can no longer be verified.",
-  "saveFirst": "Save the world to a folder first."
+  "saveFirst": "Save the world to a folder first.",
+  "unsupportedProfile": "This PNG color profile is not supported for lossless editing. The PNG was not changed.",
+  "unsupportedDepth": "16-bit PNG samples cannot be preserved losslessly. The PNG was not changed.",
+  "unsupportedAnimation": "Animated PNG cannot be edited losslessly. The PNG was not changed.",
+  "unsupportedRepresentation": "The chosen color or alpha cannot be represented losslessly in the source PNG palette or color type. The PNG was not changed.",
+  "unsupportedMetadata": "This PNG contains additional data that cannot be preserved losslessly. The PNG was not changed."
 }
