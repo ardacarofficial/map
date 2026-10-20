@@ -8,13 +8,14 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { editorCodeSplitting, editorPlugins } from "../editor/vite.plugins.ts";
+import { editorAliases, editorCodeSplitting, editorPlugins } from "../editor/vite.plugins.ts";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
 export default {
   root,
   plugins: editorPlugins(),
+  resolve: { alias: editorAliases() },
   // Tauri serves the files from disk: relative URLs.
   base: "./",
   clearScreen: false,

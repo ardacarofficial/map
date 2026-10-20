@@ -1,4 +1,4 @@
-import { Popover } from "@base-ui/react/popover";
+import { Popover } from "../primitives/Overlays";
 import { useState } from "react";
 import { runCommand } from "../../commands/registry";
 import { t } from "../../i18n";
@@ -24,7 +24,7 @@ export function GridControl({ disabled = false }: { disabled?: boolean }) {
 export function GridSettings({ disabled = false }: { disabled?: boolean }) {
   return <Popover.Root>
     <Tooltip label={t("majorGrid.title")}><Popover.Trigger disabled={disabled} aria-label={t("majorGrid.title")} className="grid size-control-md place-items-center rounded-sm text-muted hover:bg-hover hover:text-text data-popup-open:bg-active"><Icon name="chevron-down" size={12} /></Popover.Trigger></Tooltip>
-    <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
+    <Popover.Portal><Popover.Positioner side="bottom" align="end" className={menuPositionerClass}>
       <Popover.Popup className={`${menuPopupClass} flex w-64 flex-col gap-3 p-3!`} data-major-grid-popover>
         <Popover.Title className="text-sm font-medium text-title">{t("majorGrid.title")}</Popover.Title>
         <GridFields />

@@ -3,7 +3,7 @@
  * under the tabs while it is active, and the "save the stamp?" question.
  * Mounted by `DocumentTabs`.
  */
-import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { AlertDialog } from "../primitives/Overlays";
 import { useEffect } from "react";
 
 import { useWorldView } from "../../commands/worldActions";

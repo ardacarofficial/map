@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 
 import { fuzzyFilter, type FuzzyMatch } from "../../commands/fuzzy";

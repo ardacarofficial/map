@@ -65,7 +65,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await expect(recent).toBeFocused(); await expect(recent).toHaveAttribute("aria-selected", "true");
     await inside(list, recent);
     expect(await recent.locator("span").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-    await expect(recent).toHaveAttribute("title", "Son kullanılanlar");
+    await expect(recent).not.toHaveAttribute("title");
     await inside(strip, strip.locator("[data-zone-collapse],[data-zone-hide]"));
     await page.keyboard.press("Home"); await inside(list, page.locator("[data-panel-tab=tileset]"));
     await strip.locator("[data-tabs-next]").click();

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { AlertDialog } from "../primitives/Overlays";
 import { t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { useConfirmStore } from "./confirmStore";

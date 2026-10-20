@@ -4,7 +4,7 @@
  * click on the switcher and on a tileset header in "Tümü" (Base UI menu
  * items work in both menu kinds).
  */
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import type { Tileset } from "@smap/core";
 
 import {
@@ -44,7 +44,7 @@ export function TilesetMenuItems({ tileset }: { tileset: Tileset }) {
           <Icon name="chevronRight" size={12} className="text-faint" />
         </Menu.SubmenuTrigger>
         <Menu.Portal>
-          <Menu.Positioner side="right" align="start" sideOffset={-4} className={menuPositionerClass}>
+          <Menu.Positioner side="right" align="start" className={menuPositionerClass}>
             <Menu.Popup className={`${menuPopupClass} max-h-[min(360px,var(--available-height))] overflow-y-auto`}>
               <Menu.Item className={menuItemClass} data-group-option="" onClick={() => setTilesetGroup(tileset.id, null)}>
                 <span className="flex-1">{t("tilesetLib.ungrouped")}</span>

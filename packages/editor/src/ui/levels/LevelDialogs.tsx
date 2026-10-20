@@ -1,5 +1,5 @@
-import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Dialog } from "@base-ui/react/dialog";
+import { AlertDialog } from "../primitives/Overlays";
+import { Dialog } from "../primitives/Overlays";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { createLevel, nextLevelName, openNewLevelDialog, portalsTo, removeLevel, askRemoveLevel, useLevelUi } from "../../commands/levelActions";

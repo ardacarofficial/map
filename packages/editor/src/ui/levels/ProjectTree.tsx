@@ -203,7 +203,7 @@ function MapsFolder() {
                   }}
                   style={{ transform: y ? `translateY(${y}px)` : undefined }}
                   className={`group relative flex h-6 shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-line items-center gap-1 rounded-sm pr-1.5 pl-8 text-sm select-none ${
-                    dragged ? "z-10 cursor-grabbing bg-active" : settling ? "" : "transition-transform duration-150 ease-(--ease-out)"
+                    dragged ? "z-(--overlay-chrome) cursor-grabbing bg-active" : settling ? "" : "transition-transform duration-150 ease-(--ease-out)"
                   } ${isActive ? "bg-accent-soft text-title ring-1 ring-inset ring-accent-line" : "text-text hover:bg-hover"}`}
                 />
               }

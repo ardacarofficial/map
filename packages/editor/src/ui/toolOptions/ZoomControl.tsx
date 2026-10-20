@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { useRef, useState, useSyncExternalStore } from "react";
 
 import { runCommand } from "../../commands/registry";
@@ -93,7 +93,7 @@ export function ZoomControl() {
             <Icon name="chevronDown" size={12} />
           </Menu.Trigger>
           <Menu.Portal>
-            <Menu.Positioner side="top" align="end" sideOffset={4} className={menuPositionerClass}>
+            <Menu.Positioner side="top" align="end" className={menuPositionerClass}>
               <Menu.Popup className={`${menuPopupClass} min-w-56`}>
                 <Menu.Item data-command="view.frameMap" className={menuItemClass} onClick={() => runCommand("view.frameMap")}>
                   <span aria-hidden className="size-4 shrink-0" />

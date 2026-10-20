@@ -81,10 +81,10 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
         const next = event.key === "Home" ? 0 : event.key === "End" ? SETTINGS_CATEGORIES.length - 1 : event.key === "ArrowDown" ? (current + 1) % SETTINGS_CATEGORIES.length : event.key === "ArrowUp" ? (current + SETTINGS_CATEGORIES.length - 1) % SETTINGS_CATEGORIES.length : null;
         if (next === null) return;
         event.preventDefault(); setCategory(SETTINGS_CATEGORIES[next]!); sidebar.current?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
-      }}>{SETTINGS_CATEGORIES.map(id => <button key={id} type="button" role="tab" id={`settings-tab-${id}`} data-settings-category={id} aria-selected={category === id} aria-controls="settings-section" tabIndex={category === id ? 0 : -1} onClick={() => setCategory(id)} className={`flex h-control-md w-full items-center rounded-sm px-2 text-left text-sm ${category === id ? "bg-active text-title" : "text-muted hover:bg-hover hover:text-text"}`}>{title(id)}</button>)}</div>
+      }}>{SETTINGS_CATEGORIES.map(id => <button key={id} type="button" role="tab" id={`settings-tab-${id}`} data-settings-category={id} aria-selected={category === id} aria-controls="settings-section" tabIndex={category === id ? 0 : -1} onClick={() => setCategory(id)} className={`flex min-h-control-md w-full items-center rounded-sm px-2 text-left text-sm ${category === id ? "bg-active text-title" : "text-muted hover:bg-hover hover:text-text"}`}>{title(id)}</button>)}</div>
       <div className="settings-narrow-category px-4 pb-2"><NativeSelect aria-label={t("settingsUi.categories")} value={category} onChange={event => setCategory(event.target.value as Category)}>{SETTINGS_CATEGORIES.map(id => <option key={id} value={id}>{title(id)}</option>)}</NativeSelect></div>
-      <div id="settings-section" role="tabpanel" aria-label={title(category)} data-dialog-body="" className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4" tabIndex={0}>
-        <h2 className="mb-3 text-md font-semibold text-title">{title(category)}</h2>
+      <div id="settings-section" role="tabpanel" aria-label={title(category)} data-dialog-body="" className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-2 pb-4" tabIndex={0}>
+        <h2 className="mb-3 flex min-h-control-md items-center text-md font-semibold text-title">{title(category)}</h2>
         {text === null ? <p className="text-sm text-muted">{t("settingsUi.loading")}</p> : <fieldset disabled={busy} className="min-w-0">
           {!valid && category !== "advanced" ? <p role="alert" className="text-sm text-danger">{t("settingsUi.fixJson")}</p> : <>
             {category === "general" && <GeneralSection />}

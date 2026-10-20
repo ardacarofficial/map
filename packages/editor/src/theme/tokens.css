@@ -13,6 +13,20 @@
  * below). Keep canvas-read colours as `#rrggbb`.
  */
 @theme static {
+  /* Semantic layers; portals owned by a modal are scoped above its controls. */
+  --overlay-base: 0;
+  --overlay-chrome: 10;
+  --overlay-chrome-raised: 20;
+  --overlay-drag: 30;
+  --overlay-popover: 40;
+  --overlay-tooltip: 50;
+  --overlay-toast: 60;
+  --overlay-modal-backdrop: 70;
+  --overlay-modal: 80;
+  --overlay-modal-owned: 90;
+  --overlay-clearance: 6px;
+  --overlay-viewport-padding: 8px;
+
   --color-*: initial;
   --text-*: initial;
   --radius-*: initial;
@@ -180,7 +194,7 @@
 .dock-rail-tabs [role=tab] { writing-mode: vertical-rl; width: var(--dock-collapsed); padding: calc(var(--spacing) * 2) 0; flex-shrink: 0; }
 .dock-group-tabs [role=tablist] { overflow-x: auto; scrollbar-width: none; }
 .dock-group-tabs [role=tab] { flex-shrink: 0; padding-inline: calc(var(--spacing) * 2); touch-action: none; }
-.dock-zone-splitter { position: absolute; z-index: 20; outline: none; touch-action: none; }
+.dock-zone-splitter { position: absolute; z-index: var(--overlay-chrome-raised); outline: none; touch-action: none; }
 .dock-zone-splitter-left, .dock-zone-splitter-right { width: var(--dock-splitter-hit); top: 0; bottom: 0; cursor: col-resize; }
 .dock-zone-splitter-left { right: calc(var(--dock-splitter-hit) / -2); }
 .dock-zone-splitter-right { left: calc(var(--dock-splitter-hit) / -2); }
@@ -194,10 +208,10 @@
 .dock-group-splitter > div { height: var(--dock-line); width: 100%; background: var(--color-line); }
 .dock-group-splitter-horizontal { width: var(--dock-splitter-hit); height: auto; cursor: col-resize; justify-content: center; }
 .dock-group-splitter-horizontal > div { width: var(--dock-line); height: 100%; }
-.dock-drop-indicator, .dock-insertion { position: fixed; z-index: 100; pointer-events: none; }
+.dock-drop-indicator, .dock-insertion { position: fixed; z-index: var(--overlay-drag); pointer-events: none; }
 .dock-drop-indicator { background: var(--color-accent-soft); border: var(--dock-line) solid var(--color-accent-line); opacity: .8; }
 .dock-insertion { background: var(--color-accent); }
-.dock-empty-target { position: fixed; z-index: 30; background: var(--color-accent-soft); border: var(--dock-line) solid var(--color-accent-line); color: var(--color-text); font-size: var(--text-sm); padding: var(--spacing); }
+.dock-empty-target { position: fixed; z-index: var(--overlay-drag); background: var(--color-accent-soft); border: var(--dock-line) solid var(--color-accent-line); color: var(--color-text); font-size: var(--text-sm); padding: var(--spacing); }
 .dock-empty-target-left, .dock-empty-target-right { top: var(--spacing-toolbar); bottom: var(--spacing-statusbar); width: var(--dock-collapsed); writing-mode: vertical-rl; }
 .dock-empty-target-left { left: var(--spacing-rail); }
 .dock-empty-target-right { right: 0; }
@@ -234,11 +248,35 @@
 .dock-zone-bottom.dock-zone-collapsed { min-height: var(--dock-collapsed); }
 
 /* Settings keeps header/footer visible while each category scrolls internally. */
-.settings-dialog { height: calc(100dvh - var(--spacing) * 8); max-height: var(--spacing-dialog-l); }
+.settings-dialog, .export-dialog { height: calc(100dvh - var(--spacing) * 8); max-height: var(--spacing-dialog-l); }
 .settings-sidebar { width: var(--spacing-settings-sidebar); }
 .settings-narrow-category { display: none; }
 @media (max-width: 560px) {
   .settings-content { flex-direction: column; }
   .settings-sidebar { display: none; }
   .settings-narrow-category { display: block; }
+}
+
+/* Portals escape dock overflow; only dialog descendants can cross its backdrop. */
+.overlay-positioner { z-index: var(--overlay-popover); max-width: calc(100vw - var(--overlay-viewport-padding) * 2); }
+.overlay-positioner[data-overlay-owner] { z-index: var(--overlay-modal-owned); }
+.overlay-popup { max-height: var(--available-height) !important; max-width: calc(100vw - var(--overlay-viewport-padding) * 2); overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.overlay-tooltip { z-index: var(--overlay-tooltip); pointer-events: none; }
+.overlay-tooltip[data-overlay-owner] { z-index: var(--overlay-modal-owned); }
+.overlay-tooltip-content { max-width: min(var(--spacing-dialog-s), calc(100vw - var(--overlay-viewport-padding) * 2)); max-height: var(--available-height); overflow-y: auto; }
+body[data-modal-open] .overlay-tooltip:not([data-overlay-owner]),
+body[data-modal-open] .overlay-positioner:not([data-overlay-owner]) { visibility: hidden; pointer-events: none; }
+/* Focus rings and sticky headers stay inside their own panel stacking scope. */
+.dock-zone, .dock-canvas { isolation: isolate; }
+.dock-zone { z-index: var(--overlay-chrome); }
+.dock-canvas { z-index: var(--overlay-base); }
+
+.toast-message { max-height: calc(var(--feedback-max-height, 40vh) / 2); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; }
+.toast-message[data-scrollable] { pointer-events: auto; }
+
+/* Export rows shrink before the sticky dialog header/footer; long descriptions wrap. */
+.export-dialog-body { grid-template-rows: auto; align-content: start; }
+@media (max-width: 560px) {
+  .export-dialog-body, .export-targets { grid-template-columns: minmax(0, 1fr); }
+  .export-dialog-body > .col-span-2 { grid-column: span 1; }
 }

@@ -1,11 +1,15 @@
 import { create } from "zustand";
 
+import { activeModalScope } from "../primitives/overlayPolicy";
+
 export type ToastKind = "info" | "success" | "warning" | "error";
 
 export interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+  /** Feedback produced inside a modal is rendered in that dialog. */
+  scope?: string;
   /** Auto-dismiss delay in ms; zero or Infinity stays until dismissed. */
   duration: number;
   /** Optional button (e.g. "Geri al"); running it dismisses the toast. */
@@ -59,7 +63,8 @@ export const useToastStore = create<ToastState>()((set, get) => ({
     const delay = duration ?? (kind === "error" ? Infinity : action ? 8000 : DEFAULT_DURATION[kind]);
     const id = nextId++;
     if (action?.spent?.()) return id;
-    set({ toasts: [{ id, kind, message, duration: delay, ...(action ? { action } : {}) }] });
+    const scope = activeModalScope();
+    set({ toasts: [{ id, kind, message, duration: delay, ...(scope ? { scope } : {}), ...(action ? { action } : {}) }] });
     pruneWatchers(get().toasts);
     const { spent, watch } = action ?? {};
     if (spent && watch) {

@@ -5,7 +5,7 @@
  * click opens the tileset / palette menu. Palette cards also take dragged
  * tiles (drop = add to that palette).
  */
-import { ContextMenu } from "@base-ui/react/context-menu";
+import { ContextMenu } from "../primitives/Overlays";
 import type { Collection, Tileset } from "@smap/core";
 
 import { openTilesetImport } from "../../commands/tilesetActions";

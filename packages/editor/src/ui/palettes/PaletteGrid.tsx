@@ -7,7 +7,7 @@ import { findTileUsages } from "../../extras/usageActions";
  * tiles (into this or another palette: copy, Shift = move), Delete empties
  * the selected slots, Ctrl+C / Ctrl+V copy and paste tiles.
  */
-import { ContextMenu } from "@base-ui/react/context-menu";
+import { ContextMenu } from "../primitives/Overlays";
 import type { Collection } from "@smap/core";
 import { useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 

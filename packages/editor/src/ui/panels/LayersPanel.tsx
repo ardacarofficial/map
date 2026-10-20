@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { Slider } from "@base-ui/react/slider";
 import { isEntityLayer, isGridLayer, type TileLayer } from "@smap/core";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
@@ -227,7 +227,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
               style={{ transform: y ? `translateY(${y}px)` : undefined }}
               className={`group relative flex h-layerrow shrink-0 items-center gap-1.5 rounded-sm pr-1 pl-1 text-sm ${
                 dragged
-                  ? "z-10 cursor-grabbing bg-active"
+                  ? "z-(--overlay-chrome) cursor-grabbing bg-active"
                   : settling
                     ? ""
                     : "transition-[transform,background-color] duration-150 ease-(--ease-out)"
@@ -296,7 +296,7 @@ export function LayersPanel({ collapsed = false, onToggleCollapsed, extra }: Par
           );
         })}
         {drag?.active && to !== null && to !== drag.from && (
-          <li aria-hidden data-layer-drop-line className="pointer-events-none absolute right-1 left-1 z-20 h-px bg-accent" style={{ top: (to > drag.from ? to + 1 : to) * ROW }} />
+          <li aria-hidden data-layer-drop-line className="pointer-events-none absolute right-1 left-1 z-(--overlay-chrome-raised) h-px bg-accent" style={{ top: (to > drag.from ? to + 1 : to) * ROW }} />
         )}
       </ul>
       <PointMenu at={emptyMenu} items={layersEmptyItems} onClose={() => setEmptyMenu(null)} />
@@ -358,7 +358,7 @@ function AddLayerMenu() {
         />
       </Tooltip>
       <Menu.Portal>
-        <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="bottom" align="end" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} min-w-64`}>
             <Menu.Item className={menuItemClass} aria-label={t("layers.addTile")} title={t("layers.addTileHint")} onClick={() => void addLayer()}>
               <Icon name="layers" size={16} className="text-muted" />

@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useEffect, useRef, useState } from "react";
 import { getLocale, t } from "../../i18n";
 import type { BackupEntry } from "../../io/backups";

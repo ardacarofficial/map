@@ -11,7 +11,7 @@ export function TileDragGhost() {
     <div
       aria-hidden
       data-tile-drag-ghost
-      className={`pointer-events-none fixed z-50 flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-xs font-medium ${
+      className={`pointer-events-none fixed z-(--overlay-popover) flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-xs font-medium ${
         drag.target ? "border-accent-line bg-accent-soft text-text" : "border-line-strong bg-popup text-muted"
       }`}
       style={{ left: drag.x + 14, top: drag.y + 12 }}

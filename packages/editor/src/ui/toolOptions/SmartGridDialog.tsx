@@ -1,4 +1,4 @@
-import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { AlertDialog } from "../primitives/Overlays";
 import { adoptMapGrid, useSmartGridQuestion } from "../../commands/smartBrushGrid";
 import { useEditorStore } from "../../state/editorStore";
 import { t } from "../../i18n";

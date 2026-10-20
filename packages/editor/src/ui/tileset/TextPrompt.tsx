@@ -2,7 +2,7 @@
  * A small "name it" dialog (new group, rename): `askText()` resolves with
  * the trimmed text, or `null` when cancelled.
  */
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useState, type FormEvent } from "react";
 import { create } from "zustand";
 

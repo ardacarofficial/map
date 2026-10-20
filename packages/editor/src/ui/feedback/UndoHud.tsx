@@ -72,12 +72,12 @@ export function UndoHud() {
       {shown && (
         <div
           data-undo-hud={shown.move}
-          className={`flex h-8 max-w-full items-center gap-2 rounded-md border border-line-strong bg-popup px-3 text-sm text-text shadow-popup transition-[opacity,translate] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none ${
+          className={`flex min-h-8 max-w-full py-1 items-center gap-2 rounded-md border border-line-strong bg-popup px-3 text-sm text-text shadow-popup transition-[opacity,translate] duration-(--duration-ui) ease-(--ease-out) motion-reduce:transition-none ${
             visible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
           }`}
         >
           <Icon name={shown.move === "undo" ? "undo-2" : "redo-2"} size={16} className="shrink-0 text-muted" />
-          <span className="truncate">{shown.message()}</span>
+          <span className="toast-message min-w-0 whitespace-normal [overflow-wrap:anywhere]">{shown.message()}</span>
         </div>
       )}
     </div>

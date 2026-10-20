@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { BORDER_SIDES, type BorderGap } from "@smap/core";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { borderPlan, closeMapBorder, commitMapBorder, updateMapBorder, useMapBorder, type BorderDraft } from "../../commands/mapBorder";

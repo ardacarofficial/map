@@ -6,7 +6,7 @@
  * "add without asking when the guess is safe" preference, and
  * "Hepsini ekle (N)".
  */
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { t } from "../../i18n";

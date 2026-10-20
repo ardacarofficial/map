@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "./Overlays";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 import { menuItemClass, menuPopupClass, menuPositionerClass } from "./menuStyles";
@@ -36,7 +36,7 @@ export function MenuSelect<V extends string | number>({
         <Icon name="chevronDown" size={12} className="shrink-0 text-faint" />
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Positioner side="bottom" align="start" sideOffset={4} className={menuPositionerClass}>
+        <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-80 min-w-50 overflow-y-auto`}>
             {options.map((o) => (
               <Menu.Item key={String(o.value)} className={menuItemClass} data-select-option={String(o.value)} onClick={() => onChange(o.value)}>

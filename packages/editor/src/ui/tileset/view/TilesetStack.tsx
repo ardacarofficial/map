@@ -1,4 +1,4 @@
-import { ContextMenu } from "@base-ui/react/context-menu";
+import { ContextMenu } from "../../primitives/Overlays";
 import type { Collection, Tileset } from "@smap/core";
 import { useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { dropTileset, renameTilesetGroup } from "../../../commands/tilesetActions";
@@ -93,7 +93,7 @@ export function TilesetStack({
     const isCollapsed = collapsed.includes(name);
     return (
       <div
-        className={`sticky top-0 z-20 flex items-center gap-1 border-b border-line-subtle bg-panel pr-2 pl-1 ${over?.group === name && over.beforeId === null ? "shadow-[inset_0_1px_0_var(--color-accent)]" : ""}`}
+        className={`sticky top-0 z-(--overlay-chrome-raised) flex items-center gap-1 border-b border-line-subtle bg-panel pr-2 pl-1 ${over?.group === name && over.beforeId === null ? "shadow-[inset_0_1px_0_var(--color-accent)]" : ""}`}
         style={{ height: HEADER_H }}
         data-group-header={name}
         {...props}
@@ -125,7 +125,7 @@ export function TilesetStack({
               return (
                 <section key={p.id} data-tileset-section={key} aria-label={p.name}>
                   <div
-                    className="sticky z-10 flex items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-2"
+                    className="sticky z-(--overlay-chrome) flex items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-2"
                     style={{ top: HEADER_H, height: HEADER_H }}
                     onClick={() => showPalette(p.id)}
                     data-palette-header={p.id}
@@ -211,7 +211,7 @@ export function TilesetStack({
                               showPalette(null);
                               useUiStore.getState().setActiveTileset(ts.id);
                             }}
-                            className={`group sticky z-10 flex cursor-grab items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-1.5 active:cursor-grabbing ${
+                            className={`group sticky z-(--overlay-chrome) flex cursor-grab items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-1.5 active:cursor-grabbing ${
                               overThis ? "shadow-[inset_0_1px_0_var(--color-accent)]" : ""
                             } ${dragId === ts.id ? "opacity-50" : ""}`}
                             style={{ top: labelled ? HEADER_H : 0, height: HEADER_H }}

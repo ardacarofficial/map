@@ -298,7 +298,7 @@ function StampDetails({ clip, doc }: { clip: TileClip; doc: MapDocument }) {
             {t("inspector.savedStamp")}
           </span>
         ) : naming === clip ? (
-          <StampNameForm doc={doc} clip={clip} onDone={() => setNaming(null)} />
+          <StampNameForm doc={doc} clip={clip} onDone={() => { setNaming(null); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-action="saveClipStamp"]')?.focus({ preventScroll: true })); }} />
         ) : (
           <ActionButton icon="stamp" label={t("inspector.saveStamp")} dataAction="saveClipStamp" onClick={() => setNaming(clip)} />
         )}

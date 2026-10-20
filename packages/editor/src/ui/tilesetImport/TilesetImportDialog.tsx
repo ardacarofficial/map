@@ -7,7 +7,7 @@
  * Right: name, tile size (linked), margin, spacing, suggestion chips, the
  * tile count and a leftover hint. Enter confirms.
  */
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../primitives/Overlays";
 import type { TileGridSpec } from "@smap/core";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 

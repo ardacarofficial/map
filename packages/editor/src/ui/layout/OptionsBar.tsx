@@ -2,7 +2,7 @@ import { ModeSelector, PixelOptions } from "../pixel/PixelOptions";
 import { usePixelUi } from "../../state/pixelUi";
 import { GridControl, GridSettings } from "../toolOptions/GridControl";
 import type { Ref } from "react";
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../primitives/Overlays";
 import { useEffect, useRef, useState } from "react";
 
 import { runCommand } from "../../commands/registry";
@@ -80,7 +80,7 @@ export function OptionsBar() {
               </Menu.Trigger>
             </Tooltip>
             <Menu.Portal>
-              <Menu.Positioner side="bottom" align="end" sideOffset={4} className={menuPositionerClass}>
+              <Menu.Positioner side="bottom" align="end" className={menuPositionerClass}>
                 <Menu.Popup className={menuPopupClass}>
                   {toggles.map(({ command, icon, label, on }) => (
                     <Menu.CheckboxItem key={command} checked={on} disabled={world} closeOnClick data-view-toggle={command} data-command={command} className={menuItemClass} onCheckedChange={() => runCommand(command)}>

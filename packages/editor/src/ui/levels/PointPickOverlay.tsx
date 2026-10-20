@@ -57,7 +57,7 @@ export function PointPickOverlay() {
 
   if (!pick) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4" data-point-pick="">
+    <div className="pointer-events-none absolute inset-x-0 top-3 z-(--overlay-chrome-raised) flex justify-center px-4" data-point-pick="">
       <div
         role="status"
         className="pointer-events-auto flex items-center gap-3 rounded-md border border-line-strong bg-popup py-1.5 pr-1.5 pl-3 text-sm text-text shadow-popup"
