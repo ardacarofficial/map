@@ -22,13 +22,22 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   let disposed=false;
   const log=(error:unknown)=>{getPlatform().log("warn",error instanceof Error?error.name:"Agent runtime failure");};
   const updateClients=()=>live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:api.getState().transaction?.owner.clientSessionId===clientSessionId})));
+  const endSession=(clientSessionId:string)=>{
+    // Let the API inspect the pre-abort phase before request cancellation can seal it.
+    const ended=api.sessionEnded(clientSessionId);
+    clients.delete(clientSessionId);
+    for(const [id,entry] of requests)if(entry.request.clientSessionId===clientSessionId){
+      entry.controller.abort();clearTimeout(entry.timer);requests.delete(id);
+    }
+    void ended.then(updateClients).catch(log);
+  };
   const publish=(requestId?:string)=>connection.publishStatus({bridgeEpoch,...(requestId?{requestId}:{}),state:api.getState()}).catch(log);
   const offRequest=connection.onRequest(request=>{
     if(disposed||request.bridgeEpoch!==bridgeEpoch){void connection.reply({requestId:request.requestId,bridgeEpoch:request.bridgeEpoch,clientSessionId:request.clientSessionId,type:"failure",error:{code:"STALE_EPOCH",message:"Renderer epoch is no longer current"}}).catch(log);return;}
     if(requests.has(request.requestId))return;
     if(requests.size>=64){void connection.reply({requestId:request.requestId,bridgeEpoch:request.bridgeEpoch,clientSessionId:request.clientSessionId,type:"failure",error:{code:"LIMIT_EXCEEDED",message:"Renderer request queue is full"}}).catch(log);return;}
     const controller=new AbortController();
-    const timer=setTimeout(()=>{controller.abort();void api.sessionEnded(request.clientSessionId).catch(log);},Math.max(0,request.deadline-Date.now()));
+    const timer=setTimeout(()=>{endSession(request.clientSessionId);},Math.max(0,request.deadline-Date.now()));
     requests.set(request.requestId,{controller,request,timer});clients.set(request.clientSessionId,request.clientInfo);updateClients();
     void (async()=>{
       try{
@@ -48,8 +57,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     else if(control.type==="cancel"){
       const entry=requests.get(control.requestId);if(entry?.request.clientSessionId===control.clientSessionId)entry.controller.abort();
     }else if(control.type==="sessionEnded"){
-      clients.delete(control.clientSessionId);for(const entry of requests.values())if(entry.request.clientSessionId===control.clientSessionId)entry.controller.abort();
-      void api.sessionEnded(control.clientSessionId).then(updateClients).catch(log);
+      endSession(control.clientSessionId);
     }
   });
   let previousPhase=api.getState().phase;
@@ -67,7 +75,12 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   const offFlush=registerAgentWorldFlush(()=>live?.tags.flush()??Promise.resolve());
   const offCancellation=registerPendingCancellation(()=>api.userAction("discard"));
   const offUnsaved=registerUnsavedGuard({dirty:()=>editGate.blocked,settle:async()=>{await cancelPendingEdit();return true;}});
-  const offStatus=connection.subscribeStatus(status=>{if(["disabled","failed","portInUse"].includes(status.state))void cancelPendingEdit().catch(log);});
+  const offStatus=connection.subscribeStatus(status=>{
+    if(["disabled","failed","portInUse"].includes(status.state)){
+      const owner=api.getState().transaction?.owner.clientSessionId;
+      for(const id of new Set([...clients.keys(),...(owner?[owner]:[])]))endSession(id);
+    }
+  });
   const offFile=getPlatform().onFileChanged(change=>{if(change.path==="ai-tags.json")void live?.tags.externalChange().catch(log);});
   let observedWorld=getLevelWorkspace(),observedFolder=getProjectFolder();
   const offWorld=useEditorStore.subscribe(()=>{

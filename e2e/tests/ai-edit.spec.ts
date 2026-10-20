@@ -55,6 +55,34 @@ for (const action of ["approve", "discard"] as const) test(`AI ${action} restore
   } finally { await client.close(); }
 });
 
+test("finished edit survives client DELETE for human approval and one undo", async ({ page }) => {
+  const client = await setup(page);
+  const pair = new URL(page.url()).searchParams.get("agent")!;
+  let reader: AgentClient | undefined;
+  try {
+    const edit = await begin(client), original = await cells(client, edit);
+    await paint(client, edit);
+    success(await client.callTool("finish_edit", { context: edit.context }));
+    await client.close(); // SDK terminateSession sends DELETE /mcp
+    const bar = page.locator("[data-ai-bar]");
+    await expect(bar).toBeVisible();
+    await expect(bar).toContainText("harita-playwright");
+    await expect(bar).toContainText("bağlantı kapandı");
+    await expect(bar.getByRole("button", { name: "Durdur", exact: true })).toBeDisabled();
+    await expect(bar.getByRole("button", { name: "Onayla", exact: true })).toBeEnabled();
+    reader = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
+    expect(success(await reader.getSession()).data.transaction).toMatchObject({ state: "awaitingApproval", owner: { clientSessionId: null } });
+    expect(await cells(reader, edit)).not.toEqual(original);
+    const row = (tool: string) => page.locator("[data-ai-entry]").filter({ has: page.locator("summary", { hasText: new RegExp(`^${tool}$`) }) }).first().locator("td").nth(4);
+    await expect(row("paint_rect")).toHaveText("Uygulandı");
+    await expect(row("finish_edit")).toHaveText("Onay bekliyor");
+    await bar.getByRole("button", { name: "Onayla", exact: true }).click();
+    await expect(bar).toBeHidden();
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => cells(reader!, edit)).toEqual(original);
+  } finally { await reader?.close(); }
+});
+
 test("pending AI work blocks manual paint, preserves camera pan, and stays visible under Tab", async ({ page }) => {
   const client = await setup(page);
   try {

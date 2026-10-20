@@ -715,8 +715,28 @@ async fn delete_waits_for_renderer_rollback_confirmation() {
     assert!(!task.is_finished());
     h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":{"phase":"stopped","transaction":{"owner":{"clientSessionId":session}}}})).unwrap();
     assert!(!task.is_finished());
-    h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":{"phase":"ready","transaction":null,"worldSessionId":null,"revision":0}})).unwrap();
+    h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":{"phase":"ready","transaction":{"state":"cancelled","owner":{"clientSessionId":session}},"worldSessionId":null,"revision":0}})).unwrap();
     assert_eq!(task.await.unwrap().status(), 200);
+}
+
+#[tokio::test]
+async fn delete_accepts_detached_review_without_rolling_it_back() {
+    for phase in ["stopped", "awaitingApproval"] {
+        let mut h = Harness::new().await;
+        let session = h.session().await;
+        h.transport.ready("epoch".into()).unwrap();
+        let request = h.client.delete(format!("http://{}/mcp", h.server.addr))
+            .bearer_auth(TOKEN).header("Mcp-Session-Id", &session)
+            .header("MCP-Protocol-Version", "2025-11-25");
+        let mut task = tokio::spawn(async move { request.send().await.unwrap() });
+        let mut event = h.event(EVENT_CONTROL).await;
+        while event["type"] != "statusRequest" { event = h.event(EVENT_CONTROL).await; }
+        // A detached running edit is not a safe end acknowledgement.
+        h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":{"phase":"running","transaction":{"owner":{"clientSessionId":null}}}})).unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut task).await.is_err());
+        h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":{"phase":phase,"transaction":{"state":phase,"owner":{"clientSessionId":null,"clientInfo":{"name":"Test","version":"1"}}}}})).unwrap();
+        assert_eq!(task.await.unwrap().status(), 200);
+    }
 }
 
 #[tokio::test]

@@ -35,7 +35,7 @@ export function AiBar() {
       <Icon name="history" size={16} className="shrink-0 text-muted" />
       <div className="min-w-0 flex-1 truncate text-text" title={`${t(`ai.status.${phase}`)} ${active?.owner.clientInfo.name ?? ""} ${active?.label ?? ""}`}>
         <span>{t(`ai.status.${phase}`)}</span>
-        {active && <span className="ml-2 text-muted" title={t("ai.client.nameVersion", { ...active.owner.clientInfo })}>{active.owner.clientInfo.name}</span>}
+        {active && <span className="ml-2 text-muted" title={t("ai.client.nameVersion", { ...active.owner.clientInfo })}>{active.owner.clientInfo.name}{active.owner.clientSessionId === null && <> · {t("ai.client.disconnected")}</>}</span>}
       </div>
       {active && <span className="hidden shrink-0 text-muted @lg:inline" title={t("ai.transaction.maps", { count: active.affectedMapIds.length })}>{t("ai.transaction.cells", { count: active.counters.changedCells })}</span>}
       <Button size="sm" disabled={!controls.stop} onClick={() => performAiAction("stop")}>{t("ai.action.stop")}</Button>

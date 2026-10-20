@@ -495,7 +495,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         // Navigation can load approved metadata followers during review. Enlist them
         // before the synchronous finalizer so saving from that tab sees the same world.
         if (action === "approve" && pending)
-          await tx.enlistCached({ ...pending.summary.owner, bridgeEpoch: pending.epoch, deadline: host.clock.now() + L.callTimeoutMs, signal: new CallSignal() });
+          await tx.enlistCached({ signal: new CallSignal() });
         const transaction = tx.pending?.summary;
         if (action === "stop") {
           if (tx.phase === "preparing") tx.cancel();
@@ -531,14 +531,18 @@ export function createAgentApi(host: AgentHost): AgentApi {
     },
     sessionEnded: (clientSessionId) => {
       endedSessions.add(clientSessionId);
-      if (activeClient === clientSessionId) interrupt();
-      if (tx.pending?.summary.owner.clientSessionId === clientSessionId) {
-        interrupt();
-        tx.seal("stopped");
+      const pending = tx.pending;
+      const owned = pending?.summary.owner.clientSessionId === clientSessionId;
+      // Capture before interruption: aborting an active mutation can seal it as stopped.
+      const rollback = owned && (tx.phase === "preparing" || tx.phase === "running");
+      if (owned && !rollback) {
+        pending.summary.owner.clientSessionId = null;
+        tx.emit();
       }
+      if (activeClient === clientSessionId || rollback) interrupt();
+      if (rollback) tx.seal("stopped");
       return enqueue(() => {
-        if (tx.pending?.summary.owner.clientSessionId === clientSessionId)
-          tx.cancel();
+        if (rollback && tx.pending === pending) tx.cancel();
       });
     },
   };

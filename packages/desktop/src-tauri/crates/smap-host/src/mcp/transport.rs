@@ -294,11 +294,24 @@ impl Transport {
             }
             if let Some(pending) = inner.ending.get(id) {
                 let state = &status["state"];
-                let owner = state["transaction"]["owner"]["clientSessionId"].as_str();
-                let rolled_back = state["phase"].as_str().is_some_and(|p| p != "cancelling")
-                    && (state["transaction"].is_null()
+                let phase = state["phase"].as_str();
+                let transaction = &state["transaction"];
+                let owner = transaction["owner"]["clientSessionId"].as_str();
+                // Review belongs to the human after disconnect. Acknowledge its
+                // detached owner without demanding rollback of the retained edit.
+                let detached_review = matches!(phase, Some("stopped" | "awaitingApproval"))
+                    && transaction["state"].as_str() == phase
+                    && transaction["owner"]
+                        .get("clientSessionId")
+                        .is_some_and(Value::is_null);
+                let finalized = phase == Some("ready")
+                    && matches!(transaction["state"].as_str(), Some("approved" | "cancelled"));
+                let settled = phase.is_some_and(|p| p != "cancelling")
+                    && (transaction.is_null()
+                        || finalized
+                        || detached_review
                         || owner.is_some_and(|id| !pending.sessions.iter().any(|s| s == id)));
-                if rolled_back {
+                if settled {
                     let pending = inner.ending.remove(id).unwrap();
                     let _ = pending.done.send(true);
                 }

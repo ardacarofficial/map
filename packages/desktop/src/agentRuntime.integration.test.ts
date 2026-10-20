@@ -55,16 +55,25 @@ it("native invoke/listen runs the real API, replies with images, echoes status r
   expect(useAgentUiState.getState().connectionStatus.state).toBe("listening");
 });
 
-for (const stopped of [false, true]) it(`sessionEnded rolls back an owned ${stopped ? "stopped" : "running"} edit through native envelopes`, async () => {
+for (const phase of ["running", "stopped", "awaitingApproval"] as const) it(`native sessionEnded rolls back running work and preserves ${phase} review`, async () => {
   const h = await setup(), ws = getLevelWorkspace()!, store = ws.active.store, before = serializeLevel(store.document);
   const begun = await h.call("begin_edit", { context: h.context(), idempotencyKey: "begin-edit", expectedRevision: h.runtime.api.getState().revision, requestLabel: "Native edit", mapIds: [ws.activeId] });
   expect(begun.structuredContent.ok).toBe(true);
   await h.call("edit_layer", { context: h.editContext(), mapId: ws.activeId, action: "update", layerId: store.document.layers[0]!.id, props: { name: "Tentative" } });
   expect(serializeLevel(store.document)).not.toBe(before);
-  if (stopped) await useAgentUiState.getState().stop();
+  if (phase === "stopped") await useAgentUiState.getState().stop();
+  if (phase === "awaitingApproval") expect((await h.call("finish_edit", { context: h.editContext() })).structuredContent.ok).toBe(true);
   h.control({ type: "sessionEnded", clientSessionId: "observer", reason: "delete" });
-  expect(h.runtime.api.getState().phase).toBe(stopped ? "stopped" : "running");
+  expect(h.runtime.api.getState().phase).toBe(phase);
   h.control({ type: "sessionEnded", clientSessionId: "client", reason: "delete" });
+  if (phase !== "running") {
+    await expect.poll(() => h.runtime.api.getState().transaction!.owner.clientSessionId).toBeNull();
+    expect(useAgentUiState.getState().phase).toBe(phase);
+    expect(serializeLevel(store.document)).not.toBe(before);
+    const session = (await h.call("get_session", {}, "new-client")).structuredContent;
+    expect(session).toMatchObject({ ok: true, data: { transaction: { state: phase, owner: { clientSessionId: null, clientInfo: { name: "Claude" } } } } });
+    await useAgentUiState.getState().discard();
+  }
   await expect.poll(() => h.runtime.api.getState().phase).toBe("ready");
   expect(serializeLevel(store.document)).toBe(before);
   expect(store.inTransaction).toBe(false);

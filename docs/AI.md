@@ -59,7 +59,9 @@ AI önce `get_session` ile açık dünyayı, katalog görselleriyle gerçek tile
 
 İş beklerken elle çizim ve harita kaydı kapalıdır. Kaydırma, yakınlaştırma ve harita sekmeleri çalışır. Ctrl+S onay vermez. AI çubuğu Tab ile paneller gizlenince de görünür. **Etkinlik** paneli hangi araçların ne yaptığını gösterir; diğer paneller gibi taşınabilir.
 
-AI oturumu kapanırsa bekleyen değişiklikler geri alınır. Dünyayı kapatmak/değiştirmek, bağlantıyı kapatmak veya anahtarı yenilemek de işi iptal eder. Çalışan işlerin süre sınırı vardır; durdurulmuş/onay bekleyen işe kendiliğinden onay verilmez.
+AI oturumu kapanırsa, bağlantı boşta kalıp sona ererse, AI bağlantısını kapatırsan veya anahtarı yenilersen yalnız hazırlanmakta/çalışmakta olan iş geri alınır. AI `finish_edit` ile işi sunduysa ya da Durdur’a bastıysan çizim incelemen için kalır; çubuk istemci adını ve “bağlantı kapandı” bilgisini gösterir. Yeni istemciler bu işi görebilir ama değiştiremez, iptal edemez veya sen karar vermeden başka iş başlatamaz.
+
+Çalışan işlerin süre sınırı 30 dakikadır. Durdurulmuş/onay bekleyen işin süresi dolsa da otomatik onay veya geri alma yapılmaz; Onayla ya da Vazgeç seçersin. Dünyayı kapatmak/değiştirmek bekleyen işi geri alır. Editörü kapatınca onaylanmamış çizim diske kaydedilmez.
 
 **Etiketler ayrı kaydedilir:** `ai-tags.json` içindeki tile/stamp etiketleri Onayla/Vazgeç ve Geri al dışında kalır. Denetçi’de seçtiğin tile veya stamp’in etiketlerini düzenleyebilirsin. Kaynak pikseller değişirse eski etiketler “eski” görünür; kontrol edip yeniden etiketle.
 

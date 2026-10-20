@@ -16,7 +16,9 @@ describe("AI control availability", () => {
   it("marks earlier tentative calls rolled back after discard, without rewriting errors", () => {
     const entry = (status: ActivityLogEntry["status"], tool: ActivityLogEntry["tool"] = null) => ({ transactionId: "edit", status, tool }) as ActivityLogEntry;
     const painted = entry("succeeded", "paint_cells");
-    expect(activityOutcome(painted, [painted])).toBe("tentative");
+    expect(activityOutcome(painted, [painted])).toBe("applied");
+    const finished = entry("succeeded", "finish_edit");
+    expect(activityOutcome(finished, [painted, finished])).toBe("tentative");
     expect(activityOutcome(painted, [painted, entry("cancelled")])).toBe("rolledBack");
     expect(activityOutcome(painted, [painted, entry("approved")])).toBe("approved");
     expect(activityOutcome(entry("failed"), [entry("cancelled")])).toBe("rejected");
