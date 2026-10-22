@@ -27,6 +27,23 @@ değişiklik varsa önce sorar).
 
 ## Windows'ta derleme (adım adım)
 
+### GitHub'dan EXE indirme
+
+`.github/workflows/windows-exe.yml`, `claude/adoring-bell-0jg3cm` dalındaki
+uygulama değişikliklerini Windows x64 üzerinde derler. GitHub → Actions →
+**Windows EXE** → başarılı çalıştırma → **Artifacts** bölümünden
+`Harita-Tasarlayici-Windows-x64` arşivini indirin. Arşivde NSIS `*-setup.exe`
+kurulumu, `harita-tasarlayici.exe`, SHA-256 sağlama toplamları ve kaynak commit
+kimliği bulunur. Kurulum için `*-setup.exe` dosyasını çalıştırın; çıplak uygulama
+EXE'si WebView2 Runtime gerektirir. Artifacts 30 gün saklanır.
+
+İş akışı `workflow_dispatch` üzerinden de çalıştırılabilir (GitHub'ın manuel
+çalıştırma düğmesi için iş akışının varsayılan dalda bulunması gerekir).
+İlk Windows çalıştırması tamamlanmadan üretilmiş veya denenmiş EXE olduğu
+varsayılmamalıdır.
+
+### Yerel derleme
+
 1. Visual Studio 2022 Build Tools → "Desktop development with C++" (MSVC + Windows SDK).
 2. Rust: `rustup default stable-x86_64-pc-windows-msvc`.
 3. WebView2 Runtime: Windows 10/11'de hazır (yoksa Evergreen Bootstrapper).

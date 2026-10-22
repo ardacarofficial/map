@@ -1,0 +1,67 @@
+name: Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/adoring-bell-0jg3cm
+    paths:
+      - '.github/workflows/windows-exe.yml'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Windows x64 installer
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Prepare Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - name: Select Rust
+        run: rustup default stable
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test native host
+        run: cargo test --manifest-path packages/desktop/src-tauri/Cargo.toml -p smap-host --locked
+      - name: Build application and NSIS installer
+        run: pnpm --filter @smap/desktop exec tauri build --ci --bundles nsis -- --locked
+      - name: Collect executables and checksums
+        shell: pwsh
+        run: |
+          $output = New-Item -ItemType Directory -Path windows-artifacts -Force
+          $release = 'packages/desktop/src-tauri/target/release'
+          Copy-Item "$release/harita-tasarlayici.exe" $output
+          $installers = @(Get-ChildItem "$release/bundle/nsis/*-setup.exe")
+          if ($installers.Count -eq 0) { throw 'NSIS installer was not generated' }
+          $installers | Copy-Item -Destination $output
+          Get-ChildItem "$output/*.exe" | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)"
+          } | Set-Content "$output/SHA256SUMS.txt"
+          "Source commit: $env:GITHUB_SHA" | Set-Content "$output/BUILD.txt"
+      - name: Upload Windows download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Harita-Tasarlayici-Windows-x64
+          path: windows-artifacts/
+          if-no-files-found: error
+          retention-days: 30
