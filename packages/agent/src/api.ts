@@ -167,14 +167,15 @@ export function createAgentApi(host: AgentHost): AgentApi {
     status: "succeeded" | "failed",
     startedAt: number,
     result: AgentToolResult,
+    replayed = false,
   ): void {
     const s = result.structuredContent;
     const data = s.ok ? s.data : undefined;
     const changed = data && "change" in data ? data.change : undefined;
     // Only inspect schema-validated successful arguments. Never retain raw requests.
     const args = s.ok ? call.arguments as ToolArguments[ToolName] : undefined;
-    const transaction = s.ok && (call.name === "finish_edit" || call.name === "cancel_edit")
-      ? tx.state().transaction : null;
+    const transaction = s.ok && "transactionId" in s && (call.name === "finish_edit" || call.name === "cancel_edit")
+      ? tx.pending?.summary.id === s.transactionId ? tx.pending.summary : tx.terminals.get(s.transactionId)?.summary : null;
     const targets = args && "mapId" in args && typeof args.mapId === "string" ? [args.mapId] :
       args && "mapIds" in args && Array.isArray(args.mapIds) ? args.mapIds.filter((id): id is string => typeof id === "string") : [];
     const mapIds = [...targets, ...(changed?.affected.map(a => a.mapId) ?? []), ...(transaction?.affectedMapIds ?? [])];
@@ -189,13 +190,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
           : null,
         requestId: null,
         transactionId:
-          s.ok && "transactionId" in s
-            ? s.transactionId
+          "transactionId" in s
+            ? s.transactionId ?? null
             : (tx.pending?.summary.id ?? null),
         mapIds: [...new Set(mapIds)],
         status,
-        plannedCells: changed?.plannedCells ?? transaction?.counters.plannedWrites ?? 0,
-        changedCells: changed?.changedCells ?? transaction?.counters.changedCells ?? 0,
+        plannedCells: replayed ? 0 : changed?.plannedCells ?? transaction?.counters.plannedWrites ?? 0,
+        changedCells: replayed ? 0 : changed?.changedCells ?? transaction?.counters.changedCells ?? 0,
         durationMs: host.clock.now() - startedAt,
         ...(args ? { requestBytes: utf8(JSON.stringify({ name: call.name, arguments: args })).length } : {}),
         textBytes: result.content.reduce((sum, block) => sum + (block.type === "text" ? utf8(block.text).length : 0), 0),
@@ -213,7 +214,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
     signal: CallSignal,
   ): Promise<AgentToolResult> {
     const startedAt = host.clock.now();
-    let result: AgentToolResult, transactionId: string | undefined;
+    let result: AgentToolResult | undefined;
+    let transactionId: string | undefined, replayed = false;
     active = signal;
     activeClient = call.clientSessionId;
     activeTool = call.name;
@@ -241,7 +243,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
           E.IDEMPOTENCY_CONFLICT,
           "Idempotency key was used with different arguments",
         );
-        return replay(cached);
+        replayed = true;
+        result = replay(cached);
+        return result;
       }
       const callContext: AgentCallContext = { ...call, signal };
       let data: unknown, image: ImageBlock | Uint8Array | undefined;
@@ -469,13 +473,14 @@ export function createAgentApi(host: AgentHost): AgentApi {
         activeClient = undefined;
         activeTool = undefined;
       }
+      if (result) log(
+        call,
+        result.structuredContent.ok ? "succeeded" : "failed",
+        startedAt,
+        result,
+        replayed,
+      );
     }
-    log(
-      call,
-      result.structuredContent.ok ? "succeeded" : "failed",
-      startedAt,
-      result,
-    );
     return result;
   }
   return {

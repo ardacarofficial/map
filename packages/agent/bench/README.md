@@ -38,4 +38,11 @@ The second MCP audit adds deterministic regressions, separate from the stored ti
 
 These are counted application operations and correctness assertions, not measurements of model quality or inference speed.
 
+The third MCP audit adds focused regressions for long workflows and editor parity:
+
+- `stampSearchBudget.test.ts` searches 1,000 metadata-matching stamps with `limit:16`: fingerprint calls fall from 1,000 to 16 per page, with the next page continuing in order. Matches that depend on AI tags still require current fingerprints.
+- `retryDiagnostics.test.ts` checks that idempotent retries appear as calls with measured response bytes, retain affected map IDs, and do not count applied cells twice. Cancelled retries keep the original transaction ID.
+- `tagPagination.test.ts` binds ordinary tag-page cursors to the filters and source snapshot, rejecting stale or mismatched continuation while preserving unchanged pagination.
+- `stampMapping.test.ts` compares inferred destinations with core, creates missing layers in stamp order, and verifies that missing permission or genuinely ambiguous mappings preserve an existing draft and its counters.
+
 In the application, **AI activity → Export diagnostics** saves the filtered visible activity rows to a local JSON file. It includes call outcomes, duration, planned/changed cells, and measured request/text/decoded-image/result byte counts where available. It excludes raw arguments, image content, summaries, client identities, tokens, and transport framing. The editor sends nothing automatically. User approval/discard rows remain separate from tool calls; durations exclude external model inference.

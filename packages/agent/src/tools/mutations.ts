@@ -742,12 +742,14 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
     );
   } else {
     const inferred = stampLayerMapping(store.document, clip);
+    // Reserve every inferred destination before testing unmatched layers. A
+    // later named match must not look available to an earlier missing layer.
     for (const l of needed) {
-      const target = inferred.find(
-        (m) => m.clipLayerId === l.layerId,
-      )!.targetLayerId;
+      const target = inferred.find((m) => m.clipLayerId === l.layerId)!.targetLayerId;
       if (target) mapping.set(l.layerId, target);
-      else {
+    }
+    for (const l of needed) {
+      if (!mapping.has(l.layerId)) {
         const candidates = store.document.layers.filter(
           (t) =>
             !isEntityLayer(t) &&
@@ -807,8 +809,11 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
   const created: string[] = [];
   const patches = tx.run(() => {
     for (const l of create) {
+      const previous = needed[needed.indexOf(l) - 1],
+        previousId = previous && mapping.get(previous.layerId);
       const id = store.dispatch({
         type: "addLayer",
+        index: previousId ? store.document.indexOfLayer(previousId) + 1 : 0,
         layer: {
           name: l.name,
           ...(l.grid

@@ -411,12 +411,15 @@ export async function read<N extends ToolName>(
         ? availableTags.sidecar.stamps.map(record => [record.stampId, record.tags]) : []);
       for (const stamp of tx.host.world.stamps()) {
         if (!a.query) { all.push(stamp); continue; }
-        if (!semanticMatches(a.query, [stamp.name, stamp.category ?? "", ...(stamp.tags ?? []), ...(stampTags.get(stamp.id) ?? [])])) continue;
+        const metadata = [stamp.name, stamp.category ?? "", ...(stamp.tags ?? [])];
+        // Name/category/manual tags need no pixel validation. Only the selected
+        // page needs fingerprints unless a match depends on current AI tags.
+        if (semanticMatches(a.query, metadata)) { all.push(stamp); continue; }
+        if (!semanticMatches(a.query, [...metadata, ...(stampTags.get(stamp.id) ?? [])])) continue;
         const fingerprint = await waitFor(tx.host.images.stampFingerprint(stamp.id, call.signal), call.signal);
         const record = tag(tx, { kind: "stamp", stampId: stamp.id }, fingerprint);
         prepared.set(stamp.id, { fingerprint, record });
-        if (semanticMatches(a.query, [stamp.name, stamp.category ?? "", ...(stamp.tags ?? []),
-          ...(record.status === "current" ? record.tags : [])])) all.push(stamp);
+        if (semanticMatches(a.query, [...metadata, ...(record.status === "current" ? record.tags : [])])) all.push(stamp);
       }
       const selected = all.slice(c.offset, c.offset + (a.limit ?? 16)), items = [];
       for (const s of selected) {
@@ -506,7 +509,16 @@ export async function read<N extends ToolName>(
       };
     case "get_tags": {
       const a = args as ToolArguments["get_tags"];
-      if (!a.query?.trim()) return { data: await waitFor(tx.host.tags.get(a, call), call.signal) };
+      if (!a.query?.trim()) {
+        const filter = () => ["tags", a.kind, a.tilesetId, a.status, a.limit, hashCanonical(tx.host.tags.availability())];
+        const c = cursor(tx, a.cursor, filter());
+        const { cursor: _cursor, ...hostArgs } = a;
+        const page = await waitFor(tx.host.tags.get({ ...hostArgs, ...(c.hostCursor ? { cursor: c.hostCursor } : {}) }, call), call.signal);
+        const nextCursor = page.nextCursor === null ? null : next(tx, {
+          ...c, filter: canonicalJson(filter()), hostCursor: page.nextCursor,
+        }, c.offset + page.items.length);
+        return { data: { ...page, nextCursor } };
+      }
       const queryFilter = () => ["tags-query", a.kind, a.tilesetId, a.status, a.query, a.limit, hashCanonical(tx.host.tags.availability())];
       const c = cursor(tx, a.cursor, queryFilter());
       const items: TagRecord[] = [], limit = a.limit ?? 64;
