@@ -291,11 +291,13 @@ impl Host {
     /// projelere ekler. Yol ya kullanıcının seçtiği/izin verilmiş bir yol
     /// ya da son projeler listesinde olmalı.
     pub fn open_project(&self, path: &str, name: &str, now_ms: u64) -> HostResult<OpenedProject> {
-        let allowed = self.resolve(path).is_ok() || self.recents.contains(path);
+        // Recents store canonical paths. Windows dialogs/argv may use an 8.3
+        // alias (e.g. RUNNER~1), so compare the same identity before admission.
+        let file = crate::scope::normalize(Path::new(path)).map_err(|e| HostError::scope(path, e))?;
+        let allowed = self.resolve(path).is_ok() || self.recents.contains(&file.to_string_lossy());
         if !allowed {
             return Err(HostError::new(ErrorKind::OutOfScope, path, "not chosen by the user"));
         }
-        let file = crate::scope::normalize(Path::new(path)).map_err(|e| HostError::scope(path, e))?;
         if !file.is_file() {
             return Err(HostError::new(ErrorKind::NotFound, path, "project file not found"));
         }
@@ -429,7 +431,10 @@ mod tests {
         h.replace_png_guarded(&s(&target), &s(&backup), b"original exact bytes", b"new").unwrap();
         assert_eq!(fs::read(&backup).unwrap(), b"original exact bytes");
         assert_eq!(fs::read(&target).unwrap(), b"new");
-        assert!(h.known.lock().unwrap().classify(&target, Some(&fs::read(&target).unwrap())).is_none());
+        // The watcher and Host use resolved paths, not the temp directory's
+        // possibly short Windows alias.
+        let real = h.resolve(&s(&target)).unwrap();
+        assert!(h.known.lock().unwrap().classify(&real, Some(&fs::read(&target).unwrap())).is_none());
         let restore_backup = root.join("backups/png/second.png");
         h.replace_png_guarded(&s(&target), &s(&restore_backup), b"new", &fs::read(&backup).unwrap()).unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"original exact bytes");
