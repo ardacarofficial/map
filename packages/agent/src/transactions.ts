@@ -87,6 +87,8 @@ interface Participant {
   pin: Unsubscribe;
   target: boolean;
 }
+export const layerProtectionKey = (mapId: Id, layerId: Id): string =>
+  JSON.stringify([mapId, layerId]);
 export interface PendingEdit {
   summary: TransactionSummary;
   worldId: string;
@@ -98,6 +100,7 @@ export interface PendingEdit {
   created: Id[];
   protection: Map<string, { locked: boolean; hidden: boolean }>;
   sources: PreparedSmartSource[];
+  invalidated: boolean;
   timer: Unsubscribe;
 }
 
@@ -123,8 +126,10 @@ export class Transactions {
     this.subscriptions.push(host.subscribeWorldContent(() => {
       this.revision = Math.max(this.revision + 1, host.session().revision);
       if (!this.pending) this.committedRevision = this.revision;
-      if (this.pending && !this.applying && !this.independent)
+      if (this.pending && !this.applying && !this.independent) {
+        this.pending.invalidated = true;
         this.onExternal?.();
+      }
       this.emit();
     }));
     this.subscriptions.push(host.tags.subscribe(() => {
@@ -227,6 +232,7 @@ export class Transactions {
       created: [],
       protection: new Map(),
       sources: [],
+      invalidated: false,
       timer: () => {},
     };
     this.pending = p;
@@ -273,7 +279,7 @@ export class Transactions {
       }
       for (const [mapId, m] of p.participants)
         for (const layer of m.store.document.layers)
-          p.protection.set(`${mapId}:${layer.id}`, {
+          p.protection.set(layerProtectionKey(mapId, layer.id), {
             locked: layer.locked,
             hidden: !layer.visible,
           });
@@ -391,7 +397,7 @@ export class Transactions {
         maps: [...p.baseline.maps, ...baseline.maps],
       };
     for (const layer of store.document.layers)
-      p.protection.set(`${mapId}:${layer.id}`, {
+      p.protection.set(layerProtectionKey(mapId, layer.id), {
         locked: layer.locked,
         hidden: !layer.visible,
       });
@@ -404,11 +410,14 @@ export class Transactions {
     });
   }
   async enlistCached(call: Pick<AgentCallContext, "signal">): Promise<void> {
+    const p = this.pending!;
     for (const map of this.host.world.maps())
-      if (map.loaded && !this.pending!.participants.has(map.id)) {
+      if (map.loaded && !p.participants.has(map.id)) {
         const store = await waitFor(this.host.loadMap(map.id), call.signal);
-        this.world(this.pending!.worldId);
+        this.world(p.worldId);
         call.signal.throwIfAborted();
+        check(this.pending === p && !p.invalidated, E.CANCELLED,
+          "World changed while enlisting maps");
         this.enlist(map.id, store);
       }
   }
@@ -481,6 +490,12 @@ export class Transactions {
   approve(): void {
     const p = this.pending;
     if (!p) return;
+    // External invalidation queues rollback behind the active call. Approval may
+    // have yielded while loading a follower, so reject before any local commit.
+    if (p.invalidated) {
+      this.cancel();
+      fail(E.CANCELLED, "World changed before approval");
+    }
     if (this.phase === "preparing") {
       this.cancel();
       return;
@@ -569,10 +584,17 @@ export class Transactions {
   ): void {
     const p = this.pending!;
     p.timer();
-    this.run(() => this.host.smartSources.releaseTransaction(p.summary.id, outcome));
-    for (const m of p.participants.values()) {
-      m.lease.release();
-      m.pin();
+    try {
+      this.run(() => this.host.smartSources.releaseTransaction(p.summary.id, outcome));
+    } catch {
+      // Source publication already succeeded or rolled back. Asset-retirement
+      // observers must not strand ownership after that completed history action.
+      this.diagnostic("Source release failed after transaction finalization");
+    } finally {
+      for (const m of p.participants.values()) {
+        m.lease.release();
+        m.pin();
+      }
     }
     this.last = this.copy(p.summary);
     this.terminals.set(p.summary.id, {

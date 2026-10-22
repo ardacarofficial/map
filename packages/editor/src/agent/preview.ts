@@ -1,10 +1,30 @@
-import { AGENT_LIMITS, AgentError, AgentErrorCode, type PreviewImage, type Rect, type RenderPreviewArgs } from "@smap/agent";
+import { AGENT_LIMITS, AgentError, AgentErrorCode, type AgentCallContext, type PreviewImage, type Rect, type RenderPreviewArgs } from "@smap/agent";
 import { isGridLayer, isEntityLayer, type MapDocument, type RgbaImage } from "@smap/core";
-import { regionCompositeOps, type CanvasOp } from "../export/pngComposite";
-import { replayOps } from "../export/pngRender";
+import { regionCompositeSteps } from "../export/pngComposite";
 import { RasterReplay } from "./raster";
+import { imageWork } from "./imageWork";
 
-export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pick<RenderPreviewArgs, "grid" | "coordinates" | "maxSide" | "layerIds" | "entities">, source: (id: string) => RgbaImage | undefined): RgbaImage & { image: PreviewImage; missing: string[] } {
+type PreviewOptions = Pick<RenderPreviewArgs, "grid" | "coordinates" | "maxSide" | "layerIds" | "entities">;
+type PreviewPixels = RgbaImage & { image: PreviewImage; missing: string[] };
+export function renderPreviewPixels(doc: MapDocument, region: Rect, options: PreviewOptions, source: (id: string) => RgbaImage | undefined): PreviewPixels {
+  const steps=renderPreviewSteps(doc,region,options,source);
+  for(;;){
+    const step=steps.next();
+    if(step.done)return step.value;
+  }
+}
+export async function renderPreviewPixelsAsync(doc: MapDocument, region: Rect, options: PreviewOptions, source: (id: string) => RgbaImage | undefined, call: AgentCallContext): Promise<PreviewPixels> {
+  const checkpoint=imageWork(call),steps=renderPreviewSteps(doc,region,options,source);
+  for(;;){
+    const pause=checkpoint();if(pause)await pause;
+    const step=steps.next();
+    if(step.done){
+      const tail=checkpoint();if(tail)await tail;
+      return step.value;
+    }
+  }
+}
+function* renderPreviewSteps(doc: MapDocument, region: Rect, options: PreviewOptions, source: (id: string) => RgbaImage | undefined): Generator<void,PreviewPixels> {
   const map = doc.map;
   if (region.x < 0 || region.y < 0 || region.width < 1 || region.height < 1 || region.x+region.width>map.width || region.y+region.height>map.height) throw new AgentError(AgentErrorCode.OUT_OF_BOUNDS, "Preview region outside map");
   const gutter = options.coordinates ? 40 : 0;
@@ -17,15 +37,19 @@ export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pic
   const canvas=new RasterReplay(width,height,contentRect);
   canvas.fill({x:0,y:0,width,height},[27,33,42,255]); canvas.checker(contentRect);
   const originX=region.x*map.tileWidth,originY=region.y*map.tileHeight;
-  function* offsetOps():Generator<CanvasOp>{
-    for(const op of regionCompositeOps(doc,region,scale,options.layerIds)){
-      if(op.kind==="alpha"){yield op;continue;}
-      const [a,b,c,d,e,f]=op.transform;
-      yield {...op,transform:[a,b,c,d,e-originX*scale+gutter,f-originY*scale+gutter]};
-    }
-  }
   const missing=new Set<string>();
-  replayOps(canvas,offsetOps(),id=>{const pixels=source(id);if(!pixels)missing.add(id);return pixels as unknown as CanvasImageSource|undefined;});
+  for(const op of regionCompositeSteps(doc,region,scale,options.layerIds)){
+    if(!op){yield;continue;}
+    if(op.kind==="alpha"){canvas.globalAlpha=op.alpha;continue;}
+    const pixels=source(op.tilesetId);
+    if(!pixels){missing.add(op.tilesetId);yield;continue;}
+    const [a,b,c,d,e,f]=op.transform;
+    canvas.setTransform(a,b,c,d,e-originX*scale+gutter,f-originY*scale+gutter);
+    canvas.drawImage(pixels as unknown as CanvasImageSource,op.sx,op.sy,op.sw,op.sh,0,0,op.dw,op.dh);
+    yield;
+  }
+  canvas.setTransform(1,0,0,1,0,0);canvas.globalAlpha=1;
+  let scanned=0;
   const cw=map.tileWidth*scale,ch=map.tileHeight*scale;
   // Collision is an explicit diagnostic overlay, never inferred from tile artwork.
   if(options.layerIds)for(const layer of doc.layers){
@@ -38,6 +62,7 @@ export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pic
       for(let row=0;row<32;row++){
         const y=chunks[start]!.cy*32+row;if(y<region.y||y>=bottom)continue;
         for(let c=start;c<end;c++)for(let col=0;col<32;col++){
+          if((scanned++&1023)===0)yield;
           const chunk=chunks[c]!,x=chunk.cx*32+col;if(x<region.x||x>=right)continue;
           const value=chunk.data[row*32+col]!;if(!value)continue;
           const left=Math.floor(gutter+(x-region.x)*cw),top=Math.floor(gutter+(y-region.y)*ch);
@@ -60,7 +85,7 @@ export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pic
   }
   if(options.entities!==false)for(const layer of doc.layers){
     if(!isEntityLayer(layer)||!layer.visible||(options.layerIds&&!options.layerIds.includes(layer.id)))continue;
-    for(const entity of layer.entities){const x=gutter+(entity.x-originX)*scale,y=gutter+(entity.y-originY)*scale;if(x<gutter||y<gutter||x>=width||y>=height)continue;canvas.fill({x:Math.floor(x),y:Math.floor(y),width:3,height:3},[105,201,174,220]);}
+    for(const entity of layer.entities){if((scanned++&1023)===0)yield;const x=gutter+(entity.x-originX)*scale,y=gutter+(entity.y-originY)*scale;if(x<gutter||y<gutter||x>=width||y>=height)continue;canvas.fill({x:Math.floor(x),y:Math.floor(y),width:3,height:3},[105,201,174,220]);}
   }
   return {width,height,data:canvas.data,missing:[...missing],image:{width,height,scale,pixelOrigin:{x:originX,y:originY},cellSize:{width:cw,height:ch},contentRect,grid:options.grid??false,coordinates:options.coordinates??false}};
 }

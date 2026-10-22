@@ -4,9 +4,10 @@ import { cellFlags, cellPaletteIndex, createDocument, makeCell, MapStore, raster
 import { decodeWorkingSourcePng } from "../io/sourcePng";
 import { getTilesetImage, retainTilesetImage, tilesetImageBytes, type TilesetImage } from "../state/tilesetImages";
 import { pngHash } from "../state/pngHash";
-import { regionCompositeOps } from "../export/pngComposite";
+import { regionCompositeSteps } from "../export/pngComposite";
 import { RasterReplay } from "./raster";
-import { renderPreviewPixels } from "./preview";
+import { renderPreviewPixelsAsync } from "./preview";
+import { imageWork } from "./imageWork";
 
 const decoded = new Map<TilesetImage, RgbaImage>();
 const decoding = new WeakMap<TilesetImage, Promise<RgbaImage>>();
@@ -172,21 +173,46 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
     async renderPreview(args,call) {
       const store=await world.loadMap(args.mapId),mapRevision=store.revision,rev=revision(),doc=store.document;
       const region=args.region??{x:0,y:0,width:doc.map.width,height:doc.map.height};
-      const ids=new Set<string>();for(const op of regionCompositeOps(doc,region,1,args.layerIds))if(op.kind==="draw")ids.add(op.tilesetId);
+      const checkpoint=imageWork(call),ids=new Set<string>();
+      for(const op of regionCompositeSteps(doc,region,1,args.layerIds)){
+        const pause=checkpoint();if(pause)await pause;
+        if(op?.kind==="draw")ids.add(op.tilesetId);
+      }
       const images=await sources([...ids],call);
-      const result=renderPreviewPixels(doc,region,args,id=>images.get(id));call.signal.throwIfAborted();
+      const result=await renderPreviewPixelsAsync(doc,region,args,id=>images.get(id),call);call.signal.throwIfAborted();
       if(store.revision!==mapRevision)throw new AgentError(AgentErrorCode.REVISION_CONFLICT,"Map changed during preview");
       return {png:encodeAgentPng(result),width:result.width,height:result.height,revision:rev,mapRevision,region,image:result.image,warnings:result.missing.map(id=>({code:"MISSING_IMAGE",detail:id}))};
     },
     async stampPreview(stampId,call) {
       const stamp=world.stamps().find(s=>s.id===stampId);if(!stamp)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown stamp");
-      const first=world.tilesets().find(t=>stamp.palette.some(p=>p.tilesetId===t.id));
-      const store=new MapStore(createDocument({width:stamp.width,height:stamp.height,tileWidth:first?.tileWidth??16,tileHeight:first?.tileHeight??16,tilesets:world.tilesets()}));
-      for(const layer of stamp.layers){if(layer.grid)continue;const id=store.dispatch({type:"addLayer",layer:{name:layer.name}});const cells=Array.from(layer.cells,(cell,i)=>{
-        const entry=stamp.palette[cellPaletteIndex(cell)-1];return{x:i%stamp.width,y:Math.floor(i/stamp.width),cell:entry?makeCell(store.getOrAddPaletteIndex(entry.tilesetId,entry.tileId),cellFlags(cell)):0};
-      });store.dispatch({type:"paintCells",layerId:id,cells});}
-      const images=await sources(stamp.palette.map(p=>p.tilesetId),call);
-      const result=renderPreviewPixels(store.document,{x:0,y:0,width:stamp.width,height:stamp.height},{},id=>images.get(id));call.signal.throwIfAborted();
+      // Preview documents never need undo. Allocate used references together so
+      // edited atlases cannot copy growing palette snapshots for every cell.
+      const checkpoint=imageWork(call),used=new Set<number>();let scanned=0;
+      for(const layer of stamp.layers)if(!layer.grid)for(const cell of layer.cells){
+        if((scanned++&1023)===0){const pause=checkpoint();if(pause)await pause;}
+        const index=cellPaletteIndex(cell);
+        if(stamp.palette[index-1])used.add(index);
+      }
+      const indices=[...used],mapped=new Map<number,number>();
+      const sourceIds=new Set(indices.map(index=>stamp.palette[index-1]!.tilesetId));
+      const first=world.tilesets().find(t=>sourceIds.has(t.id));
+      const store=new MapStore(createDocument({width:stamp.width,height:stamp.height,tileWidth:first?.tileWidth??16,tileHeight:first?.tileHeight??16,tilesets:world.tilesets()}),{historyLimit:0});
+      if(indices.length){const allocated=store.dispatch({type:"addPaletteEntries",entries:indices.map(index=>stamp.palette[index-1]!)});indices.forEach((index,i)=>mapped.set(index,allocated[i]!));}
+      for(const layer of stamp.layers){
+        if(layer.grid)continue;
+        const id=store.dispatch({type:"addLayer",layer:{name:layer.name}});
+        let cells:{x:number;y:number;cell:number}[]=[];
+        for(let i=0;i<layer.cells.length;i++){
+          if((i&1023)===0){const pause=checkpoint();if(pause)await pause;}
+          const cell=layer.cells[i]!,index=mapped.get(cellPaletteIndex(cell));
+          if(!index)continue;
+          cells.push({x:i%stamp.width,y:Math.floor(i/stamp.width),cell:makeCell(index,cellFlags(cell))});
+          if(cells.length===AGENT_LIMITS.cellsPerCall){store.dispatch({type:"paintCells",layerId:id,cells});cells=[];}
+        }
+        if(cells.length)store.dispatch({type:"paintCells",layerId:id,cells});
+      }
+      const images=await sources([...sourceIds],call);
+      const result=await renderPreviewPixelsAsync(store.document,{x:0,y:0,width:stamp.width,height:stamp.height},{},id=>images.get(id),call);call.signal.throwIfAborted();
       return{png:encodeAgentPng(result),width:result.width,height:result.height,revision:revision(),warnings:[]};
     },
   };

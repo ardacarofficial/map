@@ -129,12 +129,20 @@ export function opsTilesets(ops: readonly CanvasOp[]): Set<string> {
  * originate left of or below the crop. Chunk rows are merged in row-major order,
  * preserving the normal exporter order even where oversized sprites overlap. */
 export function* regionCompositeOps(doc: MapDocument, region: { x:number; y:number; width:number; height:number }, scale: number, layerIds?: readonly string[]): Generator<CanvasOp> {
+  for(const op of regionCompositeSteps(doc,region,scale,layerIds))if(op)yield op;
+}
+
+/** Cooperative traversal also reports bounded scan progress through empty or
+ * invalid stored cells. Normal exporters can ignore those progress markers. */
+export function* regionCompositeSteps(doc: MapDocument, region: { x:number; y:number; width:number; height:number }, scale: number, layerIds?: readonly string[]): Generator<CanvasOp|undefined> {
   const map=doc.map,left=region.x*map.tileWidth,top=region.y*map.tileHeight;
   const right=(region.x+region.width)*map.tileWidth,bottom=(region.y+region.height)*map.tileHeight;
   const reach=doc.tilesets.reduce((n,t)=>Math.max(n,t.tileWidth,t.tileHeight),0);
   const xMin=Math.max(0,region.x-Math.ceil(reach/map.tileWidth)),xMax=Math.min(map.width,region.x+region.width);
   const yMin=Math.max(0,region.y),yMax=Math.min(map.height,region.y+region.height+Math.ceil(reach/map.tileHeight));
+  let scanned=0;
   for(const layer of doc.layers){
+    yield undefined;
     if(!isTileLayer(layer)||!layer.visible||layer.opacity<=0||(layerIds&&!layerIds.includes(layer.id)))continue;
     const chunks=[...layer.chunks()].filter(c=>c.cx*32<xMax&&(c.cx+1)*32>xMin&&c.cy*32<yMax&&(c.cy+1)*32>yMin).sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
     yield {kind:"alpha",alpha:layer.opacity};
@@ -146,6 +154,7 @@ export function* regionCompositeOps(doc: MapDocument, region: { x:number; y:numb
         for(let c=start;c<end;c++){
           const chunk=chunks[c]!;
           for(let col=0;col<32;col++){
+            if((scanned++&1023)===0)yield undefined;
             const x=chunk.cx*32+col;if(x<xMin||x>=xMax)continue;
             const cell=chunk.data[row*32+col]!;if(!cell)continue;
             const entry=doc.palette.get(cellPaletteIndex(cell));if(!entry)continue;

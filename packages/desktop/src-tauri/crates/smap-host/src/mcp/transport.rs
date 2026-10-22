@@ -29,6 +29,8 @@ const VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
 const CATALOGUE: &str = include_str!("../../../../../../agent/schema/tools.json");
 const WORKFLOW: &str = include_str!("../../../../../../agent/schema/workflow.txt");
 pub const MAX_REPLY: usize = 8 * 1024 * 1024;
+// AgentToolResult has its own full MAX_REPLY budget before bridge correlation.
+const BRIDGE_OVERHEAD_LIMIT: usize = 1024;
 pub type BridgeSink = Arc<dyn Fn(&'static str, Value) -> Result<(), String> + Send + Sync>;
 
 #[derive(Clone)]
@@ -104,6 +106,16 @@ pub struct Transport {
     inner: Mutex<Inner>,
     sink: BridgeSink,
     options: Options,
+}
+/// The HTTP handler may disappear before its timeout future can run.
+struct PendingCall<'a> {
+    transport: &'a Transport,
+    id: String,
+}
+impl Drop for PendingCall<'_> {
+    fn drop(&mut self) {
+        self.transport.cancel_request(&self.id, "clientCancelled");
+    }
 }
 /// Keeps configuration persistence and cancellation one admission boundary.
 pub struct AdmissionPause<'a> {
@@ -343,7 +355,7 @@ impl Transport {
         if serde_json::to_vec(&reply)
             .map_err(|_| "invalid reply")?
             .len()
-            > MAX_REPLY
+            > MAX_REPLY + BRIDGE_OVERHEAD_LIMIT
         {
             return Err("reply too large".into());
         }
@@ -358,7 +370,15 @@ impl Transport {
             return Err("stale correlation or deadline".into());
         }
         let result = match reply["type"].as_str() {
-            Some("result") if valid_result(&reply["result"]) => reply["result"].clone(),
+            Some("result")
+                if valid_result(&reply["result"])
+                    && serde_json::to_vec(&reply["result"])
+                        .map_err(|_| "invalid result")?
+                        .len()
+                        <= MAX_REPLY =>
+            {
+                reply["result"].clone()
+            }
             Some("failure") => {
                 let code = reply["error"]["code"].as_str().ok_or("invalid failure")?;
                 if ![
@@ -544,32 +564,37 @@ impl Transport {
         }
     }
     fn cancel(&self, session: &str, rpc_id: &Value, reason: &str) {
+        let id = self
+            .inner
+            .lock()
+            .unwrap()
+            .pending
+            .iter()
+            .find(|(_, p)| p.session == session && p.rpc_id == *rpc_id)
+            .map(|(id, _)| id.clone());
+        if let Some(id) = id {
+            self.cancel_request(&id, reason);
+        }
+    }
+    fn cancel_request(&self, id: &str, reason: &str) {
         let found = {
             let mut inner = self.inner.lock().unwrap();
-            let id = inner
-                .pending
-                .iter()
-                .find(|(_, p)| p.session == session && p.rpc_id == *rpc_id)
-                .map(|(id, _)| id.clone());
-            id.and_then(|id| {
-                inner.pending.remove(&id).map(|p| {
-                    (
-                        id,
-                        p,
-                        failure(
-                            &inner,
-                            if reason == "timeout" {
-                                "TIMEOUT"
-                            } else {
-                                "CANCELLED"
-                            },
-                        ),
-                    )
-                })
+            inner.pending.remove(id).map(|p| {
+                (
+                    p,
+                    failure(
+                        &inner,
+                        if reason == "timeout" {
+                            "TIMEOUT"
+                        } else {
+                            "CANCELLED"
+                        },
+                    ),
+                )
             })
         };
-        if let Some((id, pending, result)) = found {
-            let _ = self.emit(EVENT_CONTROL, json!({"type":"cancel","bridgeEpoch":pending.epoch,"clientSessionId":session,"requestId":id,"reason":reason}));
+        if let Some((pending, result)) = found {
+            let _ = self.emit(EVENT_CONTROL, json!({"type":"cancel","bridgeEpoch":pending.epoch,"clientSessionId":pending.session,"requestId":id,"reason":reason}));
             let _ = pending.tx.send(result);
         }
     }
@@ -616,6 +641,10 @@ impl Transport {
             );
             (id, rx, envelope, duration)
         };
+        let _pending_call = PendingCall {
+            transport: self,
+            id: id.clone(),
+        };
         if self.emit(EVENT_REQUEST, envelope).is_err() {
             self.inner.lock().unwrap().pending.remove(&id);
             return failure(&self.inner.lock().unwrap(), "EDITOR_UNAVAILABLE");
@@ -623,7 +652,7 @@ impl Transport {
         match tokio::time::timeout(duration, rx).await {
             Ok(Ok(result)) => result,
             _ => {
-                self.cancel(session, &rpc_id, "timeout");
+                self.cancel_request(&id, "timeout");
                 failure(&self.inner.lock().unwrap(), "TIMEOUT")
             }
         }
@@ -727,6 +756,55 @@ async fn fallback() -> Response {
 #[cfg(test)]
 mod deadline_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn dropping_a_call_cancels_its_bridge_request_without_ending_the_session() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let transport = Transport::new(
+            "token".into(),
+            Arc::new(move |event, value| {
+                captured.lock().unwrap().push((event, value));
+                Ok(())
+            }),
+            Options::default(),
+        );
+        transport.ready("epoch".into()).unwrap();
+        transport.inner.lock().unwrap().sessions.insert(
+            "session".into(),
+            Session {
+                info: json!({"name":"test","version":"1"}),
+                version: VERSIONS[0].into(),
+                initialized: true,
+                touched: Instant::now(),
+            },
+        );
+        let params = json!({"name":"get_session"});
+        let mut call = Box::pin(transport.call("session", json!(1), &params));
+        assert!(tokio::time::timeout(Duration::from_millis(1), &mut call)
+            .await
+            .is_err());
+        assert_eq!(transport.inner.lock().unwrap().pending.len(), 1);
+        drop(call);
+        let inner = transport.inner.lock().unwrap();
+        assert!(inner.pending.is_empty());
+        assert!(inner.sessions.contains_key("session"));
+        assert!(inner.ending.is_empty());
+        drop(inner);
+        let events = events.lock().unwrap();
+        let request = &events
+            .iter()
+            .find(|(event, _)| *event == EVENT_REQUEST)
+            .unwrap()
+            .1;
+        let cancels: Vec<_> = events
+            .iter()
+            .filter(|(event, value)| *event == EVENT_CONTROL && value["type"] == "cancel")
+            .collect();
+        assert_eq!(cancels.len(), 1);
+        assert_eq!(cancels[0].1["requestId"], request["requestId"]);
+        assert_eq!(cancels[0].1["reason"], "clientCancelled");
+    }
 
     #[test]
     fn image_defaults_and_reference_work_use_image_timeout() {

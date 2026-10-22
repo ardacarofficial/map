@@ -46,9 +46,9 @@ import {
   type ToolArguments,
   type ToolName,
 } from "../contracts";
-import { utf8 } from "../tags";
+import { utf8ByteLength } from "../tags";
 import { linePoints, rectanglePoints } from "../geometry";
-import { type Transactions, waitFor } from "../transactions";
+import { layerProtectionKey, type Transactions, waitFor } from "../transactions";
 import {
   budget,
   check,
@@ -102,7 +102,7 @@ export function protect(
   mapId: string,
   target: TileLayer,
 ): void {
-  const baseline = tx.pending!.protection.get(`${mapId}:${target.id}`);
+  const baseline = tx.pending!.protection.get(layerProtectionKey(mapId, target.id));
   check(
     !target.locked && !baseline?.locked,
     E.LAYER_LOCKED,
@@ -475,7 +475,7 @@ export async function mutate<N extends ToolName>(
           "Portal target point outside target map",
         );
       }
-      const retained = 512 + utf8(JSON.stringify(entity)).length * 2;
+      const retained = 512 + utf8ByteLength(JSON.stringify(entity)) * 2;
       tx.charge(0, retained);
       tx.run(() =>
         store.dispatch({ type: "addEntity", layerId: a.layerId, entity }),

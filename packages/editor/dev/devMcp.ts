@@ -7,6 +7,8 @@ const catalogue: unknown = JSON.parse(readFileSync(new URL("../../agent/schema/t
 const instructions = readFileSync(new URL("../../agent/schema/workflow.txt", import.meta.url), "utf8").trim();
 const VERSIONS = ["2025-11-25", "2025-06-18"];
 const BODY_LIMIT = 1024 * 1024, RESPONSE_LIMIT = 8 * BODY_LIMIT;
+// Correlation fields wrap an already budgeted AgentToolResult.
+const BRIDGE_OVERHEAD_LIMIT = 1024;
 type Message = BridgeRequest | BridgeControl;
 interface Page { epoch: string; send(message: Message): void }
 interface Session { id: string; pair: string | undefined; page: Page | undefined; version: string; info: ClientInfo; initialized: boolean; lastSeen: number; ids: Set<string | number> }
@@ -92,6 +94,7 @@ export async function startDevMcp(options: DevMcpOptions) {
     let size = 0;
     for await (const chunk of req) { size += chunk.length; if (size > BODY_LIMIT) return send(res, 413); chunks.push(Buffer.from(chunk)); }
     if (authenticatedGeneration !== tokenGeneration) return send(res, 401, { error: "Credentials revoked" });
+    if (session && sessions.get(session.id) !== session) return send(res, 404, { error: "Unknown session" });
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return send(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
     if (!depth(body)) return send(res, 413);
@@ -157,9 +160,9 @@ export async function startDevMcp(options: DevMcpOptions) {
     },
     reply(pair: string, reply: BridgeReply) {
       const call = pending.get(reply.requestId);
-      if (!call || pages.get(pair) !== call.page || call.request.bridgeEpoch !== reply.bridgeEpoch || call.session.id !== reply.clientSessionId || Buffer.byteLength(JSON.stringify(reply)) > RESPONSE_LIMIT) return false;
+      if (!call || pages.get(pair) !== call.page || call.request.bridgeEpoch !== reply.bridgeEpoch || call.session.id !== reply.clientSessionId || Buffer.byteLength(JSON.stringify(reply)) > RESPONSE_LIMIT + BRIDGE_OVERHEAD_LIMIT) return false;
       if (reply.type === "result") {
-        if (!object(reply.result) || !Array.isArray(reply.result.content) || !object(reply.result.structuredContent)) return false;
+        if (!object(reply.result) || !Array.isArray(reply.result.content) || !object(reply.result.structuredContent) || Buffer.byteLength(JSON.stringify(reply.result)) > RESPONSE_LIMIT) return false;
         call.finish(reply.result);
       } else call.finish(failure(reply.error.code, reply.error.message));
       return true;

@@ -86,11 +86,16 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
       metadata.stage({kind:"recipes",before,after:[...before.filter(r=>!add.some(a=>a.tilesetId===r.tilesetId)),...add]});record.published=true;
     },
     releaseTransaction(id,outcome){
+      let failure:unknown,failed=false;
       for(const [sourceId,record]of records)if(record.source.transactionId===id){
-        if(outcome==="cancelled"||!record.published)for(const asset of record.prepared.assets){if(record.published&&getTilesetImage(asset.tileset.id)===asset.image)removeTilesetImage(asset.tileset.id);else if(!record.published)asset.image.bitmap.close();}
+        if(outcome==="cancelled"||!record.published)for(const asset of record.prepared.assets){
+          try{if(record.published&&getTilesetImage(asset.tileset.id)===asset.image)removeTilesetImage(asset.tileset.id);else if(!record.published)asset.image.bitmap.close();}
+          catch(error){if(!failed){failure=error;failed=true;}}
+        }
         // Approved images remain retained for ordinary undo/redo and save from another tab.
         records.delete(sourceId);
       }
+      if(failed)throw failure;
     },
   };
 }

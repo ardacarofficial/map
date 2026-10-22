@@ -282,6 +282,37 @@ async fn bridge_round_trip_timeout_and_stale_replies() {
 }
 
 #[tokio::test]
+async fn complete_api_result_budget_survives_bridge_correlation() {
+    let mut h = Harness::with_options(Options {
+        call_timeout: Duration::from_secs(3),
+        ..Options::default()
+    })
+    .await;
+    h.transport.ready("epoch".into()).unwrap();
+    let session = h.session().await;
+    let request = h.message(
+        &session,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session"}}),
+    );
+    let task =
+        tokio::spawn(async move { request.send().await.unwrap().json::<Value>().await.unwrap() });
+    let req = h.event(EVENT_REQUEST).await;
+    let mut result = json!({"content":[{"type":"text","text":""}],"structuredContent":{}});
+    let overhead = serde_json::to_vec(&result).unwrap().len();
+    result["content"][0]["text"] = json!("x".repeat(super::transport::MAX_REPLY - overhead));
+    assert_eq!(
+        serde_json::to_vec(&result).unwrap().len(),
+        super::transport::MAX_REPLY
+    );
+    let reply = json!({"type":"result","requestId":req["requestId"],"clientSessionId":session,"bridgeEpoch":"epoch","result":result});
+    let mut too_large = reply.clone();
+    too_large["result"]["structuredContent"]["tooLarge"] = json!(true);
+    assert!(h.transport.reply(too_large).is_err());
+    h.transport.reply(reply).unwrap();
+    assert_eq!(task.await.unwrap()["result"], result);
+}
+
+#[tokio::test]
 async fn idle_expiry_and_rotation_revoke_sessions() {
     let mut h = Harness::new().await;
     h.transport.ready("epoch".into()).unwrap();

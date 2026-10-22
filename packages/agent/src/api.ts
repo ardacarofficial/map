@@ -17,20 +17,21 @@ import { TOOL_DEFINITIONS, canonicalJson } from "./toolSchemas";
 import { toMcpToolResult } from "./result";
 import { CallSignal, Transactions, waitFor } from "./transactions";
 import { check, validate } from "./validation";
-import { normalizeTags, tagKey, utf8 } from "./tags";
+import { hashCanonical, normalizeTags, tagKey, utf8ByteLength } from "./tags";
 import { mutate } from "./tools/mutations";
 import { read } from "./tools/read";
 import { applyOperations, editEntity } from "./tools/operations";
 import { validateGoals } from "./tools/goals";
+import { pruneReplayCache, type ReplayRecord } from "./replayCache";
 
 const writes = new Set(
   TOOL_DEFINITIONS.filter(
     (t) => !t.annotations.readOnlyHint && t.name !== "set_tags",
   ).map((t) => t.name),
 );
-interface Cached {
+interface Cached extends ReplayRecord {
   fingerprint: string;
-  result: AgentToolResult;
+  result?: AgentToolResult;
   transactionId?: string;
   at: number;
   client: string;
@@ -52,6 +53,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
   let activeTool: string | undefined;
   let queue: Promise<unknown> = Promise.resolve(),
     active: CallSignal | undefined,
+    approval: CallSignal | undefined,
     queued = 0;
   const perClient = new Map<string, number>();
   function enqueue<T>(task: () => Promise<T> | T): Promise<T> {
@@ -61,6 +63,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
   }
   function interrupt() {
     active?.abort();
+    approval?.abort();
   }
   tx.interrupt = interrupt;
   tx.onExternal = () => {
@@ -119,25 +122,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
     }
     return undefined;
   }
-  function prune(client: string): void {
+  function prune(): void {
     const now = host.clock.now();
-    for (const [key, c] of cache)
-      if (
-        c.transactionId !== tx.pending?.summary.id &&
-        now - c.at > L.reviewIdleMs
-      )
-        cache.delete(key);
-    const entries = [...cache].filter(([, c]) => c.client === client);
-    for (const [key, c] of entries)
-      if (entries.length > 1023 && c.transactionId !== tx.pending?.summary.id) {
-        cache.delete(key);
-        entries.pop();
-      }
+    pruneReplayCache(cache, tx.pending?.summary.id, now);
+    const retainedTransactions = new Set([...cache.values()].map(c => c.transactionId));
     for (const [id, t] of tx.terminals)
-      if (
-        now - t.at > L.reviewIdleMs &&
-        ![...cache.values()].some((c) => c.transactionId === id)
-      )
+      if (now - t.at > L.reviewIdleMs && !retainedTransactions.has(id))
         tx.terminals.delete(id);
   }
   function replay(c: Cached): AgentToolResult {
@@ -149,6 +139,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
         new AgentError(E.TRANSACTION_CANCELLED, "Transaction was cancelled"),
         c.transactionId,
       );
+    if (!c.result)
+      return failure(new AgentError(E.LIMIT_EXCEEDED,
+        "Cached response was released; the original request was not repeated"), c.transactionId);
     const previous = c.result.structuredContent;
     if (!previous.ok) return c.result;
     const state = tx.state();
@@ -202,10 +195,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
         plannedCells: replayed ? 0 : changed?.plannedCells ?? transaction?.counters.plannedWrites ?? 0,
         changedCells: replayed ? 0 : changed?.changedCells ?? transaction?.counters.changedCells ?? 0,
         durationMs: host.clock.now() - startedAt,
-        ...(args ? { requestBytes: utf8(JSON.stringify({ name: call.name, arguments: args })).length } : {}),
-        textBytes: result.content.reduce((sum, block) => sum + (block.type === "text" ? utf8(block.text).length : 0), 0),
+        ...(args ? { requestBytes: utf8ByteLength(JSON.stringify({ name: call.name, arguments: args })) } : {}),
+        textBytes: result.content.reduce((sum, block) => sum + (block.type === "text" ? utf8ByteLength(block.text) : 0), 0),
         imageBytes: result.content.reduce((sum, block) => sum + (block.type === "image" ? Math.floor(block.data.length * 3 / 4) - (block.data.endsWith("==") ? 2 : block.data.endsWith("=") ? 1 : 0) : 0), 0),
-        resultBytes: utf8(JSON.stringify(result)).length,
+        resultBytes: utf8ByteLength(JSON.stringify(result)),
         ...(!s.ok ? { code: s.code } : {}),
         summary: call.name,
       });
@@ -237,9 +230,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
         args = call.arguments as ToolArguments[ToolName];
       const context = "context" in args ? args.context : undefined;
       if (context) tx.world(context.worldSessionId);
-      prune(call.clientSessionId);
+      prune();
       const key = keyFor(name, args, call),
-        fingerprint = canonicalJson([name, args]);
+        fingerprint = key ? hashCanonical([name, args]) : "";
       const cached = key ? cache.get(key) : undefined;
       if (cached) {
         check(
@@ -447,19 +440,23 @@ export function createAgentApi(host: AgentHost): AgentApi {
             : {}),
       } as ToolSuccess;
       result = toMcpToolResult(success, image);
+      const serializedResult = JSON.stringify(result);
       check(
-        utf8(JSON.stringify(result)).length <= L.responseBytes,
+        utf8ByteLength(serializedResult) <= L.responseBytes,
         E.LIMIT_EXCEEDED,
         "Response size limit exceeded",
       );
-      if (key)
+      if (key) {
         cache.set(key, {
+          retainedBytes: 2 * serializedResult.length,
           fingerprint,
           result,
           at: host.clock.now(),
           client: call.clientSessionId,
           ...(transactionId ? { transactionId } : {}),
         });
+        prune();
+      }
     } catch (error) {
       // Expected preflight errors preserve previous work. Unexpected dispatch failures rollback all maps.
       if (
@@ -535,10 +532,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
         timer();
         signals.delete(signal);
         queued--;
-        perClient.set(
-          call.clientSessionId,
-          (perClient.get(call.clientSessionId) ?? 1) - 1,
-        );
+        const remaining = (perClient.get(call.clientSessionId) ?? 1) - 1;
+        if (remaining > 0) perClient.set(call.clientSessionId, remaining);
+        else perClient.delete(call.clientSessionId);
       });
     },
     userAction: (action) => {
@@ -550,8 +546,17 @@ export function createAgentApi(host: AgentHost): AgentApi {
         const pending = tx.pending;
         // Navigation can load approved metadata followers during review. Enlist them
         // before the synchronous finalizer so saving from that tab sees the same world.
-        if (action === "approve" && pending)
-          await tx.enlistCached({ signal: lifetime });
+        if (action === "approve" && pending) {
+          const signal = new CallSignal();
+          approval = signal;
+          const off = lifetime.onAbort(() => signal.abort());
+          try {
+            await tx.enlistCached({ signal });
+          } finally {
+            off();
+            if (approval === signal) approval = undefined;
+          }
+        }
         if (disposed) return;
         const transaction = tx.pending?.summary;
         if (action === "stop") {
@@ -589,6 +594,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
     sessionEnded: (clientSessionId) => {
       if (disposed) return Promise.resolve();
       endedSessions.add(clientSessionId);
+      // Ended sessions are rejected before replay, so their payloads are unreachable.
+      for (const [key, entry] of cache)
+        if (entry.client === clientSessionId) cache.delete(key);
       host.visualReferences?.sessionEnded(clientSessionId);
       const pending = tx.pending;
       const owned = pending?.summary.owner.clientSessionId === clientSessionId;

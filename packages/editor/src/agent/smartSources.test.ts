@@ -6,7 +6,7 @@ import { browserPlatform, setPlatform } from "../platform";
 import { closeProject, getLevelWorkspace, newProject } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { useEditorStore } from "../state/editorStore";
-import { getTilesetImage, setTilesetImage } from "../state/tilesetImages";
+import { getTilesetImage, onTilesetImage, setTilesetImage } from "../state/tilesetImages";
 import { bakeSmartStamp } from "../ui/stamps/smartStampBake";
 import { createEditorHost } from "./editorHost";
 vi.mock("../ui/stamps/smartStampBake",async original=>({...await original<typeof BakeModule>(),bakeSmartStamp:vi.fn(async(_stamp:Stamp,_layer:string,target:Tileset)=>({tilesetId:target.id,bytes:new Uint8Array([1,2,3]),bitmap:{width:target.columns*target.tileWidth,height:target.rows*target.tileHeight,close:vi.fn()} as unknown as ImageBitmap}))}));
@@ -80,4 +80,26 @@ it("reserves all estimated atlas memory before the first bake (#7)", async () =>
   const reserve=vi.fn((_bytes:number)=>{throw Error("No budget");});
   await expect(host.smartSources.prepare({context:{transactionId:"private"},mapId:ws.activeId,source:{stampId:"road"},force:true} as PrepareSmartSourceArgs,call,reserve)).rejects.toThrow("No budget");
   expect(reserve).toHaveBeenCalledOnce();expect(reserve.mock.calls[0]![0]).toBeGreaterThan(0);expect(bakeSmartStamp).not.toHaveBeenCalled();
+});
+
+it("retires every transaction asset and source handle even when an image observer throws", async () => {
+  const {host,ws}=await setup();
+  const args={context:{transactionId:"retire"},mapId:ws.activeId,source:{stampId:"road"},force:true} as PrepareSmartSourceArgs;
+  const first=await host.smartSources.prepare(args,call);
+  const second=await host.smartSources.prepare(args,call);
+  ws.active.store.beginTransaction();
+  host.smartSources.publish(first);host.smartSources.publish(second);
+  ws.active.store.rollback();
+  const ids=[...first.generatedTilesetIds,...second.generatedTilesetIds];
+  const images=ids.map(id=>getTilesetImage(id)!);
+  const listener=vi.fn(()=>{throw Error("Atlas observer");}),off=onTilesetImage(listener);
+  try {
+    expect(()=>host.smartSources.releaseTransaction("retire","cancelled")).toThrow("Atlas observer");
+    expect(listener).toHaveBeenCalledTimes(ids.length);
+    for(const id of ids)expect(getTilesetImage(id)).toBeUndefined();
+    for(const image of images)expect(image.bitmap.close).toHaveBeenCalledOnce();
+    expect(host.smartSources.get(first.sourceId)).toBeUndefined();
+    expect(host.smartSources.get(second.sourceId)).toBeUndefined();
+    expect(()=>host.smartSources.releaseTransaction("retire","cancelled")).not.toThrow();
+  } finally {off();}
 });

@@ -5,9 +5,13 @@ import {
   isEntityLayer,
   isGridLayer,
   isValidTileId,
+  portalTarget,
+  portalTargetPoint,
+  resolveEntityFields,
   tileCount,
   tileRect,
   type MapStore,
+  type MapInfo as CoreMapInfo,
   type Tileset,
 } from "@smap/core";
 import {
@@ -559,13 +563,27 @@ async function validateMap(
   if (a.region) rect(store, a.region);
   const issues: ValidationIssue[] = [],
     limit = a.limit ?? 128;
+  const maps = new Map(tx.host.world.maps().map(map => [map.id, map]));
+  type Dimensions = Pick<CoreMapInfo, "width" | "height" | "tileWidth" | "tileHeight">;
+  const targets = new Map<string, Promise<Dimensions>>([[a.mapId, Promise.resolve(store.document.map)]]);
+  const targetDimensions = (id: string): Promise<Dimensions> => {
+    let dimensions = targets.get(id);
+    if (!dimensions) {
+      const map = maps.get(id)!;
+      dimensions = map.width != null && map.height != null && map.tileWidth != null && map.tileHeight != null
+        ? Promise.resolve({ width: map.width, height: map.height, tileWidth: map.tileWidth, tileHeight: map.tileHeight })
+        : waitFor(tx.host.loadMap(id), call.signal).then(target => target.document.map);
+      targets.set(id, dimensions);
+    }
+    return dimensions;
+  };
   const add = (
     code: string,
     detail: string,
     extra: Partial<ValidationIssue> = {},
   ) =>
     issues.push({ severity: "error", code, detail, mapId: a.mapId, ...extra });
-  function* records(): Generator<() => void> {
+  function* records(): Generator<() => void | Promise<void>> {
     // Sparse chunks keep whole-map validation independent of a map's empty area.
     for (const entry of store.document.palette.entries())
       yield () => {
@@ -577,28 +595,37 @@ async function validateMap(
           );
       };
     for (const l of store.document.layers) {
-      if (isEntityLayer(l))
-        for (const e of l.entities)
+      if (isEntityLayer(l)) {
+        for (const e of l.entities) {
+          const type = store.document.getEntityType(e.typeId);
           yield () => {
-            const type = store.document.getEntityType(e.typeId),
-              problem = entityProblem(e, store.document.map, type);
+            const problem = entityProblem(e, store.document.map, type);
             if (!type || problem)
               add("ENTITY_SCHEMA", problem ?? "Unknown entity type", {
                 layerId: l.id,
                 entityId: e.id,
               });
-            for (const def of type?.fields ?? [])
-              if (
-                def.type === "levelRef" &&
-                e.fields[def.name] !== null &&
-                !tx.host.world.maps().some((m) => m.id === e.fields[def.name])
-              )
-                add("PORTAL_TARGET", "Unknown target map", {
-                  layerId: l.id,
-                  entityId: e.id,
-                });
           };
-      else
+          // Missing fields use the same current type defaults as game exports.
+          // Each reference is its own record, so one entity cannot exceed the issue-page limit.
+          for (const field of resolveEntityFields(e, type))
+            if (field.type === "levelRef")
+              yield () => {
+                if (field.value !== null && !maps.has(field.value as string))
+                  add("PORTAL_TARGET", "Unknown target map", {
+                    layerId: l.id,
+                    entityId: e.id,
+                  });
+              };
+          const targetId = portalTarget(e), point = portalTargetPoint(e);
+          if (targetId && point && maps.has(targetId))
+            yield async () => {
+              const target = await targetDimensions(targetId);
+              if (point.x < 0 || point.y < 0 || point.x >= target.width * target.tileWidth || point.y >= target.height * target.tileHeight)
+                add("PORTAL_TARGET", "Portal target point outside target map", { layerId: l.id, entityId: e.id });
+            };
+        }
+      } else
         for (const chunk of l.chunks())
           for (let i = 0; i < chunk.data.length; i++) {
             const cell = chunk.data[i]!;
@@ -675,7 +702,8 @@ async function validateMap(
       truncated = true;
       break;
     }
-    inspect();
+    const inspection = inspect();
+    if (inspection) await inspection;
     offset++;
     scannedCells++;
   }

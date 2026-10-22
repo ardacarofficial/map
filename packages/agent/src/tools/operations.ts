@@ -1,6 +1,6 @@
-import { LEVEL_FORMAT, MapStore, entityProblem, isEntityLayer, isGridLayer, parseLevel, type Entity, type LayerPatch, type Op } from "@smap/core";
+import { LEVEL_FORMAT, MapStore, entityProblem, isEntityLayer, isGridLayer, parseLevel, portalTarget, portalTargetPoint, resolveEntityFields, type Entity, type LayerPatch, type Op } from "@smap/core";
 import { AGENT_LIMITS as L, AgentError, AgentErrorCode as E, type AgentCallContext, type ApplyOperationsArgs, type BatchOperation, type ChangeSummary, type EditEntityArgs, type EntityInfo, type ToolData } from "../contracts";
-import { utf8 } from "../tags";
+import { utf8ByteLength } from "../tags";
 import { type Transactions, waitFor } from "../transactions";
 import { budget, check, point } from "../validation";
 import { change, mutate, protect } from "./mutations";
@@ -23,21 +23,20 @@ export async function editEntity(tx: Transactions, a: EditEntityArgs, call: Agen
     check(type, E.ENTITY_SCHEMA, "Unknown entity type");
     const problem = entityProblem(next, store.document.map, type);
     check(!problem, E.ENTITY_SCHEMA, problem ?? "Invalid entity");
-    for (const field of type.fields)
-      if (field.type === "levelRef" && next.fields[field.name] !== null)
-        check(tx.host.world.maps().some(map => map.id === next.fields[field.name]), E.ENTITY_SCHEMA, "Unknown target map");
-    if (next.typeId === "portal" && next.fields.targetLevel !== null && next.fields.targetPoint !== null) {
-      const targetId = next.fields.targetLevel, targetPoint = next.fields.targetPoint;
-      check(typeof targetId === "string", E.ENTITY_SCHEMA, "Portal target requires a map");
+    for (const field of resolveEntityFields(next, type))
+      if (field.type === "levelRef" && field.value !== null)
+        check(tx.host.world.maps().some(map => map.id === field.value), E.ENTITY_SCHEMA, "Unknown target map");
+    const targetId = portalTarget(next), targetPoint = portalTargetPoint(next);
+    if (targetId && targetPoint) {
       const target = await waitFor(tx.host.loadMap(targetId), call.signal);
       tx.owned(a.context, call);
-      check(typeof targetPoint === "object" && targetPoint !== null && targetPoint.x >= 0 && targetPoint.y >= 0 &&
+      check(targetPoint.x >= 0 && targetPoint.y >= 0 &&
         targetPoint.x < target.document.map.width * target.document.map.tileWidth &&
         targetPoint.y < target.document.map.height * target.document.map.tileHeight,
       E.ENTITY_SCHEMA, "Portal target point outside target map");
     }
   }
-  const retained = 512 + utf8(JSON.stringify(found.entity)).length * 2 + (a.action === "remove" ? 0 : utf8(JSON.stringify(next)).length * 2);
+  const retained = 512 + utf8ByteLength(JSON.stringify(found.entity)) * 2 + (a.action === "remove" ? 0 : utf8ByteLength(JSON.stringify(next)) * 2);
   tx.charge(0, retained);
   tx.run(() => {
     if (a.action === "remove") store.dispatch({ type: "removeEntity", entityId: a.entityId });
@@ -63,7 +62,7 @@ function projection(store: MapStore): { store: MapStore; bytes: number } {
       ...(isEntityLayer(layer) ? { entities: layer.entities.map(entity => ({ ...entity, fields: Object.keys(entity.fields).sort().map(name => ({ name, value: entity.fields[name] })) })) } : { chunks: [] }),
     })),
   });
-  const bytes = utf8(json).length * 4;
+  const bytes = utf8ByteLength(json) * 4;
   budget(bytes, L.retainedBytes);
   return { store: new MapStore(parseLevel(json, doc.tilesets, doc.entityTypes)), bytes };
 }

@@ -1,6 +1,6 @@
 import { cellFlags, cellPaletteIndex, isEntityLayer, isGridLayer, type Entity, type MapStore } from "@smap/core";
 import { AGENT_LIMITS as L, AgentErrorCode as E, type AgentCallContext, type GoalResult, type Point, type Rect, type ToolArguments, type ToolData } from "../contracts";
-import { hashCanonical, utf8 } from "../tags";
+import { hashCanonical, utf8ByteLength } from "../tags";
 import { type Transactions, waitFor } from "../transactions";
 import { budget, check, point, rect } from "../validation";
 import { compactFlags, layer } from "./mutations";
@@ -87,7 +87,7 @@ export async function validateGoals(tx: Transactions, a: ToolArguments["validate
           : { id: target.id, kind: "tile", visible: target.visible, opacity: target.opacity, cells };
       });
       const payload = ["goal-region-v2", a.mapId, goal.region, { tileWidth: store.document.map.tileWidth, tileHeight: store.document.map.tileHeight }, content];
-      digestBytes += utf8(JSON.stringify(payload)).length; budget(digestBytes, L.requestBytes);
+      digestBytes += utf8ByteLength(JSON.stringify(payload)); budget(digestBytes, L.requestBytes);
       const digest = hashCanonical(payload), passed = goal.expectedDigest === undefined ? null : digest === goal.expectedDigest;
       results.push({ kind: goal.kind, passed, digest, detail: passed === null ? "Baseline captured; supply expectedDigest after editing" : passed ? "Region content matches the baseline" : "Region content differs from the baseline" });
     }

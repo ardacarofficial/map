@@ -144,3 +144,46 @@ test("token rotation rejects an initialize whose authenticated body is still arr
   const fresh=await fetch(host.url,{method:"POST",headers:{Authorization:"Bearer replacement-token","Content-Type":"application/json",Accept:"application/json, text/event-stream"},body});
   expect(fresh.status).toBe(200);expect(host.sessionCount).toBe(1);
 });
+
+test("a session deleted while a tool body arrives cannot dispatch or rejoin the editor", async () => {
+  const { host, post, init } = await setup();
+  const dispatched: unknown[] = [];
+  host.attach("a", "epoch", message => {
+    if (message.type !== "tools/call") return;
+    dispatched.push(message);
+    host.reply("a", { type: "result", requestId: message.requestId, bridgeEpoch: message.bridgeEpoch, clientSessionId: message.clientSessionId, result: { content: [{ type: "text", text: "{}" }], structuredContent: {} } });
+  });
+  const session = await init("a");
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_session" } });
+  let finish!: () => void;
+  const response = new Promise<number | undefined>((resolve, reject) => {
+    const req = request(host.url, { method: "POST", headers: { Authorization: "Bearer private-token", "Mcp-Session-Id": session, "MCP-Protocol-Version": "2025-11-25", "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Content-Length": Buffer.byteLength(body) } }, res => { res.resume(); resolve(res.statusCode); });
+    req.on("error", reject); req.write(body.slice(0, 1)); finish = () => req.end(body.slice(1));
+  });
+  await post({ jsonrpc: "2.0", id: 3, method: "ping" }, session);
+  expect((await fetch(host.url, { method: "DELETE", headers: { Authorization: "Bearer private-token", "Mcp-Session-Id": session } })).status).toBe(200);
+  finish();
+  expect(await response).toBe(404);
+  expect(dispatched).toEqual([]);
+  expect(host.sessionCount).toBe(0);
+});
+
+test("the complete API result budget remains deliverable through the bridge envelope", async () => {
+  const { host, post, init } = await setup();
+  const result = { content: [{ type: "text", text: "" }], structuredContent: {} };
+  result.content[0]!.text = "x".repeat(8 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(result)));
+  expect(Buffer.byteLength(JSON.stringify(result))).toBe(8 * 1024 * 1024);
+  let delivered: boolean | undefined;
+  host.attach("a", "epoch", message => {
+    if (message.type === "tools/call") {
+      const reply = { type: "result" as const, requestId: message.requestId, bridgeEpoch: message.bridgeEpoch, clientSessionId: message.clientSessionId, result };
+      expect(host.reply("a", { ...reply, result: { ...result, structuredContent: { tooLarge: true } } })).toBe(false);
+      delivered = host.reply("a", reply);
+    }
+  });
+  const session = await init("a");
+  const call = post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_session" } }, session);
+  await expect.poll(() => delivered).toBeDefined();
+  expect(delivered).toBe(true);
+  expect((await (await call).json()).result).toEqual(result);
+});

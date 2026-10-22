@@ -16,24 +16,43 @@ import {
 import { canonicalJson } from "./toolSchemas";
 import { check } from "./validation";
 
+/** UTF-8 byte count without allocating an intermediate encoded copy. */
+export function utf8ByteLength(text: string): number {
+  let length = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) length++;
+    else if (c < 0x800) length += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length &&
+      text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) {
+      length += 4;
+      i++;
+    } else length += 3; // Unpaired surrogates encode as U+FFFD.
+  }
+  return length;
+}
 export function utf8(text: string): Uint8Array {
-  const bytes: number[] = [];
+  const bytes = new Uint8Array(utf8ByteLength(text));
+  let offset = 0;
   for (const char of text) {
     let c = char.codePointAt(0)!;
     if (c >= 0xd800 && c <= 0xdfff) c = 0xfffd;
-    if (c < 128) bytes.push(c);
-    else if (c < 2048) bytes.push(192 | (c >> 6), 128 | (c & 63));
-    else if (c < 65536)
-      bytes.push(224 | (c >> 12), 128 | ((c >> 6) & 63), 128 | (c & 63));
-    else
-      bytes.push(
-        240 | (c >> 18),
-        128 | ((c >> 12) & 63),
-        128 | ((c >> 6) & 63),
-        128 | (c & 63),
-      );
+    if (c < 128) bytes[offset++] = c;
+    else if (c < 2048) {
+      bytes[offset++] = 192 | (c >> 6);
+      bytes[offset++] = 128 | (c & 63);
+    } else if (c < 65536) {
+      bytes[offset++] = 224 | (c >> 12);
+      bytes[offset++] = 128 | ((c >> 6) & 63);
+      bytes[offset++] = 128 | (c & 63);
+    } else {
+      bytes[offset++] = 240 | (c >> 18);
+      bytes[offset++] = 128 | ((c >> 12) & 63);
+      bytes[offset++] = 128 | ((c >> 6) & 63);
+      bytes[offset++] = 128 | (c & 63);
+    }
   }
-  return new Uint8Array(bytes);
+  return bytes;
 }
 export const compareCodeUnits = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
@@ -106,7 +125,7 @@ export function serializeTags(sidecar: TagsSidecar): string {
   };
   const text = JSON.stringify(normalized, null, 2) + "\n";
   check(
-    utf8(text).length <= L.tagsFileBytes,
+    utf8ByteLength(text) <= L.tagsFileBytes,
     E.LIMIT_EXCEEDED,
     "Tags sidecar exceeds size limit",
   );
@@ -129,7 +148,7 @@ function id(v: unknown): v is string {
 }
 export function parseTags(text: string | null): TagsAvailability {
   if (text === null) return { state: "ready", sidecar: emptyTags() };
-  if (utf8(text).length > L.tagsFileBytes)
+  if (utf8ByteLength(text) > L.tagsFileBytes)
     return {
       state: "unavailable",
       reason: "oversized",
