@@ -2,6 +2,8 @@
 
 The editor owns the live world. Read tools inspect it; `create_stamp` and map edits require the existing `begin_edit` → tools → `finish_edit` → user approval workflow. No MCP tool reads arbitrary paths, writes source PNGs, or approves its own work.
 
+All transports publish the same concise [working guide](schema/workflow.txt) during initialization; the stdio proxy preserves upstream instructions. Inspect editor context, discover assets, plan bounded edits, preview and correct, then check integrity and explicit task goals before submitting for human review. After a timeout, read the session before deciding how to proceed; writes are never automatically replayed.
+
 ## Discover art efficiently
 
 Call `get_session`, then `list_tilesets`. Tileset fingerprints are cached against the image identity and grid; replacing source pixels, changing the grid, or editing tags invalidates the relevant summary. Hosts without a trustworthy image identity use uncached fingerprints.
@@ -52,6 +54,54 @@ Alternatively, `source` is `{mapId, region, layerIds}` with explicit tile/collis
 
 Stamp library tags are stored in the stamp; independent AI labels remain the separate `set_tags` operation. Before human approval the stamp is tentative and cannot be saved. Discard restores the library and map. Approval groups stamp creation and placement into one world undo entry; undo/redo and normal save/reopen preserve the result. Source PNGs remain unchanged.
 
+## Batch a known placement plan
+
+`apply_operations` accepts one write context and 1–32 `{tool,args}` items. Child args have no context. Supported tools are `paint_cells`, `paint_rect`, `paint_line`, `place_stamp`, `place_entity`, and `edit_entity`. Stamps require explicit mappings to existing layers; layer creation is excluded.
+
+```json
+{
+  "context":{"worldSessionId":"<session>","transactionId":"<edit>","expectedRevision":4,"idempotencyKey":"village-batch-001"},
+  "operations":[
+    {"tool":"place_stamp","args":{"mapId":"<map>","stampId":"<house>","at":{"x":2,"y":3},"layerMapping":[{"sourceLayerId":"<source>","targetLayerId":"<ground>"}]}},
+    {"tool":"place_entity","args":{"mapId":"<map>","layerId":"<entities>","typeId":"spawn","at":{"x":4,"y":5}}}
+  ]
+}
+```
+
+The batch preflights every item in order, including duplicate spawn rules, portal destinations, protection, and cumulative budgets. A late invalid item leaves prior surrounding work and revision untouched. Only validated core commands replay, synchronously; no portal loading occurs after the first live write. Retry an identical outer payload/key to replay its result without duplicating entities. Responses contain short item results and the aggregate change summary.
+
+The aggregate limit is 4096 planned cell writes, even across layers/maps; each child consumes one of the transaction's 256 mutation calls and its normal retained-memory budget. Temporary metadata/entity projections also fit within the existing 64 MiB memory budget; maps with very large existing metadata can therefore require smaller individual calls. Preflight entity IDs use the maximum valid length, so memory admission is conservative. Fill, source preparation, layer/map/stamp creation, lifecycle operations, and tags are not batch children. Approval remains one world undo action; discard restores the entire edit.
+
+## Correct an existing entity
+
+`read_region` with `includeEntities:true` returns each entity's `layerId`, including when several entity layers are requested. Use the existing entity ID with `edit_entity`:
+
+```json
+{"context":{"worldSessionId":"<session>","transactionId":"<edit>","expectedRevision":5,"idempotencyKey":"move-spawn-001"},"mapId":"<map>","entityId":"<spawn>","action":"move","at":{"x":6,"y":5}}
+```
+
+`action:"update"` takes `fields`, merged into existing values; `action:"remove"` takes no extra data. Moves use map cells. Portal point fields use native target-map pixels. IDs/types stay fixed, unknown fields and invalid targets reject, and initial/current layer locks and visibility are enforced. Corrections and removals retain normal idempotency, discard, approval, undo, and redo behavior.
+
+## Verify explicit map goals
+
+Keep `validate_map` for structural integrity. `validate_goals` checks caller-specified goals; it does not infer collision from artwork. Each request specifies one `mapId` and 1–16 checks:
+
+```json
+{
+  "context":{"worldSessionId":"<session>"},"mapId":"<map>",
+  "checks":[
+    {"kind":"reachability","region":{"x":0,"y":0,"width":32,"height":16},"from":{"x":1,"y":8},"to":{"x":30,"y":8},"collisionLayerIds":["<collision>"],"blockedValues":[1],"emptyIsBlocked":false},
+    {"kind":"entity_count","region":{"x":0,"y":0,"width":32,"height":16},"layerIds":["<entities>"],"typeId":"spawn","min":1,"max":1}
+  ]
+}
+```
+
+Reachability uses four orthogonal neighbors within the explicit region. Collision layers follow map stack order regardless of input order; the uppermost nonzero decision wins. The caller explicitly chooses blocked nonzero values (`1`, `2`, or both) and whether an undecided empty cell is blocked. Endpoints must be inside the region. A structurally valid map can fail this check if a bridge is disconnected.
+
+To protect content, call with `{kind:"region_unchanged",region,layerIds}` **before editing**, retain its `digest`, then repeat with `expectedDigest`. The first capture returns `passed:null` and aggregate `valid:null`; it is not an assertion of success. Digests bind map ID, region, chosen layer identities, resolved tile IDs/orientations, collision values, and entities whose anchors lie inside the region. Unrelated palette growth does not invalidate the digest. Entity counts also use anchors and explicit layers, with optional existing `typeId` and inclusive `min`/`max`.
+
+Each check permits 4096 cells per selected layer, with at most eight layers and 16384 aggregate cell-layer scans per request. Entity scans are separately bounded to 16384 visits; region digests include at most 256 entities per layer and at most 1 MiB of content per call. Checks are read-only; failures do not change pending edits. Review both the preview and the relevant structural/goal results before `finish_edit`.
+
 ## Validation
 
 From the repository root:
@@ -64,3 +114,9 @@ pnpm build
 ```
 
 The new browser workflow is `e2e/tests/ai-assets.spec.ts`. Native deadline/security tests run with `cargo test --manifest-path packages/desktop/src-tauri/Cargo.toml -p smap-host --locked`.
+
+## Local diagnostics and reproducible measurements
+
+Use the AI activity panel's **Export diagnostics** action to save the currently filtered rows locally. The file contains tool outcomes, elapsed time, cell totals, and request/text/image/result byte counts, without raw arguments, images, client identities or credentials. No export runs automatically.
+
+The [five representative scripted workloads and before/after results](bench/README.md) distinguish call/byte/capacity improvements from actual model quality or inference latency, which were not measured. These fixtures also exercise approval, exact undo/redo/discard, and preservation of earlier work after an invalid call.

@@ -12,7 +12,7 @@ export function toMcpToolResult(
   result: ToolSuccess | AgentFailure,
   png?: Uint8Array | ImageBlock,
 ): AgentToolResult {
-  const text = { type: "text" as const, text: canonicalJson(result) };
+  const text = { type: "text" as const, text: canonicalJson(result, false) };
   if (!result.ok)
     return { isError: true, content: [text], structuredContent: result };
   const image: ImageBlock | undefined =

@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { harness, success, error, tile } from "./helpers";
 import { AGENT_LIMITS as L } from "../src/contracts";
 import { memoryCall } from "../src/testing/memoryHost";
+import { serializeLevel } from "@smap/core";
 
 it("bounds read/paint/fill searches before dispatch, including each layer and aggregate reads", async () => {
   const h = harness({ width: 128, height: 128 });
@@ -212,7 +213,7 @@ it("queued calls are bounded per authenticated client", async () => {
   for (const call of calls) success(await call);
 });
 
-it("charges reversible palette snapshot growth before allocating a large batch", async () => {
+it.each(["approve", "discard"] as const)("paints 4096 distinct tiles under the unchanged memory limit and restores exactly on %s", async action => {
   const h = harness({
     width: 64,
     height: 64,
@@ -232,7 +233,7 @@ it("charges reversible palette snapshot growth before allocating a large batch",
   });
   await h.begin();
   const before = h.host.snapshot();
-  error(
+  success(
     await h.edit("paint_cells", {
       mapId: "map-1",
       layerId: "ground",
@@ -242,7 +243,27 @@ it("charges reversible palette snapshot growth before allocating a large batch",
         value: { tilesetId: "tiles", tileId },
       })),
     }),
-    "LIMIT_EXCEEDED",
   );
-  expect(h.host.snapshot()).toEqual(before);
+  expect(L.retainedBytes).toBe(64 * 1024 * 1024);
+  expect(h.api.getState().transaction!.counters).toMatchObject({
+    plannedWrites: 4096,
+    changedCells: 4096,
+    retainedBytes: 4096 * (32 + 8 + 128 + "tiles".length * 2) + 64,
+  });
+  const store = h.host.stores.get("map-1")!;
+  expect(store.document.palette.size).toBe(4096);
+  const afterText = serializeLevel(store.document);
+  await h.api.userAction(action);
+  if (action === "discard") expect(h.host.snapshot()).toEqual(before);
+  else {
+    const snapshots = store.peekUndo()!.changes.filter(c => c.kind === "paletteAppend");
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({ before: [], after: expect.arrayContaining([{ tilesetId: "tiles", tileId: 4095 }]) });
+    expect(h.host.history.undoDepth).toBe(1);
+    h.host.history.undo();
+    expect(store.document.palette.size).toBe(0);
+    expect(store.document.getLayer("ground")!.chunkCount).toBe(0);
+    h.host.history.redo();
+    expect(serializeLevel(store.document)).toBe(afterText);
+  }
 });

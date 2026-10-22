@@ -19,6 +19,7 @@ export {
   tileFingerprint,
   stampFingerprint,
   hashCanonical,
+  semanticMatches,
 } from "./tags";
 
 export * from "./tools/visual";

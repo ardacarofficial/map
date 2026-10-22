@@ -4,7 +4,9 @@ import { getLocale, t } from "../../i18n";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/TextField";
 import { useProjectLibrary } from "../../io/projectLibrary";
-import { agentActivity } from "../../agent/activity";
+import { agentActivity, exportActivityMetrics } from "../../agent/activity";
+import { deliverFile } from "../../export/exportActions";
+import { toast } from "../toast/toastStore";
 import { activityOutcome, groupActivity } from "./selectors";
 import { agentErrorMessage } from "./errorMessages";
 
@@ -18,6 +20,9 @@ export function AiActivityPanel() {
   return <div className="flex min-h-0 flex-1 flex-col" data-ai-activity>
     <div className="flex h-control-md shrink-0 items-center gap-2 border-b border-line-subtle px-2">
       <TextField size="sm" leadingIcon="search" aria-label={t("ai.activity.search")} placeholder={t("ai.activity.search")} value={query} onChange={event => setQuery(event.target.value)} className="flex-1" />
+      <Button size="sm" variant="ghost" disabled={!rows.length} onClick={() => {
+        void deliverFile(new Blob([exportActivityMetrics(rows)], { type: "application/json" }), "smap-ai-diagnostics.json", { name: "JSON", extensions: ["json"] }).catch(() => toast.warning(t("ai.activity.exportFailed")));
+      }}>{t("ai.activity.export")}</Button>
       <Button size="sm" variant="ghost" disabled={!entries.some(row => !cleared.has(row.id))} onClick={() => setCleared(new Set(entries.map(row => row.id)))}>{t("ai.activity.clear")}</Button>
     </div>
     <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={t("ai.activity.title")} tabIndex={0}>

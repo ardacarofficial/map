@@ -177,6 +177,7 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         let body: Value = res.json().await.unwrap();
         assert_eq!(body["result"]["protocolVersion"], version);
         assert_eq!(body["result"]["serverInfo"]["name"], "harita");
+        assert_eq!(body["result"]["instructions"], include_str!("../../../../../../agent/schema/workflow.txt").trim());
     }
     assert_eq!(
         h.post(json!({"jsonrpc":"2.0","id":2,"method":"ping"}))
@@ -207,7 +208,7 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         .await
         .unwrap();
     let tools = body["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 29);
+    assert_eq!(tools.len(), 33);
     for name in ["visual_ingest_reference", "visual_match_reference", "create_stamp"] {
         assert!(tools.iter().any(|tool| tool["name"] == name), "missing {name}");
     }

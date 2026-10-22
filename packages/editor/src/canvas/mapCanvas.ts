@@ -1,3 +1,4 @@
+import type { EditorContext } from "@smap/agent";
 import { pixelUploadMetrics } from "./pixelUpload";
 import { usePixelColors } from "../state/pixelColors";
 import { PixelController } from "./pixelController";
@@ -126,6 +127,8 @@ export interface CanvasHandle {
   centerOn(cellX: number, cellY: number): void;
   /** Read-only camera settings for named bookmarks. */
   captureView(): LevelView | null;
+  /** Live visible bounds in map pixels and cells for read-only editor context. */
+  captureViewport(): EditorContext["viewport"];
   restoreView(view: LevelView): void;
   /** Transient navigation feedback; creates no map selection or operation. */
   flashCell(x: number, y: number): void;
@@ -659,6 +662,13 @@ export class MapCanvas {
       this.#camera.centerOnWorld((cellX + 0.5) * map.tileWidth, (cellY + 0.5) * map.tileHeight);
     },
     captureView: () => this.#view === "level" ? this.#camera.savedView() : null,
+    captureViewport: () => {
+      const map=this.#map();if(!map||this.#destroyed)return null;
+      const camera=this.#camera,off=snappedOffset(camera.camera,camera.resolution),zoom=camera.camera.zoom;
+      const pixelBounds={x:-off.x/zoom,y:-off.y/zoom,width:camera.viewW/zoom,height:camera.viewH/zoom};
+      const x=Math.floor(pixelBounds.x/map.tileWidth),y=Math.floor(pixelBounds.y/map.tileHeight);
+      return {view:this.#view,zoom,pixelBounds,cellBounds:{x,y,width:Math.ceil((pixelBounds.x+pixelBounds.width)/map.tileWidth)-x,height:Math.ceil((pixelBounds.y+pixelBounds.height)/map.tileHeight)-y}};
+    },
     restoreView: (view) => this.#camera.restoreView(view),
     flashCell: (x, y) => this.#overlays.flash({ x, y, width: 1, height: 1 }),
     setMinimapVisible: (visible) => {

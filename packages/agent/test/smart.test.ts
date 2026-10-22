@@ -9,6 +9,29 @@ import {
 } from "@smap/core";
 import { harness, success, error, tile } from "./helpers";
 
+it("rejects missing and mixed smart brush branches without losing pending paint or revision", async () => {
+  const h = harness();
+  await h.begin();
+  success(await h.edit("paint_cells",{mapId:"map-1",layerId:"ground",cells:[{x:0,y:0,value:tile}]}));
+  const prepared = success(await h.edit("prepare_smart_source",{
+    mapId:"map-1",source:{tilesetId:"tiles",region:{x:0,y:0,width:3,height:3}},force:true,
+  }));
+  const sourceId = "sourceId" in prepared.data ? prepared.data.sourceId : "";
+  const snapshot = h.host.snapshot(), revision = h.api.getState().revision, transaction = h.api.getState().transaction!.id;
+  for (const branch of [
+    {mode:"area"}, {mode:"road"},
+    {mode:"area",region:{x:1,y:1,width:2,height:2},cells:[{x:1,y:1}]},
+    {mode:"area",region:{x:1,y:1,width:2,height:2},erase:true},
+    {mode:"road",cells:[{x:1,y:1}],region:{x:1,y:1,width:2,height:2}},
+  ]) {
+    error(await h.edit("smart_brush",{mapId:"map-1",layerId:"ground",sourceId,...branch}),"INVALID_ARGUMENT");
+    expect(h.host.snapshot()).toEqual(snapshot);
+    expect(h.api.getState()).toMatchObject({phase:"running",revision,transaction:{id:transaction}});
+  }
+  success(await h.edit("smart_brush",{mapId:"map-1",layerId:"ground",sourceId,mode:"area",region:{x:4,y:4,width:3,height:3},erase:false}));
+  success(await h.edit("paint_cells",{mapId:"map-1",layerId:"ground",cells:[{x:1,y:0,value:tile}]}));
+});
+
 function bandFixture(band = 2) {
   const size = band * 2 + 1;
   const base: Stamp = {

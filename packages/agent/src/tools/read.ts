@@ -194,7 +194,7 @@ export async function read<N extends ToolName>(
       budget(a.layerIds.length, L.readLayers);
       const legend: ResolvedTile[] = [],
         indices = new Map<string, number>();
-      const entities: Omit<EntityInfo, "layerId">[] = [];
+      const entities: EntityInfo[] = [];
       const layers = a.layerIds.map((id) => {
         const target = layer(s, id);
         if (isEntityLayer(target)) {
@@ -210,6 +210,7 @@ export async function read<N extends ToolName>(
                 budget(entities.length + 1, L.entitiesPerRead);
                 entities.push({
                   id: e.id,
+                  layerId: target.id,
                   typeId: e.typeId,
                   pixelX: e.x,
                   pixelY: e.y,
@@ -509,7 +510,7 @@ export async function read<N extends ToolName>(
         call.signal.throwIfAborted();
         check(tx.host.clock.now() < call.deadline, E.TIMEOUT, "Semantic search deadline expired");
         if (!remainder.length) {
-          const page = await waitFor(tx.host.tags.get({ context: a.context, ...(a.kind ? { kind: a.kind } : {}), ...(a.tilesetId ? { tilesetId: a.tilesetId } : {}), ...(hostCursor ? { cursor: hostCursor } : {}), status: "all", limit: L.tagsPage }, call), call.signal);
+          const page = await waitFor(tx.host.tags.get({ context: a.context, query: a.query, ...(a.kind ? { kind: a.kind } : {}), ...(a.tilesetId ? { tilesetId: a.tilesetId } : {}), ...(hostCursor ? { cursor: hostCursor } : {}), status: "all", limit: L.tagsPage }, call), call.signal);
           remainder.push(...page.items);
           more = page.nextCursor !== null;
           hostCursor = page.nextCursor ?? undefined;

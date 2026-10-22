@@ -1,5 +1,5 @@
 /** Frozen v2 catalogue. Each published input schema contains its reachable local definitions. */
-import type { AgentToolDefinition } from "./contracts.ts";
+import type { AgentToolDefinition, JsonValue } from "./contracts.ts";
 
 const SHARED_DEFS = {
   "Id": {
@@ -1797,12 +1797,71 @@ export function reachableSchemaDefinitions<T>(schema: unknown, definitions: Read
   return Object.fromEntries(Object.entries(definitions).filter(([name]) => reachable.has(name)));
 }
 
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = DEFINITIONS.map(tool => ({
+type Schema = { readonly [key: string]: JsonValue };
+const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
+const objectSchema = (properties: Record<string, JsonValue>, required = Object.keys(properties)): Schema =>
+  ({ type: "object", additionalProperties: false, properties, required });
+const requiredKeys = (...keys: string[]): Schema => ({ required: keys, properties: Object.fromEntries(keys.map(key => [key, {}])) });
+const ids: Schema = { type: "array", minItems: 1, maxItems: 8, uniqueItems: true, items: ref("Id") };
+const fieldValues: Schema = { type: "object", maxProperties: 64, propertyNames: { type: "string", minLength: 1, maxLength: 128 }, additionalProperties: ref("FieldValue") };
+const baseEntity = { context: ref("WriteContext"), mapId: ref("Id"), entityId: ref("Id") };
+const editEntitySchema = { oneOf: [
+  objectSchema({ ...baseEntity, action: { const: "move" }, at: ref("Point") }),
+  objectSchema({ ...baseEntity, action: { const: "update" }, fields: fieldValues }),
+  objectSchema({ ...baseEntity, action: { const: "remove" } }),
+] };
+const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
+  let schema: Schema = tool.inputSchema;
+  if (tool.name === "smart_brush") schema = { ...schema, allOf: [
+    { if: { properties: { mode: { const: "area" } } }, then: { ...requiredKeys("region"), not: { anyOf: [requiredKeys("cells"), { ...requiredKeys("erase"), properties: { erase: { const: true } } }] } } },
+    { if: { properties: { mode: { const: "road" } } }, then: { ...requiredKeys("cells"), not: requiredKeys("region") } },
+  ] };
+  if (tool.name === "get_tile_catalog") schema = { ...schema, allOf: [
+    { not: { ...requiredKeys("tileIds"), anyOf: [requiredKeys("offset"), requiredKeys("limit")] } },
+    { if: requiredKeys("sheetRegion"), then: { ...requiredKeys("image"), properties: { image: { const: "sheet" } } } },
+    { not: { ...requiredKeys("tileIds", "image"), properties: { tileIds: {}, image: { const: "sheet" } } } },
+  ] };
+  if (tool.name === "visual_ingest_reference") schema = {
+    ...schema, properties: { ...(schema.properties as Record<string, JsonValue>), selectedReferenceToken: ref("Id") },
+    required: ["context"], oneOf: [requiredKeys("pngBase64"), requiredKeys("selectedReferenceToken")],
+  };
+  return { ...tool, inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" } };
+});
+function feature(name: AgentToolDefinition["name"], title: string, description: string, schema: Schema, readOnly: boolean): AgentToolDefinition {
+  return { name, title, description, annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, openWorldHint: false },
+    inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" } };
+}
+const batchNames = ["paint_cells", "paint_rect", "paint_line", "place_stamp", "place_entity", "edit_entity"] as const;
+const batchBranches = batchNames.map(name => {
+  const source = name === "edit_entity" ? editEntitySchema : hardenedDefinitions.find(t => t.name === name)!.inputSchema;
+  function withoutContext(schema: Schema): Schema {
+    if (Array.isArray(schema.oneOf)) return { oneOf: schema.oneOf.map(branch => withoutContext(branch as Schema)) };
+    const { context: _context, ...properties } = schema.properties as Record<string, JsonValue>;
+    const required = (schema.required as string[]).filter(key => key !== "context");
+    if (name === "place_stamp") { properties.allowCreateLayers = { const: false }; required.push("layerMapping"); }
+    return objectSchema(properties, required);
+  }
+  return objectSchema({ tool: { const: name }, args: withoutContext(source) });
+});
+const goalBase = { region: ref("Rect") };
+const goalSchema: Schema = { oneOf: [
+  objectSchema({ ...goalBase, kind: { const: "reachability" }, from: ref("Point"), to: ref("Point"), collisionLayerIds: ids,
+    blockedValues: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: { type: "integer", enum: [1, 2] } }, emptyIsBlocked: { type: "boolean" } }),
+  objectSchema({ ...goalBase, kind: { const: "region_unchanged" }, layerIds: ids, expectedDigest: { type: "string", pattern: "^[a-f0-9]{64}$" } }, ["kind", "region", "layerIds"]),
+  objectSchema({ ...goalBase, kind: { const: "entity_count" }, layerIds: ids, typeId: ref("Id"), min: { type: "integer", minimum: 0, maximum: 1000000 }, max: { type: "integer", minimum: 0, maximum: 1000000 } }, ["kind", "region", "layerIds", "min", "max"]),
+] };
+const featureDefinitions = [
+  feature("get_editor_context", "Get Editor Context", "Read the user's current map/layer/tool, bounded atlas/stamp/map selection, viewport and explicitly shared reference token. Context is observational: confirm intent before choosing a source. contextToken changes when selection or view changes, independently of world revision. No edits or automatic reference upload.", objectSchema({ context: ref("ReadContext") }), true),
+  feature("edit_entity", "Edit Entity", "Move, update fields or remove an existing entity by mapId/entityId. move.at is map cells; point field values are native pixels. Preserves entity ID/type and validates merged fields, portal destinations and initial/current layer protection. Requires an edit, current revision and idempotency key.", editEntitySchema, false),
+  feature("apply_operations", "Apply Operations", "Apply 1–32 sequential existing-ID paint_cells/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤4096. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.", objectSchema({ context: ref("WriteContext"), operations: { type: "array", minItems: 1, maxItems: 32, items: { oneOf: batchBranches } } }), false),
+  feature("validate_goals", "Validate Goals", "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision and entities; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.", objectSchema({ context: ref("ReadContext"), mapId: ref("Id"), checks: { type: "array", minItems: 1, maxItems: 16, items: goalSchema } }), true),
+];
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions].map(tool => ({
   ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 
 /** Code-unit key order, LF, two spaces and one final newline, independent of host locale. */
-export function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown, pretty = true): string {
   function sorted(input: unknown): unknown {
     if (Array.isArray(input)) return input.map(item => sorted(item));
     if (input !== null && typeof input === "object") {
@@ -1810,7 +1869,7 @@ export function canonicalJson(value: unknown): string {
     }
     return input;
   }
-  return JSON.stringify(sorted(value), null, 2) + "\n";
+  return pretty ? JSON.stringify(sorted(value), null, 2) + "\n" : JSON.stringify(sorted(value));
 }
 
 /** The root is an MCP tools/list result, directly embeddable by Rust. */

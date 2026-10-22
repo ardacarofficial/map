@@ -5,6 +5,9 @@ it("records explicit read targets, mutation deltas and review totals in activity
   const h = harness();
   success(await h.read("get_map_info", { mapId: "map-1" }));
   expect(h.host.activity.entries().at(-1)).toMatchObject({ tool: "get_map_info", mapIds: ["map-1"], changedCells: 0 });
+  expect(h.host.activity.entries().at(-1)?.textBytes).toBeGreaterThan(0);
+  expect(h.host.activity.entries().at(-1)?.resultBytes).toBeGreaterThan(h.host.activity.entries().at(-1)!.textBytes!);
+  expect(h.host.activity.entries().at(-1)?.requestBytes).toBeGreaterThan(0);
   await h.begin();
   expect(h.host.activity.entries().at(-1)).toMatchObject({ tool: "begin_edit", mapIds: ["map-1"] });
   success(await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region: { x: 0, y: 0, width: 2, height: 3 }, value: tile }));

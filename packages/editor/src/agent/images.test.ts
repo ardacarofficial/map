@@ -67,3 +67,22 @@ it("changes catalog source identities on replacement and leaves stable reads cac
   image(encodeRgbaPng(7,4,pixels()));const key=port.catalogSourceKey!("art");expect(port.catalogSourceKey!("art")).toBe(key);
   image(encodeRgbaPng(7,4,pixels()));expect(port.catalogSourceKey!("art")).not.toBe(key);
 });
+
+it("shares cached pixel hashes and invalidates source and grid identities",async()=>{
+  const core=await import("@smap/core"),hash=vi.spyOn(core,"rasterContentHash");
+  const grid={...ts};
+  const port=createImagePort({tilesets:()=>[grid],stamps:()=>[]} as unknown as AgentWorldPort,()=>1);
+  image(encodeRgbaPng(7,4,pixels()));hash.mockClear();
+  const first=await port.tileFingerprint("art",0,call.signal);
+  await port.tileFingerprint("art",0,call.signal);
+  expect(hash).toHaveBeenCalledTimes(1);
+  await Promise.all([0,1,1].map(id=>port.tileFingerprint("art",id,call.signal)));
+  const count=hash.mock.calls.length;
+  await port.tileFingerprint("art",1,call.signal);expect(hash).toHaveBeenCalledTimes(count);
+  grid.spacing=0;
+  expect(await port.tileFingerprint("art",0,call.signal)).not.toBe(first);
+  expect(hash).toHaveBeenCalledTimes(count+1);
+  image(encodeRgbaPng(7,4,pixels()));
+  await port.tileFingerprint("art",0,call.signal);expect(hash).toHaveBeenCalledTimes(count+2);
+  hash.mockRestore();
+});

@@ -35,19 +35,48 @@ export function encodeAgentPng(image: RgbaImage): Uint8Array {
 }
 const sourceIds = new WeakMap<TilesetImage, string>();
 let sourceSequence = 0;
+function sourceKey(image:TilesetImage):string {
+  let key=sourceIds.get(image);
+  if(!key){key=String(++sourceSequence);sourceIds.set(image,key);}
+  return key;
+}
 const hashTuple = (value: unknown) => pngHash(new TextEncoder().encode(JSON.stringify(value)));
 function assertTile(tileset: Tileset | undefined, tileId: number): asserts tileset is Tileset {
   const count=tileset?.edited?.nextTileId ?? (tileset ? tileset.columns*tileset.rows : 0);
   if(!tileset||!Number.isInteger(tileId)||tileId<0||tileId>=count)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown tile");
 }
 export function createImagePort(world: AgentWorldPort, revision: () => number): AgentImagePort {
+  // Source object identity and slicing geometry bound every cached fingerprint.
+  // PNG replacement and grid edits invalidate only the affected atlas.
+  const fingerprints=new Map<string,{imageKey:string;grid:string;values:Map<number,string>}>();
+  let fingerprintEntries=0;
+  const gridKey=(ts:Tileset)=>JSON.stringify([ts.tileWidth,ts.tileHeight,ts.columns,ts.rows,ts.margin,ts.spacing,ts.edited?.nextTileId??null]);
   const tileFingerprint = async (tilesetId: string, tileId: number, signal: AgentSignal) => {
+    signal.throwIfAborted();
     const tileset=world.tilesets().find(t=>t.id===tilesetId);assertTile(tileset,tileId);
+    const image=getTilesetImage(tilesetId),imageKey=image?sourceKey(image):null,grid=gridKey(tileset);
+    let cached=fingerprints.get(tilesetId);
+    if(cached&&(cached.imageKey!==imageKey||cached.grid!==grid)){
+      fingerprintEntries-=cached.values.size;fingerprints.delete(tilesetId);cached=undefined;
+    }
+    const hit=cached?.values.get(tileId);if(hit)return hit;
     const source=await imagePixels(tilesetId,signal),rect=tileRect(tileset,tileId);
+    const current=world.tilesets().find(t=>t.id===tilesetId);
+    if(getTilesetImage(tilesetId)!==image||!image||!current||gridKey(current)!==grid)
+      throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Tileset changed while fingerprinting");
     if(rect.x+rect.width>source.width||rect.y+rect.height>source.height)throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Tile outside current image");
     const pixels=new Uint8Array(rect.width*rect.height*4);
     for(let y=0;y<rect.height;y++)pixels.set(source.data.subarray(((rect.y+y)*source.width+rect.x)*4,((rect.y+y)*source.width+rect.x+rect.width)*4),y*rect.width*4);
-    return hashTuple(["tile-v1",tileset.tileWidth,tileset.tileHeight,tileset.columns,tileset.rows,tileset.margin,tileset.spacing,tileId,rasterContentHash(rect.width,rect.height,pixels)]);
+    const fingerprint=await hashTuple(["tile-v1",tileset.tileWidth,tileset.tileHeight,tileset.columns,tileset.rows,tileset.margin,tileset.spacing,tileId,rasterContentHash(rect.width,rect.height,pixels)]);
+    signal.throwIfAborted();
+    const latest=world.tilesets().find(t=>t.id===tilesetId);
+    if(getTilesetImage(tilesetId)!==image||!latest||gridKey(latest)!==grid)throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Tileset changed while fingerprinting");
+    // Keep cache memory bounded independently from decoded source retention.
+    if(fingerprintEntries>=100000){fingerprints.clear();fingerprintEntries=0;}
+    cached=fingerprints.get(tilesetId);
+    if(!cached||cached.imageKey!==imageKey||cached.grid!==grid){if(cached)fingerprintEntries-=cached.values.size;cached={imageKey:sourceKey(image),grid,values:new Map()};fingerprints.set(tilesetId,cached);}
+    if(!cached.values.has(tileId)){cached.values.set(tileId,fingerprint);fingerprintEntries++;}
+    return fingerprint;
   };
   const stampFingerprint = async (id: string, signal: AgentSignal) => {
     const stamp=world.stamps().find(s=>s.id===id);if(!stamp)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown stamp");
@@ -69,9 +98,7 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
     catalogSourceKey(id) {
       const image = getTilesetImage(id);
       if (!image) return null;
-      let key = sourceIds.get(image);
-      if (!key) { key = String(++sourceSequence); sourceIds.set(image, key); }
-      return key;
+      return sourceKey(image);
     },
     async tileCatalog(args,call) {
       const rev=revision(),tileset=world.tilesets().find(t=>t.id===args.tilesetId);

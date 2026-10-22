@@ -6,12 +6,12 @@ import { TOOL_DEFINITIONS, canonicalJson, generateToolsJson } from "../src/toolS
 import { TOOL_CATALOGUE_HASH } from "../src/catalogue.generated";
 import examples from "./fixtures/tool-examples.json";
 
-const names = ["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "begin_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_rect", "paint_line", "fill", "prepare_smart_source", "smart_brush", "draw_path", "place_stamp", "edit_layer", "list_entity_types", "place_entity", "create_map", "resize_map", "render_preview", "validate_map", "get_tags", "set_tags", "visual_ingest_reference", "visual_match_reference", "create_stamp"];
+const names = ["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "begin_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_rect", "paint_line", "fill", "prepare_smart_source", "smart_brush", "draw_path", "place_stamp", "edit_layer", "list_entity_types", "place_entity", "create_map", "resize_map", "render_preview", "validate_map", "get_tags", "set_tags", "visual_ingest_reference", "visual_match_reference", "create_stamp", "get_editor_context", "edit_entity", "apply_operations", "validate_goals"];
 
 describe("frozen MCP catalogue", () => {
   it("publishes exactly the agreed tools in order", () => {
     expect(TOOL_DEFINITIONS.map(tool => tool.name)).toEqual(names);
-    expect(new Set(names).size).toBe(29);
+    expect(new Set(names).size).toBe(33);
   });
   it("commits deterministic, self-contained draft 2020-12 schemas", () => {
     const actual = generateToolsJson();
@@ -31,6 +31,15 @@ describe("frozen MCP catalogue", () => {
       for (const args of fixture.invalid) expect(validate(args), `${tool.name}: accepted ${JSON.stringify(args)}`).toBe(false);
       for (const args of fixture.valid) expect(validate({ ...args, unexpected: true }), tool.name).toBe(false);
     }
+  });
+  it("bounds batches at 32 existing-ID operations and forbids implicit stamp layer creation", () => {
+    const validate = new Ajv2020({ strict: true }).compile(TOOL_DEFINITIONS.find(tool => tool.name === "apply_operations")!.inputSchema);
+    const fixture = examples.tools.apply_operations.valid[0]!;
+    const item = fixture.operations[0]!;
+    expect(validate({ ...fixture, operations: Array.from({ length: 32 }, () => item) })).toBe(true);
+    expect(validate({ ...fixture, operations: Array.from({ length: 33 }, () => item) })).toBe(false);
+    expect(validate({ ...fixture, operations: [{ tool: "place_stamp", args: { mapId: "map", stampId: "house", at: { x: 0, y: 0 } } }] })).toBe(false);
+    expect(validate({ ...fixture, operations: [{ tool: "place_stamp", args: { mapId: "map", stampId: "house", at: { x: 0, y: 0 }, layerMapping: [{ sourceLayerId: "base", targetLayerId: "ground" }], allowCreateLayers: true } }] })).toBe(false);
   });
   it("resolves every local reference, including transitive shared definitions", () => {
     for (const tool of TOOL_DEFINITIONS) {

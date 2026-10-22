@@ -4,8 +4,26 @@ import { describe, expect, it } from "vitest";
 import { AGENT_LIMITS, AgentErrorCode, MCP_PROTOCOL_VERSIONS } from "../src/contracts";
 import schema from "../schema/transport.json";
 import vectors from "./fixtures/transport-examples.json";
+import { harness, success } from "./helpers";
+import { canonicalJson } from "../src/toolSchemas";
+import { toMcpToolResult } from "../src/result";
 
 describe("cross-transport conformance", () => {
+  it("reduces dense runtime JSON text by at least 75% while preserving payload and PNG blocks", async () => {
+    const h = harness({width:64,height:64});
+    const store = h.host.stores.get("map-1")!;
+    for (let i=1;i<4;i++) store.dispatch({type:"addLayer",layer:{id:`layer-${i}`,name:`Layer ${i}`}});
+    const result = await h.read("read_region",{mapId:"map-1",layerIds:["ground","layer-1","layer-2","layer-3"],region:{x:0,y:0,width:64,height:64}});
+    const payload = success(result), compact = result.content[0]!;
+    if (compact.type!=="text") throw new Error("Expected text");
+    const textBytes = Buffer.byteLength(compact.text), prettyBytes = Buffer.byteLength(canonicalJson(payload));
+    expect(textBytes/prettyBytes).toBeLessThanOrEqual(0.25);
+    expect(JSON.parse(compact.text)).toEqual(payload);
+    expect(compact.text).not.toContain("\n");
+    const image = {type:"image" as const,mimeType:"image/png" as const,data:"AAECA/8="};
+    expect(toMcpToolResult(payload,image).content[1]).toBe(image);
+    expect(toMcpToolResult(payload).content[0]).toEqual(compact);
+  });
   it("shares budgets, protocol versions and stable application error codes", () => {
     expect(vectors.limits).toEqual(AGENT_LIMITS);
     expect(vectors.protocolVersions).toEqual(MCP_PROTOCOL_VERSIONS);

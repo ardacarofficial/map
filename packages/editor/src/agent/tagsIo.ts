@@ -1,12 +1,18 @@
 import { t } from "../i18n";
 import { toast } from "../ui/toast/toastStore";
-import { AGENT_LIMITS, AgentError, AgentErrorCode, type AgentImagePort, type AgentTagsPort, type AgentWorldPort, type TagRecord, type TagsAvailability, type TagsSidecar, type TagTarget, type ToolData } from "@smap/agent";
+import { AGENT_LIMITS, semanticMatches, AgentError, AgentErrorCode, type AgentImagePort, type AgentTagsPort, type AgentWorldPort, type TagRecord, type TagsAvailability, type TagsSidecar, type TagTarget, type ToolData, type TileTagEntry, type StampTagEntry } from "@smap/agent";
 import { FileNotFoundError, type ProjectFileSystem } from "../io/fs";
 import { cancelPendingEdit } from "./editGate";
 
 const empty = (): TagsSidecar => ({ format:"smap-ai-tags",tagFormatVersion:1,tiles:[],stamps:[] });
 const compare=(a:string,b:string)=>a<b?-1:a>b?1:0;
 const key=(target:TagTarget)=>target.kind==="tile"?JSON.stringify(["tile",target.tilesetId,target.tileId]):JSON.stringify(["stamp",target.stampId]);
+const indexes=new WeakMap<TagsSidecar,{tiles:Map<string,TileTagEntry>;stamps:Map<string,StampTagEntry>}>();
+function storedIndexes(sidecar:TagsSidecar){
+  let index=indexes.get(sidecar);
+  if(!index){index={tiles:new Map(sidecar.tiles.map(r=>[key({kind:"tile",...r}),r])),stamps:new Map(sidecar.stamps.map(r=>[key({kind:"stamp",...r}),r]))};indexes.set(sidecar,index);}
+  return index;
+}
 const words=(tags:readonly string[])=>[...new Set(tags.map(s=>s.trim().normalize("NFC")))].sort(compare);
 function exact(value: unknown, keys: string[]): asserts value is Record<string, unknown> {
   if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).sort().join()!==keys.sort().join())throw Error("Invalid tag record");
@@ -88,16 +94,35 @@ export function createTagsPort(deps:{world:AgentWorldPort;images:AgentImagePort;
     async get(args,call){
       await ready();assertContext(args.context.worldSessionId);if(state.state!=="ready")throw new AgentError(AgentErrorCode.DISK_CONFLICT,"AI tags are unavailable");
       const sidecar=state.sidecar,targets:TagTarget[]=[];
-      if(args.kind==="stamps"){for(const stamp of deps.world.stamps())targets.push({kind:"stamp",stampId:stamp.id});for(const r of sidecar.stamps)if(!targets.some(t=>t.kind==="stamp"&&t.stampId===r.stampId))targets.push({kind:"stamp",stampId:r.stampId});}
-      else{for(const ts of deps.world.tilesets()){if(args.tilesetId&&ts.id!==args.tilesetId)continue;for(let tileId=0;tileId<(ts.edited?.nextTileId??ts.columns*ts.rows);tileId++)targets.push({kind:"tile",tilesetId:ts.id,tileId});}
-        const ids=new Set(targets.map(key));for(const r of sidecar.tiles)if((!args.tilesetId||r.tilesetId===args.tilesetId)&&!ids.has(key({kind:"tile",...r})))targets.push({kind:"tile",tilesetId:r.tilesetId,tileId:r.tileId});}
+      // Stored annotations are sparse. Filter their text before touching source pixels.
+      const {tiles:tileRecords,stamps:stampRecords}=storedIndexes(sidecar);
+      const sparse=!!args.query?.trim() || args.status==="current" || args.status==="stale";
+      if(args.kind==="stamps"){
+        const stamps=new Map(deps.world.stamps().map(stamp=>[stamp.id,stamp]));
+        const ids=new Set([...stamps.keys(),...sidecar.stamps.map(r=>r.stampId)]);
+        for(const stampId of ids){
+          const stamp=stamps.get(stampId),stored=stampRecords.get(key({kind:"stamp",stampId}));
+          if(sparse&&!stored&&!args.query?.trim())continue;
+          if(!semanticMatches(args.query,[...(stored?.tags??[]),stored?.note??"",stamp?.name??"",stamp?.category??"",...(stamp?.tags??[])]))continue;
+          targets.push({kind:"stamp",stampId});
+        }
+      }else if(sparse){
+        for(const r of sidecar.tiles)if((!args.tilesetId||r.tilesetId===args.tilesetId)&&semanticMatches(args.query,[...r.tags,r.note]))targets.push({kind:"tile",tilesetId:r.tilesetId,tileId:r.tileId});
+      }else{
+        for(const ts of deps.world.tilesets()){
+          if(args.tilesetId&&ts.id!==args.tilesetId)continue;
+          for(let tileId=0;tileId<(ts.edited?.nextTileId??ts.columns*ts.rows);tileId++)targets.push({kind:"tile",tilesetId:ts.id,tileId});
+        }
+        const ids=new Set(targets.map(key));
+        for(const r of sidecar.tiles){const target:TagTarget={kind:"tile",tilesetId:r.tilesetId,tileId:r.tileId};if((!args.tilesetId||r.tilesetId===args.tilesetId)&&!ids.has(key(target)))targets.push(target);}
+      }
       const offset=args.cursor?Number(args.cursor):0;if(!Number.isSafeInteger(offset)||offset<0)throw new AgentError(AgentErrorCode.INVALID_ARGUMENT,"Invalid tags cursor");
       const items:TagRecord[]=[],limit=Math.min(args.limit??64,128);let index=offset;
       for(;index<targets.length&&items.length<limit;index++){
-        const target=targets[index]!,stored=target.kind==="tile"?sidecar.tiles.find(r=>r.tilesetId===target.tilesetId&&r.tileId===target.tileId):sidecar.stamps.find(r=>r.stampId===target.stampId);
+        const target=targets[index]!,stored=target.kind==="tile"?tileRecords.get(key(target)):stampRecords.get(key(target));
         let currentFingerprint:string|null=null;try{currentFingerprint=await fingerprint(target,call);}catch{call.signal.throwIfAborted();}
         const status=!stored?"missing":stored.fingerprint===currentFingerprint?"current":"stale";
-        if((args.status??"missing")!=="all"&&status!==(args.status??"missing"))continue;
+        if((args.status??(args.query?.trim()?"current":"missing"))!=="all"&&status!==(args.status??(args.query?.trim()?"current":"missing")))continue;
         items.push({target,tags:stored?.tags??[],note:stored?.note??"",status,...(stored?{storedFingerprint:stored.fingerprint}:{}),currentFingerprint});
       }
       assertContext(args.context.worldSessionId);return{items,nextCursor:index<targets.length?String(index):null};

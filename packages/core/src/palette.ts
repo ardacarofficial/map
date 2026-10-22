@@ -13,8 +13,8 @@ export interface PaletteEntry {
  * is append-only: entries are never removed or reordered, so indices stored
  * in cells (and in undo history) stay valid.
  *
- * Reading is public; adding goes through `MapStore` (`addPaletteEntry` op or
- * `MapStore.getOrAddPaletteIndex`).
+ * Reading is public; adding goes through `MapStore` (`addPaletteEntry`,
+ * reversible `addPaletteEntries`, or `MapStore.getOrAddPaletteIndex`).
  */
 export class Palette {
   /** `entries[i]` is palette index `i + 1`. */

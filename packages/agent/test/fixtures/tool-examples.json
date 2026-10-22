@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "1c6ad008981d8fa4d0331c3f77315b039b0ddc06806ba7c65690cebe49234851",
+  "catalogueSha256": "48d1c6f9d89f99be1f853fbe1f32649bfc1d52c32776394b87a6b7aafb33d8f3",
   "tools": {
     "get_session": {
       "valid": [
@@ -614,6 +614,25 @@
           ],
           "erase": true,
           "orientation": 7
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "mode": "area",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          },
+          "erase": false
         }
       ],
       "invalid": [
@@ -1240,6 +1259,12 @@
             "worldSessionId": "world-1"
           },
           "pngBase64": "aA=="
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "selectedReferenceToken": "selection-1"
         }
       ],
       "invalid": [
@@ -1254,6 +1279,13 @@
             "worldSessionId": "world-1"
           },
           "path": "/tmp/ref.png"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "selectedReferenceToken": "selection-1",
+          "pngBase64": "AAAA"
         }
       ]
     },
@@ -1374,6 +1406,271 @@
             "layerIds": []
           },
           "name": "House"
+        }
+      ]
+    },
+    "get_editor_context": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          }
+        }
+      ],
+      "invalid": [
+        {}
+      ]
+    },
+    "edit_entity": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "entityId": "spawn",
+          "action": "move",
+          "at": {
+            "x": 1,
+            "y": 2
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "entityId": "portal",
+          "action": "update",
+          "fields": {
+            "targetLevel": "map-2",
+            "targetPoint": {
+              "x": 32,
+              "y": 32
+            }
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "entityId": "spawn",
+          "action": "remove"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "entityId": "spawn",
+          "action": "move"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "entityId": "spawn",
+          "action": "remove",
+          "fields": {}
+        }
+      ]
+    },
+    "apply_operations": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "operations": [
+            {
+              "tool": "paint_cells",
+              "args": {
+                "mapId": "map-1",
+                "layerId": "ground",
+                "cells": [
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "value": null
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "operations": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "operations": [
+            {
+              "tool": "create_map",
+              "args": {}
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "operations": [
+            {
+              "tool": "paint_cells",
+              "args": {
+                "mapId": "map-1",
+                "layerId": "ground",
+                "cells": [
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "value": null
+                  }
+                ],
+                "context": {
+                  "worldSessionId": "world-1",
+                  "transactionId": "edit-1",
+                  "idempotencyKey": "mutation-0001",
+                  "expectedRevision": 4
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "validate_goals": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "checks": [
+            {
+              "kind": "region_unchanged",
+              "region": {
+                "x": 0,
+                "y": 0,
+                "width": 8,
+                "height": 8
+              },
+              "layerIds": [
+                "ground"
+              ]
+            },
+            {
+              "kind": "entity_count",
+              "region": {
+                "x": 0,
+                "y": 0,
+                "width": 8,
+                "height": 8
+              },
+              "layerIds": [
+                "entities"
+              ],
+              "typeId": "spawn",
+              "min": 1,
+              "max": 1
+            },
+            {
+              "kind": "reachability",
+              "region": {
+                "x": 0,
+                "y": 0,
+                "width": 8,
+                "height": 8
+              },
+              "from": {
+                "x": 0,
+                "y": 0
+              },
+              "to": {
+                "x": 7,
+                "y": 7
+              },
+              "collisionLayerIds": [
+                "collision"
+              ],
+              "blockedValues": [
+                1
+              ],
+              "emptyIsBlocked": false
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "checks": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "checks": [
+            {
+              "kind": "reachability",
+              "region": {
+                "x": 0,
+                "y": 0,
+                "width": 8,
+                "height": 8
+              },
+              "from": {
+                "x": 0,
+                "y": 0
+              },
+              "to": {
+                "x": 7,
+                "y": 7
+              }
+            }
+          ]
         }
       ]
     }

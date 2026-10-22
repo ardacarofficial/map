@@ -143,8 +143,8 @@ export function tileValue(
     );
   }
 }
-/** Each reversible palette append owns full before/after pointer arrays in core.
- * Charge their cumulative retained size, including an existing large palette. */
+/** Bulk allocation owns one before/after pointer-array pair plus new entries.
+ * Existing entries are shared immutable objects, so charge only their pointers. */
 function paletteRetained(
   store: MapStore,
   refs: Iterable<{ tilesetId: string; tileId: number }>,
@@ -155,9 +155,10 @@ function paletteRetained(
       added.set(JSON.stringify([ref.tilesetId, ref.tileId]), ref);
   const n = added.size,
     p = store.document.palette.size;
-  return (
-    16 * n * p +
-    8 * n * n +
+  return n === 0 ? 0 : (
+    16 * p +
+    8 * n +
+    64 +
     [...added.values()].reduce(
       (total, ref) => total + 128 + ref.tilesetId.length * 2,
       0,
@@ -168,12 +169,7 @@ function cellValue(store: MapStore, value: PaintValue): number {
   if (!value) return 0;
   if ("collision" in value) return value.collision;
   return makeCell(
-    store.dispatch({
-      type: "addPaletteEntry",
-      tilesetId: value.tilesetId,
-      tileId: value.tileId,
-      undoable: true,
-    }),
+    store.document.palette.indexOf(value.tilesetId, value.tileId),
     rawFlags(value.flags ?? 0),
   );
 }
@@ -236,8 +232,9 @@ function applyPaint(
   );
   const retained = writes.length * 32 + paletteRetained(store, refs);
   tx.charge(writes.length, retained);
-  const patch = tx.run(() =>
-    isGridLayer(target)
+  const patch = tx.run(() => {
+    store.dispatch({ type: "addPaletteEntries", entries: refs });
+    return isGridLayer(target)
       ? store.dispatch({
           type: "paintGrid",
           layerId,
@@ -255,8 +252,8 @@ function applyPaint(
             y: w.y,
             cell: cellValue(store, w.value),
           })),
-        }),
-  );
+        });
+  });
   const result = change(mapId, store, writes.length, [patch]);
   tx.record(result, retained);
   return { change: result };
@@ -822,8 +819,7 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
       created.push(id);
       mapping.set(l.layerId, id);
     }
-    for (const ref of refs.values())
-      store.dispatch({ type: "addPaletteEntry", ...ref, undoable: true });
+    store.dispatch({ type: "addPaletteEntries", entries: [...refs.values()] });
     return pasteClip(store, clip, mapping, a.at.x, a.at.y, {
       emptyCells: a.emptyCells ?? "skip",
     });
@@ -934,6 +930,18 @@ function smart(
   name: "smart_brush" | "draw_path",
   a: ToolArguments["smart_brush"] | ToolArguments["draw_path"],
 ) {
+  // Keep branch validation before source checks and planning as a second guard
+  // for internal callers. Invalid payloads must preserve earlier pending work.
+  if (name === "smart_brush") {
+    const brush = a as ToolArguments["smart_brush"];
+    check(
+      brush.mode === "area"
+        ? "region" in brush && !!brush.region && !("cells" in brush) && (!("erase" in brush) || brush.erase === false)
+        : brush.mode === "road" && "cells" in brush && Array.isArray(brush.cells) && !("region" in brush),
+      E.INVALID_ARGUMENT,
+      "Area requires region only; road requires cells and optional erase",
+    );
+  }
   const store = tx.store(a.mapId),
     source = tx.host.smartSources.get(a.sourceId);
   check(source, E.UNKNOWN_ID, "Unknown source handle");
@@ -1066,14 +1074,10 @@ function smart(
     for (const w of l.writes) point(store, w);
   }
   const result = tx.run(() => {
-    for (const l of plan.layers)
-      for (const w of l.writes)
-        if ("tile" in w && w.tile)
-          store.dispatch({
-            type: "addPaletteEntry",
-            ...w.tile,
-            undoable: true,
-          });
+    store.dispatch({
+      type: "addPaletteEntries",
+      entries: plan.layers.flatMap((l) => l.writes.flatMap((w) => "tile" in w && w.tile ? [w.tile] : [])),
+    });
     // Reversible pre-registration advances the store revision. Replan against that exact revision.
     plan = planNow();
     return applySmartStampPlan(store, plan);

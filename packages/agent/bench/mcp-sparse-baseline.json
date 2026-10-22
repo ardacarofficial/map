@@ -1,0 +1,12 @@
+{
+  "fixture": "50000 tile atlas, ten merdiven tags, stairs query, real editor tags adapter through AgentApi; deterministic constant fingerprint adapter isolates tag discovery cost",
+  "command": "node node_modules/vitest/vitest.mjs run packages/editor/src/agent/sparseTags.benchmark.test.ts --reporter=verbose --disableConsoleIntercept",
+  "passed": true,
+  "tiles": 50000,
+  "tags": 10,
+  "runs": [
+    {"temperature":"cold","fingerprintCalls":50000,"mcpCalls":13,"wireBytes":12946,"items":10,"milliseconds":3661.834897},
+    {"temperature":"warm","fingerprintCalls":50000,"mcpCalls":13,"wireBytes":12964,"items":10,"milliseconds":3479.146893}
+  ],
+  "limitations": "Wall-clock values are local single samples; stub fingerprint isolates enumeration and call overhead, does not measure SHA/pixel processing or LLM performance. Wire bytes use JSON string length; payload is ASCII so equals UTF-8 bytes. Warm measurement repeats same query and starts fresh pagination."
+}

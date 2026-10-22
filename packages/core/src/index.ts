@@ -116,6 +116,7 @@ export type {
   AddTilesetOp,
   AddLayerOp,
   AddPaletteEntryOp,
+  AddPaletteEntriesOp,
   RemoveLayerOp,
   MoveLayerOp,
   SetLayerPropsOp,

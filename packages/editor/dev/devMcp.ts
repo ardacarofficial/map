@@ -4,13 +4,14 @@ import { readFileSync } from "node:fs";
 import type { AgentToolResult, BridgeControl, BridgeReply, BridgeRequest, ClientInfo } from "@smap/agent";
 
 const catalogue: unknown = JSON.parse(readFileSync(new URL("../../agent/schema/tools.json", import.meta.url), "utf8"));
+const instructions = readFileSync(new URL("../../agent/schema/workflow.txt", import.meta.url), "utf8").trim();
 const VERSIONS = ["2025-11-25", "2025-06-18"];
 const BODY_LIMIT = 1024 * 1024, RESPONSE_LIMIT = 8 * BODY_LIMIT;
 type Message = BridgeRequest | BridgeControl;
 interface Page { epoch: string; send(message: Message): void }
 interface Session { id: string; pair: string | undefined; page: Page | undefined; version: string; info: ClientInfo; initialized: boolean; lastSeen: number; ids: Set<string | number> }
 interface Pending { session: Session; page: Page; request: BridgeRequest; finish(result: AgentToolResult): void }
-export interface DevMcpOptions { port: number; token: string; now?: () => number }
+export interface DevMcpOptions { port: number; token: string; now?: () => number; callTimeoutMs?: number; imageTimeoutMs?: number }
 export function secret(): string { return randomBytes(32).toString("hex"); }
 export function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function failure(code: string, message: string): AgentToolResult {
@@ -49,12 +50,12 @@ export async function startDevMcp(options: DevMcpOptions) {
     const page = session.page;
     if (!page || pages.get(session.pair!) !== page) return Promise.resolve(failure("EDITOR_UNAVAILABLE", "No paired editor is available"));
     if (pending.size >= 64 || [...pending.values()].filter((call) => call.session === session).length >= 32) return Promise.resolve(failure("LIMIT_EXCEEDED", "Too many pending requests"));
-    const timeout = ["begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference"].includes(name) ? 30000 : 10000;
+    const timeout = ["begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference"].includes(name) ? options.imageTimeoutMs ?? 30000 : options.callTimeoutMs ?? 10000;
     const request: BridgeRequest = { type: "tools/call", bridgeEpoch: page.epoch, clientSessionId: session.id, clientInfo: session.info, requestId: secret(), name, arguments: args as BridgeRequest["arguments"], deadline: now() + timeout };
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        page.send({ type: "cancel", bridgeEpoch: page.epoch, clientSessionId: session.id, requestId: request.requestId, reason: "timeout" });
         pending.get(request.requestId)?.finish(failure("TIMEOUT", "Editor request timed out"));
+        page.send({ type: "cancel", bridgeEpoch: page.epoch, clientSessionId: session.id, requestId: request.requestId, reason: "timeout" });
       }, timeout);
       const call: Pending & { rpcId: string | number } = { session, page, request, rpcId, finish(result) { clearTimeout(timer); pending.delete(request.requestId); resolve(result); } };
       pending.set(request.requestId, call);
@@ -109,7 +110,7 @@ export async function startDevMcp(options: DevMcpOptions) {
       sessions.set(fresh.id, fresh);
       if (target) target.send({ type: "sessionStarted", bridgeEpoch: target.epoch, clientSessionId: fresh.id, clientInfo: fresh.info });
       res.setHeader("Mcp-Session-Id", fresh.id);
-      return result({ protocolVersion: fresh.version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "harita", version: "2.0.0" }, instructions: "Edits require begin_edit and human approval after finish_edit. No save/approve tool exists. Sessions expire after five idle minutes." });
+      return result({ protocolVersion: fresh.version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "harita", version: "2.0.0" }, instructions });
     }
     if (!session) return send(res, 400, { error: "Session required" });
     session.lastSeen = now();

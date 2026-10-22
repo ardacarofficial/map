@@ -22,3 +22,28 @@ export function createActivityStore(): AgentActivityPort {
   };
 }
 export const agentActivity = createActivityStore();
+
+/** Explicit local export: only metrics and protocol outcomes, never payloads or credentials. */
+export function exportActivityMetrics(entries: readonly ActivityLogEntry[]): string {
+  const rows = entries.slice(-AGENT_LIMITS.activityEntries).map(entry => ({
+    timestamp: entry.timestamp,
+    tool: entry.tool,
+    status: entry.status,
+    ...(entry.code ? { code: entry.code } : {}),
+    plannedCells: entry.plannedCells,
+    changedCells: entry.changedCells,
+    durationMs: entry.durationMs,
+    ...(entry.requestBytes !== undefined ? { requestBytes: entry.requestBytes } : {}),
+    ...(entry.textBytes !== undefined ? { textBytes: entry.textBytes } : {}),
+    ...(entry.imageBytes !== undefined ? { imageBytes: entry.imageBytes } : {}),
+    ...(entry.resultBytes !== undefined ? { resultBytes: entry.resultBytes } : {}),
+  }));
+  return JSON.stringify({
+    format: "smap-ai-diagnostics",
+    version: 1,
+    scope: "selected local activity rows; application tool bytes exclude transport framing; durations exclude model inference",
+    toolCalls: rows.filter(row => row.tool !== null).length,
+    failedCalls: rows.filter(row => row.status === "failed").length,
+    rows,
+  }, null, 2) + "\n";
+}

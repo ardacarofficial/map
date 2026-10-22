@@ -7,6 +7,9 @@ import { Button } from "../primitives/Button";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { useStampLibrary } from "../stamps/stampLibraryStore";
 import { useAgentTags } from "../../agent/uiTags";
+import { getAgentRuntime, createAgentSignal } from "../../agent/runtime";
+import { shareSelectedReference } from "../../agent/editorContext";
+import { toast } from "../toast/toastStore";
 import { openAiTags, selectedAiTagTarget, tagTargetId } from "./tagsSelection";
 
 export function AiTagsSection({ ctx }: { ctx: InspectorContext }) {
@@ -14,6 +17,7 @@ export function AiTagsSection({ ctx }: { ctx: InspectorContext }) {
   const selectedStamp = useStampLibrary(s => s.selectedId);
   const { tags, revision } = useAgentTags();
   const [record, setRecord] = useState<TagRecord | null>(null);
+  const [sharing, setSharing] = useState(false);
   const target = selectedAiTagTarget();
   const id = target ? tagTargetId(target) : null;
   useEffect(() => {
@@ -30,6 +34,14 @@ export function AiTagsSection({ ctx }: { ctx: InspectorContext }) {
       <p className="text-muted">{record ? t(`ai.tags.${record.status}`) : t("ai.tags.unavailable")}</p>
       {!!record?.tags.length && <p className="truncate text-text" title={record.tags.join(", ")}>{record.tags.join(", ")}</p>}
       <Button size="sm" className="self-start" onClick={openAiTags}>{t("ai.action.editTags")}</Button>
+      {target.kind === "tile" && tags && <Button size="sm" className="self-start" disabled={sharing} onClick={() => {
+        const host=getAgentRuntime()?.host;if(!host)return;
+        setSharing(true);
+        void shareSelectedReference(host.world,createAgentSignal(new AbortController()))
+          .then(()=>toast.success(t("ai.action.shareReferenceReady")))
+          .catch(()=>toast.warning(t("ai.action.shareReferenceFailed")))
+          .finally(()=>setSharing(false));
+      }}>{t("ai.action.shareReference")}</Button>}
     </div>
   </section>;
 }

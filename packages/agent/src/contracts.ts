@@ -29,11 +29,20 @@ export interface LayerPropsInput { name?: string; visible?: boolean; locked?: bo
 interface MapWrite { context: WriteContext; mapId: Id }
 interface LayerWrite extends MapWrite { layerId: Id }
 export interface GetSessionArgs { transactionId?: Id }
+export interface GetEditorContextArgs { context: ReadContext }
+export interface EditorContext {
+  contextToken: string; activeMapId: Id | null; activeLayerId: Id | null; tool: string;
+  selection: { tilesetId: Id; region: Rect; tileIds: number[]; truncated: boolean; grid: { columns: number; rows: number; tileWidth: number; tileHeight: number; margin: number; spacing: number } } | null;
+  stamp: { stampId: Id | null; width: number; height: number; layerIds: Id[] } | null;
+  region: { bounds: Rect; selectedCells: number; masked: boolean; mask: number[] | null; truncated: boolean } | null;
+  viewport: { view: "level" | "world"; zoom: number; pixelBounds: Rect; cellBounds: Rect } | null;
+  reference: { selectionToken: string; width: number; height: number } | null;
+}
 export interface GetMapInfoArgs { context: ReadContext; mapId: Id }
 export interface ReadRegionArgs extends GetMapInfoArgs { region: Rect; layerIds: Id[]; includeEntities?: boolean }
 export interface ListTilesetsArgs { context: ReadContext; cursor?: string; limit?: number }
 export interface GetTileCatalogArgs { context: ReadContext; tilesetId: Id; tileIds?: number[]; offset?: number; limit?: number; image?: "none" | "tiles" | "sheet"; sheetRegion?: Rect; scale?: 1 | 2 | 4 }
-export interface IngestReferenceArgs { context: ReadContext; pngBase64: string }
+export type IngestReferenceArgs = { context: ReadContext } & ({ pngBase64: string; selectedReferenceToken?: never } | { selectedReferenceToken: string; pngBase64?: never });
 export interface MatchReferenceArgs { context: ReadContext; referenceId: Id; tilesetIds?: Id[]; topK?: number; maxScale?: number }
 export interface ReferenceInfo { referenceId: Id; width: number; height: number }
 export interface ReferenceCandidate { tilesetId: Id; tileId: number; region: Rect; flags: Orientation; scale: number; match: "exact_rgba" }
@@ -61,6 +70,19 @@ export type EditLayerArgs = MapWrite & (
 );
 export interface ListEntityTypesArgs { context: ReadContext }
 export interface PlaceEntityArgs extends LayerWrite { typeId: Id; at: Point; fields?: Record<string, EntityFieldValue> }
+export type EditEntityArgs = MapWrite & { entityId: Id } & (
+  { action: "move"; at: Point } | { action: "update"; fields: Record<string, EntityFieldValue> } | { action: "remove" }
+);
+export type BatchToolName = "paint_cells" | "paint_rect" | "paint_line" | "place_stamp" | "place_entity" | "edit_entity";
+type WithoutContext<T> = T extends unknown ? Omit<T, "context"> : never;
+export type BatchOperation = { [N in BatchToolName]: { tool: N; args: WithoutContext<ToolArguments[N]> } }[BatchToolName];
+export interface ApplyOperationsArgs { context: WriteContext; operations: BatchOperation[] }
+export type GoalCheck =
+  | { kind: "reachability"; region: Rect; from: Point; to: Point; collisionLayerIds: Id[]; blockedValues: (1 | 2)[]; emptyIsBlocked: boolean }
+  | { kind: "region_unchanged"; region: Rect; layerIds: Id[]; expectedDigest?: string }
+  | { kind: "entity_count"; region: Rect; layerIds: Id[]; typeId?: Id; min: number; max: number };
+export interface ValidateGoalsArgs extends GetMapInfoArgs { checks: GoalCheck[] }
+export interface GoalResult { kind: GoalCheck["kind"]; passed: boolean | null; detail: string; digest?: string; count?: number; visitedCells?: number }
 export interface CreateMapArgs { context: WriteContext; name: string; width: number; height: number; tileWidth: number; tileHeight: number; world?: Point }
 export interface ResizeMapArgs extends MapWrite { width: number; height: number; allowCrop?: boolean }
 export interface RenderPreviewArgs extends GetMapInfoArgs { region?: Rect; layerIds?: Id[]; maxSide?: number; grid?: boolean; coordinates?: boolean; entities?: boolean }
@@ -68,6 +90,7 @@ export interface ValidateMapArgs extends GetMapInfoArgs { region?: Rect; limit?:
 export interface GetTagsArgs { context: ReadContext; query?: string; kind?: "tiles" | "stamps"; tilesetId?: Id; status?: "all" | "current" | "missing" | "stale"; cursor?: string; limit?: number }
 export interface SetTagsArgs { context: TagWriteContext; entries: TagWrite[] }
 export interface ToolArguments {
+  get_editor_context: GetEditorContextArgs; apply_operations: ApplyOperationsArgs; edit_entity: EditEntityArgs; validate_goals: ValidateGoalsArgs;
   visual_ingest_reference: IngestReferenceArgs; visual_match_reference: MatchReferenceArgs; create_stamp: CreateStampArgs;
   get_session: GetSessionArgs; get_map_info: GetMapInfoArgs; read_region: ReadRegionArgs;
   list_tilesets: ListTilesetsArgs; get_tile_catalog: GetTileCatalogArgs; list_stamps: ListStampsArgs;
@@ -164,12 +187,16 @@ export interface PreviewImage { width: number; height: number; scale: number; pi
 export interface AgentWarning { code: string; detail: string }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
 export interface ToolData {
+  get_editor_context: EditorContext;
+  apply_operations: ChangedData & { items: { tool: BatchToolName; changedCells: number; entityId?: Id }[] };
+  edit_entity: ChangedData & { entity: EntityInfo | null; entityId: Id; action: EditEntityArgs["action"] };
+  validate_goals: { valid: boolean | null; checks: GoalResult[]; scannedCells: number };
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
   get_session: { apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
-  read_region: { region: Rect; legend: ResolvedTile[]; layers: ({ id: Id; kind: "tile" | "collision"; cells: number[] } | { id: Id; kind: "entity" })[]; entities: Omit<EntityInfo, "layerId">[] };
+  read_region: { region: Rect; legend: ResolvedTile[]; layers: ({ id: Id; kind: "tile" | "collision"; cells: number[] } | { id: Id; kind: "entity" })[]; entities: EntityInfo[] };
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId: Id } };
@@ -191,7 +218,7 @@ export interface ToolData {
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
-export type MutationToolName = Exclude<ToolName, "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
+export type MutationToolName = Exclude<ToolName, "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
 export interface AgentEnvelope<T> { ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
 export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
 export interface AgentFailure { ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
@@ -319,7 +346,7 @@ export interface AgentTagsPort {
   subscribe(listener: () => void): Unsubscribe;
   flush(): Promise<void>;
 }
-export interface ActivityLogEntry { id: Id; timestamp: number; clientInfo: ClientInfo | null; clientSessionId: Id | null; tool: ToolName | null; requestId: Id | null; transactionId: Id | null; mapIds: Id[]; status: "started" | "succeeded" | "failed" | "cancelled" | "approved" | "stopped"; plannedCells: number; changedCells: number; durationMs: number; code?: AgentErrorCode; summary: string }
+export interface ActivityLogEntry { requestBytes?: number; textBytes?: number; imageBytes?: number; resultBytes?: number; id: Id; timestamp: number; clientInfo: ClientInfo | null; clientSessionId: Id | null; tool: ToolName | null; requestId: Id | null; transactionId: Id | null; mapIds: Id[]; status: "started" | "succeeded" | "failed" | "cancelled" | "approved" | "stopped"; plannedCells: number; changedCells: number; durationMs: number; code?: AgentErrorCode; summary: string }
 export interface AgentActivityPort { append(entry: ActivityLogEntry): void; entries(): readonly ActivityLogEntry[]; subscribe(listener: () => void): Unsubscribe }
 export interface AgentClock { now(): number; schedule(delayMs: number, callback: () => void): Unsubscribe }
 export interface AgentIds { next(kind: "instance" | "world" | "transaction" | "source" | "entity" | "map" | "layer" | "activity" | "cursor"): Id }
@@ -338,6 +365,7 @@ export interface AgentHost {
   subscribeWorldContent(listener: () => void): Unsubscribe;
   world: AgentWorldPort; transactions: AgentTransactionsPort; metadata: AgentMetadataPort;
   visualReferences?: AgentVisualReferencePort;
+  editorContext?: () => EditorContext;
   images: AgentImagePort; smartSources: AgentSmartSourcePort; tags: AgentTagsPort;
   activity: AgentActivityPort; clock: AgentClock; ids: AgentIds;
 }

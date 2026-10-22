@@ -166,3 +166,41 @@ test("semantic searches find current tags and map captures disappear on human di
     expect(success(await water()).data.items).toEqual(expect.arrayContaining([expect.objectContaining({ tags: ["Water", "river"], status: "current" })]));
   } finally { await client.close(); }
 });
+
+test("selected editor crop is explicitly shared, matched and included only as metrics in diagnostics",async({page})=>{
+  const environment=await setup(page),{client,readContext,tilesetId,mapId,layerId}=environment;
+  try {
+    const original=await cells(environment),grid=page.locator(`[data-tileset-grid="${tilesetId}"]`);
+    const scale=Number(await grid.getAttribute("data-tileset-scale")),box=(await grid.boundingBox())!;
+    await page.mouse.move(box.x+16*scale,box.y+16*scale);await page.mouse.down();
+    await page.mouse.move(box.x+48*scale,box.y+48*scale,{steps:5});await page.mouse.up();
+    const selected=success(await client.callTool("get_editor_context",{context:readContext}));
+    expect(selected.data).toMatchObject({activeMapId:mapId,activeLayerId:layerId,selection:{tilesetId,region:{x:0,y:0,width:2,height:2},tileIds:[0,1,2,3],truncated:false},viewport:{view:"level"},reference:null});
+    const token=selected.data.contextToken;
+    await page.locator('[data-inspector-section="ai-tags"]').getByRole("button",{name:"Seçimi referans olarak paylaş",exact:true}).click();
+    let shared=success(await client.callTool("get_editor_context",{context:readContext}));
+    await expect.poll(async()=>{
+      shared=success(await client.callTool("get_editor_context",{context:readContext}));
+      return shared.data.reference;
+    }).not.toBeNull();
+    expect(shared.data.contextToken).not.toBe(token);
+    expect(shared.data.reference).toMatchObject({width:64,height:64});
+    const reference=success(await client.callTool("visual_ingest_reference",{context:readContext,selectedReferenceToken:shared.data.reference!.selectionToken}));
+    const matched=success(await client.callTool("visual_match_reference",{context:readContext,referenceId:reference.data.referenceId,tilesetIds:[tilesetId],maxScale:1}));
+    expect(matched.data).toMatchObject({status:"matched",candidates:[{tilesetId,region:{x:0,y:0,width:2,height:2},match:"exact_rgba"}]});
+    expect(await cells(environment)).toEqual(original);
+    expect(success(await client.getSession()).data.transaction).toBeNull();
+    await grid.click({position:{x:16*scale,y:16*scale}});
+    expect(success(await client.callTool("get_editor_context",{context:readContext})).data.contextToken).not.toBe(shared.data.contextToken);
+    await page.keyboard.press("Control+k");await page.locator('[id="command-view.aiActivity"]').click();
+    const downloadPromise=page.waitForEvent("download");
+    await page.locator("[data-ai-activity]").getByRole("button",{name:"Tanılamayı dışa aktar",exact:true}).click();
+    const download=await downloadPromise;expect(download.suggestedFilename()).toBe("smap-ai-diagnostics.json");
+    const stream=await download.createReadStream(),chunks:Buffer[]=[];
+    for await(const chunk of stream)chunks.push(Buffer.from(chunk));
+    const raw=Buffer.concat(chunks).toString("utf8"),diagnostics=JSON.parse(raw);
+    expect(diagnostics).toMatchObject({format:"smap-ai-diagnostics",version:1});
+    expect(diagnostics.rows).toEqual(expect.arrayContaining([expect.objectContaining({tool:"visual_match_reference",status:"succeeded",textBytes:expect.any(Number),resultBytes:expect.any(Number)})]));
+    for(const secret of [shared.data.reference!.selectionToken,reference.data.referenceId,process.env.HARITA_MCP_TOKEN??"e2e-token-harita-protocol","pngBase64"])expect(raw).not.toContain(secret);
+  } finally {await client.close();}
+});

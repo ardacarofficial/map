@@ -12,6 +12,7 @@ import { t } from "../i18n";
 import { agentActivity } from "./activity";
 import { agentWorldChanging, editGate, getAgentWorldSessionId } from "./editGate";
 import { createMetadataJournal } from "./metadataJournal";
+import { captureEditorContext } from "./editorContext";
 import { createImagePort } from "./images";
 import { createVisualReferencePort } from "./visualReferences";
 import { createSmartSourcePort } from "./smartSources";
@@ -82,6 +83,7 @@ export function createEditorHost(): EditorAgentHost {
       const ws=getLevelWorkspace(),project=useEditorStore.getState().project,folder=getProjectFolder();
       return{instanceId,worldSessionId:ws?getAgentWorldSessionId():null,revision:contentRevision(),world:ws?{name:ws.name,locationLabel:folder?.label??"",saved:!!folder,dirty:useEditorStore.getState().dirty||ws.hasUnsavedLevels}:null,maps:[...world.maps()],activeMapId:ws?.activeId??null,activeLayerId:project?.levelId?.startsWith("stamp:")?null:useEditorStore.getState().activeLayerId,clients};
     },
+    editorContext:()=>captureEditorContext(world,contentRevision()),
     setClients(value){clients=value;},
     loadMap:world.loadMap,subscribeWorldContent:subscribeContent,world,metadata,images,
     visualReferences:createVisualReferencePort(world,contentRevision),

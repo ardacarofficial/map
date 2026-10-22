@@ -287,6 +287,70 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "offset": {}
+                  },
+                  "required": [
+                    "offset"
+                  ]
+                },
+                {
+                  "properties": {
+                    "limit": {}
+                  },
+                  "required": [
+                    "limit"
+                  ]
+                }
+              ],
+              "properties": {
+                "tileIds": {}
+              },
+              "required": [
+                "tileIds"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "sheetRegion": {}
+              },
+              "required": [
+                "sheetRegion"
+              ]
+            },
+            "then": {
+              "properties": {
+                "image": {
+                  "const": "sheet"
+                }
+              },
+              "required": [
+                "image"
+              ]
+            }
+          },
+          {
+            "not": {
+              "properties": {
+                "image": {
+                  "const": "sheet"
+                },
+                "tileIds": {}
+              },
+              "required": [
+                "tileIds",
+                "image"
+              ]
+            }
+          }
+        ],
         "properties": {
           "context": {
             "$ref": "#/$defs/ReadContext"
@@ -1555,6 +1619,72 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "area"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "cells": {}
+                    },
+                    "required": [
+                      "cells"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "erase": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "erase"
+                    ]
+                  }
+                ]
+              },
+              "properties": {
+                "region": {}
+              },
+              "required": [
+                "region"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "road"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "properties": {
+                  "region": {}
+                },
+                "required": [
+                  "region"
+                ]
+              },
+              "properties": {
+                "cells": {}
+              },
+              "required": [
+                "cells"
+              ]
+            }
+          }
+        ],
         "properties": {
           "cells": {
             "items": {
@@ -2906,6 +3036,24 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "pngBase64": {}
+            },
+            "required": [
+              "pngBase64"
+            ]
+          },
+          {
+            "properties": {
+              "selectedReferenceToken": {}
+            },
+            "required": [
+              "selectedReferenceToken"
+            ]
+          }
+        ],
         "properties": {
           "context": {
             "$ref": "#/$defs/ReadContext"
@@ -2914,11 +3062,13 @@
             "maxLength": 1000000,
             "minLength": 1,
             "type": "string"
+          },
+          "selectedReferenceToken": {
+            "$ref": "#/$defs/Id"
           }
         },
         "required": [
-          "context",
-          "pngBase64"
+          "context"
         ],
         "type": "object"
       },
@@ -3161,6 +3311,1086 @@
       },
       "name": "create_stamp",
       "title": "Create Stamp"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read the user's current map/layer/tool, bounded atlas/stamp/map selection, viewport and explicitly shared reference token. Context is observational: confirm intent before choosing a source. contextToken changes when selection or view changes, independently of world revision. No edits or automatic reference upload.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "type": "object"
+      },
+      "name": "get_editor_context",
+      "title": "Get Editor Context"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Move, update fields or remove an existing entity by mapId/entityId. move.at is map cells; point field values are native pixels. Preserves entity ID/type and validates merged fields, portal destinations and initial/current layer protection. Requires an edit, current revision and idempotency key.",
+      "inputSchema": {
+        "$defs": {
+          "FieldValue": {
+            "oneOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "maximum": 1000000000,
+                "minimum": -1000000000,
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "y": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Point": {
+            "additionalProperties": false,
+            "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
+            "properties": {
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "properties": {
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "move"
+              },
+              "at": {
+                "$ref": "#/$defs/Point"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "entityId": {
+                "$ref": "#/$defs/Id"
+              },
+              "mapId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "mapId",
+              "entityId",
+              "action",
+              "at"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "update"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "entityId": {
+                "$ref": "#/$defs/Id"
+              },
+              "fields": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/FieldValue"
+                },
+                "maxProperties": 64,
+                "propertyNames": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "mapId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "mapId",
+              "entityId",
+              "action",
+              "fields"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "remove"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "entityId": {
+                "$ref": "#/$defs/Id"
+              },
+              "mapId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "mapId",
+              "entityId",
+              "action"
+            ],
+            "type": "object"
+          }
+        ],
+        "type": "object"
+      },
+      "name": "edit_entity",
+      "title": "Edit Entity"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Apply 1–32 sequential existing-ID paint_cells/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤4096. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.",
+      "inputSchema": {
+        "$defs": {
+          "CellWrite": {
+            "additionalProperties": false,
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/PaintValue"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "value"
+            ],
+            "type": "object"
+          },
+          "FieldValue": {
+            "oneOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "maximum": 1000000000,
+                "minimum": -1000000000,
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "y": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "LayerMapping": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "sourceLayerId": {
+                  "$ref": "#/$defs/Id"
+                },
+                "targetLayerId": {
+                  "$ref": "#/$defs/Id"
+                }
+              },
+              "required": [
+                "sourceLayerId",
+                "targetLayerId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "PaintValue": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/Tile"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "collision": {
+                    "maximum": 2,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "collision"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Point": {
+            "additionalProperties": false,
+            "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
+            "properties": {
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "Tile": {
+            "additionalProperties": false,
+            "description": "Stable tilesetId/tileId from catalog, with optional compact D4 flags H=1,V=2,D=4; not a palette integer.",
+            "properties": {
+              "flags": {
+                "default": 0,
+                "maximum": 7,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tileId": {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tilesetId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "tilesetId",
+              "tileId"
+            ],
+            "type": "object"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "properties": {
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "operations": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cells": {
+                          "items": {
+                            "$ref": "#/$defs/CellWrite"
+                          },
+                          "maxItems": 4096,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "layerId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        }
+                      },
+                      "required": [
+                        "mapId",
+                        "layerId",
+                        "cells"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "paint_cells"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "layerId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "outline": {
+                          "default": 0,
+                          "maximum": 16,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "region": {
+                          "$ref": "#/$defs/Rect"
+                        },
+                        "value": {
+                          "$ref": "#/$defs/PaintValue"
+                        }
+                      },
+                      "required": [
+                        "mapId",
+                        "layerId",
+                        "region",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "paint_rect"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "$ref": "#/$defs/Point"
+                        },
+                        "layerId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "to": {
+                          "$ref": "#/$defs/Point"
+                        },
+                        "value": {
+                          "$ref": "#/$defs/PaintValue"
+                        },
+                        "width": {
+                          "default": 1,
+                          "maximum": 16,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "mapId",
+                        "layerId",
+                        "from",
+                        "to",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "paint_line"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowCreateLayers": {
+                          "const": false
+                        },
+                        "at": {
+                          "$ref": "#/$defs/Point"
+                        },
+                        "emptyCells": {
+                          "default": "skip",
+                          "enum": [
+                            "skip",
+                            "erase"
+                          ],
+                          "type": "string"
+                        },
+                        "flipX": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "flipY": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "layerMapping": {
+                          "$ref": "#/$defs/LayerMapping"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "rotation": {
+                          "default": 0,
+                          "maximum": 3,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "stampId": {
+                          "$ref": "#/$defs/Id"
+                        }
+                      },
+                      "required": [
+                        "mapId",
+                        "stampId",
+                        "at",
+                        "layerMapping"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "place_stamp"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "$ref": "#/$defs/Point"
+                        },
+                        "fields": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/FieldValue"
+                          },
+                          "maxProperties": 64,
+                          "propertyNames": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "layerId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "typeId": {
+                          "$ref": "#/$defs/Id"
+                        }
+                      },
+                      "required": [
+                        "mapId",
+                        "layerId",
+                        "typeId",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "place_entity"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "const": "move"
+                            },
+                            "at": {
+                              "$ref": "#/$defs/Point"
+                            },
+                            "entityId": {
+                              "$ref": "#/$defs/Id"
+                            },
+                            "mapId": {
+                              "$ref": "#/$defs/Id"
+                            }
+                          },
+                          "required": [
+                            "mapId",
+                            "entityId",
+                            "action",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "const": "update"
+                            },
+                            "entityId": {
+                              "$ref": "#/$defs/Id"
+                            },
+                            "fields": {
+                              "additionalProperties": {
+                                "$ref": "#/$defs/FieldValue"
+                              },
+                              "maxProperties": 64,
+                              "propertyNames": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "mapId": {
+                              "$ref": "#/$defs/Id"
+                            }
+                          },
+                          "required": [
+                            "mapId",
+                            "entityId",
+                            "action",
+                            "fields"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "const": "remove"
+                            },
+                            "entityId": {
+                              "$ref": "#/$defs/Id"
+                            },
+                            "mapId": {
+                              "$ref": "#/$defs/Id"
+                            }
+                          },
+                          "required": [
+                            "mapId",
+                            "entityId",
+                            "action"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "tool": {
+                      "const": "edit_entity"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "context",
+          "operations"
+        ],
+        "type": "object"
+      },
+      "name": "apply_operations",
+      "title": "Apply Operations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision and entities; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Point": {
+            "additionalProperties": false,
+            "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
+            "properties": {
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blockedValues": {
+                      "items": {
+                        "enum": [
+                          1,
+                          2
+                        ],
+                        "type": "integer"
+                      },
+                      "maxItems": 2,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "collisionLayerIds": {
+                      "items": {
+                        "$ref": "#/$defs/Id"
+                      },
+                      "maxItems": 8,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "emptyIsBlocked": {
+                      "type": "boolean"
+                    },
+                    "from": {
+                      "$ref": "#/$defs/Point"
+                    },
+                    "kind": {
+                      "const": "reachability"
+                    },
+                    "region": {
+                      "$ref": "#/$defs/Rect"
+                    },
+                    "to": {
+                      "$ref": "#/$defs/Point"
+                    }
+                  },
+                  "required": [
+                    "region",
+                    "kind",
+                    "from",
+                    "to",
+                    "collisionLayerIds",
+                    "blockedValues",
+                    "emptyIsBlocked"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expectedDigest": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "region_unchanged"
+                    },
+                    "layerIds": {
+                      "items": {
+                        "$ref": "#/$defs/Id"
+                      },
+                      "maxItems": 8,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "region": {
+                      "$ref": "#/$defs/Rect"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "region",
+                    "layerIds"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "entity_count"
+                    },
+                    "layerIds": {
+                      "items": {
+                        "$ref": "#/$defs/Id"
+                      },
+                      "maxItems": 8,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "max": {
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "min": {
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "region": {
+                      "$ref": "#/$defs/Rect"
+                    },
+                    "typeId": {
+                      "$ref": "#/$defs/Id"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "region",
+                    "layerIds",
+                    "min",
+                    "max"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "required": [
+          "context",
+          "mapId",
+          "checks"
+        ],
+        "type": "object"
+      },
+      "name": "validate_goals",
+      "title": "Validate Goals"
     }
   ]
 }

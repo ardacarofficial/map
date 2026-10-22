@@ -2,7 +2,7 @@ import { RasterAssets, canonicalRgba, assertRasterSize, MAX_RASTER_BYTES, type R
 import { editedImagePath, EDITED_ATLAS_COLUMNS, MAX_EDITED_TILES } from "./pixel/metadata";
 import { rasterContentHash } from "./pixel/png";
 import type { AllocateEditedTileOp, SetEditedTilesetOp, EditedTileSlot, EditTilePixelsOp, LoadRasterAssetOp, RemapCellsOp, PatchPixelsOp, PixelRectPatch, PixelDirtyRect } from "./pixel/ops";
-import { cellFlags, makeCell } from "./cell";
+import { cellFlags, makeCell, MAX_PALETTE_INDEX } from "./cell";
 import { isValidCell, cellPaletteIndex, type Cell } from "./cell";
 import { CHUNK_AREA, CHUNK_MASK, CHUNK_SHIFT, chunkKey, localIndex, type ChunkKey } from "./chunk";
 import { MAX_COLLECTION_ROWS, collectionProblem, normalizeCollection, remapCollectionsForTileset, type Collection } from "./collection";
@@ -54,6 +54,7 @@ import type {
   PaintGridOp,
   AddLayerOp,
   AddPaletteEntryOp,
+  AddPaletteEntriesOp,
   AddTilesetOp,
   LayerPatch,
   MoveLayerOp,
@@ -749,6 +750,8 @@ export class MapStore {
         return this.#addLayer(op);
       case "addPaletteEntry":
         return this.#addPaletteEntry(op);
+      case "addPaletteEntries":
+        return this.#addPaletteEntries(op);
       case "removeLayer":
         return this.#removeLayer(op);
       case "moveLayer":
@@ -1558,6 +1561,34 @@ export class MapStore {
     markTileChunksDirty(this.#doc, ctx.dirty);
     this.#closeOp(ctx);
     return Object.freeze(result);
+  }
+
+  #addPaletteEntries(op: AddPaletteEntriesOp): readonly number[] {
+    if (!Array.isArray(op.entries)) throw new TypeError("addPaletteEntries: entries must be an array");
+    const palette = this.#doc.palette;
+    const additions = new Map<string, PaletteEntry>();
+    const indices: number[] = [];
+    for (const ref of op.entries) {
+      const tileset = this.#doc.getTileset(ref?.tilesetId);
+      if (!tileset) throw new Error(`addPaletteEntries: unknown tileset "${ref?.tilesetId}"`);
+      if (!isValidTileId(tileset, ref.tileId)) {
+        throw new RangeError(`addPaletteEntries: tile id ${ref.tileId} is outside tileset "${ref.tilesetId}"`);
+      }
+      const existing = palette.indexOf(ref.tilesetId, ref.tileId);
+      const key = `${ref.tileId}:${ref.tilesetId}`;
+      if (!existing && !additions.has(key)) additions.set(key, { tilesetId: ref.tilesetId, tileId: ref.tileId });
+      indices.push(existing);
+    }
+    if (palette.size + additions.size > MAX_PALETTE_INDEX) throw new RangeError("Palette is full");
+    if (!additions.size) return Object.freeze(indices);
+    const before = Object.freeze([...palette.entries()]);
+    for (const ref of additions.values()) palette._getOrAdd(ref.tilesetId, ref.tileId);
+    for (let i = 0; i < indices.length; i++) {
+      const ref = op.entries[i]!;
+      indices[i] = palette.indexOf(ref.tilesetId, ref.tileId);
+    }
+    this.#recordStructural({ kind: "paletteAppend", before, after: Object.freeze([...palette.entries()]) }, ["palette"]);
+    return Object.freeze(indices);
   }
 
   #addPaletteEntry(op: AddPaletteEntryOp): number {

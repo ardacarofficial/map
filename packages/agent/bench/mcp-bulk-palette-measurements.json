@@ -1,0 +1,59 @@
+{
+  "scope": "Actual HistoryEntry arrays; byte estimate uses conservative 8-byte pointers, excludes array headers/shared entry objects; single run latency is illustrative, not a threshold or benchmark claim.",
+  "rows": [
+    {
+      "method": "legacy",
+      "entries": 1024,
+      "paletteChanges": 1024,
+      "arrays": 2048,
+      "retainedPointerSlots": 1048576,
+      "pointerBytesEstimate": 8388608,
+      "elapsedMs": 8.998199999999997
+    },
+    {
+      "method": "bulk",
+      "entries": 1024,
+      "paletteChanges": 1,
+      "arrays": 2,
+      "retainedPointerSlots": 1024,
+      "pointerBytesEstimate": 8192,
+      "elapsedMs": 0.7979660000000308
+    },
+    {
+      "method": "legacy",
+      "entries": 2048,
+      "paletteChanges": 2048,
+      "arrays": 4096,
+      "retainedPointerSlots": 4194304,
+      "pointerBytesEstimate": 33554432,
+      "elapsedMs": 14.469397000000015
+    },
+    {
+      "method": "bulk",
+      "entries": 2048,
+      "paletteChanges": 1,
+      "arrays": 2,
+      "retainedPointerSlots": 2048,
+      "pointerBytesEstimate": 16384,
+      "elapsedMs": 1.24852199999998
+    },
+    {
+      "method": "legacy",
+      "entries": 4096,
+      "paletteChanges": 4096,
+      "arrays": 8192,
+      "retainedPointerSlots": 16777216,
+      "pointerBytesEstimate": 134217728,
+      "elapsedMs": 95.45679399999995
+    },
+    {
+      "method": "bulk",
+      "entries": 4096,
+      "paletteChanges": 1,
+      "arrays": 2,
+      "retainedPointerSlots": 4096,
+      "pointerBytesEstimate": 32768,
+      "elapsedMs": 2.4030309999999417
+    }
+  ]
+}

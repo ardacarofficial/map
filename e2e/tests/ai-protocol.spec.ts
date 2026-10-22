@@ -15,7 +15,7 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
   const agent = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
   try {
     expect((await agent.listTools()).tools.map((tool) => tool.name)).toContain("get_session");
-    expect((await agent.listTools()).tools).toHaveLength(29);
+    expect((await agent.listTools()).tools).toHaveLength(33);
     const result = await agent.getSession();
     expect(result.structuredContent).toHaveProperty("ok");
     expect(result.content[0].type).toBe("text");

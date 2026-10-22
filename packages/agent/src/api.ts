@@ -20,6 +20,8 @@ import { check, validate } from "./validation";
 import { normalizeTags, tagKey, utf8 } from "./tags";
 import { mutate } from "./tools/mutations";
 import { read } from "./tools/read";
+import { applyOperations, editEntity } from "./tools/operations";
+import { validateGoals } from "./tools/goals";
 
 const writes = new Set(
   TOOL_DEFINITIONS.filter(
@@ -195,6 +197,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
         plannedCells: changed?.plannedCells ?? transaction?.counters.plannedWrites ?? 0,
         changedCells: changed?.changedCells ?? transaction?.counters.changedCells ?? 0,
         durationMs: host.clock.now() - startedAt,
+        ...(args ? { requestBytes: utf8(JSON.stringify({ name: call.name, arguments: args })).length } : {}),
+        textBytes: result.content.reduce((sum, block) => sum + (block.type === "text" ? utf8(block.text).length : 0), 0),
+        imageBytes: result.content.reduce((sum, block) => sum + (block.type === "image" ? Math.floor(block.data.length * 3 / 4) - (block.data.endsWith("==") ? 2 : block.data.endsWith("=") ? 1 : 0) : 0), 0),
+        resultBytes: utf8(JSON.stringify(result)).length,
         ...(!s.ok ? { code: s.code } : {}),
         summary: call.name,
       });
@@ -276,7 +282,11 @@ export function createAgentApi(host: AgentHost): AgentApi {
         } else {
           const revision = tx.revision;
           try {
-            data = await mutate(tx, name, args, callContext);
+            data = name === "apply_operations"
+              ? await applyOperations(tx, args as ToolArguments["apply_operations"], callContext)
+              : name === "edit_entity"
+                ? await editEntity(tx, args as ToolArguments["edit_entity"], callContext)
+                : await mutate(tx, name, args, callContext);
           } catch (error) {
             if (tx.revision !== revision || !(error instanceof AgentError)) {
               enteredApply = true;
@@ -364,7 +374,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
         const revision = tx.revision,
           worldId = host.session().worldSessionId;
         let output;
-        if (name === "visual_ingest_reference" || name === "visual_match_reference") {
+        if (name === "get_editor_context") {
+          check(host.editorContext, E.EDITOR_UNAVAILABLE, "Editor context is unavailable in this host");
+          output = { data: host.editorContext(), image: undefined };
+        } else if (name === "validate_goals") {
+          output = { data: await validateGoals(tx, args as ToolArguments["validate_goals"], callContext), image: undefined };
+        } else if (name === "visual_ingest_reference" || name === "visual_match_reference") {
           const port = host.visualReferences;
           check(port, E.EDITOR_UNAVAILABLE, "Visual reference matching is unavailable in this host");
           output = { data: await waitFor<unknown>(name === "visual_ingest_reference"

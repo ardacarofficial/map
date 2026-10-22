@@ -14,6 +14,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDevMcp } from "../../editor/dev/devMcp";
+import { readFileSync } from "node:fs";
 
 const cwd = fileURLToPath(new URL("../../../", import.meta.url));
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -35,7 +36,8 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   const client = new Client({ name: "real-stdio-client", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(29);
+  expect(client.getInstructions()).toBe(readFileSync(new URL("../../agent/schema/workflow.txt",import.meta.url),"utf8").trim());
+  expect((await client.listTools()).tools).toHaveLength(33);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -43,7 +45,7 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
 });
 
 test("proxy mirrors an independent SDK server verbatim, preserves client identity and cancellation", async () => {
-  const sdk = new Server({ name: "fake-upstream", version: "1" }, { capabilities: { tools: {} } });
+  const sdk = new Server({ name: "fake-upstream", version: "1" }, { capabilities: { tools: {} }, instructions:"An independent upstream workflow." });
   const httpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID, enableJsonResponse: true });
   const tools = [{ name: "image", description: "An upstream-specific tool", inputSchema: { type: "object" as const, properties: {} } }, { name: "slow", inputSchema: { type: "object" as const } }];
   const result = { content: [{ type: "text" as const, text: '{"answer":42}' }, { type: "image" as const, mimeType: "image/png", data: "AAECA/8=" }], structuredContent: { answer: 42 } };
@@ -64,6 +66,7 @@ test("proxy mirrors an independent SDK server verbatim, preserves client identit
   const client = new Client({ name: "original-client", version: "7" });
   cleanup.push(() => client.close());
   await client.connect(transport);
+  expect(client.getInstructions()).toBe("An independent upstream workflow.");
   expect((await client.listTools()).tools).toEqual(tools);
   expect(await client.callTool({ name: "image", arguments: {} })).toEqual(result);
   expect(sdk.getClientVersion()).toEqual({ name: "original-client", version: "7" });
@@ -144,5 +147,5 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(29);
+  expect((await client.listTools()).tools).toHaveLength(33);
 });

@@ -27,6 +27,7 @@ pub const EVENT_CONTROL: &str = "smap://agent-control";
 pub const EVENT_STATUS: &str = "smap://agent-status";
 const VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
 const CATALOGUE: &str = include_str!("../../../../../../agent/schema/tools.json");
+const WORKFLOW: &str = include_str!("../../../../../../agent/schema/workflow.txt");
 pub const MAX_REPLY: usize = 8 * 1024 * 1024;
 pub type BridgeSink = Arc<dyn Fn(&'static str, Value) -> Result<(), String> + Send + Sync>;
 
@@ -943,7 +944,7 @@ async fn handle(
         transport.changed();
         let mut res = rpc(
             id,
-            json!({"protocolVersion":version,"serverInfo":{"name":"harita","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{"listChanged":false}},"instructions":"Inspect the session and catalog, begin_edit before map changes, finish_edit for user review. Only the user can approve; cancellation rolls back pending edits."}),
+            json!({"protocolVersion":version,"serverInfo":{"name":"harita","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{"listChanged":false}},"instructions":WORKFLOW.trim()}),
         );
         res.headers_mut()
             .insert("Mcp-Session-Id", session.parse().unwrap());

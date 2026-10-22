@@ -44,6 +44,18 @@ async function main() {
   let ping: ReturnType<typeof setInterval> | undefined, connecting: Promise<void> | undefined;
   const server = new Server({ name: "harita-mcp", version: "2.0.0" }, { capabilities: { tools: { listChanged: false } } });
   const stdio = new StdioServerTransport();
+  // The SDK proxy owns its initialize response, so copy the upstream guide onto
+  // that one response after the authenticated upstream handshake has completed.
+  let initializeId: string | number | undefined;
+  const send = stdio.send.bind(stdio);
+  stdio.send = (message) => {
+    if ("id" in message && message.id === initializeId && "result" in message) {
+      initializeId = undefined;
+      const instructions = upstream?.getInstructions();
+      if (instructions) return send({ ...message, result: { ...message.result, instructions } });
+    }
+    return send(message);
+  };
   let closing: Promise<void> | undefined;
   const shutdown = () => closing ??= (async () => {
     if (ping) clearInterval(ping);
@@ -77,6 +89,7 @@ async function main() {
   stdio.onmessage = (message) => {
     if ("method" in message && message.method === "initialize" && "id" in message) {
       if (connecting || closing) return;
+      initializeId = message.id;
       connecting = (async () => {
         const params = message.params as { clientInfo?: { name?: unknown; version?: unknown } } | undefined;
         const info = params?.clientInfo;

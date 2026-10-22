@@ -124,7 +124,7 @@ for (const phase of ["running", "stopped", "awaitingApproval"] as const) test(`m
     const edit = await begin(client);
     if (phase === "stopped") await page.locator("[data-ai-bar]").getByRole("button", { name: "Durdur", exact: true }).click();
     if (phase === "awaitingApproval") success(await client.callTool("finish_edit", { context: edit.context }));
-    await page.locator('[data-inspector-section="ai-tags"]').getByRole("button").click();
+    await page.locator('[data-inspector-section="ai-tags"]').getByRole("button", { name: "AI etiketleri", exact: true }).click();
     const dialog = page.locator('[data-dialog="ai-tags"]'), words = dialog.locator("#ai-tag-words");
     await expect(words).toBeEnabled(); await words.fill(`review-${phase}`);
     await dialog.getByRole("button", { name: "Kaydet", exact: true }).click();

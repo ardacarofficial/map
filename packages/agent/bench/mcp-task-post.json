@@ -1,0 +1,58 @@
+{
+  "kind": "deterministic in-process MCP API tasks",
+  "mode": "batch",
+  "timing": "single-run local wall clock; no network or LLM inference",
+  "rows": [
+    {
+      "task": "four-layer-64x64-read",
+      "calls": 1,
+      "requestBytes": 188,
+      "textBytes": 33121,
+      "imageBytes": 0,
+      "wireBytes": 66374,
+      "durationMs": 9.305537999999842,
+      "failures": [],
+      "correct": true
+    },
+    {
+      "task": "sixteen-house-village",
+      "calls": 3,
+      "requestBytes": 2886,
+      "textBytes": 3081,
+      "imageBytes": 0,
+      "wireBytes": 6874,
+      "durationMs": 12.45034499999997,
+      "failures": [],
+      "placed": 16,
+      "undoExact": true,
+      "redoPlaced": true
+    },
+    {
+      "task": "4096-distinct-tiles",
+      "calls": 1,
+      "requestBytes": 243572,
+      "textBytes": 387,
+      "imageBytes": 0,
+      "wireBytes": 892,
+      "durationMs": 55.142741000000115,
+      "failures": [],
+      "success": true,
+      "changed": true,
+      "discardExact": true
+    },
+    {
+      "task": "malformed-brush-recovery",
+      "calls": 3,
+      "requestBytes": 757,
+      "textBytes": 1151,
+      "imageBytes": 0,
+      "wireBytes": 2657,
+      "durationMs": 20.771127000000206,
+      "failures": [
+        "INVALID_ARGUMENT"
+      ],
+      "priorWorkPreserved": true,
+      "transactionState": "running"
+    }
+  ]
+}

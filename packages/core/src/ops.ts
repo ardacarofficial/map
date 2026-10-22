@@ -8,6 +8,7 @@ import type { Collection } from "./collection";
 import type { RandomSet } from "./randomSet";
 import type { EntityFieldValue, EntityType } from "./entity";
 import type { GridRole } from "./layer";
+import type { PaletteEntry } from "./palette";
 import type { GeneratedTilesetMetadata, Tileset } from "./tileset";
 
 /** One cell write inside a `paintCells` op. */
@@ -149,6 +150,13 @@ export interface AddPaletteEntryOp {
   readonly tilesetId: string;
   readonly tileId: number;
   readonly undoable?: true;
+}
+
+/** Validates all references before allocating, in first-use order. One reversible
+ * before/after snapshot pair owns all new slots; returned indices match input order. */
+export interface AddPaletteEntriesOp {
+  readonly type: "addPaletteEntries";
+  readonly entries: readonly PaletteEntry[];
 }
 
 /**
@@ -425,6 +433,7 @@ export type Op =
   | AddTilesetOp
   | AddLayerOp
   | AddPaletteEntryOp
+  | AddPaletteEntriesOp
   | RemoveLayerOp
   | MoveLayerOp
   | SetLayerPropsOp
@@ -459,6 +468,7 @@ export interface OpResultMap {
   addLayer: string;
   /** Palette index of the entry. */
   addPaletteEntry: number;
+  addPaletteEntries: readonly number[];
   removeLayer: void;
   moveLayer: void;
   setLayerProps: void;

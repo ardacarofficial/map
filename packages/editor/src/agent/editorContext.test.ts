@@ -1,0 +1,71 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { createAgentApi, memoryCall, createMemoryHost, type AgentCallContext } from "@smap/agent";
+import { encodeRgbaPng } from "@smap/core";
+import { useEditorStore } from "../state/editorStore";
+import { clearTilesetImages, setTilesetImage } from "../state/tilesetImages";
+import { useTilesetView } from "../ui/tileset/tilesetViewStore";
+import { setCanvasHandle } from "../ui/canvas/canvasHandle";
+import type { CanvasHandle } from "../canvas/mapCanvas";
+import { resetAgentWorld, getAgentWorldSessionId, clearAgentWorld } from "./editGate";
+import { captureEditorContext, shareSelectedReference } from "./editorContext";
+import { clearSelectedReference } from "./selectedReference";
+import { createVisualReferencePort } from "./visualReferences";
+const art={id:"art",name:"Art",imagePath:"tilesets/art.png",tileWidth:2,tileHeight:2,columns:2,rows:1,margin:1,spacing:1};
+const call:AgentCallContext={clientSessionId:"client",clientInfo:{name:"Test",version:"1"},bridgeEpoch:"epoch",deadline:Number.MAX_SAFE_INTEGER,signal:{aborted:false,throwIfAborted(){},onAbort:()=>()=>{}}};
+function setup(){
+  resetAgentWorld();const host=createMemoryHost({tilesets:[art]});
+  useEditorStore.getState().setProject({name:"Test",levelId:"map-1",store:host.stores.get("map-1")!,levelPath:"levels/main.json"});
+  useEditorStore.getState().setSelection({tilesetId:"art",tileId:0});
+  useTilesetView.getState().setSelection({tilesetId:"art",ids:[0,1],referenceIds:[0,1],anchor:{col:0,row:0},focus:{col:1,row:0},clip:null});
+  return host;
+}
+afterEach(()=>{useEditorStore.getState().setProject(null);useTilesetView.getState().setSelection(null);setCanvasHandle(null);clearTilesetImages();clearSelectedReference();clearAgentWorld();});
+it("returns lossless selected source, bounded mask, live viewport and a changing context token",()=>{
+  const host=setup(),mask=Uint8Array.from({length:5000},(_,i)=>i%3?1:0);
+  useEditorStore.getState().setRegion({x:3,y:4,width:100,height:50,mask});
+  const viewport={view:"level",zoom:2,pixelBounds:{x:10,y:20,width:100,height:80},cellBounds:{x:0,y:1,width:5,height:4}};
+  setCanvasHandle({captureViewport:()=>viewport} as CanvasHandle);
+  const first=captureEditorContext(host.world,7);
+  expect(first).toMatchObject({activeMapId:"map-1",selection:{tilesetId:"art",region:{x:0,y:0,width:2,height:1},tileIds:[0,1],truncated:false},region:{selectedCells:3333,masked:true,truncated:true},viewport,reference:null});
+  expect(first.region!.mask).toHaveLength(4096);
+  expect(captureEditorContext(host.world,7).contextToken).toBe(first.contextToken);
+  const changed=mask.slice();changed[4999]=0;
+  useEditorStore.getState().setRegion({x:3,y:4,width:100,height:50,mask:changed});
+  expect(captureEditorContext(host.world,7).contextToken).not.toBe(first.contextToken);
+  expect(captureEditorContext(host.world,8).contextToken).not.toBe(first.contextToken);
+  const before=captureEditorContext(host.world,8).contextToken;
+  viewport.pixelBounds.x=11;
+  expect(captureEditorContext(host.world,8).contextToken).not.toBe(before);
+});
+it("hands an explicitly shared source crop to the existing client scoped exact matcher",async()=>{
+  const host=setup(),data=new Uint8Array(7*4*4);
+  for(let y=1;y<3;y++)for(let x=1;x<6;x++)data.set([x*30,y*50,20,255],(y*7+x)*4);
+  setTilesetImage({tilesetId:"art",bytes:encodeRgbaPng(7,4,data),bitmap:{width:7,height:4,close:vi.fn()} as unknown as ImageBitmap});
+  const port=createVisualReferencePort(host.world,()=>7),context={worldSessionId:getAgentWorldSessionId()!};
+  expect(captureEditorContext(host.world,7).reference).toBeNull();
+  await shareSelectedReference(host.world,call.signal);
+  const shared=captureEditorContext(host.world,7).reference!;
+  expect(shared).toMatchObject({width:4,height:2});
+  const handle=await port.ingestReference({context,selectedReferenceToken:shared.selectionToken},call);
+  expect(await port.matchReference({context,referenceId:handle.referenceId,tilesetIds:["art"]},call)).toMatchObject({status:"matched",candidates:[{region:{x:0,y:0,width:2,height:1},match:"exact_rgba"}]});
+  await expect(port.matchReference({context,referenceId:handle.referenceId},{...call,clientSessionId:"other"})).rejects.toMatchObject({code:"UNKNOWN_ID"});
+  await expect(port.ingestReference({context:{worldSessionId:"other"},selectedReferenceToken:shared.selectionToken},call)).rejects.toMatchObject({code:"UNKNOWN_ID"});
+  port.clear();
+  await expect(port.ingestReference({context,selectedReferenceToken:shared.selectionToken},call)).rejects.toMatchObject({code:"UNKNOWN_ID"});
+  expect(useEditorStore.getState().region).toBeNull();
+});
+
+it("serves the editor snapshot through MCP and changes its token without changing document revision",async()=>{
+  const host=setup();host.editorContext=()=>captureEditorContext(host.world,host.session().revision);
+  const api=createAgentApi(host),context={worldSessionId:host.session().worldSessionId!};
+  const first=await api.executeTool(memoryCall("get_editor_context",{context}));
+  expect(first.structuredContent.ok).toBe(true);if(!first.structuredContent.ok)throw Error(first.structuredContent.message);
+  const snapshot=first.structuredContent.data as ReturnType<typeof captureEditorContext>;
+  expect(snapshot.selection).toMatchObject({tileIds:[0,1],grid:{columns:2,tileWidth:2,spacing:1}});
+  useEditorStore.getState().setRegion({x:1,y:2,width:3,height:4});
+  const second=await api.executeTool(memoryCall("get_editor_context",{context}));
+  expect(second.structuredContent.ok).toBe(true);if(!second.structuredContent.ok)throw Error(second.structuredContent.message);
+  expect(second.structuredContent.revision).toBe(first.structuredContent.revision);
+  expect((second.structuredContent.data as ReturnType<typeof captureEditorContext>).contextToken).not.toBe(snapshot.contextToken);
+  expect(api.getState().transaction).toBeNull();
+});

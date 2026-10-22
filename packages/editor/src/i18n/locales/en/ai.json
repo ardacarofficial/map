@@ -136,5 +136,10 @@
   "command.openSettings": "AI settings",
   "activity.changes": "Changes",
   "tags.browse": "Browse tags",
-  "tags.more": "More"
+  "tags.more": "More",
+  "activity.export": "Export diagnostics",
+  "activity.exportFailed": "Could not save the diagnostics file.",
+  "action.shareReference": "Share selection as reference",
+  "action.shareReferenceReady": "Selected image is ready as an AI reference.",
+  "action.shareReferenceFailed": "Select a rectangular tileset region and try again."
 }

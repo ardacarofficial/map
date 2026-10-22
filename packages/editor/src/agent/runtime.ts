@@ -37,7 +37,9 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     if(requests.has(request.requestId))return;
     if(requests.size>=64){void connection.reply({requestId:request.requestId,bridgeEpoch:request.bridgeEpoch,clientSessionId:request.clientSessionId,type:"failure",error:{code:"LIMIT_EXCEEDED",message:"Renderer request queue is full"}}).catch(log);return;}
     const controller=new AbortController();
-    const timer=setTimeout(()=>{endSession(request.clientSessionId);},Math.max(0,request.deadline-Date.now()));
+    // Deadlines cancel one request. Only transport lifecycle controls end sessions;
+    // the same authenticated client must remain able to inspect/recover its edit.
+    const timer=setTimeout(()=>{controller.abort();},Math.max(0,request.deadline-Date.now()));
     requests.set(request.requestId,{controller,request,timer});clients.set(request.clientSessionId,request.clientInfo);updateClients();
     void (async()=>{
       try{
@@ -65,8 +67,10 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     if(state.phase!==previousPhase && (state.phase==="stopped" || state.phase==="cancelling")){
       const owner=state.transaction?.owner.clientSessionId;
       for(const [id,entry] of requests)if(entry.request.clientSessionId===owner && entry.request.name!=="cancel_edit"){
+        const alreadyAborted=entry.controller.signal.aborted;
         entry.controller.abort();clearTimeout(entry.timer);requests.delete(id);
-        void connection.reply({requestId:entry.request.requestId,bridgeEpoch,clientSessionId:entry.request.clientSessionId,type:"failure",error:{code:"CANCELLED",message:"The user stopped or discarded this edit"}}).catch(log);
+        // Transport timeout/cancel already owns the response for aborted requests.
+        if(!alreadyAborted)void connection.reply({requestId:entry.request.requestId,bridgeEpoch,clientSessionId:entry.request.clientSessionId,type:"failure",error:{code:"CANCELLED",message:"The user stopped or discarded this edit"}}).catch(log);
       }
     }
     previousPhase=state.phase;updateClients();void publish();

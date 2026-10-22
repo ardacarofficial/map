@@ -69,3 +69,22 @@ it("rechecks disk after a preceding queued write finishes (#3)", async () => {
   const rejected=expect(second).rejects.toMatchObject({code:"DISK_CONFLICT"});resume();await first;await rejected;
   expect(await fs.readText("ai-tags.json")).toBe(external);tags.dispose();
 });
+
+it("filters sparse text before fingerprints, keeps stale evidence and paginates candidates",async()=>{
+  const fs=new MemoryFileSystem(),fingerprints=vi.fn(async(_id:string,tileId:number)=>tileId===100?next:fp);
+  const sparseWorld={tilesets:()=>[{id:"art",columns:250,rows:200}],stamps:()=>[]} as unknown as AgentWorldPort;
+  await fs.writeText("ai-tags.json",serializeTagsSidecar({format:"smap-ai-tags",tagFormatVersion:1,tiles:[
+    {tilesetId:"art",tileId:100,fingerprint:fp,tags:["merdiven"],note:""},
+    {tilesetId:"art",tileId:200,fingerprint:fp,tags:["stairs"],note:""},
+    {tilesetId:"art",tileId:300,fingerprint:fp,tags:["grass"],note:""},
+  ],stamps:[]}));
+  const tags=createTagsPort({world:sparseWorld,images:{tileFingerprint:fingerprints} as unknown as AgentImagePort,folder:()=>fs,worldId:()=>"world"});
+  const query={context:{worldSessionId:"world"},query:"steps",status:"all" as const,limit:1};
+  const first=await tags.get(query,call);expect(first.items).toMatchObject([{target:{tileId:100},status:"stale"}]);
+  expect(fingerprints).toHaveBeenCalledTimes(1);
+  const second=await tags.get({...query,cursor:first.nextCursor!},call);expect(second.items).toMatchObject([{target:{tileId:200},status:"current"}]);
+  expect(second.nextCursor).toBeNull();expect(fingerprints).toHaveBeenCalledTimes(2);
+  expect((await tags.get({...query,status:"current",limit:128},call)).items).toMatchObject([{target:{tileId:200}}]);
+  expect(fingerprints.mock.calls.every(([,tileId])=>tileId===100||tileId===200)).toBe(true);
+  tags.dispose();
+});

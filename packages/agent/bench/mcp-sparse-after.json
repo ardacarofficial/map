@@ -1,0 +1,22 @@
+{
+  "command": "node node_modules/vitest/vitest.mjs run packages/editor/src/agent/sparseTags.benchmark.test.ts --reporter=verbose --disableConsoleIntercept",
+  "passed": true,
+  "tiles": 50000,
+  "tags": 10,
+  "comparableAdapterFixture": {
+    "description": "Same real editor tags adapter through AgentApi and deterministic constant fingerprint adapter as baseline",
+    "runs": [
+      {"temperature":"cold","fingerprintCalls":10,"mcpCalls":1,"wireBytes":6372,"items":10,"milliseconds":4.943072},
+      {"temperature":"warm","fingerprintCalls":10,"mcpCalls":1,"wireBytes":6372,"items":10,"milliseconds":0.804563}
+    ]
+  },
+  "realImageFixture": {
+    "description": "Actual 250x200 opaque RGBA PNG, 50000 one-pixel tiles, 10 current annotations, editor image port and sparse tags adapter through AgentApi. New image identity before cold run; actual rasterContentHash spy counts per-tile pixel hashes. Warm uses shared source/grid fingerprint cache.",
+    "runs": [
+      {"temperature":"cold","pixelHashes":10,"mcpCalls":1,"wireBytes":6372,"items":10,"milliseconds":23.00224},
+      {"temperature":"warm","pixelHashes":0,"mcpCalls":1,"wireBytes":6372,"items":10,"milliseconds":0.85573}
+    ]
+  },
+  "comparison": {"fingerprintCallReductionPercent":99.98,"mcpCallsBefore":13,"mcpCallsAfter":1,"wireBytesBeforeCold":12946,"wireBytesAfterCold":6372},
+  "limitations": "Single local wall-clock samples, not LLM inference or token measurements. Constant fingerprint fixture isolates enumeration and call overhead and excludes SHA/pixel processing; only that fixture has a pre-change baseline. Actual-pixel fixture validates cold/warm cache behavior after change. Wire bytes use JSON string length; payload ASCII means equal UTF-8 bytes. Results and timing assertions check correctness/candidate count; elapsed time is reported without brittle thresholds."
+}

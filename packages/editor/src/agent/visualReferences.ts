@@ -5,6 +5,7 @@ import {
 import { canonicalRgba, type RgbaImage } from "@smap/core";
 import { decodeWorkingSourcePng } from "../io/sourcePng";
 import { sourceChunks } from "../io/sourcePngFormat";
+import { clearSelectedReference, resolveSelectedReference, selectedReferenceInfo } from "./selectedReference";
 import { imagePixels } from "./images";
 
 interface StoredReference { pixels: RgbaImage; client: string; world: string }
@@ -52,11 +53,23 @@ export function createVisualReferencePort(world: AgentWorldPort, revision: () =>
   };
   const invalid = (message: string): never => { throw new AgentError(AgentErrorCode.INVALID_ARGUMENT, message); };
   const limit = (message: string): never => { throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED, message); };
-  const clear = () => { references.clear(); clientGenerations.clear(); retainedBytes = 0; generation++; };
+  const clear = () => { clearSelectedReference(); references.clear(); clientGenerations.clear(); retainedBytes = 0; generation++; };
   return {
     async ingestReference(args, call) {
       check(call);
-      const value = args.pngBase64;
+      if(args.selectedReferenceToken!==undefined){
+        const info=selectedReferenceInfo(args.context.worldSessionId);
+        if(!info||info.selectionToken!==args.selectedReferenceToken)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown explicitly shared reference in this world");
+        const bytes=info.width*info.height*4;
+        if(references.size+pendingCount>=VISUAL_LIMITS.references)limit("Reference handle capacity reached; start a new session");
+        if(retainedBytes+pendingBytes+bytes>AGENT_LIMITS.retainedBytes)limit("Reference images exceed the 64 MiB retained budget");
+        const pixels=resolveSelectedReference(args.selectedReferenceToken,args.context.worldSessionId),referenceId=crypto.randomUUID();
+        const clientGeneration=clientGenerations.get(call.clientSessionId)??{};
+        clientGenerations.set(call.clientSessionId,clientGeneration);
+        references.set(referenceId,{pixels,client:call.clientSessionId,world:args.context.worldSessionId});retainedBytes+=bytes;
+        return {referenceId,width:pixels.width,height:pixels.height};
+      }
+      const value = args.pngBase64!;
       if (value.length > AGENT_LIMITS.requestBytes - 4096) limit("Base64 PNG exceeds the 1 MiB request budget");
       if (!value.length || value.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) invalid("Provide a PNG as canonical base64 without a data URL prefix");
       if (references.size + pendingCount >= VISUAL_LIMITS.references) limit("Reference handle capacity reached; start a new session");

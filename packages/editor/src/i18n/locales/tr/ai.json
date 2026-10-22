@@ -136,5 +136,10 @@
   "command.openSettings": "AI ayarları",
   "activity.changes": "Değişiklik",
   "tags.browse": "Etiketlere göz at",
-  "tags.more": "Daha fazla"
+  "tags.more": "Daha fazla",
+  "activity.export": "Tanılamayı dışa aktar",
+  "activity.exportFailed": "Tanılama dosyası kaydedilemedi.",
+  "action.shareReference": "Seçimi referans olarak paylaş",
+  "action.shareReferenceReady": "Seçilen görüntü AI referansı olarak hazır.",
+  "action.shareReferenceFailed": "Dikdörtgen bir tileset seçimi yapıp tekrar dene."
 }
