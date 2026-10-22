@@ -16,7 +16,11 @@ Use `image: "tiles"` and explicit `tileIds` for labeled detail (at most 64 image
 
 ## Match an explicit PNG reference
 
-A chat attachment is not automatically available to the editor. The client must supply raw PNG bytes as base64 (without a data URL prefix):
+`get_editor_context` returns a bounded snapshot of the active world map/layer, selected tileset IDs and grid/region, stamp dimensions, region mask, and viewport. Its opaque `contextToken` changes when selection or viewport changes even if the map revision does not. A `truncated` selection/mask must not be treated as a complete selection; at most 4096 IDs/mask entries are returned. Temporary stamp-editor documents are not presented as world maps.
+
+The user can select a rectangular tileset crop and click **Share selection as reference** in the AI tags section. The editor copies that explicitly selected crop, strips atlas gutters, and exposes `reference.selectionToken` through `get_editor_context`. Ingest it with `{context,selectedReferenceToken}` to obtain the same client/world-scoped `referenceId` used below. A newly shared crop replaces the pending selection token; already ingested handles keep their own bounded snapshot. Nothing is painted or matched automatically. Arbitrary screenshot cropping is not provided by this action.
+
+A chat attachment is not automatically available to the editor. As an alternative to the explicit selection action, the client can supply raw PNG bytes as base64 (without a data URL prefix):
 
 ```json
 {"context":{"worldSessionId":"<session>"},"pngBase64":"<base64 PNG>"}
