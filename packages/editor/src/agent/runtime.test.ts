@@ -5,18 +5,21 @@ import { serializeLevel } from "@smap/core";
 import { browserPlatform, setPlatform } from "../platform";
 import { installAgentRuntime, getAgentRuntime } from "./runtime";
 import { startDevMcp } from "../../dev/devMcp";
+import * as editorHost from "./editorHost";
+import { getAgentApi } from "./agentUiState";
+import { hasAgentWorldFlush } from "./editGate";
 const state:AgentState={phase:"ready",instanceId:"instance",worldSessionId:null,revision:0,committedRevision:0,transaction:null};
 function setup(){
   let request=(_value:BridgeRequest)=>{},control=(_value:BridgeControl)=>{};
   const listeners=new Set<(value:AgentState)=>void>();
   let current=state;
   const statusListeners=new Set<(value:AgentConnectionStatus)=>void>();
-  const api:AgentApi={executeTool:vi.fn(async()=>({content:[{type:"text",text:"{}"}],structuredContent:{}} as AgentToolResult)),describeTools:()=>[],sessionEnded:vi.fn(async()=>{}),userAction:vi.fn(async()=>{}),getState:()=>current,subscribe:cb=>{listeners.add(cb);return()=>{listeners.delete(cb);};}};
+  const api:AgentApi={executeTool:vi.fn(async()=>({content:[{type:"text",text:"{}"}],structuredContent:{}} as AgentToolResult)),describeTools:()=>[],sessionEnded:vi.fn(async()=>{}),userAction:vi.fn(async()=>{}),dispose:vi.fn(async()=>{}),getState:()=>current,subscribe:cb=>{listeners.add(cb);return()=>{listeners.delete(cb);};}};
   const connection:AgentConnection={onRequest:cb=>{request=cb;return()=>{};},onControl:cb=>{control=cb;return()=>{};},reply:vi.fn(async()=>{}),publishStatus:vi.fn(async()=>{}),ready:vi.fn(async()=>{}),getSettings:vi.fn(),setSettings:vi.fn(),revealToken:vi.fn(),copyToken:vi.fn(),regenerateToken:vi.fn(),status:{state:"listening",port:48765,clients:[]},subscribeStatus:cb=>{statusListeners.add(cb);return()=>{statusListeners.delete(cb);};}};
   const call=(epoch:string):BridgeRequest=>({requestId:"request",bridgeEpoch:epoch,clientSessionId:"client",clientInfo:{name:"Test",version:"1"},type:"tools/call",deadline:Date.now()+1000,name:"get_session",arguments:{}});
   return {api,connection,status:(value:AgentConnectionStatus)=>{for(const cb of statusListeners)cb(value);},emitState:(value:AgentState)=>{current=value;for(const cb of listeners)cb(value);},request:(r:BridgeRequest)=>request(r),control:(c:BridgeControl)=>control(c),call};
 }
-afterEach(async()=>{await getAgentRuntime()?.dispose();vi.useRealTimers();setPlatform(browserPlatform);});
+afterEach(async()=>{await getAgentRuntime()?.dispose();vi.restoreAllMocks();vi.useRealTimers();setPlatform(browserPlatform);});
 describe("live transport runtime",()=>{
   it("forwards authenticated identity and rejects a request from a stale webview epoch",async()=>{
     setPlatform({...browserPlatform,onFileChanged:()=>()=>{}});const fake=setup();
@@ -45,12 +48,57 @@ describe("live transport runtime",()=>{
     expect(fake.connection.reply).toHaveBeenCalledWith(expect.objectContaining({type:"failure",error:expect.objectContaining({code:"CANCELLED"})}));
     await vi.advanceTimersByTimeAsync(1001);expect(fake.api.sessionEnded).not.toHaveBeenCalled();
   });
-  it("ignores stale session controls and discards before detaching the current runtime",async()=>{
+  it("ignores stale session controls and disposes the API before detaching the current runtime",async()=>{
     setPlatform({...browserPlatform,onFileChanged:()=>()=>{}});const fake=setup();
     const runtime=await installAgentRuntime({connection:fake.connection,host:{} as AgentHost,apiFactory:()=>fake.api});
     fake.control({type:"sessionEnded",bridgeEpoch:"old",clientSessionId:"client",reason:"disconnect"});expect(fake.api.sessionEnded).not.toHaveBeenCalled();
     fake.control({type:"sessionEnded",bridgeEpoch:runtime.bridgeEpoch,clientSessionId:"client",reason:"disconnect"});expect(fake.api.sessionEnded).toHaveBeenCalledWith("client");
-    await runtime.dispose();expect(fake.api.userAction).toHaveBeenCalledWith("discard");expect(getAgentRuntime()).toBeNull();
+    await runtime.dispose();expect(fake.api.dispose).toHaveBeenCalledTimes(1);expect(getAgentRuntime()).toBeNull();
+  });
+  it("closes request admission as soon as disposal starts and shares its completion",async()=>{
+    setPlatform({...browserPlatform,onFileChanged:()=>()=>{}});const fake=setup();
+    let finish!:()=>void;
+    vi.mocked(fake.api.dispose).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    const runtime=await installAgentRuntime({connection:fake.connection,host:{} as AgentHost,apiFactory:()=>fake.api});
+    const disposing=runtime.dispose(),again=runtime.dispose();
+    fake.request(fake.call(runtime.bridgeEpoch));
+    finish();await Promise.all([disposing,again]);
+    expect(fake.api.executeTool).not.toHaveBeenCalled();
+    expect(fake.api.dispose).toHaveBeenCalledTimes(1);
+    expect(getAgentRuntime()).toBeNull();
+  });
+  it("detaches the runtime after tag persistence fails so a replacement can install",async()=>{
+    const offFile=vi.fn();setPlatform({...browserPlatform,onFileChanged:()=>offFile});
+    const fake=setup(),host=createMemoryHost(),failure=new Error("disk unavailable");
+    const disposeTags=vi.fn(),clearReferences=vi.fn();
+    const live={...host,setClients:vi.fn(),tags:{...host.tags,reload:vi.fn(async()=>{}),folderChanged:vi.fn(async()=>{}),externalChange:vi.fn(async()=>{}),dispose:disposeTags,flush:vi.fn(async():Promise<void>=>{throw failure;})},visualReferences:{...host.visualReferences!,clear:clearReferences}};
+    vi.spyOn(editorHost,"createEditorHost").mockReturnValue(live);
+    const runtime=await installAgentRuntime({connection:fake.connection});
+    const original=serializeLevel(host.stores.get("map-1")!.document),worldSessionId=host.session().worldSessionId!;
+    const begin=await runtime.api.executeTool(memoryCall("begin_edit",{context:{worldSessionId},expectedRevision:runtime.api.getState().revision,idempotencyKey:"dispose-begin",requestLabel:"Pending edit",mapIds:["map-1"]}));
+    expect(begin.structuredContent.ok).toBe(true);
+    const painted=await runtime.api.executeTool(memoryCall("paint_cells",{context:{worldSessionId,transactionId:runtime.api.getState().transaction!.id,expectedRevision:runtime.api.getState().revision,idempotencyKey:"dispose-paint"},mapId:"map-1",layerId:"ground",cells:[{x:1,y:1,value:{tilesetId:"tiles",tileId:0}}]}));
+    expect(painted.structuredContent.ok).toBe(true);
+    expect(serializeLevel(host.stores.get("map-1")!.document)).not.toBe(original);
+    const execute=vi.spyOn(runtime.api,"executeTool");
+    try {
+      await expect(runtime.dispose()).rejects.toBe(failure);
+      expect(getAgentRuntime()).toBeNull();
+      expect(getAgentApi()).toBeNull();
+      expect(hasAgentWorldFlush()).toBe(false);
+      expect(offFile).toHaveBeenCalledTimes(1);
+      expect(disposeTags).toHaveBeenCalledTimes(1);
+      expect(clearReferences).toHaveBeenCalled();
+      expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(original);
+      expect(host.transactions.writeGate.blocked).toBe(false);
+      const replacement=setup();
+      await installAgentRuntime({connection:replacement.connection,host:{} as AgentHost,apiFactory:()=>replacement.api});
+      fake.request(fake.call(runtime.bridgeEpoch));
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(live.tags.flush).mockResolvedValue(undefined);
+      await runtime.dispose().catch(()=>{});
+    }
   });
 });
 

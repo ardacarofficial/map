@@ -116,21 +116,30 @@ export class Transactions {
   independent = false;
   interrupt: (() => void) | undefined;
   onExternal: (() => void) | undefined;
+  private readonly subscriptions: Unsubscribe[] = [];
   constructor(readonly host: AgentHost) {
     this.revision = host.session().revision;
     this.committedRevision = this.revision;
-    host.subscribeWorldContent(() => {
+    this.subscriptions.push(host.subscribeWorldContent(() => {
       this.revision = Math.max(this.revision + 1, host.session().revision);
       if (!this.pending) this.committedRevision = this.revision;
       if (this.pending && !this.applying && !this.independent)
         this.onExternal?.();
       this.emit();
-    });
-    host.tags.subscribe(() => {
+    }));
+    this.subscriptions.push(host.tags.subscribe(() => {
       this.revision++;
       if (!this.pending) this.committedRevision = this.revision;
       this.emit();
-    });
+    }));
+  }
+  dispose(): void {
+    for (const off of this.subscriptions.splice(0)) off();
+    this.pending?.timer();
+    this.listeners.clear();
+    this.terminals.clear();
+    this.interrupt = undefined;
+    this.onExternal = undefined;
   }
   state(): AgentState {
     const s = this.host.session();

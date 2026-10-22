@@ -45,4 +45,10 @@ The third MCP audit adds focused regressions for long workflows and editor parit
 - `tagPagination.test.ts` binds ordinary tag-page cursors to the filters and source snapshot, rejecting stale or mismatched continuation while preserving unchanged pagination.
 - `stampMapping.test.ts` compares inferred destinations with core, creates missing layers in stamp order, and verifies that missing permission or genuinely ambiguous mappings preserve an existing draft and its counters.
 
+The fourth MCP audit adds lifecycle and sparse-preview regressions:
+
+- `preview.test.ts` renders a 4096×4096 collision region containing one occupied chunk into a 64×64 image. The previous dense loop required 16,777,216 `getCell` calls; the fixed renderer makes zero such calls and scans the intersecting stored chunk. Crop boundaries and row-major blending across chunks remain covered. Dense populated layers still require work proportional to stored cells; output dimensions alone do not bound that work.
+- `disposal.test.ts` verifies that repeated API teardown releases world/tag subscriptions, cancels active and queued calls, rolls back pending edits, and interrupts approval waiting for a map without committing. `runtime.test.ts` rejects requests as soon as teardown starts and verifies cleanup/replacement after tag persistence fails.
+- `createStamp.test.ts` rejects unused edited-atlas slots, including selections mixing allocated and unused slots, while preserving prior pending edits and counters. The last allocated tile still creates a stamp that can be placed and discarded correctly.
+
 In the application, **AI activity → Export diagnostics** saves the filtered visible activity rows to a local JSON file. It includes call outcomes, duration, planned/changed cells, and measured request/text/decoded-image/result byte counts where available. It excludes raw arguments, image content, summaries, client identities, tokens, and transport framing. The editor sends nothing automatically. User approval/discard rows remain separate from tool calls; durations exclude external model inference.

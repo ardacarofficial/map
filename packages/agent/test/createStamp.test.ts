@@ -118,6 +118,38 @@ it("capture bounds total cells across layers before allocating stamp buffers", a
   expect(h.api.getState().transaction!.counters).toMatchObject({ mutationCalls: 0, retainedBytes: 0 });
 });
 
+it("rejects unallocated edited-atlas slots, including a mixed selection, while preserving pending work", async () => {
+  const h = harness({ tilesets: [{
+    id: "edited", name: "Edited", imagePath: "tilesets/edited.png",
+    tileWidth: 32, tileHeight: 32, columns: 16, rows: 2, margin: 0, spacing: 0,
+    edited: { kind: "pixel", layoutVersion: 1, nextTileId: 18,
+      contentHash: "a".repeat(64), origins: [] },
+  }] }), initial = h.host.snapshot();
+  await h.begin();
+  success(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground",
+    cells: [{ x: 0, y: 0, value: { tilesetId: "edited", tileId: 17 } }] }));
+  const before = h.host.snapshot(), counters = { ...h.api.getState().transaction!.counters };
+  for (const region of [
+    { x: 2, y: 1, width: 1, height: 1 },
+    { x: 1, y: 1, width: 2, height: 1 },
+  ]) {
+    error(await h.edit("create_stamp", { name: "Tail", source: { tilesetId: "edited", region } }), "UNKNOWN_ID");
+    expect(h.host.snapshot()).toEqual(before);
+    expect(h.api.getState().transaction!.counters).toEqual(counters);
+  }
+  success(await h.edit("create_stamp", { name: "Last tile", source: {
+    tilesetId: "edited", region: { x: 1, y: 1, width: 1, height: 1 },
+  } }));
+  const captured = h.host.world.stamps()[0]!;
+  expect(captured.palette).toEqual([{ tilesetId: "edited", tileId: 17 }]);
+  success(await h.edit("place_stamp", { mapId: "map-1", stampId: captured.id,
+    at: { x: 2, y: 0 }, layerMapping: [{ sourceLayerId: captured.layers[0]!.layerId, targetLayerId: "ground" }] }));
+  const ground = h.host.stores.get("map-1")!.document.getLayer("ground")!;
+  expect(ground.getCell(2, 0)).toBe(ground.getCell(0, 0));
+  await h.api.userAction("discard");
+  expect(h.host.snapshot()).toEqual(initial);
+});
+
 it("world undo/redo preserves later independent changes to unrelated library stamps", async () => {
   const h = harness({ stamps: [stamp] });
   await h.begin();

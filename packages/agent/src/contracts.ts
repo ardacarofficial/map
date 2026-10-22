@@ -240,6 +240,8 @@ export interface AgentApi {
   describeTools(): readonly AgentToolDefinition[];
   sessionEnded(clientSessionId: Id): Promise<void>;
   userAction(action: "stop" | "approve" | "discard"): Promise<void>;
+  /** Close admission, cancel pending work, and release host subscriptions. */
+  dispose(): Promise<void>;
   getState(): AgentState;
   subscribe(listener: (state: AgentState) => void): Unsubscribe;
 }

@@ -30,10 +30,21 @@ export function renderPreviewPixels(doc: MapDocument, region: Rect, options: Pic
   // Collision is an explicit diagnostic overlay, never inferred from tile artwork.
   if(options.layerIds)for(const layer of doc.layers){
     if(!isGridLayer(layer)||!layer.visible||!options.layerIds.includes(layer.id))continue;
-    for(let y=0;y<region.height;y++)for(let x=0;x<region.width;x++){
-      const value=layer.getCell(region.x+x,region.y+y);if(!value)continue;
-      const left=Math.floor(gutter+x*cw),top=Math.floor(gutter+y*ch);
-      canvas.fill({x:left,y:top,width:Math.min(width-left,Math.ceil(cw)),height:Math.min(height-top,Math.ceil(ch))},value===1?[255,84,104,85]:[92,178,255,85]);
+    const right=region.x+region.width,bottom=region.y+region.height;
+    const chunks=[...layer.chunks()].filter(c=>c.cx*32<right&&(c.cx+1)*32>region.x&&c.cy*32<bottom&&(c.cy+1)*32>region.y).sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
+    // Keep row-major blending when multiple subpixel cells cover the same pixel.
+    for(let start=0;start<chunks.length;){
+      let end=start+1;while(end<chunks.length&&chunks[end]!.cy===chunks[start]!.cy)end++;
+      for(let row=0;row<32;row++){
+        const y=chunks[start]!.cy*32+row;if(y<region.y||y>=bottom)continue;
+        for(let c=start;c<end;c++)for(let col=0;col<32;col++){
+          const chunk=chunks[c]!,x=chunk.cx*32+col;if(x<region.x||x>=right)continue;
+          const value=chunk.data[row*32+col]!;if(!value)continue;
+          const left=Math.floor(gutter+(x-region.x)*cw),top=Math.floor(gutter+(y-region.y)*ch);
+          canvas.fill({x:left,y:top,width:Math.min(width-left,Math.ceil(cw)),height:Math.min(height-top,Math.ceil(ch))},value===1?[255,84,104,85]:[92,178,255,85]);
+        }
+      }
+      start=end;
     }
   }
 

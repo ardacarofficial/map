@@ -40,6 +40,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
   const tx = new Transactions(host),
     cache = new Map<string, Cached>();
   const endedSessions = new Set<string>();
+  const signals = new Set<CallSignal>();
+  const lifetime = new CallSignal();
+  let disposed = false, disposal: Promise<void> | undefined;
   let referenceWorld = host.session().worldSessionId;
   function syncReferenceWorld() {
     const current = host.session().worldSessionId;
@@ -61,6 +64,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
   }
   tx.interrupt = interrupt;
   tx.onExternal = () => {
+    if (disposed) return;
     const worldChanged = host.session().worldSessionId !== referenceWorld;
     syncReferenceWorld();
     // An explicit reference upload does not depend on map contents.
@@ -487,10 +491,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
     describeTools: () => TOOL_DEFINITIONS,
     getState: () => tx.state(),
     subscribe: (listener) => {
+      if (disposed) return () => {};
       tx.listeners.add(listener);
       return () => tx.listeners.delete(listener);
     },
     executeTool: (call) => {
+      if (disposed)
+        return Promise.resolve(failure(new AgentError(E.CANCELLED, "Agent API is disposed")));
       const count = perClient.get(call.clientSessionId) ?? 0;
       if (queued >= L.queueTotal || count >= L.queuePerClient)
         return Promise.resolve(
@@ -499,6 +506,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       queued++;
       perClient.set(call.clientSessionId, count + 1);
       const signal = new CallSignal();
+      signals.add(signal);
       signal.onAbort(() => {
         if (active === signal && writes.has(call.name as ToolName) &&
             tx.pending?.summary.owner.clientSessionId === call.clientSessionId)
@@ -525,6 +533,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       return enqueue(() => execute(call, signal)).finally(() => {
         off();
         timer();
+        signals.delete(signal);
         queued--;
         perClient.set(
           call.clientSessionId,
@@ -533,14 +542,17 @@ export function createAgentApi(host: AgentHost): AgentApi {
       });
     },
     userAction: (action) => {
+      if (disposed) return Promise.resolve();
       if (action === "stop" || action === "approve") tx.seal("stopped");
       else interrupt();
       return enqueue(async () => {
+        if (disposed) return;
         const pending = tx.pending;
         // Navigation can load approved metadata followers during review. Enlist them
         // before the synchronous finalizer so saving from that tab sees the same world.
         if (action === "approve" && pending)
-          await tx.enlistCached({ signal: new CallSignal() });
+          await tx.enlistCached({ signal: lifetime });
+        if (disposed) return;
         const transaction = tx.pending?.summary;
         if (action === "stop") {
           if (tx.phase === "preparing") tx.cancel();
@@ -575,6 +587,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       });
     },
     sessionEnded: (clientSessionId) => {
+      if (disposed) return Promise.resolve();
       endedSessions.add(clientSessionId);
       host.visualReferences?.sessionEnded(clientSessionId);
       const pending = tx.pending;
@@ -590,6 +603,24 @@ export function createAgentApi(host: AgentHost): AgentApi {
       return enqueue(() => {
         if (rollback && tx.pending === pending) tx.cancel();
       });
+    },
+    dispose: () => {
+      if (disposal) return disposal;
+      disposed = true;
+      lifetime.abort();
+      for (const signal of signals) signal.abort();
+      disposal = enqueue(() => {
+        try {
+          tx.cancel();
+        } finally {
+          tx.dispose();
+          cache.clear();
+          endedSessions.clear();
+          perClient.clear();
+          host.visualReferences?.clear();
+        }
+      });
+      return disposal;
     },
   };
 }

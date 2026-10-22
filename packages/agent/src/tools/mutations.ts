@@ -674,6 +674,11 @@ function createStamp(tx: Transactions, a: ToolArguments["create_stamp"]) {
       source.region.y + source.region.height <= tileset.rows,
       E.OUT_OF_BOUNDS, "Stamp source outside tileset");
     budget(area);
+    // Edited atlases reserve sheet capacity beyond their allocated tile prefix.
+    for (let y = source.region.y; y < source.region.y + source.region.height; y++)
+      for (let x = source.region.x; x < source.region.x + source.region.width; x++)
+        check(isValidTileId(tileset, y * tileset.columns + x), E.UNKNOWN_ID,
+          "Stamp source references an unavailable tile");
     retained = 2048 + before.length * 16 + area * (136 + tileset.id.length * 2);
     tx.charge(0, retained);
     const clip = clipFromTileset(tileset, {

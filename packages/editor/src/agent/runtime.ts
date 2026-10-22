@@ -20,6 +20,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   const requests=new Map<string,{controller:AbortController;request:BridgeRequest;timer:ReturnType<typeof setTimeout>}>();
   const clients=new Map<string,BridgeRequest["clientInfo"]>();
   let disposed=false;
+  let disposal:Promise<void>|undefined;
   const log=(error:unknown)=>{getPlatform().log("warn",error instanceof Error?error.name:"Agent runtime failure");};
   const updateClients=()=>live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:api.getState().transaction?.owner.clientSessionId===clientSessionId})));
   const endSession=(clientSessionId:string)=>{
@@ -93,14 +94,22 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     else if(folder!==observedFolder){observedFolder=folder;void live?.tags.folderChanged().catch(log);}
   });
   if(live)void live.tags.reload().catch(log);
-  const runtime:AgentRuntime={host,api,connection,bridgeEpoch,async dispose(){
-    if(disposed)return;
-    for(const entry of requests.values()){entry.controller.abort();clearTimeout(entry.timer);}
-    await api.userAction("discard");
-    await live?.tags.flush();
-    host.visualReferences?.clear();
-    disposed=true;requests.clear();offFlush();offRequest();offControl();offState();offUi();offCancellation();offUnsaved();offStatus();offFile();offWorld();live?.tags.dispose();
-    if(installed===runtime)installed=null;
+  const runtime:AgentRuntime={host,api,connection,bridgeEpoch,dispose(){
+    if(disposal)return disposal;
+    // Close admission before cancellation or persistence can yield to a new request.
+    disposed=true;
+    disposal=(async()=>{
+      for(const entry of requests.values()){entry.controller.abort();clearTimeout(entry.timer);}
+      try{
+        await api.dispose();
+        await live?.tags.flush();
+      }finally{
+        host.visualReferences?.clear();
+        requests.clear();offFlush();offRequest();offControl();offState();offUi();offCancellation();offUnsaved();offStatus();offFile();offWorld();live?.tags.dispose();
+        if(installed===runtime)installed=null;
+      }
+    })();
+    return disposal;
   }};
   installed=runtime;
   offUi=bindAgentUiState(api,connection);
