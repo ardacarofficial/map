@@ -249,6 +249,21 @@ it("approval survives throwing commit subscribers and dispatch errors rollback t
   expect(k.host.snapshot()).toEqual(before);
   expect(k.host.transactions.writeGate.blocked).toBe(false);
 });
+it("a mutation whose result exceeds the response budget rolls back instead of leaving an uncached write", async () => {
+  const h = harness({ entityTypes: [{
+    id: "large-default", name: "Large default", color: "#ffffff",
+    fields: [{ name: "text", type: "string", default: "x".repeat(L.responseBytes / 2) }],
+  }] });
+  const before = h.host.snapshot();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  const args = { context: h.writeContext(), mapId: "map-1", layerId: "entities", typeId: "large-default", at: { x: 0, y: 0 } };
+  error(await h.run("place_entity", args), "LIMIT_EXCEEDED");
+  expect(h.api.getState().phase).toBe("ready");
+  expect(h.host.snapshot()).toEqual(before);
+  expect(h.host.transactions.writeGate.blocked).toBe(false);
+  error(await h.run("place_entity", args), "TRANSACTION_CANCELLED");
+});
 it("Stop/discard/timeouts during asynchronous preparation never publish late results", async () => {
   for (const action of ["stop", "discard", "timeout", "disconnect"] as const) {
     const h = harness(),

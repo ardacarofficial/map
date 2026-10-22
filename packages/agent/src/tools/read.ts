@@ -251,11 +251,26 @@ export async function read<N extends ToolName>(
       return { data: { items: tx.host.world.entityTypes() } };
     case "list_tilesets": {
       const a = args as ToolArguments["list_tilesets"],
-        c = cursor(tx, a.cursor, ["tilesets", a.limit]),
+        c = cursor(tx, a.cursor, ["tilesets", a.limit, a.includeDetails !== false]),
         all = tx.host.world.tilesets(),
         selected = all.slice(c.offset, c.offset + (a.limit ?? 64)),
         items = [];
       for (const ts of selected) {
+        const metadata = {
+          id: ts.id,
+          name: ts.name,
+          tileWidth: ts.tileWidth,
+          tileHeight: ts.tileHeight,
+          columns: ts.columns,
+          rows: ts.rows,
+          margin: ts.margin,
+          spacing: ts.spacing,
+          tileCount: catalogTileCount(ts),
+          kind: ts.edited ? "edited" : ts.generated ? "generated" : "source",
+        };
+        // First-pass discovery needs only project metadata, even when artwork
+        // is unavailable. Detailed fingerprints remain an explicit full scan.
+        if (a.includeDetails === false) { items.push(metadata); continue; }
         const sourceKey = tx.host.images.catalogSourceKey?.(ts.id);
         const source = canonicalJson([tx.host.session().worldSessionId, sourceKey,
           ts.tileWidth, ts.tileHeight, ts.columns, ts.rows, ts.margin, ts.spacing, ts.edited, catalogTileCount(ts)]);
@@ -294,16 +309,7 @@ export async function read<N extends ToolName>(
           summary.tagsKey = tagsKey;
         }
         items.push({
-          id: ts.id,
-          name: ts.name,
-          tileWidth: ts.tileWidth,
-          tileHeight: ts.tileHeight,
-          columns: ts.columns,
-          rows: ts.rows,
-          margin: ts.margin,
-          spacing: ts.spacing,
-          tileCount: catalogTileCount(ts),
-          kind: ts.edited ? "edited" : ts.generated ? "generated" : "source",
+          ...metadata,
           fingerprint: summary.fingerprint,
           tagCounts: { ...summary.tagCounts },
         });

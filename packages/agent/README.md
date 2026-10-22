@@ -6,7 +6,7 @@ All transports publish the same concise [working guide](schema/workflow.txt) dur
 
 ## Discover art efficiently
 
-Call `get_session`, then `list_tilesets`. Tileset fingerprints are cached against the image identity and grid; replacing source pixels, changing the grid, or editing tags invalidates the relevant summary. Hosts without a trustworthy image identity use uncached fingerprints.
+Call `get_session`, then `list_tilesets` with `includeDetails:false` for fast names, IDs, dimensions and counts without reading or hashing image pixels. This omits `fingerprint` and `tagCounts`. Omit the flag or use `includeDetails:true` when those details are needed; the existing default remains true. Tileset fingerprints are cached against the image identity and grid; replacing source pixels, changing the grid, or editing tags invalidates the relevant summary. Hosts without a trustworthy image identity use uncached fingerprints.
 
 Use `get_tile_catalog` with `image: "sheet"` for a continuous atlas overview. Coordinate labels sit outside the artwork, so adjoining cells remain visually connected. Large overviews fit within the image budget. `image.sheet` describes the source pixel rectangle, displayed content rectangle, grid, and region in tile coordinates; `placements` is empty in this mode. Metadata `items` contains at most one bounded page. With `sheetRegion`, `offset` and `nextOffset` count row-major slots inside that region, skipping unused edited-atlas slots. Do not combine sheet mode with `tileIds`.
 
@@ -88,7 +88,7 @@ The aggregate limit is 4096 planned cell writes, even across layers/maps; each c
 
 ## Verify explicit map goals
 
-Keep `validate_map` for structural integrity. `validate_goals` checks caller-specified goals; it does not infer collision from artwork. Each request specifies one `mapId` and 1–16 checks:
+Keep `validate_map` for structural integrity. Each page scans at most 4096 records; follow every `nextCursor` with the same arguments and unchanged world until it is null. `valid:null` means validation is incomplete; require the final `valid:true` before treating integrity as verified. `validate_goals` checks caller-specified goals; it does not infer collision from artwork. Each request specifies one `mapId` and 1–16 checks:
 
 ```json
 {
@@ -102,9 +102,9 @@ Keep `validate_map` for structural integrity. `validate_goals` checks caller-spe
 
 Reachability uses four orthogonal neighbors within the explicit region. Collision layers follow map stack order regardless of input order; the uppermost nonzero decision wins. The caller explicitly chooses blocked nonzero values (`1`, `2`, or both) and whether an undecided empty cell is blocked. Endpoints must be inside the region. A structurally valid map can fail this check if a bridge is disconnected.
 
-To protect content, call with `{kind:"region_unchanged",region,layerIds}` **before editing**, retain its `digest`, then repeat with `expectedDigest`. The first capture returns `passed:null` and aggregate `valid:null`; it is not an assertion of success. Digests bind map ID, region, chosen layer identities, resolved tile IDs/orientations, collision values, and entities whose anchors lie inside the region. Unrelated palette growth does not invalidate the digest. Entity counts also use anchors and explicit layers, with optional existing `typeId` and inclusive `min`/`max`.
+To protect content, call with `{kind:"region_unchanged",region,layerIds}` **before editing**, retain its `digest`, then repeat with `expectedDigest`. The first capture returns `passed:null` and aggregate `valid:null`; it is not an assertion of success. Digests bind map ID, region, chosen layer identities, resolved tile IDs/orientations, collision values, entities whose anchors lie inside the region, and visibility/opacity of selected visual layers. Names and locks do not affect the digest; collision-layer visibility does not affect manual collision. Unrelated palette growth does not invalidate the digest. Entity counts also use anchors and explicit layers, with optional existing `typeId` and inclusive `min`/`max`.
 
-Each check permits 4096 cells per selected layer, with at most eight layers and 16384 aggregate cell-layer scans per request. Entity scans are separately bounded to 16384 visits; region digests include at most 256 entities per layer and at most 1 MiB of content per call. Checks are read-only; failures do not change pending edits. Review both the preview and the relevant structural/goal results before `finish_edit`.
+Digests describe map content and layer presentation; they do not snapshot source PNG pixels. Each check permits 4096 cells per selected layer, with at most eight layers and 16384 aggregate cell-layer scans per request. Entity scans are separately bounded to 16384 visits; region digests include at most 256 entities per layer and at most 1 MiB of content per call. Checks are read-only; failures do not change pending edits. Review both the preview and the relevant structural/goal results before `finish_edit`.
 
 ## Validation
 

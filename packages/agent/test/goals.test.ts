@@ -61,6 +61,32 @@ describe("explicit map goals", () => {
     expect(h.host.snapshot()).toEqual(before); expect(h.api.getState()).toEqual(state);
   });
 
+  it("detects hiding or fading a protected visual layer while ignoring its name and lock", async () => {
+    const h = harness(); await h.begin();
+    success(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", cells: [{ x: 0, y: 0, value: tile }] }));
+    const baseline = await inspect(h, [capture]);
+    const check = { ...capture, expectedDigest: baseline.checks[0]!.digest! };
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "ground", action: "update", props: { visible: false } }));
+    expect(await inspect(h, [check])).toMatchObject({ valid: false });
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "ground", action: "update", props: { visible: true, opacity: 0.5 } }));
+    expect(await inspect(h, [check])).toMatchObject({ valid: false });
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "ground", action: "update", props: { opacity: 1, name: "Renamed", locked: true } }));
+    expect(await inspect(h, [check])).toMatchObject({ valid: true });
+  });
+
+  it("protects entity visibility but keeps collision checks independent of visibility", async () => {
+    const h = harness(); await h.begin();
+    success(await h.edit("place_entity", { mapId: "map-1", layerId: "entities", typeId: "spawn", at: { x: 1, y: 1 } }));
+    const baseline = await inspect(h, [capture]);
+    const check = { ...capture, expectedDigest: baseline.checks[0]!.digest! };
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "collision", action: "update", props: { visible: false } }));
+    expect(await inspect(h, [check, connection])).toMatchObject({ valid: true });
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "entities", action: "update", props: { visible: false } }));
+    expect(await inspect(h, [check])).toMatchObject({ valid: false });
+    success(await h.edit("edit_layer", { mapId: "map-1", layerId: "entities", action: "update", props: { visible: true, opacity: 0.5 } }));
+    expect(await inspect(h, [check])).toMatchObject({ valid: false });
+  });
+
   it("rejects out-of-region endpoints and cumulative work above the normal read budget", async () => {
     const h = harness({ width: 128, height: 128 });
     error(await h.read("validate_goals", { mapId: "map-1", checks: [{ ...connection, to: { x: 5, y: 1 } }] }), "OUT_OF_BOUNDS");

@@ -1,16 +1,17 @@
 import { encode } from "fast-png";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeRgbaPng } from "@smap/core";
-import type { AgentCallContext, AgentWorldPort } from "@smap/agent";
-import { setTilesetImage, clearTilesetImages } from "../state/tilesetImages";
+import { CallSignal, type AgentCallContext, type AgentWorldPort } from "@smap/agent";
+import { setTilesetImage, clearTilesetImages, deferredTilesetImage } from "../state/tilesetImages";
 import { decodeWorkingSourcePng } from "../io/sourcePng";
-import { createImagePort } from "./images";
+import * as sourcePng from "../io/sourcePng";
+import { createImagePort, imagePixels } from "./images";
 const ts={id:"art",name:"Art",imagePath:"tilesets/art.png",tileWidth:2,tileHeight:2,columns:2,rows:1,margin:1,spacing:1};
 const call:AgentCallContext={clientSessionId:"test",clientInfo:{name:"Test",version:"1"},bridgeEpoch:"test",deadline:Date.now()+10000,signal:{aborted:false,throwIfAborted(){},onAbort:()=>()=>{}}};
 const world={tilesets:()=>[ts],stamps:()=>[]} as unknown as AgentWorldPort;
 function pixels(){const data=new Uint8Array(7*4*4);for(let y=1;y<3;y++)for(let x=1;x<3;x++)data.set([255,0,0,255],(y*7+x)*4);for(let y=1;y<3;y++)for(let x=4;x<6;x++)data.set([0,255,0,255],(y*7+x)*4);return data;}
 function image(bytes:Uint8Array){setTilesetImage({tilesetId:"art",bytes,bitmap:{width:7,height:4,close:vi.fn()} as unknown as ImageBitmap});}
-afterEach(clearTilesetImages);
+afterEach(()=>{clearTilesetImages();vi.restoreAllMocks();});
 describe("agent catalog images and fingerprints",()=>{
   it("uses real source rectangles with margin/spacing and reserves numeric-label gutters",async()=>{
     image(encodeRgbaPng(7,4,pixels()));const port=createImagePort(world,()=>1);
@@ -85,4 +86,66 @@ it("shares cached pixel hashes and invalidates source and grid identities",async
   image(encodeRgbaPng(7,4,pixels()));
   await port.tileFingerprint("art",0,call.signal);expect(hash).toHaveBeenCalledTimes(count+2);
   hash.mockRestore();
+});
+
+it("decodes a cold atlas once while fingerprinting an entire stamp palette",async()=>{
+  image(encodeRgbaPng(7,4,pixels()));
+  const decode=vi.spyOn(sourcePng,"decodeWorkingSourcePng");
+  const stamp={id:"stamp",name:"Stamp",width:2,height:1,palette:[{tilesetId:"art",tileId:0},{tilesetId:"art",tileId:1}],layers:[{layerId:"layer",name:"Layer",cells:new Uint32Array([1,2])}]};
+  const port=createImagePort({tilesets:()=>[ts],stamps:()=>[stamp]} as unknown as AgentWorldPort,()=>1);
+  expect(await port.stampFingerprint("stamp",call.signal)).toMatch(/^[a-f0-9]{64}$/);
+  expect(decode).toHaveBeenCalledTimes(1);
+  await port.tileFingerprint("art",1,call.signal);
+  expect(decode).toHaveBeenCalledTimes(1);
+});
+
+it("cancels one pending image waiter promptly while retaining the shared source for other callers",async()=>{
+  let finish!:(bytes:Uint8Array)=>void;
+  const bytes=new Promise<Uint8Array>(resolve=>{finish=resolve;}),close=vi.fn();
+  setTilesetImage(deferredTilesetImage("art",{width:7,height:4,close} as unknown as ImageBitmap,()=>bytes));
+  const decode=vi.spyOn(sourcePng,"decodeWorkingSourcePng"),cancelled=new CallSignal();
+  const first=imagePixels("art",cancelled),second=imagePixels("art",call.signal);
+  const rejection=expect(first).rejects.toMatchObject({code:"CANCELLED"});
+  cancelled.abort();await rejection;
+  expect(close).not.toHaveBeenCalled();
+  finish(encodeRgbaPng(7,4,pixels()));
+  expect(await second).toMatchObject({width:7,height:4});
+  expect(decode).toHaveBeenCalledTimes(1);
+});
+
+it("rejects retired pending sources for every waiter and releases the lease after encoding",async()=>{
+  let finish!:(bytes:Uint8Array)=>void;
+  const bytes=new Promise<Uint8Array>(resolve=>{finish=resolve;}),close=vi.fn();
+  setTilesetImage(deferredTilesetImage("art",{width:7,height:4,close} as unknown as ImageBitmap,()=>bytes));
+  const decode=vi.spyOn(sourcePng,"decodeWorkingSourcePng");
+  const first=imagePixels("art",call.signal),second=imagePixels("art",call.signal);
+  image(encodeRgbaPng(7,4,pixels()));
+  expect(close).not.toHaveBeenCalled();
+  const results=Promise.allSettled([first,second]);
+  finish(encodeRgbaPng(7,4,pixels()));
+  for(const result of await results){expect(result.status).toBe("rejected");if(result.status==="rejected")expect(result.reason).toMatchObject({code:"SOURCE_CHANGED"});}
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(decode).not.toHaveBeenCalled();
+  await imagePixels("art",call.signal);
+  expect(decode).toHaveBeenCalledTimes(1);
+});
+
+it("retries after a shared decode failure",async()=>{
+  image(encodeRgbaPng(7,4,pixels()));
+  const decode=vi.spyOn(sourcePng,"decodeWorkingSourcePng").mockImplementationOnce(()=>{throw Error("decode failed");});
+  const results=await Promise.allSettled([imagePixels("art",call.signal),imagePixels("art",call.signal)]);
+  expect(results.map(result=>result.status)).toEqual(["rejected","rejected"]);
+  expect(decode).toHaveBeenCalledTimes(1);
+  expect(await imagePixels("art",call.signal)).toMatchObject({width:7,height:4});
+  expect(decode).toHaveBeenCalledTimes(2);
+});
+
+it("counts shared decoded pixels once when retaining multiple atlases",async()=>{
+  const bytes=encodeRgbaPng(7,4,pixels());image(bytes);
+  const decode=vi.spyOn(sourcePng,"decodeWorkingSourcePng").mockImplementation(()=>({width:3072,height:2048,data:new Uint8Array(24*1024*1024)}));
+  await Promise.all([imagePixels("art",call.signal),imagePixels("art",call.signal)]);
+  setTilesetImage({tilesetId:"other",bytes,bitmap:{width:7,height:4,close:vi.fn()} as unknown as ImageBitmap});
+  await imagePixels("other",call.signal);
+  await imagePixels("art",call.signal);
+  expect(decode).toHaveBeenCalledTimes(2);
 });

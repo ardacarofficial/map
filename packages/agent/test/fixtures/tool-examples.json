@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "48d1c6f9d89f99be1f853fbe1f32649bfc1d52c32776394b87a6b7aafb33d8f3",
+  "catalogueSha256": "72106cdcf420e71e55da8db31ab56560e4fff1b1f04ea91245740ff7c4955fc0",
   "tools": {
     "get_session": {
       "valid": [
@@ -110,7 +110,8 @@
             "worldSessionId": "world-1"
           },
           "cursor": "page-2",
-          "limit": 128
+          "limit": 128,
+          "includeDetails": false
         }
       ],
       "invalid": [
@@ -119,6 +120,12 @@
             "worldSessionId": "world-1"
           },
           "limit": 129
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "includeDetails": "false"
         }
       ]
     },

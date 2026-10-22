@@ -9,8 +9,11 @@ import { RasterReplay } from "./raster";
 import { renderPreviewPixels } from "./preview";
 
 const decoded = new Map<TilesetImage, RgbaImage>();
+const decoding = new WeakMap<TilesetImage, Promise<RgbaImage>>();
 let decodedBytes=0;
 function rememberPixels(image:TilesetImage,pixels:RgbaImage):void {
+  const previous=decoded.get(image);
+  if(previous){decoded.delete(image);decodedBytes-=previous.data.byteLength;}
   while(decoded.size && decodedBytes+pixels.data.byteLength>AGENT_LIMITS.retainedBytes){const first=decoded.entries().next().value!;decoded.delete(first[0]);decodedBytes-=first[1].data.byteLength;}
   decoded.set(image,pixels);decodedBytes+=pixels.data.byteLength;
 }
@@ -18,14 +21,28 @@ export async function imagePixels(id: string, signal: AgentSignal): Promise<Rgba
   signal.throwIfAborted();
   const image = getTilesetImage(id);
   if (!image) throw new AgentError(AgentErrorCode.SOURCE_CHANGED, "Tileset image unavailable", { tilesetId: id });
-  const release = retainTilesetImage(image);
-  try {
-    let pixels = decoded.get(image);
-    if (!pixels) { pixels = decodeWorkingSourcePng(await tilesetImageBytes(image)); rememberPixels(image, pixels); }
-    signal.throwIfAborted();
-    if (getTilesetImage(id) !== image) throw new AgentError(AgentErrorCode.SOURCE_CHANGED, "Tileset changed during image preparation");
-    return pixels;
-  } finally { release(); }
+  let pixels=decoded.get(image);
+  if(!pixels){
+    let pending=decoding.get(image);
+    if(!pending){
+      // A stamp can fingerprint many tiles at once. Share one source decode,
+      // with a lease that survives individual callers cancelling their wait.
+      const release=retainTilesetImage(image);
+      pending=tilesetImageBytes(image).then(bytes=>{
+        if(getTilesetImage(id)!==image)throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Tileset changed during image preparation");
+        const result=decodeWorkingSourcePng(bytes);rememberPixels(image,result);return result;
+      }).finally(()=>{decoding.delete(image);release();});
+      decoding.set(image,pending);
+    }
+    pixels=await new Promise<RgbaImage>((resolve,reject)=>{
+      let off=()=>{};
+      off=signal.onAbort(()=>{off();try{signal.throwIfAborted();}catch(error){reject(error);}});
+      pending.then(value=>{off();resolve(value);},error=>{off();reject(error);});
+    });
+  }
+  signal.throwIfAborted();
+  if (getTilesetImage(id) !== image) throw new AgentError(AgentErrorCode.SOURCE_CHANGED, "Tileset changed during image preparation");
+  return pixels;
 }
 export function encodeAgentPng(image: RgbaImage): Uint8Array {
   if (image.width > AGENT_LIMITS.imageSide || image.height > AGENT_LIMITS.imageSide || image.width * image.height > AGENT_LIMITS.imagePixels) throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED, "Image dimensions exceed budget");

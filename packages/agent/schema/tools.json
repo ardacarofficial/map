@@ -178,7 +178,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
+      "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -208,6 +208,10 @@
           },
           "cursor": {
             "$ref": "#/$defs/Id"
+          },
+          "includeDetails": {
+            "default": true,
+            "type": "boolean"
           },
           "limit": {
             "default": 64,
@@ -2707,7 +2711,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Paginate ≤256 issues (default 128) using returned revision-bound nextCursor. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
+      "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -4164,7 +4168,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision and entities; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.",
+      "description": "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.",
       "inputSchema": {
         "$defs": {
           "Id": {

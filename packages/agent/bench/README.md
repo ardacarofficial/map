@@ -28,4 +28,14 @@ Latency is not uniformly lower: the final village sample took about 12.5 ms loca
 
 The benchmark tasks cover a four-layer 64×64 read, sixteen stamp placements with validation/approval/undo/redo, 4096 distinct palette references with exact discard, malformed smart-brush recovery with prior work, and a 50,000-tile atlas with ten tagged candidates. Focused tests additionally cover goal failures, reference sharing, batch late failures/replay, entity corrections, and real HTTP timeout recovery.
 
+The second MCP audit adds deterministic regressions, separate from the stored timing samples:
+
+- `catalog.test.ts` discovers a 50,000-tile atlas with `includeDetails:false` and asserts zero pixel fingerprints, image identity lookups, or tag reads, including unavailable artwork. Detailed discovery retains its existing default; cursors cannot cross detail modes.
+- `images.test.ts` fingerprints a cold two-tile stamp palette with exactly one source PNG decode, checks independent cancellation and source replacement, and verifies that two mocked 24 MiB decoded atlases remain cached without duplicate memory charges.
+- `api.test.ts` preserves tentative edits when either the owner or an observer encounters unavailable unrelated artwork, both while running and awaiting approval. Actual world-source invalidation still cancels stale edits.
+- `lifecycle.test.ts` uses a valid large entity default to force response-size failure after mutation, then verifies complete rollback and a cancelled retry instead of an uncached applied write.
+- `goals.test.ts` detects visibility and opacity changes to protected visual layers. Manual collision remains independent of layer visibility.
+
+These are counted application operations and correctness assertions, not measurements of model quality or inference speed.
+
 In the application, **AI activity → Export diagnostics** saves the filtered visible activity rows to a local JSON file. It includes call outcomes, duration, planned/changed cells, and measured request/text/decoded-image/result byte counts where available. It excludes raw arguments, image content, summaries, client identities, tokens, and transport framing. The editor sends nothing automatically. User approval/discard rows remain separate from tool calls; durations exclude external model inference.

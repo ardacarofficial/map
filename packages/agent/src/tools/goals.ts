@@ -69,7 +69,7 @@ export async function validateGoals(tx: Transactions, a: ToolArguments["validate
           entityVisits += target.entities.length; budget(entityVisits, L.readCellsTotal);
           const entities = target.entities.filter(entity => entityWithin(entity, goal.region, store));
           budget(entities.length, L.entitiesPerRead);
-          return { id: target.id, kind: "entity", entities: [...entities].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
+          return { id: target.id, kind: "entity", visible: target.visible, opacity: target.opacity, entities: [...entities].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
         }
         const cells: unknown[] = [];
         for (let y = goal.region.y; y < goal.region.y + goal.region.height; y++)
@@ -82,9 +82,11 @@ export async function validateGoals(tx: Transactions, a: ToolArguments["validate
               cells.push({ ...tile, flags: compactFlags(cellFlags(cell)) });
             }
           }
-        return { id: target.id, kind: isGridLayer(target) ? "collision" : "tile", cells };
+        return isGridLayer(target)
+          ? { id: target.id, kind: "collision", cells }
+          : { id: target.id, kind: "tile", visible: target.visible, opacity: target.opacity, cells };
       });
-      const payload = ["goal-region-v1", a.mapId, goal.region, { tileWidth: store.document.map.tileWidth, tileHeight: store.document.map.tileHeight }, content];
+      const payload = ["goal-region-v2", a.mapId, goal.region, { tileWidth: store.document.map.tileWidth, tileHeight: store.document.map.tileHeight }, content];
       digestBytes += utf8(JSON.stringify(payload)).length; budget(digestBytes, L.requestBytes);
       const digest = hashCanonical(payload), passed = goal.expectedDigest === undefined ? null : digest === goal.expectedDigest;
       results.push({ kind: goal.kind, passed, digest, detail: passed === null ? "Baseline captured; supply expectedDigest after editing" : passed ? "Region content matches the baseline" : "Region content differs from the baseline" });

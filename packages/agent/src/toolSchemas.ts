@@ -408,7 +408,7 @@ const DEFINITIONS = [
   {
     "name": "list_tilesets",
     "title": "List Tilesets",
-    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
+    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -420,6 +420,10 @@ const DEFINITIONS = [
       "properties": {
         "context": {
           "$ref": "#/$defs/ReadContext"
+        },
+        "includeDetails": {
+          "type": "boolean",
+          "default": true
         },
         "cursor": {
           "$ref": "#/$defs/Id"
@@ -1471,7 +1475,7 @@ const DEFINITIONS = [
   {
     "name": "validate_map",
     "title": "Validate Map",
-    "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Paginate ≤256 issues (default 128) using returned revision-bound nextCursor. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
+    "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1854,7 +1858,7 @@ const featureDefinitions = [
   feature("get_editor_context", "Get Editor Context", "Read the user's current map/layer/tool, bounded atlas/stamp/map selection, viewport and explicitly shared reference token. Context is observational: confirm intent before choosing a source. contextToken changes when selection or view changes, independently of world revision. No edits or automatic reference upload.", objectSchema({ context: ref("ReadContext") }), true),
   feature("edit_entity", "Edit Entity", "Move, update fields or remove an existing entity by mapId/entityId. move.at is map cells; point field values are native pixels. Preserves entity ID/type and validates merged fields, portal destinations and initial/current layer protection. Requires an edit, current revision and idempotency key.", editEntitySchema, false),
   feature("apply_operations", "Apply Operations", "Apply 1–32 sequential existing-ID paint_cells/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤4096. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.", objectSchema({ context: ref("WriteContext"), operations: { type: "array", minItems: 1, maxItems: 32, items: { oneOf: batchBranches } } }), false),
-  feature("validate_goals", "Validate Goals", "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision and entities; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.", objectSchema({ context: ref("ReadContext"), mapId: ref("Id"), checks: { type: "array", minItems: 1, maxItems: 16, items: goalSchema } }), true),
+  feature("validate_goals", "Validate Goals", "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.", objectSchema({ context: ref("ReadContext"), mapId: ref("Id"), checks: { type: "array", minItems: 1, maxItems: 16, items: goalSchema } }), true),
 ];
 export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions].map(tool => ({
   ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },

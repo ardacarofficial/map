@@ -287,6 +287,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
               : name === "edit_entity"
                 ? await editEntity(tx, args as ToolArguments["edit_entity"], callContext)
                 : await mutate(tx, name, args, callContext);
+            // Postflight failures must not leave an applied write without a
+            // successful response or an idempotency record for its retry.
+            enteredApply = true;
           } catch (error) {
             if (tx.revision !== revision || !(error instanceof AgentError)) {
               enteredApply = true;
@@ -453,7 +456,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
       // Expected preflight errors preserve previous work. Unexpected dispatch failures rollback all maps.
       if (
         (enteredApply ||
-          (error instanceof AgentError && error.code === E.SOURCE_CHANGED)) &&
+          (writes.has(call.name as ToolName) &&
+            error instanceof AgentError && error.code === E.SOURCE_CHANGED)) &&
         tx.pending
       )
         tx.cancel();

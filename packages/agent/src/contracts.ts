@@ -40,7 +40,7 @@ export interface EditorContext {
 }
 export interface GetMapInfoArgs { context: ReadContext; mapId: Id }
 export interface ReadRegionArgs extends GetMapInfoArgs { region: Rect; layerIds: Id[]; includeEntities?: boolean }
-export interface ListTilesetsArgs { context: ReadContext; cursor?: string; limit?: number }
+export interface ListTilesetsArgs { context: ReadContext; cursor?: string; limit?: number; includeDetails?: boolean }
 export interface GetTileCatalogArgs { context: ReadContext; tilesetId: Id; tileIds?: number[]; offset?: number; limit?: number; image?: "none" | "tiles" | "sheet"; sheetRegion?: Rect; scale?: 1 | 2 | 4 }
 export type IngestReferenceArgs = { context: ReadContext } & ({ pngBase64: string; selectedReferenceToken?: never } | { selectedReferenceToken: string; pngBase64?: never });
 export interface MatchReferenceArgs { context: ReadContext; referenceId: Id; tilesetIds?: Id[]; topK?: number; maxScale?: number }
@@ -179,7 +179,7 @@ export interface UpdatedTag { target: TagTarget; fingerprint: string; tags: stri
 export interface ImagePlacement { tileId: number; rect: Rect; labelRect: Rect }
 export interface CatalogImage { width: number; height: number; mode: "tiles" | "sheet"; scale: number; placements: ImagePlacement[]; sheet?: { region: Rect; sourceRect: Rect; grid: { columns: number; rows: number; tileWidth: number; tileHeight: number; margin: number; spacing: number }; contentRect: Rect } }
 export interface TagCounts { current: number; stale: number; missing: number }
-export interface TilesetInfo { id: Id; name: string; tileWidth: number; tileHeight: number; columns: number; rows: number; margin: number; spacing: number; tileCount: number; kind: "source" | "generated" | "edited"; fingerprint: string; tagCounts: TagCounts }
+export interface TilesetInfo { id: Id; name: string; tileWidth: number; tileHeight: number; columns: number; rows: number; margin: number; spacing: number; tileCount: number; kind: "source" | "generated" | "edited"; fingerprint?: string; tagCounts?: TagCounts }
 export interface TileCatalogItem { tileId: number; sourceRect: Rect; tags: string[]; note: string; tagStatus: TagStatus; fingerprint: string }
 export interface StampInfo { id: Id; name: string; width: number; height: number; layers: { sourceLayerId: Id; name: string; kind: LayerKind }[]; category: string; tags: string[]; semanticTags: string[]; smartUsages: SmartUsage[]; fingerprint: string }
 export interface EntityTypeInfo { id: Id; name: string; builtin: boolean; fields: { name: string; type: EntityFieldType; default: EntityFieldValue; enumValues?: string[] }[] }

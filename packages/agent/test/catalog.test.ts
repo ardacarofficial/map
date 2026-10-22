@@ -2,6 +2,38 @@ import { expect, it, vi } from "vitest";
 import { harness, success, error, stamp } from "./helpers";
 import { semanticMatches, normalizeSemanticText } from "../src/tags";
 
+it("discovers a cold 50,000-tile atlas from metadata without hashing or requiring source images", async () => {
+  const h = harness();
+  const tileset = { ...h.host.world.tilesets()[0]!, columns: 250, rows: 200 };
+  h.host.world.tilesets = () => [tileset];
+  const fingerprint = vi.spyOn(h.host.images, "tileFingerprint").mockRejectedValue(new Error("Artwork unavailable"));
+  const sourceKey = h.host.images.catalogSourceKey = vi.fn(() => null);
+  const availability = vi.spyOn(h.host.tags, "availability");
+  const result = success(await h.read("list_tilesets", { includeDetails: false }));
+  expect(result.data).toMatchObject({ items: [{ id: "tiles", columns: 250, rows: 200, tileCount: 50000 }] });
+  const item = (result.data as { items: object[] }).items[0]!;
+  expect(item).not.toHaveProperty("fingerprint");
+  expect(item).not.toHaveProperty("tagCounts");
+  expect(fingerprint).not.toHaveBeenCalled();
+  expect(sourceKey).not.toHaveBeenCalled();
+  expect(availability).not.toHaveBeenCalled();
+});
+
+it("binds tileset pagination to detail mode while treating omitted and true modes identically", async () => {
+  const h = harness();
+  const tileset = h.host.world.tilesets()[0]!;
+  h.host.world.tilesets = () => [tileset, { ...tileset, id: "second", columns: 1, rows: 1 }];
+  const fingerprint = h.host.images.tileFingerprint;
+  h.host.images.tileFingerprint = (id, ...args) => fingerprint(id === "second" ? "tiles" : id, ...args);
+  const first = success(await h.read("list_tilesets", { limit: 1, includeDetails: false }));
+  const cursor = (first.data as { nextCursor: string }).nextCursor;
+  expect(success(await h.read("list_tilesets", { limit: 1, includeDetails: false, cursor })).data).toMatchObject({ items: [{ id: "second" }], nextCursor: null });
+  error(await h.read("list_tilesets", { limit: 1, cursor }), "INVALID_ARGUMENT");
+  const detailed = success(await h.read("list_tilesets", { limit: 1 }));
+  const detailedCursor = (detailed.data as { nextCursor: string }).nextCursor;
+  expect(success(await h.read("list_tilesets", { limit: 1, includeDetails: true, cursor: detailedCursor })).data).toMatchObject({ items: [{ id: "second", tagCounts: { current: 0, stale: 0, missing: 1 } }] });
+});
+
 it("folds Turkish search and uses a small explicit bilingual object vocabulary", () => {
   expect(normalizeSemanticText("İĞDE AĞACI / ÇİMEN TAŞI")).toBe("igde agaci cimen tasi");
   expect(semanticMatches("AĞAÇ", ["tree"])).toBe(true);

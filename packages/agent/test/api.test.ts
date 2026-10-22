@@ -2,6 +2,31 @@ import { describe, expect, it } from "vitest";
 import { serializeLevel } from "@smap/core";
 import { createAgentApi } from "../src/api";
 import { createMemoryHost, memoryCall } from "../src/testing/memoryHost";
+import { AgentError, AgentErrorCode } from "../src/contracts";
+import { harness, success, error, tile } from "./helpers";
+
+for (const clientSessionId of ["client-1", "observer"])
+  for (const review of [false, true])
+    it(`preserves ${review ? "review" : "running"} work when ${clientSessionId} reads unavailable unrelated artwork`, async () => {
+      const h = harness();
+      const tilesets = h.host.world.tilesets();
+      h.host.world.tilesets = () => [...tilesets, { ...tilesets[0]!, id: "unavailable" }];
+      await h.begin();
+      success(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", cells: [{ x: 1, y: 1, value: tile }] }));
+      if (review) success(await h.edit("finish_edit"));
+      const snapshot = h.host.snapshot(), state = h.api.getState();
+      const fingerprint = h.host.images.tileFingerprint;
+      h.host.images.tileFingerprint = (id, ...args) => {
+        if (id === "unavailable") throw new AgentError(AgentErrorCode.SOURCE_CHANGED, "Tileset image unavailable", { tilesetId: id });
+        return fingerprint(id, ...args);
+      };
+      error(await h.api.executeTool(memoryCall("get_tile_catalog", { context: h.context(), tilesetId: "unavailable", tileIds: [0], image: "none" }, { clientSessionId })), "SOURCE_CHANGED");
+      expect(h.host.snapshot()).toEqual(snapshot);
+      expect(h.api.getState()).toMatchObject({ phase: state.phase, revision: state.revision, transaction: { id: state.transaction!.id } });
+      expect(h.host.transactions.writeGate.blocked).toBe(true);
+      await h.api.userAction("approve");
+      expect(h.host.history.undoDepth).toBe(1);
+    });
 
 it("keeps edits tentative, commits one row, and round trips palettes with ordinary world undo", async () => {
   const host = createMemoryHost(),
