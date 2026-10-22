@@ -15,13 +15,21 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
   const agent = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
   try {
     const tools = (await agent.listTools()).tools;
-    expect(tools).toHaveLength(45);
+    expect(tools).toHaveLength(46);
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
       "get_session", "get_editor_state", "configure_editor", "configure_layout",
       "configure_application", "list_editor_commands", "run_editor_command",
       "get_export_settings", "configure_export", "get_world_settings",
-      "configure_world", "edit_map", "edit_stamp",
+      "configure_world", "edit_map", "edit_stamp", "join_edit",
     ]));
+    const resources = (await agent.client.listResources()).resources;
+    expect(resources).toHaveLength(9);
+    expect(resources.map(resource => resource.uri)).toContain("harita://guide/collaboration");
+    const overview = await agent.client.readResource({ uri: "harita://guide/overview" });
+    expect(overview.contents[0]).toMatchObject({ uri: "harita://guide/overview", mimeType: "text/markdown" });
+    expect(overview.contents[0]).toHaveProperty("text", expect.stringContaining("get_editor_context"));
+    const prompt = await agent.client.getPrompt({ name: "harita-map-task", arguments: { task: "Build an editable village", topic: "collaboration" } });
+    expect(prompt.messages[0]?.content).toMatchObject({ type: "text", text: expect.stringContaining("harita://guide/collaboration") });
     const result = await agent.getSession();
     expect(result.structuredContent).toHaveProperty("ok");
     expect(result.content[0].type).toBe("text");

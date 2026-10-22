@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "vitest";
 import { startDevMcp } from "../devMcp";
 import { request } from "node:http";
+import { readFileSync } from "node:fs";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0)) await close(); });
@@ -34,7 +35,7 @@ test("auth, origin, Host, method, protocol, and initialization checks precede di
   const id = await init();
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "MCP-Protocol-Version": "wrong" })).status).toBe(400);
   const catalogue = await (await post({ jsonrpc: "2.0", id: 2, method: "tools/list" }, id)).json();
-  expect(catalogue.result.tools).toHaveLength(45);
+  expect(catalogue.result.tools).toHaveLength(46);
 });
 
 test("pairing pins a session to exactly one page; disconnect fails pending calls", async () => {
@@ -120,13 +121,43 @@ test("protocol envelopes, bounded ingress, exact endpoint Origin and session cap
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping", params: { large: "x".repeat(1024 * 1024) } }, id)).status).toBe(413);
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "Content-Type": "text/plain" })).status).toBe(415);
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { Accept: "application/json" })).status).toBe(406);
-  await init(); await init(); await init();
+  for (let index = 1; index < 16; index++) await init();
   expect((await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "fifth", version: "1" } } })).status).toBe(429);
 });
 
 test("an occupied MCP port reports failure instead of selecting a different port", async () => {
   const { host } = await setup();
   await expect(startDevMcp({ port: host.port, token: "another-token" })).rejects.toMatchObject({ code: "EADDRINUSE" });
+});
+
+test("guide resources and prompts require authenticated initialized sessions and advertise static capabilities", async () => {
+  const { host, post, init } = await setup();
+  const unauthenticated = await post({ jsonrpc: "2.0", id: 1, method: "resources/read", params: { uri: "harita://guide/skill" } }, undefined, undefined, { Authorization: "" });
+  expect(unauthenticated.status).toBe(401);
+  expect((await post({ jsonrpc: "2.0", id: 1, method: "resources/list" })).status).toBe(400);
+  const initial = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "guide-client", version: "1" } } });
+  const session = initial.headers.get("Mcp-Session-Id")!;
+  const setupResult = await initial.json();
+  expect(setupResult.result.capabilities).toMatchObject({ resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } });
+  expect(setupResult.result.instructions).toBe(readFileSync(new URL("../../../agent/schema/workflow.txt", import.meta.url), "utf8").trim());
+  expect((await (await post({ jsonrpc: "2.0", id: 2, method: "resources/list" }, session)).json()).error).toBeDefined();
+  await post({ jsonrpc: "2.0", method: "notifications/initialized" }, session);
+  const list = await (await post({ jsonrpc: "2.0", id: 3, method: "resources/list" }, session)).json();
+  expect(list.result.resources).toHaveLength(9);
+  const read = await (await post({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "harita://guide/skill" } }, session)).json();
+  expect(read.result.contents[0].text).toContain("harita://guide/overview");
+  const unknown = await (await post({ jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "file:///etc/passwd" } }, session)).json();
+  expect(unknown.error.code).toBe(-32002);
+  const prompt = await (await post({ jsonrpc: "2.0", id: 6, method: "prompts/get", params: { name: "harita-map-task", arguments: { task: "Design a village", topic: "collaboration" } } }, session)).json();
+  expect(prompt.result.messages[0].content.text).toContain("harita://guide/collaboration");
+  const prompts = await (await post({ jsonrpc: "2.0", id: 7, method: "prompts/list" }, session)).json();
+  expect(prompts.result.prompts[0].name).toBe("harita-map-task");
+  const templates = await (await post({ jsonrpc: "2.0", id: 8, method: "resources/templates/list" }, session)).json();
+  expect(templates.result).toEqual({ resourceTemplates: [] });
+  // Guide reads need no paired renderer and cannot dispatch an editor request.
+  expect(host.sessionCount).toBe(1);
+  const paired = await init("absent");
+  expect((await (await post({ jsonrpc: "2.0", id: 9, method: "resources/list" }, paired)).json()).result.resources).toHaveLength(9);
 });
 
 test("token rotation rejects an initialize whose authenticated body is still arriving (#4)", async () => {

@@ -3,6 +3,8 @@ import type { EntityFieldType, EntityFieldValue, MapStore, Project, ProjectData,
 
 import type { AgentEditorControlsPort, ConfigureExportArgs, EditorExportPreferences, ConfigureApplicationArgs, ConfigureEditorArgs, ConfigureLayoutArgs, EditorControlContext, EditorControlState, EditorControlToolName, ListEditorCommandsArgs, RunEditorCommandArgs } from "./editorControls";
 
+import type {CollaborativeBegin,CollaborativeJoin,CollaborationSummary,RegionClaim} from "./collaboration";
+
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type Unsubscribe = () => void;
@@ -18,7 +20,7 @@ export type PaintValue = Tile | { collision: 0 | 1 | 2 } | null;
 export interface CellWrite extends Point { value: PaintValue }
 export interface LayerMapping { sourceLayerId: Id; targetLayerId: Id }
 export interface ReadContext { worldSessionId: Id }
-export interface WriteContext extends ReadContext { transactionId: Id; idempotencyKey: string; expectedRevision: Revision }
+export interface WriteContext extends ReadContext { transactionId: Id; idempotencyKey: string; expectedRevision?: Revision; expectedMemberRevision?: Revision }
 /** O2: tags never require a transaction or revision, even when an edit is pending. */
 export interface TagWriteContext extends ReadContext { idempotencyKey: string }
 export type LayerKind = "tile" | "collision" | "entity";
@@ -51,7 +53,7 @@ export interface ReferenceCandidate { tilesetId: Id; tileId: number; region: Rec
 export interface ReferenceMatches { status: "matched" | "ambiguous" | "no_match"; candidates: ReferenceCandidate[]; truncated: boolean; revision: Revision }
 export interface CreateStampArgs { context: WriteContext; source: { mapId: Id; region: Rect; layerIds: Id[] } | { tilesetId: Id; region: Rect }; name: string; category?: string; tags?: string[] }
 export interface ListStampsArgs { context: ReadContext; query?: string; cursor?: string; limit?: number; previewStampId?: Id }
-export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision: Revision; requestLabel: string; mapIds: Id[] }
+export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision: Revision; requestLabel: string; mapIds: Id[]; collaboration?: CollaborativeBegin }
 export interface FinishEditArgs { context: WriteContext; summary?: string }
 export interface CancelEditArgs { context: WriteContext; reason?: string }
 export interface PaintCellsArgs extends LayerWrite { cells: CellWrite[] }
@@ -96,6 +98,7 @@ export type EditStampArgs = { context: WriteContext; stampId: Id } & ({ action: 
 export interface ConfigureWorldArgs { context: WriteContext; settings: {tileWidth?: number;tileHeight?: number;newLevel?:{width?:number;height?:number};layerTemplate?:{name:string;kind:LayerKind}[];background?:string|null} }
 
 export interface ToolArguments {
+  join_edit: CollaborativeJoin;
   get_export_settings: EditorControlContext; configure_export: ConfigureExportArgs;
   edit_map: EditMapArgs; edit_stamp: EditStampArgs; configure_world: ConfigureWorldArgs; get_world_settings: { context: ReadContext };
   get_editor_state: EditorControlContext; configure_editor: ConfigureEditorArgs; configure_layout: ConfigureLayoutArgs; configure_application: ConfigureApplicationArgs; list_editor_commands: ListEditorCommandsArgs; run_editor_command: RunEditorCommandArgs;
@@ -124,7 +127,7 @@ export const AGENT_LIMITS = {
   callTimeoutMs: 10000, imageSourceTimeoutMs: 30000, beginDrainTimeoutMs: 30000,
   queuePerClient: 32, queueTotal: 64, editLifetimeMs: 30 * 60 * 1000,
   // O9: review inactivity is advisory; stopped/review work never rolls back automatically.
-  reviewIdleMs: 10 * 60 * 1000, sessionIdleMs: 5 * 60 * 1000, clients: 4,
+  reviewIdleMs: 10 * 60 * 1000, sessionIdleMs: 5 * 60 * 1000, clients: 16,
   activityEntries: 1000, entitiesPerRead: 256, tagsFileBytes: 8 * 1024 * 1024,
   tileTagRecords: 100000, stampTagRecords: 10000, tagsDebounceMs: 500,
   proxyPingMs: 30000, defaultDesktopPort: 48765, defaultDevPort: 48766,
@@ -132,6 +135,7 @@ export const AGENT_LIMITS = {
 export type AgentLimits = typeof AGENT_LIMITS;
 /** Stable application diagnostics; protocol and HTTP errors are separate. */
 export enum AgentErrorCode {
+  REGION_CONFLICT = "REGION_CONFLICT", OUTSIDE_REGION = "OUTSIDE_REGION", MEMBER_REVISION_CONFLICT = "MEMBER_REVISION_CONFLICT", EXCLUSIVE_OPERATION_REQUIRED = "EXCLUSIVE_OPERATION_REQUIRED",
   NO_WORLD = "NO_WORLD", STALE_WORLD = "STALE_WORLD", EDITOR_UNAVAILABLE = "EDITOR_UNAVAILABLE",
   WRITER_BUSY = "WRITER_BUSY", TRANSACTION_REQUIRED = "TRANSACTION_REQUIRED",
   TRANSACTION_NOT_OWNED = "TRANSACTION_NOT_OWNED", TRANSACTION_SEALED = "TRANSACTION_SEALED",
@@ -163,7 +167,7 @@ export interface TransactionOwner { clientSessionId: Id | null; clientInfo: Clie
 export interface TransactionCounters { mutationCalls: number; plannedWrites: number; changedCells: number; retainedBytes: number }
 export interface TransactionSummary {
   id: Id; state: TransactionState; label: string; owner: TransactionOwner; startedAt: number;
-  leaseDeadline: number; affectedMapIds: Id[]; counters: TransactionCounters;
+  leaseDeadline: number; affectedMapIds: Id[]; counters: TransactionCounters; collaboration?: CollaborationSummary;
   outcome?: "approved" | "cancelled"; historyEntryId?: number;
 }
 export interface AgentState {
@@ -196,6 +200,7 @@ export interface PreviewImage { width: number; height: number; scale: number; pi
 export interface AgentWarning { code: string; detail: string }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
 export interface ToolData {
+  join_edit: { transactionId: Id; memberId: Id; memberRevision: Revision; state: "running"; claims: RegionClaim[]; revisionMode: "member" };
   get_export_settings: EditorExportPreferences; configure_export: EditorExportPreferences;
   edit_map: ChangedData & { map: MapSummary }; edit_stamp: ChangedData & { stamp: {id: Id;name:string;width:number;height:number;category:string;tags:string[];favorite:boolean}|null;stampId:Id;action:EditStampArgs["action"] };
   configure_world: ChangedData & { settings: ProjectSettings }; get_world_settings: { settings: ProjectSettings };
@@ -208,15 +213,15 @@ export interface ToolData {
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
-  get_session: { apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits };
+  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
   read_region: { region: Rect; legend: ResolvedTile[]; layers: ({ id: Id; kind: "tile" | "collision"; cells: number[] } | { id: Id; kind: "entity" })[]; entities: EntityInfo[] };
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId: Id } };
-  begin_edit: { transactionId: Id; state: "running"; baseRevision: Revision; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; limits: AgentLimits; leaseDeadline: number };
-  finish_edit: { transactionId: Id; state: "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true };
-  cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true };
+  begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; limits: AgentLimits; leaseDeadline: number };
+  finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
+  cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true; scope?: "member"; memberId?: Id; sharedResourcesRetained?: boolean };
   paint_cells: ChangedData; paint_rect: ChangedData; paint_line: ChangedData; fill: ChangedData & { filledCells: number };
   prepare_smart_source: ChangedData & { sourceId: Id; mapId: Id; band: number; usages: SmartUsage[]; detectorVersion: number; fingerprint: string; forced: boolean; generatedTilesetIds: Id[]; layerMapping: LayerMapping[] };
   smart_brush: ChangedData & { sourceId: Id; neighborRepairs: number; layerMapping: LayerMapping[] };
@@ -233,9 +238,9 @@ export interface ToolData {
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
 export type MutationToolName = Exclude<ToolName, EditorControlToolName | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
-export interface AgentEnvelope<T> { ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
+export interface AgentEnvelope<T> { memberId?: Id; memberRevision?: Revision; ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
 export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
-export interface AgentFailure { ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
+export interface AgentFailure { memberId?:Id;memberRevision?:Revision;ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
 export interface TextBlock { type: "text"; text: string }
 export interface ImageBlock { type: "image"; mimeType: "image/png"; data: string }
 /** Exactly one stable JSON text block, optionally followed by one PNG. Never embed PNG in JSON. */
@@ -364,10 +369,10 @@ export interface AgentTagsPort {
   subscribe(listener: () => void): Unsubscribe;
   flush(): Promise<void>;
 }
-export interface ActivityLogEntry { requestBytes?: number; textBytes?: number; imageBytes?: number; resultBytes?: number; id: Id; timestamp: number; clientInfo: ClientInfo | null; clientSessionId: Id | null; tool: ToolName | null; requestId: Id | null; transactionId: Id | null; mapIds: Id[]; status: "started" | "succeeded" | "failed" | "cancelled" | "approved" | "stopped"; plannedCells: number; changedCells: number; durationMs: number; code?: AgentErrorCode; summary: string }
+export interface ActivityLogEntry { memberId?: Id; requestBytes?: number; textBytes?: number; imageBytes?: number; resultBytes?: number; id: Id; timestamp: number; clientInfo: ClientInfo | null; clientSessionId: Id | null; tool: ToolName | null; requestId: Id | null; transactionId: Id | null; mapIds: Id[]; status: "started" | "succeeded" | "failed" | "cancelled" | "approved" | "stopped"; plannedCells: number; changedCells: number; durationMs: number; code?: AgentErrorCode; summary: string }
 export interface AgentActivityPort { append(entry: ActivityLogEntry): void; entries(): readonly ActivityLogEntry[]; subscribe(listener: () => void): Unsubscribe }
 export interface AgentClock { now(): number; schedule(delayMs: number, callback: () => void): Unsubscribe }
-export interface AgentIds { next(kind: "instance" | "world" | "transaction" | "source" | "entity" | "map" | "layer" | "activity" | "cursor"): Id }
+export interface AgentIds { next(kind: "member" | "instance" | "world" | "transaction" | "source" | "entity" | "map" | "layer" | "activity" | "cursor"): Id }
 export interface AgentTransactionsPort {
   readonly history: PendingWorldHistoryPort;
   readonly writeGate: AgentWriteGate;

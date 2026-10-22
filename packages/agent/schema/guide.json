@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "resources": [
+    { "uri": "harita://guide/overview", "name": "harita_overview", "title": "Start here", "description": "Choose the next useful read and understand the editor's live review workflow.", "mimeType": "text/markdown", "contentPath": "../guide/overview.md" },
+    { "uri": "harita://guide/planning", "name": "harita_planning", "title": "Plan an editable map", "description": "Translate intent into a readable composition and a manageable semantic layer stack.", "mimeType": "text/markdown", "contentPath": "../guide/planning.md" },
+    { "uri": "harita://guide/assets", "name": "harita_assets", "title": "Discover and understand art", "description": "Inspect selected art, atlas grids, native sizes, tags, stamps and exact PNG references.", "mimeType": "text/markdown", "contentPath": "../guide/assets.md" },
+    { "uri": "harita://guide/painting", "name": "harita_painting", "title": "Paint, stamp and mark collision", "description": "Choose flat painting or suitable smart sources, reuse stamps and author manual collision.", "mimeType": "text/markdown", "contentPath": "../guide/painting.md" },
+    { "uri": "harita://guide/collaboration", "name": "harita_collaboration", "title": "Collaborate on a common draft", "description": "Coordinate region ownership, shared layers, boundaries and independent contributions.", "mimeType": "text/markdown", "contentPath": "../guide/collaboration.md" },
+    { "uri": "harita://guide/validation", "name": "harita_validation", "title": "Review the actual result", "description": "Combine visual inspection, structural validation and explicit gameplay or preservation checks.", "mimeType": "text/markdown", "contentPath": "../guide/validation.md" },
+    { "uri": "harita://guide/editor", "name": "harita_editor", "title": "Navigate and configure the editor", "description": "Inspect settings, arrange panels and change UI preferences independently of document proposals.", "mimeType": "text/markdown", "contentPath": "../guide/editor.md" },
+    { "uri": "harita://guide/workflow", "name": "harita_workflow", "title": "Edit, submit and review", "description": "Use revisions and replay keys, understand proposal ownership, recover from errors and hand off for human review.", "mimeType": "text/markdown", "contentPath": "../guide/workflow.md" },
+    { "uri": "harita://guide/skill", "name": "harita_map_authoring_skill", "title": "Harita map authoring skill", "description": "A portable skill entry point with progressive links to the application guide.", "mimeType": "text/markdown", "contentPath": "../../../.agents/skills/harita-map-authoring/SKILL.md" }
+  ]
+}

@@ -4,6 +4,9 @@
 HTTP sessions and bounded bridge correlations; tool semantics belong to the
 editor. Production starts `Service::start()` inside `tauri::async_runtime::spawn`.
 Tests bind real `127.0.0.1:0` listeners.
+Each endpoint accepts at most 16 clients, with at most 64 pending calls in total
+and 32 per client. Calls and collaborative membership still have their own
+editor limits; the session cap does not grant concurrent write ownership.
 
 The desktop platform supplies the frozen `AgentConnection`. Native IPC:
 
@@ -31,6 +34,21 @@ independent. A port already in use produces an explicit error. Closing one
 window permanently revokes only its transport and releases its listener;
 late readiness or configuration calls cannot reopen the closed service.
 
+## Progressive guide context
+
+`initialize` supplies a short orientation. `resources/list` exposes metadata for
+the authoring guide and portable skill; `resources/read` reads one exact
+`harita://guide/...` URI. Markdown is embedded in the native binary at compile
+time, so resource requests cannot select local files. Static resources have no
+subscriptions or list notifications. `resources/templates/list` is empty.
+
+`prompts/list` advertises `harita-map-task`; `prompts/get` accepts a bounded
+`task` and optional `topic`, returning the overview and links to relevant
+sections. It does not load the entire guide or change editor state. All guide
+methods follow the same authenticated, initialized session checks as tools.
+The stdio proxy forwards these methods and advertises only upstream capabilities
+it implements. Live world state remains available through editor tools.
+
 ## Rollback confirmation
 
 After `sessionEnded`, Rust sends a `statusRequest` with a fresh request ID.
@@ -40,6 +58,9 @@ state is no longer cancelling and has no transaction owned by an ended
 session. An early response during rollback does not acknowledge completion;
 the transport repeats the status query until completion. Replies from another
 epoch cannot acknowledge it.
+For a collaborative proposal, acknowledgement also waits until each departed
+session is detached from the proposal's member list. Peers may remain running;
+ending one client does not demand that their work stop or be rolled back.
 
 While this confirmation is pending, initialize and tool execution are blocked.
 DELETE waits for confirmation (503 on timeout). Configuration/credential changes

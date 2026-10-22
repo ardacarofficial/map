@@ -77,6 +77,12 @@
         },
         "replayed": {
           "type": "boolean"
+        },
+        "memberId": {
+          "$ref": "#/$defs/Id"
+        },
+        "memberRevision": {
+          "$ref": "#/$defs/Revision"
         }
       },
       "required": [
@@ -98,6 +104,10 @@
         "code": {
           "type": "string",
           "enum": [
+            "REGION_CONFLICT",
+            "OUTSIDE_REGION",
+            "MEMBER_REVISION_CONFLICT",
+            "EXCLUSIVE_OPERATION_REQUIRED",
             "NO_WORLD",
             "STALE_WORLD",
             "EDITOR_UNAVAILABLE",
@@ -154,6 +164,12 @@
         },
         "details": {
           "type": "object"
+        },
+        "memberId": {
+          "$ref": "#/$defs/Id"
+        },
+        "memberRevision": {
+          "$ref": "#/$defs/Revision"
         }
       },
       "required": [

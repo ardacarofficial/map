@@ -21,6 +21,9 @@ export function StackViewport({ viewportRef, size, contentWidth, label, shown, p
     if (!el || !el.clientWidth || !el.clientHeight) return;
     el.scrollLeft = projection.scrollLeft;
     el.scrollTop = projection.scrollTop;
+    // Headers stay in the panel while the grids pan beneath them. One CSS
+    // variable updates the visible chrome without re-rendering every grid.
+    el.style.setProperty("--tileset-stack-header-offset", `${el.scrollLeft - projection.origin.x}px`);
     sync.current = { left: el.scrollLeft, top: el.scrollTop };
   });
   return <div ref={viewportRef} tabIndex={0} role="region" aria-label={label}
@@ -31,6 +34,7 @@ export function StackViewport({ viewportRef, size, contentWidth, label, shown, p
       const el = e.currentTarget;
       if (!el.clientWidth || !el.clientHeight || el.clientWidth !== size.width || el.clientHeight !== size.height) return;
       if (el.scrollLeft === sync.current.left && el.scrollTop === sync.current.top) return;
+      el.style.setProperty("--tileset-stack-header-offset", `${el.scrollLeft - projection.origin.x}px`);
       const current = useTilesetView.getState().stackOffset;
       useTilesetView.getState().setStackOffset({ x: current.x + sync.current.left - el.scrollLeft, y: current.y + sync.current.top - el.scrollTop });
       sync.current = { left: el.scrollLeft, top: el.scrollTop };

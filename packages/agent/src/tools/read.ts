@@ -162,6 +162,7 @@ export async function read<N extends ToolName>(
         : (tx.pending?.summary ?? tx.last);
       return {
         data: {
+          currentClientSessionId:call.clientSessionId,
           apiVersion: 1,
           toolCatalogueHash: TOOL_CATALOGUE_HASH,
           world: s.world,

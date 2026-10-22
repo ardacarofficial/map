@@ -1,6 +1,7 @@
 import type { AgentErrorCode } from "@smap/agent";
 import { t, type MessageKey } from "../../i18n";
 const messages: Record<AgentErrorCode, MessageKey> = {
+  REGION_CONFLICT: "ai.error.regionConflict", OUTSIDE_REGION: "ai.error.outsideRegion", MEMBER_REVISION_CONFLICT: "ai.error.memberRevisionConflict", EXCLUSIVE_OPERATION_REQUIRED: "ai.error.exclusiveOperation",
   NO_WORLD: "ai.error.noWorld", STALE_WORLD: "ai.error.staleWorld", EDITOR_UNAVAILABLE: "ai.error.editorUnavailable", WRITER_BUSY: "ai.error.writerBusy",
   TRANSACTION_REQUIRED: "ai.error.transactionRequired", TRANSACTION_NOT_OWNED: "ai.error.notOwned", TRANSACTION_SEALED: "ai.error.sealed", TRANSACTION_CANCELLED: "ai.error.cancelled",
   REVISION_CONFLICT: "ai.error.revisionConflict", IDEMPOTENCY_CONFLICT: "ai.error.idempotencyConflict", INVALID_ARGUMENT: "ai.error.invalidArgument", UNKNOWN_ID: "ai.error.unknownId", OUT_OF_BOUNDS: "ai.error.outOfBounds",

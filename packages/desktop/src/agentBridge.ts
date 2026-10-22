@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { AGENT_LIMITS } from "../../agent/src/contracts";
 import type {
   AgentConnection, AgentConnectionStatus, AgentSettingsSnapshot, BridgeControl, BridgeReply, BridgeRequest,
 } from "../../agent/src/contracts";
@@ -39,7 +40,7 @@ function control(value: unknown): value is BridgeControl {
 }
 function connectionStatus(value: unknown): value is AgentConnectionStatus {
   return object(value) && ["disabled", "starting", "listening", "connected", "portInUse", "failed"].includes(String(value.state))
-    && Number.isInteger(value.port) && (value.port as number) >= 1024 && (value.port as number) <= 65535 && Array.isArray(value.clients) && value.clients.length <= 4 && value.clients.every(client);
+    && Number.isInteger(value.port) && (value.port as number) >= 1024 && (value.port as number) <= 65535 && Array.isArray(value.clients) && value.clients.length <= AGENT_LIMITS.clients && value.clients.every(client);
 }
 
 export function createAgentConnection(transport: AgentTransport = nativeTransport): AgentConnection {

@@ -16,6 +16,7 @@ import { useUiStore } from "../../uiStore";
 import { HEADER_H, PADDING } from "./constants";
 const DRAG_TYPE = "application/x-smap-tileset";
 const PALETTE_GROUP = "\u0000palettes";
+const HEADER_TRANSFORM = "translateX(var(--tileset-stack-header-offset, 0px))";
 
 export function TilesetStack({
   tilesets,
@@ -96,7 +97,7 @@ export function TilesetStack({
     return (
       <div
         className={`sticky top-0 z-(--overlay-chrome-raised) flex items-center gap-1 border-b border-line-subtle bg-panel pr-2 pl-1 ${over?.group === name && over.beforeId === null ? "shadow-[inset_0_1px_0_var(--color-accent)]" : ""}`}
-        style={{ height: HEADER_H }}
+        style={{ height: HEADER_H, transform: HEADER_TRANSFORM }}
         data-group-header={name}
         {...props}
       >
@@ -128,7 +129,7 @@ export function TilesetStack({
                 <section key={p.id} data-tileset-section={key} aria-label={p.name}>
                   <div
                     className="sticky z-(--overlay-chrome) flex items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-2"
-                    style={{ top: HEADER_H, height: HEADER_H }}
+                    style={{ top: HEADER_H, height: HEADER_H, transform: HEADER_TRANSFORM }}
                     onClick={() => showPalette(p.id)}
                     data-palette-header={p.id}
                     data-palette-drop={p.id}
@@ -216,7 +217,7 @@ export function TilesetStack({
                             className={`group sticky z-(--overlay-chrome) flex cursor-grab items-center gap-1.5 border-b border-line-subtle bg-panel pr-2 pl-1.5 active:cursor-grabbing ${
                               overThis ? "shadow-[inset_0_1px_0_var(--color-accent)]" : ""
                             } ${dragId === ts.id ? "opacity-50" : ""}`}
-                            style={{ top: labelled ? HEADER_H : 0, height: HEADER_H }}
+                            style={{ top: labelled ? HEADER_H : 0, height: HEADER_H, transform: HEADER_TRANSFORM }}
                             data-tileset-header={ts.id}
                             {...dragProps(target)}
                           />

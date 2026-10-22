@@ -1,4 +1,4 @@
-import type { MapStore } from "@smap/core";
+import { type Entity, type MapStore } from "@smap/core";
 import {
   AGENT_LIMITS as L,
   AgentError,
@@ -20,6 +20,8 @@ import {
   type Unsubscribe,
   type WriteContext,
 } from "./contracts";
+import { RegionCollaboration, type CollaborativeJoin } from "./collaboration";
+import { CollaborationJournal, type CollaborativeCall } from "./collaborationJournal";
 import { budget, check, fail } from "./validation";
 
 export class CallSignal implements AgentSignal {
@@ -102,6 +104,8 @@ export interface PendingEdit {
   sources: PreparedSmartSource[];
   invalidated: boolean;
   timer: Unsubscribe;
+  collaboration?: RegionCollaboration;
+  journal?: CollaborationJournal;
 }
 
 export class Transactions {
@@ -115,6 +119,8 @@ export class Transactions {
     { summary: TransactionSummary; at: number }
   >();
   readonly listeners = new Set<(state: AgentState) => void>();
+  memberCall: { journal: CollaborativeCall; counters: TransactionSummary["counters"]; memberCounters: TransactionSummary["counters"]; reserved: number; finished?: boolean } | undefined;
+  planning = false;
   applying = false;
   independent = false;
   interrupt: (() => void) | undefined;
@@ -164,6 +170,7 @@ export class Transactions {
           owner: { ...s.owner, clientInfo: { ...s.owner.clientInfo } },
           affectedMapIds: [...s.affectedMapIds],
           counters: { ...s.counters },
+          ...(this.pending?.summary===s && this.pending.collaboration ? {collaboration:this.pending.collaboration.snapshot()}:s.collaboration?{collaboration:JSON.parse(JSON.stringify(s.collaboration)) as NonNullable<TransactionSummary["collaboration"]>}:{}),
         }
       : null;
   }
@@ -284,6 +291,10 @@ export class Transactions {
             hidden: !layer.visible,
           });
       this.expected(args.expectedRevision);
+      if(args.collaboration){
+        p.collaboration=new RegionCollaboration(this.host.ids.next("member"),call,args.collaboration.claims,id=>this.store(id));
+        p.journal=new CollaborationJournal(p.collaboration,id=>this.store(id));
+      }
       p.baseline = this.host.transactions.captureBaseline(ids);
       p.collector = this.host.transactions.history.beginPending(
         args.mapIds[0]!,
@@ -298,13 +309,19 @@ export class Transactions {
       p.timer = this.host.clock.schedule(
         Math.max(0, summary.leaseDeadline - this.host.clock.now()),
         () => {
-          if (this.pending === p && summary.state === "running")
-            this.onExternal?.();
+          if (this.pending === p && summary.state === "running") {
+            if(p.collaboration){
+              p.collaboration.reviewReason="The shared draft time limit expired; contributions are retained for human review";
+              this.seal("stopped");
+              try{this.host.activity.append({id:this.host.ids.next("activity"),timestamp:this.host.clock.now(),clientInfo:null,clientSessionId:null,tool:null,requestId:null,transactionId:p.summary.id,mapIds:p.summary.affectedMapIds,status:"stopped",plannedCells:p.summary.counters.plannedWrites,changedCells:p.summary.counters.changedCells,durationMs:0,summary:p.collaboration.reviewReason});}catch{/* Expiry cannot strand the reviewable draft. */}
+            }else this.onExternal?.();
+          }
         },
       );
       this.emit();
       return {
         transactionId: summary.id,
+        ...(p.collaboration?{memberId:p.collaboration.coordinatorId,memberRevision:0,revisionMode:"member"}:{}),
         state: "running",
         baseRevision: args.expectedRevision,
         protectedLayers: [...p.participants].flatMap(([mapId, m]) =>
@@ -348,21 +365,78 @@ export class Transactions {
         fail(E.TRANSACTION_CANCELLED, "Transaction was cancelled");
       fail(E.TRANSACTION_REQUIRED, "Begin an edit first");
     }
-    check(
-      p.summary.owner.clientSessionId === call.clientSessionId &&
-        p.summary.id === context.transactionId &&
-        p.epoch === call.bridgeEpoch,
-      E.TRANSACTION_NOT_OWNED,
-      "Transaction belongs to another client or epoch",
-    );
-    check(
-      sealed || p.summary.state === "running",
-      E.TRANSACTION_SEALED,
-      "Transaction is sealed",
-    );
-    if (!skipRevision) this.expected(context.expectedRevision);
+    check(p.summary.id === context.transactionId && p.epoch === call.bridgeEpoch,
+      E.TRANSACTION_NOT_OWNED, "Transaction belongs to another client or epoch");
+    if(p.collaboration) {
+      const member=p.collaboration.require(call,sealed);
+      if(context.expectedMemberRevision!==undefined)p.collaboration.expect(member,context.expectedMemberRevision);
+      else { check(context.expectedRevision!==undefined,E.INVALID_ARGUMENT,"Choose an explicit global or member revision token"); this.expected(context.expectedRevision); }
+    } else {
+      check(p.summary.owner.clientSessionId===call.clientSessionId,E.TRANSACTION_NOT_OWNED,"Transaction belongs to another client");
+      if(!skipRevision){check(context.expectedRevision!==undefined,E.INVALID_ARGUMENT,"Exclusive edits require expectedRevision");this.expected(context.expectedRevision);}
+    }
+    check(sealed || p.summary.state === "running",E.TRANSACTION_SEALED,"Transaction is sealed");
     call.signal.throwIfAborted();
     return p;
+  }
+  async join(args: CollaborativeJoin,call:AgentCallContext):Promise<unknown>{
+    this.world(args.context.worldSessionId);this.expected(args.expectedRevision);
+    const p=this.pending;check(p&&p.summary.id===args.transactionId&&p.epoch===call.bridgeEpoch,E.TRANSACTION_REQUIRED,"No matching collaborative draft");
+    check(p.summary.state==="running",E.TRANSACTION_SEALED,"Draft is sealed");
+    check(p.collaboration,E.INVALID_ARGUMENT,"This is an exclusive draft");call.signal.throwIfAborted();
+    const m=p.collaboration.join(this.host.ids.next("member"),call,args.claims);this.emit();
+    return {transactionId:p.summary.id,memberId:m.id,memberRevision:m.revision,state:"running",claims:m.claims,revisionMode:"member"};
+  }
+  memberFor(call:Pick<AgentCallContext,"clientSessionId">){return this.pending?.collaboration?.bySession(call.clientSessionId);}
+  memberRevision(call:Pick<AgentCallContext,"clientSessionId">,transactionId?:Id):{memberId:Id;memberRevision:number}|undefined{
+    const m=this.memberFor(call)??(transactionId?this.terminals.get(transactionId)?.summary.collaboration?.members.find(member=>member.clientSessionId===call.clientSessionId):undefined);return m?{memberId:m.id,memberRevision:m.revision}:undefined;
+  }
+  beginMemberCall(call:AgentCallContext):void{
+    const p=this.pending;if(!p?.collaboration)return;const m=p.collaboration.require(call);
+    this.memberCall={journal:p.journal!.begin(m.id),counters:{...p.summary.counters},memberCounters:{...m.counters},reserved:0};
+  }
+  reserveMemberCall(bytes:number):void{if(this.memberCall&&!this.planning)this.memberCall.reserved=Math.max(this.memberCall.reserved,bytes);}
+  authorizeCells(mapId:Id,layerId:Id,points:readonly {x:number;y:number}[]):void{
+    const p=this.pending;if(!p?.collaboration)return;check(this.memberCall,E.INTERNAL_ERROR,"Missing collaborative call scope");
+    if(this.planning)p.collaboration.assertCells(this.memberCall.journal.memberId,mapId,layerId,points);
+    else p.journal!.cells(this.memberCall.journal,mapId,layerId,points);
+  }
+  authorizeEntity(mapId:Id,layerId:Id,before:Entity|null,after:Entity|null):void{
+    const p=this.pending;if(!p?.collaboration)return;check(this.memberCall,E.INTERNAL_ERROR,"Missing collaborative call scope");
+    if(this.planning){if(before)p.collaboration.assertEntity(this.memberCall.journal.memberId,mapId,layerId,before);if(after)p.collaboration.assertEntity(this.memberCall.journal.memberId,mapId,layerId,after);}
+    else p.journal!.entity(this.memberCall.journal,mapId,layerId,before,after);
+  }
+  assertGlobal(call:AgentCallContext):void{const p=this.pending;if(p?.collaboration)p.collaboration.assertGlobal(p.collaboration.require(call).id);}
+  finishMemberCall():void{
+    const scope=this.memberCall,p=this.pending;if(!scope||!p?.collaboration||scope.finished)return;scope.finished=true;
+    const m=p.collaboration.members.get(scope.journal.memberId)!;if(scope.journal.cells.size||scope.journal.entities.size)p.collaboration.spatialStarted=true;m.revision++;m.counters.retainedBytes+=scope.journal.addedBytes;p.summary.counters.retainedBytes+=scope.journal.addedBytes;this.emit();
+  }
+  releaseMemberCall():void{this.memberCall=undefined;}
+  recoverMemberCall():void{
+    const scope=this.memberCall,p=this.pending;this.memberCall=undefined;if(!scope||!p?.collaboration)return;
+    if(scope.journal.applied){
+      try{this.run(()=>p.journal!.recover(scope.journal));p.summary.counters={...scope.counters};const m=p.collaboration.members.get(scope.journal.memberId)!;m.counters={...scope.memberCounters};m.revision++;}
+      catch{p.invalidated=true;p.collaboration.stopAll("Local recovery failed; human group discard is required");p.summary.state="stopped";this.phase="stopped";}
+    }
+    this.emit();
+  }
+  finishMember(call:AgentCallContext,summary:string):unknown{
+    const p=this.pending!;const m=p.collaboration!.require(call);p.collaboration!.finish(m);this.updateCollaborativePhase();
+    return{transactionId:p.summary.id,state:p.summary.state,memberId:m.id,memberState:"ready",summary,counters:{...m.counters},requiresUserApproval:true};
+  }
+  cancelMember(clientSessionId:Id,detach=false):void{
+    const p=this.pending,collaboration=p?.collaboration,m=collaboration?.bySession(clientSessionId);if(!p||!collaboration||!m)return;if(m.state==="cancelled"){if(detach)this.detachMember(clientSessionId);return;}
+    this.memberCall=undefined;collaboration.beginCancel(m);this.emit();
+    try{this.run(()=>p.journal!.cancel(m.id));collaboration.cancelled(m,detach);if(detach&&p.summary.owner.clientSessionId===clientSessionId)p.summary.owner.clientSessionId=null;}
+    catch{p.invalidated=true;collaboration.stopAll("Member rollback failed; human group discard is required");p.summary.state="stopped";this.phase="stopped";this.emit();throw new AgentError(E.INTERNAL_ERROR,"Member rollback failed; peer contributions were retained for human discard");}
+    try{this.host.activity.append({id:this.host.ids.next("activity"),timestamp:this.host.clock.now(),memberId:m.id,clientInfo:m.clientInfo,clientSessionId,tool:null,requestId:null,transactionId:p.summary.id,mapIds:[...new Set(m.claims.map(claim=>claim.mapId))],status:"cancelled",plannedCells:m.counters.plannedWrites,changedCells:m.counters.changedCells,durationMs:0,summary:detach?"Disconnected member contribution rolled back":"Member contribution rolled back"});}catch{/* Activity observers cannot undo completed local recovery. */}
+    this.updateCollaborativePhase();
+  }
+  detachMember(clientSessionId:Id):void{
+    const p=this.pending,m=p?.collaboration?.bySession(clientSessionId);if(!p||!m)return;p.collaboration!.detach(m);if(p.summary.owner.clientSessionId===clientSessionId)p.summary.owner.clientSessionId=null;this.emit();
+  }
+  private updateCollaborativePhase():void{
+    const p=this.pending!;if(p.collaboration!.allFinished){p.summary.state="awaitingApproval";this.phase="awaitingApproval";}this.emit();
   }
   store(mapId: string): MapStore {
     const p = this.pending!;
@@ -422,6 +496,7 @@ export class Transactions {
       }
   }
   run<T>(apply: () => T): T {
+    if(this.memberCall && !this.planning)this.pending!.journal!.capture(this.memberCall.journal,bytes=>budget(this.pending!.summary.counters.retainedBytes+this.memberCall!.reserved+this.memberCall!.journal.addedBytes+bytes,L.retainedBytes));
     const old = this.applying;
     this.applying = true;
     const leases = [...this.pending!.participants.values()].map((m) => m.lease);
@@ -445,6 +520,7 @@ export class Transactions {
     budget(c.mutationCalls + 1, L.mutationCalls);
     budget(c.plannedWrites + planned, L.transactionPlannedWrites);
     budget(c.retainedBytes + retained, L.retainedBytes);
+    if(this.memberCall&&!this.planning)this.memberCall.reserved=Math.max(this.memberCall.reserved,retained);
   }
   record(change: ChangeSummary, retained = change.plannedCells * 32): void {
     const c = this.pending!.summary.counters;
@@ -452,6 +528,7 @@ export class Transactions {
     c.plannedWrites += change.plannedCells;
     c.changedCells += change.changedCells;
     c.retainedBytes += retained;
+    if(this.memberCall&&!this.planning){const m=this.pending!.collaboration!.members.get(this.memberCall.journal.memberId)!;m.counters.mutationCalls++;m.counters.plannedWrites+=change.plannedCells;m.counters.changedCells+=change.changedCells;m.counters.retainedBytes+=retained;}
     this.emit();
   }
   seal(state: "stopped" | "awaitingApproval"): void {
@@ -460,6 +537,7 @@ export class Transactions {
       return;
     }
     if (this.pending.summary.state !== "running") return;
+    this.pending.collaboration?.stopAll();
     this.pending.summary.state = state;
     this.phase = state;
     this.interrupt?.();
@@ -493,6 +571,7 @@ export class Transactions {
     // External invalidation queues rollback behind the active call. Approval may
     // have yielded while loading a follower, so reject before any local commit.
     if (p.invalidated) {
+      if(p.collaboration)fail(E.CANCELLED,"Collaborative draft is stopped for human discard after an external change");
       this.cancel();
       fail(E.CANCELLED, "World changed before approval");
     }
@@ -504,6 +583,7 @@ export class Transactions {
       for (const source of p.sources)
         this.host.smartSources.assertCurrent(source);
     } catch (error) {
+      if(p.collaboration){p.collaboration.stopAll("A shared source changed; discard or resolve the source before approval");this.phase="stopped";p.summary.state="stopped";this.emit();throw error;}
       this.cancel();
       throw error;
     }
@@ -574,6 +654,7 @@ export class Transactions {
       if (p.collector) p.collector.cancel(rollback);
       else rollback();
     });
+    if(p.collaboration){for(const member of p.collaboration.members.values())if(member.state!=="cancelled"){member.state="cancelled";member.revision++;}}
     p.summary.state = "cancelled";
     p.summary.outcome = "cancelled";
     this.complete("cancelled", admissionOutcome);

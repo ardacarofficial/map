@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { flushSync } from "react-dom";
 import { Menu } from "../primitives/Overlays";
 import { Menubar } from "@base-ui/react/menubar";
 
@@ -31,18 +33,26 @@ const registryLookup: CommandLookup = {
  * command is. Hovering across triggers moves between open menus.
  */
 export function MenuBar() {
+  // A newly mounted popup can appear under a stationary mouse. Keep keyboard
+  // focus authoritative until the pointer actually moves, including in portals.
+  // Flush that transition before native mousemove so the first hover is observed.
+  const [hoverEnabled, setHoverEnabled] = useState(true);
   return (
-    <Menubar modal={false} className="flex h-full shrink-0 items-center" aria-label={t("menu.bar")}>
+    <Menubar modal={false}
+      onKeyDownCapture={() => setHoverEnabled(false)}
+      onPointerMoveCapture={event => { if (!hoverEnabled && (event.movementX || event.movementY)) flushSync(() => setHoverEnabled(true)); }}
+      onPointerDownCapture={() => setHoverEnabled(true)}
+      className="flex h-full shrink-0 items-center" aria-label={t("menu.bar")}>
       {MENUS.map((menu) => (
-        <MenuBarMenu key={menu.id} menu={menu} />
+        <MenuBarMenu key={menu.id} menu={menu} hoverEnabled={hoverEnabled} />
       ))}
     </Menubar>
   );
 }
 
-function MenuBarMenu({ menu }: { menu: MenuDef }) {
+function MenuBarMenu({ menu, hoverEnabled }: { menu: MenuDef; hoverEnabled: boolean }) {
   return (
-    <Menu.Root>
+    <Menu.Root highlightItemOnHover={hoverEnabled}>
       <Menu.Trigger
         data-menu={menu.id}
         className="flex h-control-md items-center rounded-sm px-2 text-sm text-muted outline-none transition-colors duration-(--duration-fast) hover:bg-hover hover:text-text focus-visible:bg-hover data-popup-open:bg-active data-popup-open:text-text"
@@ -52,7 +62,7 @@ function MenuBarMenu({ menu }: { menu: MenuDef }) {
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" className={menuPositionerClass}>
           <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) min-w-56 overflow-y-auto`}>
-            <MenuItems menu={menu} />
+            <MenuItems menu={menu} hoverEnabled={hoverEnabled} />
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
@@ -70,29 +80,29 @@ function CheckSlot({ on }: { on: boolean }) {
 }
 
 /** Rendered only while the menu is open, so titles / enabled / keys / checks are current. */
-function MenuItems({ menu }: { menu: MenuDef }) {
+function MenuItems({ menu, hoverEnabled }: { menu: MenuDef; hoverEnabled: boolean }) {
   const entries = resolveMenu(menu, registryLookup);
-  return <ResolvedMenuItems entries={entries} menu={menu} />;
+  return <ResolvedMenuItems entries={entries} menu={menu} hoverEnabled={hoverEnabled} />;
 }
 
-function ResolvedMenuItems({ entries, menu }: { entries: ResolvedEntry[]; menu: MenuDef }) {
+function ResolvedMenuItems({ entries, menu, hoverEnabled }: { entries: ResolvedEntry[]; menu: MenuDef; hoverEnabled: boolean }) {
   const checks = entries.some((e) => e.kind === "item" && e.checked !== undefined);
   return entries.map((entry, i) => {
     if (entry.kind === "separator") return <Menu.Separator key={`sep-${i}`} className={menuSeparatorClass} />;
     if (entry.kind === "submenu") {
-      const submenu = <Menu.SubmenuRoot key={entry.id}>
-      <Menu.SubmenuTrigger data-submenu={entry.id} className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
+      const submenu = <Menu.SubmenuRoot highlightItemOnHover={hoverEnabled} key={entry.id}>
+      <Menu.SubmenuTrigger openOnHover={hoverEnabled} data-submenu={entry.id} className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
         {checks && <CheckSlot on={false} />}
         <span className="min-w-0 flex-1 truncate">{t(entry.label)}</span>
         <Icon name="chevronRight" size={12} className="ml-6 shrink-0 text-faint" />
       </Menu.SubmenuTrigger>
       <Menu.Portal><Menu.Positioner side="right" align="start" className={menuPositionerClass}>
         <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) min-w-56 overflow-y-auto`}>
-          <ResolvedMenuItems entries={entry.entries} menu={menu} />
+          <ResolvedMenuItems entries={entry.entries} menu={menu} hoverEnabled={hoverEnabled} />
         </Menu.Popup>
       </Menu.Positioner></Menu.Portal>
     </Menu.SubmenuRoot>;
-      return menu.id === "view" && entry.id === "zoom" ? [submenu, <BookmarksMenu key="submenu-bookmarks" />] : submenu;
+      return menu.id === "view" && entry.id === "zoom" ? [submenu, <BookmarksMenu key="submenu-bookmarks" hoverEnabled={hoverEnabled} />] : submenu;
     }
     const label = (
       <>
@@ -125,18 +135,18 @@ function ResolvedMenuItems({ entries, menu }: { entries: ResolvedEntry[]; menu: 
           {label}
         </Menu.Item>
       );
-    if (menu.submenu?.after === entry.command) return [item, <RecentProjectsSubmenu key="submenu-recent" />];
+    if (menu.submenu?.after === entry.command) return [item, <RecentProjectsSubmenu key="submenu-recent" hoverEnabled={hoverEnabled} />];
     return item;
   });
 }
 
 /** Dosya → Son açılanlar ▸ (hidden where the host keeps no recent list). */
-function RecentProjectsSubmenu() {
+function RecentProjectsSubmenu({ hoverEnabled }: { hoverEnabled: boolean }) {
   const { supported, entries } = useRecentProjects();
   if (!supported) return null;
   return (
-    <Menu.SubmenuRoot>
-      <Menu.SubmenuTrigger data-submenu="recentProjects" className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
+    <Menu.SubmenuRoot highlightItemOnHover={hoverEnabled}>
+      <Menu.SubmenuTrigger openOnHover={hoverEnabled} data-submenu="recentProjects" className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
         <span className="min-w-0 flex-1 truncate">{t("appBar.recentProjects")}</span>
         <Icon name="chevronRight" size={12} className="ml-6 shrink-0 text-faint" />
       </Menu.SubmenuTrigger>

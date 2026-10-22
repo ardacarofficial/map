@@ -385,7 +385,7 @@ async fn initialize_ordering_session_cap_and_version_headers() {
             .status(),
         400
     );
-    for _ in 0..3 {
+    for _ in 1..MAX_CLIENTS {
         h.session().await;
     }
     assert!(h
@@ -1119,4 +1119,88 @@ async fn closing_a_window_during_endpoint_configuration_releases_the_candidate_s
     service.start().await;
     assert!(service.transport().ready("late-epoch".into()).is_err());
     assert!(tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await.is_ok());
+}
+
+#[tokio::test]
+async fn guide_resources_and_prompts_are_discoverable_and_bound_to_authenticated_sessions() {
+    let h = Harness::new().await;
+    assert_eq!(h.post(json!({"jsonrpc":"2.0","id":1,"method":"resources/list"})).send().await.unwrap().status(), 400);
+    let initialized = h.init("2025-11-25").await;
+    let session = initialized.headers()["Mcp-Session-Id"].to_str().unwrap().to_owned();
+    let initialization: Value = initialized.json().await.unwrap();
+    assert_eq!(initialization["result"]["capabilities"]["resources"], json!({"subscribe":false,"listChanged":false}));
+    assert_eq!(initialization["result"]["capabilities"]["prompts"], json!({"listChanged":false}));
+    let request = |method: &str, params: Value| h.message(&session, json!({"jsonrpc":"2.0","id":20,"method":method,"params":params}));
+    let not_ready: Value = request("resources/list", json!({})).send().await.unwrap().json().await.unwrap();
+    assert!(not_ready.get("error").is_some());
+    assert_eq!(h.message(&session, json!({"jsonrpc":"2.0","method":"notifications/initialized"})).send().await.unwrap().status(), 202);
+    let listing: Value = request("resources/list", json!({})).send().await.unwrap().json().await.unwrap();
+    let resources = listing["result"]["resources"].as_array().unwrap();
+    assert_eq!(resources.len(), 9);
+    assert!(!listing.to_string().contains("contentPath"));
+    for resource in resources {
+        assert!(resource.get("text").is_none());
+        let response: Value = request("resources/read", json!({"uri":resource["uri"]})).send().await.unwrap().json().await.unwrap();
+        let content = &response["result"]["contents"][0];
+        assert_eq!(content["uri"], resource["uri"]);
+        assert_eq!(content["mimeType"], "text/markdown");
+        assert!(content["text"].as_str().is_some_and(|s| !s.trim().is_empty() && s.len() <= 32768));
+    }
+    let templates: Value = request("resources/templates/list", json!({})).send().await.unwrap().json().await.unwrap();
+    assert_eq!(templates["result"], json!({"resourceTemplates":[]}));
+    for uri in ["file:///etc/passwd", "harita://guide/../secret", "harita://guide/unknown"] {
+        let response: Value = request("resources/read", json!({"uri":uri})).send().await.unwrap().json().await.unwrap();
+        assert_eq!(response["error"]["code"], -32002);
+    }
+    for (method, params) in [
+        ("resources/read", json!({})), ("resources/list", json!({"cursor":"unknown"})),
+        ("prompts/get", json!({"name":"unknown","arguments":{"task":"village"}})),
+        ("prompts/get", json!({"name":"harita-map-task","arguments":{"task":"x".repeat(2001)}})),
+        ("prompts/get", json!({"name":"harita-map-task","arguments":{"task":"village","topic":"../secret"}})),
+    ] {
+        let response: Value = request(method, params).send().await.unwrap().json().await.unwrap();
+        assert_eq!(response["error"]["code"], -32602, "{method}");
+    }
+    let prompts: Value = request("prompts/list", json!({})).send().await.unwrap().json().await.unwrap();
+    assert_eq!(prompts["result"]["prompts"][0]["name"], "harita-map-task");
+    let prompt: Value = request("prompts/get", json!({"name":"harita-map-task","arguments":{"task":"Design a village","topic":"collaboration"}})).send().await.unwrap().json().await.unwrap();
+    let message = prompt["result"]["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(message.contains("Design a village"));
+    assert!(message.contains("harita://guide/collaboration"));
+    assert!(message.contains("harita://guide/skill"));
+    assert!(message.len() < 8192);
+    let unauthenticated = h.client.post(format!("http://{}/mcp", h.server.addr)).json(&json!({"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"harita://guide/skill"}})).send().await.unwrap();
+    assert_eq!(unauthenticated.status(), 401);
+}
+
+#[tokio::test]
+async fn collaborative_disconnect_waits_for_only_the_departed_members_cleanup() {
+    for owner_is_departing in [false, true] {
+        let mut h = Harness::new().await;
+        let departed = h.session().await;
+        let peer = h.session().await;
+        h.transport.ready("epoch".into()).unwrap();
+        let request = h.client.delete(format!("http://{}/mcp", h.server.addr)).bearer_auth(TOKEN)
+            .header("Mcp-Session-Id", &departed).header("MCP-Protocol-Version", "2025-11-25");
+        let mut deletion = tokio::spawn(async move { request.send().await.unwrap() });
+        let mut event = h.event(EVENT_CONTROL).await;
+        while event["type"] != "statusRequest" { event = h.event(EVENT_CONTROL).await; }
+        let owner = if owner_is_departing { json!(departed) } else { json!(peer) };
+        let mut state = json!({"phase":"running","transaction":{"state":"running","owner":{"clientSessionId":owner},
+            "collaboration":{"mode":"regions","joinOpen":false,"members":[
+                {"id":"departing","clientSessionId":departed,"state":"cancelling","detached":false},
+                {"id":"peer","clientSessionId":peer,"state":"running","detached":false}
+            ]}}});
+        h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":state})).unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut deletion).await.is_err());
+        state["transaction"]["collaboration"]["members"][0]["clientSessionId"] = Value::Null;
+        state["transaction"]["collaboration"]["members"][0]["state"] = json!("cancelled");
+        state["transaction"]["collaboration"]["members"][0]["detached"] = json!(true);
+        if owner_is_departing { state["transaction"]["owner"]["clientSessionId"] = Value::Null; }
+        h.transport.publish_status(json!({"bridgeEpoch":"epoch","requestId":event["requestId"],"state":state})).unwrap();
+        assert_eq!(deletion.await.unwrap().status(), 200);
+        assert_eq!(h.transport.clients().len(), 1);
+        assert_eq!(h.message(&peer, json!({"jsonrpc":"2.0","id":4,"method":"ping"})).send().await.unwrap().status(), 200);
+        assert_eq!(h.init("2025-11-25").await.status(), 200);
+    }
 }

@@ -5,7 +5,11 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema, ErrorCode, GetPromptRequestSchema, ListPromptsRequestSchema,
+  ListResourcesRequestSchema, ListResourceTemplatesRequestSchema, ListToolsRequestSchema,
+  McpError, ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 async function upstreamRequest<T>(request: () => Promise<T>): Promise<T> {
   try { return await request(); }
@@ -42,7 +46,9 @@ async function main() {
   const localFetch: typeof fetch = async (url, init) => fetch(url, { ...init, redirect: "error" });
   let upstream: Client | undefined, http: StreamableHTTPClientTransport | undefined;
   let ping: ReturnType<typeof setInterval> | undefined, connecting: Promise<void> | undefined;
-  const server = new Server({ name: "harita-mcp", version: "2.0.0" }, { capabilities: { tools: { listChanged: false } } });
+  const server = new Server({ name: "harita-mcp", version: "2.0.0" }, { capabilities: {
+    tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false },
+  } });
   const stdio = new StdioServerTransport();
   // The SDK proxy owns its initialize response, so copy the upstream guide onto
   // that one response after the authenticated upstream handshake has completed.
@@ -52,7 +58,15 @@ async function main() {
     if ("id" in message && message.id === initializeId && "result" in message) {
       initializeId = undefined;
       const instructions = upstream?.getInstructions();
-      if (instructions) return send({ ...message, result: { ...message.result, instructions } });
+      const available = upstream?.getServerCapabilities();
+      // Advertise only methods this proxy implements and the upstream offers.
+      // The JSON transport does not forward subscriptions or list notifications.
+      const capabilities = {
+        ...(available?.tools ? { tools: { listChanged: false } } : {}),
+        ...(available?.resources ? { resources: { subscribe: false, listChanged: false } } : {}),
+        ...(available?.prompts ? { prompts: { listChanged: false } } : {}),
+      };
+      return send({ ...message, result: { ...message.result, capabilities, ...(instructions ? { instructions } : {}) } });
     }
     return send(message);
   };
@@ -74,6 +88,26 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
     if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
     return upstreamRequest(() => upstream!.callTool(request.params, undefined, { signal: extra.signal }));
+  });
+  server.setRequestHandler(ListResourcesRequestSchema, (request, extra) => {
+    if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
+    return upstreamRequest(() => upstream!.listResources(request.params, { signal: extra.signal }));
+  });
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, (request, extra) => {
+    if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
+    return upstreamRequest(() => upstream!.listResourceTemplates(request.params, { signal: extra.signal }));
+  });
+  server.setRequestHandler(ReadResourceRequestSchema, (request, extra) => {
+    if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
+    return upstreamRequest(() => upstream!.readResource(request.params, { signal: extra.signal }));
+  });
+  server.setRequestHandler(ListPromptsRequestSchema, (request, extra) => {
+    if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
+    return upstreamRequest(() => upstream!.listPrompts(request.params, { signal: extra.signal }));
+  });
+  server.setRequestHandler(GetPromptRequestSchema, (request, extra) => {
+    if (!upstream) throw new Error("EDITOR_UNAVAILABLE");
+    return upstreamRequest(() => upstream!.getPrompt(request.params, { signal: extra.signal }));
   });
   // Probe on launch without creating a session under a false proxy identity.
   try {

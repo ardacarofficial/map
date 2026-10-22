@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { AgentToolResult, BridgeControl, BridgeReply, BridgeRequest, ClientInfo } from "@smap/agent";
+import { guideResponse } from "./guideProtocol.ts";
 
 const catalogue: unknown = JSON.parse(readFileSync(new URL("../../agent/schema/tools.json", import.meta.url), "utf8"));
 const instructions = readFileSync(new URL("../../agent/schema/workflow.txt", import.meta.url), "utf8").trim();
@@ -9,6 +10,7 @@ const VERSIONS = ["2025-11-25", "2025-06-18"];
 const BODY_LIMIT = 1024 * 1024, RESPONSE_LIMIT = 8 * BODY_LIMIT;
 // Correlation fields wrap an already budgeted AgentToolResult.
 const BRIDGE_OVERHEAD_LIMIT = 1024;
+const MAX_CLIENTS = 16;
 type Message = BridgeRequest | BridgeControl;
 interface Page { epoch: string; send(message: Message): void }
 interface Session { id: string; pair: string | undefined; page: Page | undefined; version: string; info: ClientInfo; initialized: boolean; lastSeen: number; ids: Set<string | number> }
@@ -106,14 +108,14 @@ export async function startDevMcp(options: DevMcpOptions) {
     if (body.method === "initialize") {
       if (session || sessionId !== undefined) return send(res, 400, { error: "Already initialized" });
       if (id === undefined || !object(params.clientInfo) || typeof params.clientInfo.name !== "string" || typeof params.clientInfo.version !== "string" || typeof params.protocolVersion !== "string" || !object(params.capabilities)) return error(-32602, "Invalid initialize parameters");
-      if (sessions.size >= 4) return send(res, 429, { error: "Session limit exceeded" });
+      if (sessions.size >= MAX_CLIENTS) return send(res, 429, { error: "Session limit exceeded" });
       const selected = pair ?? (pages.size === 1 ? pages.keys().next().value : undefined);
       const target = selected === undefined ? undefined : pages.get(selected);
       const fresh: Session = { id: secret(), pair: selected, page: target, version: VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : VERSIONS[0]!, info: { name: params.clientInfo.name.replace(/[^\x20-\x7e]/g, "").slice(0, 80), version: params.clientInfo.version.slice(0, 80) }, initialized: false, lastSeen: now(), ids: new Set() };
       sessions.set(fresh.id, fresh);
       if (target) target.send({ type: "sessionStarted", bridgeEpoch: target.epoch, clientSessionId: fresh.id, clientInfo: fresh.info });
       res.setHeader("Mcp-Session-Id", fresh.id);
-      return result({ protocolVersion: fresh.version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "harita", version: "2.0.0" }, instructions });
+      return result({ protocolVersion: fresh.version, capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } }, serverInfo: { name: "harita", version: "2.0.0" }, instructions });
     }
     if (!session) return send(res, 400, { error: "Session required" });
     session.lastSeen = now();
@@ -132,6 +134,8 @@ export async function startDevMcp(options: DevMcpOptions) {
     if (session.ids.has(id)) return error(-32600, "Duplicate pending request ID");
     if (body.method === "ping") return result({});
     if (body.method === "tools/list") return result(catalogue);
+    const guide = guideResponse(body.method as string, params);
+    if (guide) return "error" in guide ? error(guide.error.code, guide.error.message) : result(guide.result);
     if (body.method !== "tools/call") return error(-32601, "Method not found");
     if (typeof params.name !== "string" || (params.arguments !== undefined && !object(params.arguments))) return error(-32602, "Invalid tool parameters");
     session.ids.add(id);

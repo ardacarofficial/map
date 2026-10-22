@@ -37,6 +37,8 @@ interface Cached extends ReplayRecord {
   transactionId?: string;
   at: number;
   client: string;
+  memberId?: string;
+  tool?: ToolName;
 }
 
 export function createAgentApi(host: AgentHost): AgentApi {
@@ -75,6 +77,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     // An explicit reference upload does not depend on map contents.
     if (worldChanged || activeTool !== "visual_ingest_reference") interrupt();
     if (tx.pending) {
+      if(tx.pending.collaboration){tx.pending.collaboration.stopAll("An external source or world changed; human review/discard is required");tx.seal("stopped");return;}
       tx.seal("stopped");
       void enqueue(() => tx.cancel());
     }
@@ -87,6 +90,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     const state = tx.state();
     const result: AgentFailure = {
       ok: false,
+      ...tx.memberRevision({clientSessionId:activeClient??""},transactionId),
       code: e.code,
       message: e.message,
       worldSessionId: state.worldSessionId,
@@ -102,6 +106,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     args: ToolArguments[ToolName],
     call: AgentCall,
   ): string | undefined {
+    if(name==="join_edit"){const a=args as ToolArguments["join_edit"];return canonicalJson([a.context.worldSessionId,call.clientSessionId,"join",a.transactionId,a.idempotencyKey]);}
     if (name === "begin_edit") {
       const a = args as ToolArguments["begin_edit"];
       return canonicalJson([
@@ -133,6 +138,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
         tx.terminals.delete(id);
   }
   function replay(c: Cached): AgentToolResult {
+    const member=c.memberId?(tx.pending?.collaboration?.members.get(c.memberId)??tx.terminals.get(c.transactionId??"")?.summary.collaboration?.members.find(m=>m.id===c.memberId)):undefined;
+    if(member?.state==="cancelled"&&c.tool!=="cancel_edit")return failure(new AgentError(E.TRANSACTION_CANCELLED,"This member contribution was cancelled"),c.transactionId);
     const terminal = c.transactionId
       ? tx.terminals.get(c.transactionId)?.summary
       : undefined;
@@ -149,6 +156,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     const state = tx.state();
     const result = {
       ...previous,
+      ...(member?{memberId:member.id,memberRevision:member.revision}:{}),
       worldSessionId: state.worldSessionId,
       revision: state.revision,
       tentative: !!tx.pending,
@@ -188,6 +196,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
           ? (call.name as ToolName)
           : null,
         requestId: null,
+        ...(tx.memberFor(call)?{memberId:tx.memberFor(call)!.id}:"memberId"in s&&s.memberId?{memberId:s.memberId}:{}),
         transactionId:
           "transactionId" in s
             ? s.transactionId ?? null
@@ -218,7 +227,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     active = signal;
     activeClient = call.clientSessionId;
     activeTool = call.name;
-    let enteredApply = false;
+    let enteredApply = false,globalMutation=false;
     try {
       signal.throwIfAborted();
       check(
@@ -248,7 +257,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
       }
       const callContext: AgentCallContext = { ...call, signal };
       let data: unknown, image: ImageBlock | Uint8Array | undefined;
-      if (name === "begin_edit") {
+      if(name==="join_edit"){data=await tx.join(args as ToolArguments["join_edit"],callContext);transactionId=tx.pending!.summary.id;}
+      else if (name === "begin_edit") {
         data = await tx.begin(args as ToolArguments["begin_edit"], callContext);
         transactionId = tx.pending!.summary.id;
       } else if (writes.has(name)) {
@@ -260,7 +270,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
           name === "cancel_edit",
         );
         transactionId = pending.summary.id;
-        if (name === "finish_edit") {
+        if (name === "finish_edit" && pending.collaboration) {
+          data=tx.finishMember(callContext,(args as ToolArguments["finish_edit"]).summary??pending.summary.label);
+        } else if (name === "finish_edit") {
           // No interrupt here: this is the active call that is sealing the writer.
           pending.summary.state = "awaitingApproval";
           tx.phase = "awaitingApproval";
@@ -275,16 +287,22 @@ export function createAgentApi(host: AgentHost): AgentApi {
             requiresUserApproval: true,
           };
         } else if (name === "cancel_edit") {
-          tx.cancel();
+          const member=tx.memberFor(callContext);
+          if(pending.collaboration&&pending.collaboration.hasJoined)tx.cancelMember(callContext.clientSessionId);
+          else tx.cancel();
           data = {
             transactionId,
             state: "cancelled",
             reason: (args as ToolArguments["cancel_edit"]).reason ?? "",
             rolledBack: true,
+            ...(member?{memberId:member.id,scope:"member",sharedResourcesRetained:!!tx.pending?.collaboration?.hasJoined}:{}),
           };
         } else {
           const revision = tx.revision;
           try {
+            tx.beginMemberCall(callContext);
+            globalMutation=["prepare_smart_source","edit_layer","create_map","resize_map","create_stamp","edit_map","edit_stamp","configure_world"].includes(name);
+            if(globalMutation)tx.assertGlobal(callContext);
             data = name === "edit_map" ? editMap(tx, args as ToolArguments["edit_map"])
               : name === "edit_stamp" ? editStamp(tx, args as ToolArguments["edit_stamp"])
               : name === "configure_world" ? configureWorld(tx, args as ToolArguments["configure_world"])
@@ -296,6 +314,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
             // Postflight failures must not leave an applied write without a
             // successful response or an idempotency record for its retry.
             enteredApply = true;
+            tx.finishMemberCall();
           } catch (error) {
             if (tx.revision !== revision || !(error instanceof AgentError)) {
               enteredApply = true;
@@ -447,6 +466,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         worldSessionId: state.worldSessionId,
         revision: state.revision,
         tentative: !!tx.pending,
+        ...tx.memberRevision(callContext,transactionId),
         data,
         ...(writes.has(name)
           ? {
@@ -475,21 +495,31 @@ export function createAgentApi(host: AgentHost): AgentApi {
           result,
           at: host.clock.now(),
           client: call.clientSessionId,
+          tool:name,
+          ...tx.memberRevision(callContext,transactionId),
           ...(transactionId ? { transactionId } : {}),
         });
         prune();
       }
+      tx.releaseMemberCall();
     } catch (error) {
-      // Expected preflight errors preserve previous work. Unexpected dispatch failures rollback all maps.
-      if (
+      let failureError=error;
+      // Collaborative failures recover only this call/member; peer contributions stay pending.
+      const collaborative=!!tx.pending?.collaboration,scopedMutation=!!tx.memberCall;
+      try{
+        if(collaborative&&globalMutation&&enteredApply&&!tx.pending!.collaboration!.hasJoined){tx.releaseMemberCall();tx.cancel();}
+        else if(collaborative){tx.recoverMemberCall();if(signal.aborted&&scopedMutation&&tx.memberFor(call)?.state==="running")tx.cancelMember(call.clientSessionId);if(error instanceof AgentError&&error.code===E.SOURCE_CHANGED){tx.pending!.invalidated=true;tx.pending!.collaboration!.stopAll("A shared source changed; human discard is required");tx.seal("stopped");}}
+      }catch(recoveryError){failureError=recoveryError;}
+      // Expected preflight errors preserve previous exclusive work.
+      if (!collaborative && (
         (enteredApply ||
           (writes.has(call.name as ToolName) &&
-            error instanceof AgentError && error.code === E.SOURCE_CHANGED)) &&
+            error instanceof AgentError && error.code === E.SOURCE_CHANGED))) &&
         tx.pending
       )
         tx.cancel();
       if (signal.aborted && tx.phase === "preparing") tx.cancel();
-      result = failure(error, transactionId);
+      result = failure(failureError, transactionId);
     } finally {
       if (active === signal) {
         active = undefined;
@@ -527,7 +557,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       const signal = new CallSignal();
       signals.add(signal);
       signal.onAbort(() => {
-        if (active === signal && writes.has(call.name as ToolName) &&
+        if (active === signal && !tx.pending?.collaboration && writes.has(call.name as ToolName) &&
             tx.pending?.summary.owner.clientSessionId === call.clientSessionId)
           tx.seal("stopped");
       });
@@ -620,6 +650,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
       for (const [key, entry] of cache)
         if (entry.client === clientSessionId) cache.delete(key);
       host.visualReferences?.sessionEnded(clientSessionId);
+      const collaborative=tx.pending?.collaboration,member=tx.memberFor({clientSessionId});
+      if(collaborative&&member){
+        if(activeClient===clientSessionId)active?.abort();
+        const rollback=member.state==="running"||member.state==="cancelling";
+        if(!rollback)tx.detachMember(clientSessionId);
+        return enqueue(()=>{if(rollback&&tx.pending?.collaboration===collaborative){tx.cancelMember(clientSessionId,true);}});
+      }
       const pending = tx.pending;
       const owned = pending?.summary.owner.clientSessionId === clientSessionId;
       // Capture before interruption: aborting an active mutation can seal it as stopped.

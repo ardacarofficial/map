@@ -38,7 +38,7 @@
     "editLifetimeMs": 1800000,
     "reviewIdleMs": 600000,
     "sessionIdleMs": 300000,
-    "clients": 4,
+    "clients": 16,
     "activityEntries": 1000,
     "entitiesPerRead": 256,
     "tagsFileBytes": 8388608,
@@ -54,6 +54,10 @@
     "2025-06-18"
   ],
   "errorCodes": [
+    "REGION_CONFLICT",
+    "OUTSIDE_REGION",
+    "MEMBER_REVISION_CONFLICT",
+    "EXCLUSIVE_OPERATION_REQUIRED",
     "NO_WORLD",
     "STALE_WORLD",
     "EDITOR_UNAVAILABLE",
@@ -992,6 +996,157 @@
         },
         "isError": true
       }
+    },
+    {
+      "requestId": "request-region_conflict",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"REGION_CONFLICT\",\"details\":{\"mapId\":\"map-1\",\"memberId\":\"member-b\"},\"memberId\":\"member-a\",\"memberRevision\":2,\"message\":\"A peer owns this overlapping layer region\",\"ok\":false,\"retryable\":false,\"revision\":7,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "REGION_CONFLICT",
+          "message": "A peer owns this overlapping layer region",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "transactionId": "edit-1",
+          "memberId": "member-a",
+          "memberRevision": 2,
+          "retryable": false,
+          "details": {
+            "memberId": "member-b",
+            "mapId": "map-1"
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-outside_region",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"OUTSIDE_REGION\",\"details\":{\"layerId\":\"ground\",\"mapId\":\"map-1\",\"memberId\":\"member-a\",\"x\":8,\"y\":2},\"memberId\":\"member-a\",\"memberRevision\":2,\"message\":\"Neighbor repairs exceed this member claim\",\"ok\":false,\"retryable\":false,\"revision\":7,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "OUTSIDE_REGION",
+          "message": "Neighbor repairs exceed this member claim",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "transactionId": "edit-1",
+          "memberId": "member-a",
+          "memberRevision": 2,
+          "retryable": false,
+          "details": {
+            "memberId": "member-a",
+            "mapId": "map-1",
+            "layerId": "ground",
+            "x": 8,
+            "y": 2
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-member_revision_conflict",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"MEMBER_REVISION_CONFLICT\",\"details\":{\"actualMemberRevision\":2,\"expectedMemberRevision\":1},\"memberId\":\"member-a\",\"memberRevision\":2,\"message\":\"Refresh this member write revision\",\"ok\":false,\"retryable\":false,\"revision\":7,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "MEMBER_REVISION_CONFLICT",
+          "message": "Refresh this member write revision",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "transactionId": "edit-1",
+          "memberId": "member-a",
+          "memberRevision": 2,
+          "retryable": false,
+          "details": {
+            "expectedMemberRevision": 1,
+            "actualMemberRevision": 2
+          }
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "request-exclusive_operation_required",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"code\":\"EXCLUSIVE_OPERATION_REQUIRED\",\"details\":{},\"memberId\":\"member-a\",\"memberRevision\":2,\"message\":\"Prepare shared metadata before spatial painting or peer joins\",\"ok\":false,\"retryable\":false,\"revision\":7,\"transactionId\":\"edit-1\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": false,
+          "code": "EXCLUSIVE_OPERATION_REQUIRED",
+          "message": "Prepare shared metadata before spatial painting or peer joins",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "transactionId": "edit-1",
+          "memberId": "member-a",
+          "memberRevision": 2,
+          "retryable": false,
+          "details": {}
+        },
+        "isError": true
+      }
+    },
+    {
+      "requestId": "collaborative-write",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"memberId\":\"member-a\",\"memberRevision\":3,\"revisionMode\":\"member\"},\"instanceId\":\"instance-1\",\"memberId\":\"member-a\",\"memberRevision\":3,\"ok\":true,\"replayed\":false,\"revision\":7,\"tentative\":true,\"transactionId\":\"edit-1\",\"transactionState\":\"running\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "instance-1",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "tentative": true,
+          "memberId": "member-a",
+          "memberRevision": 3,
+          "transactionId": "edit-1",
+          "transactionState": "running",
+          "replayed": false,
+          "data": {
+            "memberId": "member-a",
+            "memberRevision": 3,
+            "revisionMode": "member"
+          }
+        }
+      }
     }
   ],
   "invalid": [
@@ -1270,6 +1425,37 @@
           }
         },
         "isError": true
+      }
+    },
+    {
+      "requestId": "collaborative-write",
+      "bridgeEpoch": "renderer-1",
+      "clientSessionId": "client-1",
+      "type": "result",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"data\":{\"memberId\":\"member-a\",\"memberRevision\":3,\"revisionMode\":\"member\"},\"instanceId\":\"instance-1\",\"memberId\":\"member-a\",\"memberRevision\":3,\"ok\":true,\"replayed\":false,\"revision\":7,\"tentative\":true,\"transactionId\":\"edit-1\",\"transactionState\":\"running\",\"worldSessionId\":\"world-1\"}"
+          }
+        ],
+        "structuredContent": {
+          "ok": true,
+          "instanceId": "instance-1",
+          "worldSessionId": "world-1",
+          "revision": 7,
+          "tentative": true,
+          "memberId": "member-a",
+          "memberRevision": -1,
+          "transactionId": "edit-1",
+          "transactionState": "running",
+          "replayed": false,
+          "data": {
+            "memberId": "member-a",
+            "memberRevision": 3,
+            "revisionMode": "member"
+          }
+        }
       }
     }
   ]

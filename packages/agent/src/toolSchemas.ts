@@ -32,7 +32,7 @@ const SHARED_DEFS = {
     ]
   },
   "WriteContext": {
-    "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+    "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -47,13 +47,33 @@ const SHARED_DEFS = {
       },
       "expectedRevision": {
         "$ref": "#/$defs/Revision"
+      },
+      "expectedMemberRevision": {
+        "$ref": "#/$defs/Revision"
       }
     },
     "required": [
       "worldSessionId",
       "transactionId",
-      "idempotencyKey",
-      "expectedRevision"
+      "idempotencyKey"
+    ],
+    "oneOf": [
+      {
+        "required": [
+          "expectedRevision"
+        ],
+        "properties": {
+          "expectedRevision": {}
+        }
+      },
+      {
+        "required": [
+          "expectedMemberRevision"
+        ],
+        "properties": {
+          "expectedMemberRevision": {}
+        }
+      }
     ]
   },
   "Point": {
@@ -1814,8 +1834,11 @@ const editEntitySchema = { oneOf: [
   objectSchema({ ...baseEntity, action: { const: "update" }, fields: fieldValues }),
   objectSchema({ ...baseEntity, action: { const: "remove" } }),
 ] };
+const claimSchema=objectSchema({mapId:ref("Id"),layerIds:{type:"array",minItems:1,maxItems:8,uniqueItems:true,items:ref("Id")},region:ref("Rect")});
+const claimsSchema:Schema={type:"array",minItems:1,maxItems:16,items:claimSchema};
 const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
   let schema: Schema = tool.inputSchema;
+  if(tool.name==="begin_edit")schema={...schema,properties:{...(schema.properties as Record<string,JsonValue>),collaboration:objectSchema({mode:{const:"regions"},claims:claimsSchema},["mode"])}};
   if (tool.name === "smart_brush") schema = { ...schema, allOf: [
     { if: { properties: { mode: { const: "area" } } }, then: { ...requiredKeys("region"), not: { anyOf: [requiredKeys("cells"), { ...requiredKeys("erase"), properties: { erase: { const: true } } }] } } },
     { if: { properties: { mode: { const: "road" } } }, then: { ...requiredKeys("cells"), not: requiredKeys("region") } },
@@ -1829,7 +1852,12 @@ const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
     ...schema, properties: { ...(schema.properties as Record<string, JsonValue>), selectedReferenceToken: ref("Id") },
     required: ["context"], oneOf: [requiredKeys("pngBase64"), requiredKeys("selectedReferenceToken")],
   };
-  return { ...tool, inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" } };
+  const collaborationGuidance:Partial<Record<AgentToolDefinition["name"],string>>={
+    begin_edit:" Optional collaboration:{mode:'regions',claims?} creates one shared draft. Claims are explicit existing map/layer rectangles. Omit claims for coordinator metadata preparation, then self join_edit once to assign regions before peers join. Prepare shared metadata before any spatial write or peer join. Returns memberId/memberRevision for explicit member-scoped CAS.",
+    finish_edit:" In a collaborative draft this marks only your member ready; peers remain writable. Coordinator finish closes new joins. The group awaits human approval once all members are ready/stopped/cancelled.",
+    cancel_edit:" In a collaborative draft with peers this rolls back only your bounded spatial contribution and releases your claims; peer contributions/shared setup remain pending. Before any peer joined, cancellation can discard the whole proposal. No agent can discard peers or approve the group.",
+  };
+  return { ...tool,description:tool.description+(collaborationGuidance[tool.name]??""), inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" } };
 });
 function feature(name: AgentToolDefinition["name"], title: string, description: string, schema: Schema, readOnly: boolean): AgentToolDefinition {
   return { name, title, description, annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, openWorldHint: false },
@@ -1911,7 +1939,8 @@ const LIBRARY_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("get_world_settings", "Get World Settings", "Read this world's new-map tile size, dimensions, layer template, canvas background and Unity defaults. Inspect before configure_world. No changes.", objectSchema({context:ref("ReadContext")}), true),
   feature("configure_world", "Configure World", "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.", objectSchema({context:ref("WriteContext"),settings:{...objectSchema({tileWidth:{type:"integer",minimum:1,maximum:1024},tileHeight:{type:"integer",minimum:1,maximum:1024},newLevel:{...objectSchema({width:{type:"integer",minimum:1,maximum:4096},height:{type:"integer",minimum:1,maximum:4096}},[]),minProperties:1},layerTemplate:{type:"array",maxItems:128,items:objectSchema({name:{type:"string",minLength:1,maxLength:128},kind:{type:"string",enum:["tile","collision","entity"]}})},background:{anyOf:[{type:"null"},{type:"string",pattern:"^#[a-fA-F0-9]{6}$"}]}},[]),minProperties:1}}), false),
 ];
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS].map(tool => ({
+const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
   ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 

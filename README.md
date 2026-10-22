@@ -1,10 +1,10 @@
 # Harita Tasarlayıcı
 
-Tileset'lerdeki sprite'ları ızgaraya dizerek 2D harita çizen, kaydeden ve oyuna aktaran bir tile map editörü. Tarayıcıda ve Tauri ile Windows masaüstü uygulaması olarak çalışır. Katmanlar, autotile (blob47 / corner16), çarpışma, entity'ler (spawn, portal…), stamp'ler, çoklu level ve dünya görünümü var. Unity (top-down) birincil hedef, Tiled TMJ ile Godot/Phaser da desteklenir. Tek geliştirici Arda; plan ve kararlar [`CLAUDE.md`](CLAUDE.md) içinde.
+Tileset'lerdeki sprite'ları ızgaraya dizerek 2D harita çizen, kaydeden ve oyuna aktaran bir tile map editörü. Tarayıcıda ve Tauri ile Windows masaüstü uygulaması olarak çalışır. Katmanlar, akıllı fırça/stamp, manuel çarpışma, entity'ler (spawn, portal…), piksel düzenleme, çoklu harita, dünya görünümü ve MCP üzerinden AI kumanda içerir. Unity (top-down), Tiled TMJ, Godot 4, Defold, PNG, JSON ve Zip dışa aktarma hedefleridir. Tek geliştirici Arda; plan ve kararlar [`CLAUDE.md`](CLAUDE.md) içinde.
 
 ## Durum
 
-v0.1 – v1.2 sürümlerinin hepsi uygulandı. Henüz gerçek ortamda doğrulanmayanlar:
+Güncel kapsam ve kararlar `CLAUDE.md` içindedir. Otomatik testler ve derleme, gerçek motor/masaüstü denemesinin yerini tutmaz; doğrulama gerektiren başlıklar:
 
 - **Unity 6.3'te gerçek import.** C# kodu Unity referanslarıyla derlendi, testleri .NET'te geçti; ama Unity editöründe uçtan uca denenmedi.
 - **Windows'ta NSIS kurulumu, `.smap` çift tıklama ve < 1 sn açılış.** Linux'ta doğrulandı; Windows'ta ölçülmedi.
@@ -41,13 +41,17 @@ Hepsi depo kökünden çalışır.
 | `pnpm desktop:build` | Masaüstü sürümü ve kurulum paketi |
 | `pnpm --filter @smap/desktop test:rust` | Rust çekirdeğinin (`smap-host`) testleri |
 
-MCP ile görsel referans eşleştirme, katalog arama ve onaylı stamp oluşturma akışı: [Agent API rehberi](packages/agent/README.md).
+## AI ile harita tasarlama
+
+MCP bağlantısında AI, açık editördeki gerçek haritaları ve görselleri inceler; değişiklikler kullanıcı onayını bekleyen ortak bir taslakta görünür. [Harita tasarlama rehberi](packages/agent/guide/overview.md), niyeti planlamayı, az ve anlamlı katman rolleriyle çalışmayı, art keşfini, bölge paylaşımını ve görsel doğrulamayı açıklar. Bunlar sabit katman sayısı veya tasarım şablonu dayatmaz; sonuç sonradan kolay düzenlenebilsin diye yol gösterir.
+
+[Depodaki Harita skill'i](.agents/skills/harita-map-authoring/SKILL.md) aynı rehbere kısa bir giriş sunar. Bağlanan istemci MCP kaynaklarını ihtiyaç oldukça okuyabilir; bütün rehberi her isteme eklemek gerekmez. Araçların kesin argümanları ve örnekleri [Agent API rehberindedir](packages/agent/README.md).
 
 ## Klasör yapısı
 
 ```text
 packages/
-├── core/       harita verisi, işlemler, undo, kaydet/aç, autotile, dışa aktarma (React/Pixi/DOM/Tauri bilmez)
+├── core/       harita verisi, işlemler, undo, kaydet/aç, akıllı stamp, dışa aktarma (React/Pixi/DOM/Tauri bilmez)
 ├── editor/     editör: src/canvas (PixiJS tuval), ui (React paneller), io (proje dosyaları),
 │               commands, state, shortcuts, i18n, theme, platform (tarayıcı/masaüstü arayüzü), export
 └── desktop/    Tauri kabuğu
@@ -106,7 +110,7 @@ Proje/
 | Dışa aktar | `Ctrl+E` |
 | Yeni katman | `Ctrl+Shift+N` |
 
-Tuşu olmayan komutlar (palet): projeyi kapat, yedekten aç, tileset ekle, katman sil, harita boyutu, çarpışma/entity katmanı ekle, entity tipleri, stamp kaydet, tileset'i solid işaretle, terrain tanımla, dil. Tuşlar masaüstünde `settings.json` ile değiştirilebilir (palette: "Kısayol ayarlarını aç…"; biçim: [`packages/desktop/README.md`](packages/desktop/README.md)).
+Tuşu olmayan komutlar (palet): projeyi kapat, yedekten aç, tileset ekle, katman sil, harita boyutu, çarpışma/entity katmanı ekle, entity tipleri, stamp kaydet ve uygulama ayarları. Dil ve kısayollar Uygulama Ayarları'ndan düzenlenir; masaüstünde `settings.json` dosyasına kaydedilir (biçim: [`packages/desktop/README.md`](packages/desktop/README.md)).
 
 ## Unity'ye aktarma
 
@@ -119,7 +123,7 @@ Bağlantı yalnızca dosyalarla çalışır, canlı senkron yok. Ayrıntılar (k
 
 ## Diğer motorlar
 
-Editör Tiled uyumlu **TMJ** (`<level>.tmj` + tileset PNG'leri) yazar. Godot (Tiled importer üzerinden) ve Phaser bu dosyayı okur. Ayrıca motordan bağımsız oyun JSON'u (`smapExport 1`) dışa aktarılabilir. İkisinin de ayrıntısı [`FORMAT.md`](packages/core/src/export/FORMAT.md) içinde.
+Editör Tiled uyumlu **TMJ** (`<level>.tmj` + tileset PNG'leri) yanında Godot 4 ve Defold hedeflerine doğrudan aktarır. Phaser için TMJ kullanılabilir. Ayrıca PNG, Zip ve motordan bağımsız oyun JSON'u (`smapExport 1`) dışa aktarılabilir. Biçimlerin ayrıntısı [`FORMAT.md`](packages/core/src/export/FORMAT.md) içinde.
 
 ## Testler
 

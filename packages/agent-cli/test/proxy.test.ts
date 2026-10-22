@@ -7,7 +7,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, GetPromptRequestSchema, ListPromptsRequestSchema, ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -37,7 +38,11 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   cleanup.push(() => client.close());
   await client.connect(transport);
   expect(client.getInstructions()).toBe(readFileSync(new URL("../../agent/schema/workflow.txt",import.meta.url),"utf8").trim());
-  expect((await client.listTools()).tools).toHaveLength(45);
+  expect(client.getServerCapabilities()).toMatchObject({ resources: { subscribe: false }, prompts: { listChanged: false } });
+  expect((await client.listResources()).resources).toHaveLength(9);
+  expect((await client.readResource({ uri: "harita://guide/overview" })).contents[0]).toMatchObject({ text: expect.stringContaining("# Harita") });
+  expect((await client.getPrompt({ name: "harita-map-task", arguments: { task: "Design a village", topic: "collaboration" } })).messages[0]?.content).toMatchObject({ type: "text", text: expect.stringContaining("harita://guide/collaboration") });
+  expect((await client.listTools()).tools).toHaveLength(46);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -45,12 +50,25 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
 });
 
 test("proxy mirrors an independent SDK server verbatim, preserves client identity and cancellation", async () => {
-  const sdk = new Server({ name: "fake-upstream", version: "1" }, { capabilities: { tools: {} }, instructions:"An independent upstream workflow." });
+  const sdk = new Server({ name: "fake-upstream", version: "1" }, { capabilities: { tools: {}, resources: { subscribe: true }, prompts: {} }, instructions:"An independent upstream workflow." });
   const httpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID, enableJsonResponse: true });
   const tools = [{ name: "image", description: "An upstream-specific tool", inputSchema: { type: "object" as const, properties: {} } }, { name: "slow", inputSchema: { type: "object" as const } }];
   const result = { content: [{ type: "text" as const, text: '{"answer":42}' }, { type: "image" as const, mimeType: "image/png", data: "AAECA/8=" }], structuredContent: { answer: 42 } };
   let cancelled = false, slowStarted = false;
   sdk.setRequestHandler(ListToolsRequestSchema, () => ({ tools }));
+  const resources = [{ uri: "harita://guide/overview", name: "overview", mimeType: "text/markdown", description: "Focused context" }];
+  const content = { contents: [{ uri: resources[0]!.uri, mimeType: "text/markdown", text: "# Independent guide\nRead one section at a time." }] };
+  const prompts = [{ name: "harita-map-task", description: "Start a map task", arguments: [{ name: "task", required: true }] }];
+  sdk.setRequestHandler(ListResourcesRequestSchema, () => ({ resources }));
+  sdk.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({ resourceTemplates: [] }));
+  sdk.setRequestHandler(ReadResourceRequestSchema, request => {
+    expect(request.params.uri).toBe(resources[0]!.uri);
+    return content;
+  });
+  sdk.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts }));
+  sdk.setRequestHandler(GetPromptRequestSchema, request => ({ description: "Task prompt", messages: [
+    { role: "user" as const, content: { type: "text" as const, text: `Requested: ${request.params.arguments?.task}` } },
+  ] }));
   sdk.setRequestHandler(CallToolRequestSchema, (request, extra) => request.params.name === "slow" ? new Promise((resolve) => {
     slowStarted = true;
     extra.signal.addEventListener("abort", () => { cancelled = true; resolve({ content: [] }); }, { once: true });
@@ -67,6 +85,14 @@ test("proxy mirrors an independent SDK server verbatim, preserves client identit
   cleanup.push(() => client.close());
   await client.connect(transport);
   expect(client.getInstructions()).toBe("An independent upstream workflow.");
+  expect(client.getServerCapabilities()).toMatchObject({ resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } });
+  expect((await client.listResources()).resources).toEqual(resources);
+  expect((await client.listResourceTemplates()).resourceTemplates).toEqual([]);
+  expect(await client.readResource({ uri: resources[0]!.uri })).toEqual(content);
+  expect((await client.listPrompts()).prompts).toEqual(prompts);
+  expect(await client.getPrompt({ name: "harita-map-task", arguments: { task: "Draw a village" } })).toEqual({
+    description: "Task prompt", messages: [{ role: "user", content: { type: "text", text: "Requested: Draw a village" } }],
+  });
   expect((await client.listTools()).tools).toEqual(tools);
   expect(await client.callTool({ name: "image", arguments: {} })).toEqual(result);
   expect(sdk.getClientVersion()).toEqual({ name: "original-client", version: "7" });
@@ -147,5 +173,22 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(45);
+  expect((await client.listTools()).tools).toHaveLength(46);
+});
+
+test("a tool-only upstream does not gain resource or prompt capabilities in the proxy", async () => {
+  const sdk = new Server({ name: "tools-only", version: "1" }, { capabilities: { tools: {} } });
+  const httpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID, enableJsonResponse: true });
+  sdk.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+  await sdk.connect(httpTransport as Transport);
+  const http = createServer((req, res) => { void httpTransport.handleRequest(req, res); });
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  cleanup.push(async () => { await sdk.close(); http.closeAllConnections(); await new Promise<void>((resolve) => http.close(() => resolve())); });
+  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}/mcp`;
+  const transport = new StdioClientTransport({ cwd, command: process.execPath, args: ["packages/agent-cli/dist/main.js", "--url", url], env: { HARITA_MCP_TOKEN: "private" }, stderr: "pipe" });
+  const client = new Client({ name: "tools-client", version: "1" });
+  cleanup.push(() => client.close());
+  await client.connect(transport);
+  expect(client.getServerCapabilities()).toEqual({ tools: { listChanged: false } });
+  expect((await client.listTools()).tools).toEqual([]);
 });

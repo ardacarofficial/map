@@ -78,6 +78,8 @@ test("all tilesets zoom at the cursor and pan freely in both directions without 
   await page.locator("[data-library-view='all']").click();
   const viewport = page.locator("[data-tileset-view='all']");
   const grid = viewport.locator("[data-tileset-grid]").first();
+  const header = viewport.locator("[data-tileset-header]").first();
+  const headerX = (await header.boundingBox())!.x;
   const selected = () => page.evaluate(async () => {
     const { useEditorStore } = await import(/* @vite-ignore */ String("/src/state/editorStore.ts"));
     return useEditorStore.getState().selection;
@@ -98,6 +100,7 @@ test("all tilesets zoom at the cursor and pan freely in both directions without 
     if (button === "left") await page.keyboard.up("Space");
     await expect.poll(async () => (await grid.boundingBox())!.x - before.x).toBeCloseTo(dx, 0);
     await expect.poll(async () => (await grid.boundingBox())!.y - before.y).toBeCloseTo(dy, 0);
+    await expect.poll(async () => (await header.boundingBox())!.x).toBeCloseTo(headerX, 0);
     expect(await selected()).toEqual(selection);
   }
   const before = (await grid.boundingBox())!;
@@ -113,5 +116,6 @@ test("all tilesets zoom at the cursor and pan freely in both directions without 
   const nextScale = Number(await grid.getAttribute("data-tileset-scale"));
   expect(Math.abs(after.x + source.x * nextScale - x)).toBeLessThan(1.1);
   expect(Math.abs(after.y + source.y * nextScale - y)).toBeLessThan(1.1);
+  await expect.poll(async () => (await header.boundingBox())!.x).toBeCloseTo(headerX, 0);
   expect(await selected()).toEqual(selection);
 });

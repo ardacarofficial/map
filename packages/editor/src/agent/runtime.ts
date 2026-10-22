@@ -1,4 +1,4 @@
-import { createAgentApi, type AgentApi, type AgentConnection, type AgentHost, type AgentSignal, type BridgeRequest } from "@smap/agent";
+import { createAgentApi, type AgentApi, type AgentConnection, type AgentHost, type AgentSignal, type BridgeRequest, type TransactionSummary } from "@smap/agent";
 import { useEditorStore } from "../state/editorStore";
 import { getLevelWorkspace, getProjectFolder, registerUnsavedGuard } from "../io/session";
 import { getPlatform } from "../platform";
@@ -9,6 +9,13 @@ import { cancelPendingEdit, editGate, registerPendingCancellation, registerAgent
 export interface AgentRuntime { host:AgentHost; api:AgentApi; connection:AgentConnection; bridgeEpoch:string; dispose():Promise<void> }
 let installed:AgentRuntime|null=null;
 export const getAgentRuntime=()=>installed;
+/** A shared draft retains several authenticated owners, including submitted
+ * members whose contributions still await the human's decision. */
+function transactionClients(transaction: TransactionSummary | null, includeCancelled = true): string[] {
+  if (transaction?.collaboration) return [...new Set(transaction.collaboration.members.flatMap(member =>
+    member.clientSessionId && (includeCancelled || member.state !== "cancelled") ? [member.clientSessionId] : []))];
+  return transaction?.owner.clientSessionId ? [transaction.owner.clientSessionId] : [];
+}
 export function createAgentSignal(controller:AbortController):AgentSignal {
   return{get aborted(){return controller.signal.aborted;},throwIfAborted(){controller.signal.throwIfAborted();},onAbort(cb){controller.signal.addEventListener("abort",cb,{once:true});if(controller.signal.aborted)cb();return()=>controller.signal.removeEventListener("abort",cb);}};
 }
@@ -22,7 +29,10 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   let disposed=false;
   let disposal:Promise<void>|undefined;
   const log=(error:unknown)=>{getPlatform().log("warn",error instanceof Error?error.name:"Agent runtime failure");};
-  const updateClients=()=>live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:api.getState().transaction?.owner.clientSessionId===clientSessionId})));
+  const updateClients=()=>{
+    const writers=new Set(transactionClients(api.getState().transaction,false));
+    live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:writers.has(clientSessionId)})));
+  };
   const endSession=(clientSessionId:string)=>{
     // Let the API inspect the pre-abort phase before request cancellation can seal it.
     const ended=api.sessionEnded(clientSessionId);
@@ -66,8 +76,8 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   let previousPhase=api.getState().phase;
   const offState=api.subscribe(state=>{
     if(state.phase!==previousPhase && (state.phase==="stopped" || state.phase==="cancelling")){
-      const owner=state.transaction?.owner.clientSessionId;
-      for(const [id,entry] of requests)if(entry.request.clientSessionId===owner && entry.request.name!=="cancel_edit"){
+      const owners=new Set(transactionClients(state.transaction));
+      for(const [id,entry] of requests)if(owners.has(entry.request.clientSessionId) && entry.request.name!=="cancel_edit"){
         const alreadyAborted=entry.controller.signal.aborted;
         entry.controller.abort();clearTimeout(entry.timer);requests.delete(id);
         // Transport timeout/cancel already owns the response for aborted requests.
@@ -82,8 +92,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   const offUnsaved=registerUnsavedGuard({dirty:()=>editGate.blocked,settle:async()=>{await cancelPendingEdit();return true;}});
   const offStatus=connection.subscribeStatus(status=>{
     if(["disabled","failed","portInUse"].includes(status.state)){
-      const owner=api.getState().transaction?.owner.clientSessionId;
-      for(const id of new Set([...clients.keys(),...(owner?[owner]:[])]))endSession(id);
+      for(const id of new Set([...clients.keys(),...transactionClients(api.getState().transaction)]))endSession(id);
     }
   });
   const offFile=getPlatform().onFileChanged(change=>{if(change.path==="ai-tags.json")void live?.tags.externalChange().catch(log);});

@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "159fb939dd1b22a10237623867b4b54a3f097aeeac742998f8be9824b03965d2",
+  "catalogueSha256": "2684fb13bc1c7be141931b6ef0747a3dea22f8c92b11882d152fa4a3e1d95ca2",
   "tools": {
     "get_session": {
       "valid": [
@@ -326,6 +326,23 @@
               }
             }
           ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedMemberRevision": 0
+          },
+          "mapId": "map",
+          "layerId": "ground",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "value": null
+            }
+          ]
         }
       ],
       "invalid": [
@@ -358,6 +375,24 @@
                 "tileId": 0,
                 "flags": 8
               }
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedMemberRevision": 0,
+            "expectedRevision": 1
+          },
+          "mapId": "map",
+          "layerId": "ground",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "value": null
             }
           ]
         }
@@ -2008,6 +2043,43 @@
           "preferences": {
             "target": "bad"
           }
+        }
+      ]
+    },
+    "join_edit": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world"
+          },
+          "transactionId": "transaction",
+          "idempotencyKey": "join-123",
+          "expectedRevision": 1,
+          "claims": [
+            {
+              "mapId": "map",
+              "layerIds": [
+                "ground"
+              ],
+              "region": {
+                "x": 0,
+                "y": 0,
+                "width": 8,
+                "height": 8
+              }
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world"
+          },
+          "transactionId": "transaction",
+          "idempotencyKey": "join-123",
+          "expectedRevision": 1,
+          "claims": []
         }
       ]
     }

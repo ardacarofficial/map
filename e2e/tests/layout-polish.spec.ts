@@ -36,7 +36,8 @@ for (const menu of ["file", "edit", "view", "layer", "map", "help"]) {
     await page.setViewportSize({ width: 1366, height: 768 });
     await openDockMap(page);
     await page.locator(`[data-menu=${menu}]`).click();
-    const popup = page.getByRole("menu");
+    // Hover may open a child menu; keep root-row queries on this popup.
+    const popup = page.getByRole("menu").first();
     await expect(popup).toBeVisible();
     const bounds = (await popup.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -48,12 +49,19 @@ for (const menu of ["file", "edit", "view", "layer", "map", "help"]) {
     await popup.hover();
     await page.mouse.wheel(0, 2000);
     await expect(last).toBeInViewport({ ratio: 1 });
-    await last.hover();
+    if (menu === "view") {
+      // Base UI's submenu corridor temporarily blocks parent hit testing.
+      // Real pointer movement clears it before Playwright checks actionability.
+      const row = (await last.boundingBox())!;
+      await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2, { steps: 8 });
+    } else await last.hover();
     await expect(last).toHaveAttribute("data-highlighted", "");
+    await expect(page.getByRole("menu")).toHaveCount(1);
     await page.keyboard.press("Home");
     await page.keyboard.press("End");
     await expect(last).toBeFocused();
     if (menu === "view") {
+      await expect(last).toHaveAttribute("data-command", "view.world");
       await last.click();
       await expect(page.locator("[data-rail=world]")).toHaveAttribute("aria-checked", "true");
     }
@@ -122,7 +130,10 @@ test("View groups open on hover and keyboard focus, keep shortcuts and fit a sho
   await expect(page.locator('[data-command="view.zoomIn"]')).toHaveCount(0);
   await expect(page.locator('[data-command="view.toggleRecent"]')).toHaveCount(0);
   for (const group of ["zoom", "overlays", "panels", "docks", "layout"]) {
-    await page.locator(`[data-submenu=${group}]`).hover();
+    const trigger = page.locator(`[data-submenu=${group}]`);
+    await trigger.hover();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("menu")).toHaveCount(2);
     const popup = page.getByRole("menu").last();
     await expect(popup).toBeVisible();
     const bounds = (await popup.boundingBox())!;
@@ -131,8 +142,11 @@ test("View groups open on hover and keyboard focus, keep shortcuts and fit a sho
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(911);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(512);
     await page.keyboard.press("Escape");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("menu")).toHaveCount(1);
   }
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
   await page.locator("[data-menu=view]").focus();
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("[data-submenu=zoom]")).toBeFocused();

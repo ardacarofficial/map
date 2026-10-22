@@ -25,3 +25,5 @@ export {
 export * from "./tools/visual";
 
 export * from "./editorControls";
+
+export type { RegionClaim, CollaborationMemberSummary, CollaborationSummary, CollaborativeBegin, CollaborativeJoin } from "./collaboration";

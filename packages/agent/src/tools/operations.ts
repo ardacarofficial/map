@@ -36,6 +36,7 @@ export async function editEntity(tx: Transactions, a: EditEntityArgs, call: Agen
       E.ENTITY_SCHEMA, "Portal target point outside target map");
     }
   }
+  tx.authorizeEntity(a.mapId,found.layer.id,found.entity,a.action==="remove"?null:next);
   const retained = 512 + utf8ByteLength(JSON.stringify(found.entity)) * 2 + (a.action === "remove" ? 0 : utf8ByteLength(JSON.stringify(next)) * 2);
   tx.charge(0, retained);
   tx.run(() => {
@@ -68,7 +69,8 @@ function projection(store: MapStore): { store: MapStore; bytes: number } {
 }
 
 async function applyItem(tx: Transactions, operation: BatchOperation, context: ApplyOperationsArgs["context"], call: AgentCallContext): Promise<{ change: ChangeSummary; entity?: EntityInfo | null; entityId?: string }> {
-  const args = { ...operation.args, context: { ...context, expectedRevision: tx.revision } };
+  const {expectedRevision:_revision,expectedMemberRevision:_member,...identity}=context;
+  const args = { ...operation.args, context: { ...identity,...(context.expectedMemberRevision!==undefined?{expectedMemberRevision:context.expectedMemberRevision}:{expectedRevision:tx.revision}) } };
   if (operation.tool === "edit_entity") return editEntity(tx, args as EditEntityArgs, call);
   return await mutate(tx, operation.tool, args as never, call) as { change: ChangeSummary; entity?: EntityInfo };
 }
@@ -76,7 +78,9 @@ async function applyItem(tx: Transactions, operation: BatchOperation, context: A
 export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, call: AgentCallContext): Promise<ToolData["apply_operations"]> {
   const stores = new Map<string, MapStore>();
   type Command = { mapId: string; op: Op };
-  type Step = { tool: BatchOperation["tool"]; mapId: string; commands: Command[]; planned: number; retained: number; createdEntityIds: string[]; entityId?: string };
+  type SpatialPlan={cells:{mapId:string;layerId:string;points:{x:number;y:number}[]}[];entities:{mapId:string;layerId:string;before:Entity|null;after:Entity|null}[]};
+  let spatial:SpatialPlan={cells:[],entities:[]};
+  type Step = { spatial:SpatialPlan; tool: BatchOperation["tool"]; mapId: string; commands: Command[]; planned: number; retained: number; createdEntityIds: string[]; entityId?: string };
   const steps: Step[] = [];
   let commands: Command[] = [];
   let projectionBytes = 0;
@@ -107,6 +111,9 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
     host: { ...tx.host, ids: { next: () => { let candidate: string; do candidate = `batch-validation-${++id}`.padEnd(128, "x"); while (existingIds.has(candidate)); existingIds.add(candidate); return candidate; } } },
     pending: { ...tx.pending!, summary: { ...tx.pending!.summary, counters: { ...tx.pending!.summary.counters } } },
     store: (mapId: string) => stores.get(mapId)!,
+    planning:true,
+    authorizeCells:(mapId:string,layerId:string,points:{x:number;y:number}[])=>{tx.pending!.collaboration?.assertCells(tx.memberCall!.journal.memberId,mapId,layerId,points);spatial.cells.push({mapId,layerId,points:[...points]});},
+    authorizeEntity:(mapId:string,layerId:string,before:Entity|null,after:Entity|null)=>{const c=tx.pending!.collaboration,m=tx.memberCall?.journal.memberId;if(c&&m){if(before)c.assertEntity(m,mapId,layerId,before);if(after)c.assertEntity(m,mapId,layerId,after);}spatial.entities.push({mapId,layerId,before,after});},
     run: <T>(apply: () => T) => apply(), emit: () => {}, owned: tx.owned.bind(tx),
   });
   const initialPlanned = shadow.pending!.summary.counters.plannedWrites;
@@ -114,11 +121,11 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
   try {
     for (const op of a.operations) {
       call.signal.throwIfAborted();
-      commands = [];
+      commands = [];spatial={cells:[],entities:[]};
       const counters = shadow.pending!.summary.counters, beforeRetained = counters.retainedBytes;
       const result = await applyItem(shadow, op, a.context, call);
       const entityId = result.entity?.id ?? result.entityId;
-      steps.push({ tool: op.tool, mapId: op.args.mapId, commands, planned: result.change.plannedCells,
+      steps.push({ spatial, tool: op.tool, mapId: op.args.mapId, commands, planned: result.change.plannedCells,
         retained: counters.retainedBytes - beforeRetained, createdEntityIds: result.change.createdEntityIds,
         ...(entityId ? { entityId } : {}) });
       budget(shadow.pending!.summary.counters.plannedWrites - initialPlanned);
@@ -138,6 +145,8 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
     check(actual.length > 0 && actual.length <= 128 && !existingIds.has(actual), E.INVALID_ARGUMENT, "Entity allocator returned a duplicate or invalid ID");
     existingIds.add(actual); ids.set(id, actual);
   }
+  for(const step of steps){for(const plan of step.spatial.cells)tx.authorizeCells(plan.mapId,plan.layerId,plan.points);for(const plan of step.spatial.entities){const resolve=(entity:Entity|null)=>entity?{...entity,id:ids.get(entity.id)??entity.id}:null;tx.authorizeEntity(plan.mapId,plan.layerId,resolve(plan.before),resolve(plan.after));}}
+  tx.reserveMemberCall(projectionBytes+steps.reduce((sum,step)=>sum+step.retained,0));
   // Replay only the already validated core commands. No loading, asynchronous
   // validation or event-loop yield can expose a partially applied batch.
   tx.run(() => {

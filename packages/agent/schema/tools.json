@@ -481,7 +481,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Begin one tentative action after get_session. context is {worldSessionId}; expectedRevision is the latest response revision, idempotencyKey is a unique 8–128 character key, requestLabel describes the user’s request, mapIds names 1–8 explicit targets. Save drains before running. Use returned transactionId in write contexts. One world writer, ≤256 mutation calls, 262144 planned cell writes, 64 MiB retained bytes. Running lifetime ≤30 minutes. finish_edit requests human review; only the user approves. User painting/save is blocked until approval/discard.",
+      "description": "Begin one tentative action after get_session. context is {worldSessionId}; expectedRevision is the latest response revision, idempotencyKey is a unique 8–128 character key, requestLabel describes the user’s request, mapIds names 1–8 explicit targets. Save drains before running. Use returned transactionId in write contexts. One world writer, ≤256 mutation calls, 262144 planned cell writes, 64 MiB retained bytes. Running lifetime ≤30 minutes. finish_edit requests human review; only the user approves. User painting/save is blocked until approval/discard. Optional collaboration:{mode:'regions',claims?} creates one shared draft. Claims are explicit existing map/layer rectangles. Omit claims for coordinator metadata preparation, then self join_edit once to assign regions before peers join. Prepare shared metadata before any spatial write or peer join. Returns memberId/memberRevision for explicit member-scoped CAS.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -508,6 +508,39 @@
             ],
             "type": "object"
           },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
           "Revision": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -517,6 +550,49 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "collaboration": {
+            "additionalProperties": false,
+            "properties": {
+              "claims": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "layerIds": {
+                      "items": {
+                        "$ref": "#/$defs/Id"
+                      },
+                      "maxItems": 8,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "mapId": {
+                      "$ref": "#/$defs/Id"
+                    },
+                    "region": {
+                      "$ref": "#/$defs/Rect"
+                    }
+                  },
+                  "required": [
+                    "mapId",
+                    "layerIds",
+                    "region"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
+              },
+              "mode": {
+                "const": "regions"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          },
           "context": {
             "$ref": "#/$defs/ReadContext"
           },
@@ -559,7 +635,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}, using the latest response revision and a fresh key. Optional summary describes changes. Writes are sealed and locks remain. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool.",
+      "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}, using the latest response revision and a fresh key. Optional summary describes changes. Writes are sealed and locks remain. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool. In a collaborative draft this marks only your member ready; peers remain writable. Coordinator finish closes new joins. The group awaits human approval once all members are ready/stopped/cancelled.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -580,8 +656,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -598,8 +695,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -629,7 +725,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}; unlike other writes, cancellation accepts a stale expectedRevision. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally.",
+      "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}; unlike other writes, cancellation accepts a stale expectedRevision. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally. In a collaborative draft with peers this rolls back only your bounded spatial contribution and releases your claims; peer contributions/shared setup remain pending. Before any peer joined, cancellation can discard the whole proposal. No agent can discard peers or approve the group.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -650,8 +746,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -668,8 +785,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -793,8 +909,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -811,8 +948,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -958,8 +1094,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -976,8 +1133,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1116,8 +1272,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1134,8 +1311,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1311,8 +1487,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1329,8 +1526,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1436,8 +1632,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1454,8 +1671,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1597,8 +1813,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1615,8 +1852,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1791,8 +2027,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1809,8 +2066,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -1939,8 +2195,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -1957,8 +2234,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -2046,8 +2322,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -2064,8 +2361,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -2326,8 +2622,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -2344,8 +2661,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -2420,8 +2736,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -2438,8 +2775,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -2536,8 +2872,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -2554,8 +2911,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -3217,8 +3573,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -3235,8 +3612,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -3446,8 +3822,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -3464,8 +3861,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -3780,8 +4176,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -3798,8 +4215,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -5441,8 +5857,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -5459,8 +5896,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -5554,8 +5990,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -5572,8 +6029,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -5751,8 +6207,29 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
             "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
               "expectedRevision": {
                 "$ref": "#/$defs/Revision"
               },
@@ -5769,8 +6246,7 @@
             "required": [
               "worldSessionId",
               "transactionId",
-              "idempotencyKey",
-              "expectedRevision"
+              "idempotencyKey"
             ],
             "type": "object"
           }
@@ -5864,6 +6340,137 @@
       },
       "name": "configure_world",
       "title": "Configure World"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "claims": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "layerIds": {
+                  "items": {
+                    "$ref": "#/$defs/Id"
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "mapId": {
+                  "$ref": "#/$defs/Id"
+                },
+                "region": {
+                  "$ref": "#/$defs/Rect"
+                }
+              },
+              "required": [
+                "mapId",
+                "layerIds",
+                "region"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "expectedRevision": {
+            "$ref": "#/$defs/Revision"
+          },
+          "idempotencyKey": {
+            "$ref": "#/$defs/Key"
+          },
+          "transactionId": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "required": [
+          "context",
+          "transactionId",
+          "idempotencyKey",
+          "expectedRevision",
+          "claims"
+        ],
+        "type": "object"
+      },
+      "name": "join_edit",
+      "title": "Join Collaborative Edit"
     }
   ]
 }

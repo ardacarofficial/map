@@ -17,7 +17,9 @@ export function activityOutcome(entry: ActivityLogEntry, entries: readonly Activ
   if (entry.status === "cancelled") return "rolledBack";
   if (entry.status === "approved" || entry.status === "stopped") return entry.status;
   if (!entry.transactionId || (entry.tool && READ_TOOLS.has(entry.tool))) return "succeeded";
-  const outcome = [...entries].reverse().find(row => row.transactionId === entry.transactionId && (row.status === "approved" || row.status === "cancelled"));
+  // A member's removed contribution stays removed even if its peers are later approved.
+  if (entry.memberId && entries.some(row => row.transactionId === entry.transactionId && row.memberId === entry.memberId && row.status === "cancelled")) return "rolledBack";
+  const outcome = [...entries].reverse().find(row => row.transactionId === entry.transactionId && !row.memberId && (row.status === "approved" || row.status === "cancelled"));
   return outcome?.status === "cancelled" ? "rolledBack" : outcome?.status === "approved" ? "approved" : entry.tool === "finish_edit" ? "tentative" : "applied";
 }
 

@@ -69,4 +69,14 @@ describe("desktop agent connection", () => {
     await connection.setSettings({ enabled: true, port: 48765 }, 7);
     expect(calls.at(-1)).toEqual({ command: "ai_set_config", args: { settings: { enabled: true, port: 48765 }, expectedRevision: 7 } });
   });
+
+  it("accepts all sixteen supported clients and rejects an over-capacity status", async () => {
+    const { connection, handlers } = harness();
+    await connection.ready("epoch");
+    const clients = Array.from({ length: 16 }, (_, index) => ({ name: `agent-${index}`, version: "1" }));
+    handlers.get("smap://agent-status")?.({ state: "connected", port: 48765, clients });
+    expect(connection.status.clients).toHaveLength(16);
+    handlers.get("smap://agent-status")?.({ state: "connected", port: 48765, clients: [...clients, { name: "excess", version: "1" }] });
+    expect(connection.status.clients).toEqual(clients);
+  });
 });

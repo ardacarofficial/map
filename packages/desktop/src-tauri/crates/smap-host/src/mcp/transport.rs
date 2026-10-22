@@ -29,6 +29,7 @@ const VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
 const CATALOGUE: &str = include_str!("../../../../../../agent/schema/tools.json");
 const WORKFLOW: &str = include_str!("../../../../../../agent/schema/workflow.txt");
 pub const MAX_REPLY: usize = 8 * 1024 * 1024;
+pub const MAX_CLIENTS: usize = 16;
 // AgentToolResult has its own full MAX_REPLY budget before bridge correlation.
 const BRIDGE_OVERHEAD_LIMIT: usize = 1024;
 pub type BridgeSink = Arc<dyn Fn(&'static str, Value) -> Result<(), String> + Send + Sync>;
@@ -340,11 +341,23 @@ impl Transport {
                         .is_some_and(Value::is_null);
                 let finalized = phase == Some("ready")
                     && matches!(transaction["state"].as_str(), Some("approved" | "cancelled"));
+                let collaboration = transaction.get("collaboration").filter(|value| !value.is_null());
+                // A group's owner may be another client while a departed
+                // member is still undoing its own contribution. Keep admission
+                // paused until that member's authenticated session is detached.
+                let members_settled = collaboration.is_none_or(|group| {
+                    group["members"].as_array().is_some_and(|members| members.iter().all(|member| {
+                        member.get("clientSessionId").is_some_and(|session| session.is_null()
+                            || session.as_str().is_some_and(|id| !pending.sessions.iter().any(|s| s == id)))
+                    }))
+                });
+                let owner_detached = collaboration.is_some()
+                    && transaction["owner"].get("clientSessionId").is_some_and(Value::is_null);
                 let settled = phase.is_some_and(|p| p != "cancelling")
                     && (transaction.is_null()
                         || finalized
-                        || detached_review
-                        || owner.is_some_and(|id| !pending.sessions.iter().any(|s| s == id)));
+                        || (members_settled && (detached_review || owner_detached
+                            || owner.is_some_and(|id| !pending.sessions.iter().any(|s| s == id)))));
                 if settled {
                     let pending = inner.ending.remove(id).unwrap();
                     let _ = pending.done.send(true);
@@ -1023,7 +1036,7 @@ async fn handle(
             if inner.admission_pauses > 0 || !inner.ending.is_empty() {
                 return error(id, -32000, "Editor cancellation pending");
             }
-            if inner.sessions.len() >= 4 {
+            if inner.sessions.len() >= MAX_CLIENTS {
                 return error(id, -32000, "Client limit reached");
             }
             inner.sessions.insert(session.clone(),Session {info:json!({"name":printable(&params["clientInfo"]["name"]),"version":printable(&params["clientInfo"]["version"])}),version:version.into(),initialized:false,touched:Instant::now()});
@@ -1031,7 +1044,7 @@ async fn handle(
         transport.changed();
         let mut res = rpc(
             id,
-            json!({"protocolVersion":version,"serverInfo":{"name":"harita","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{"listChanged":false}},"instructions":WORKFLOW.trim()}),
+            json!({"protocolVersion":version,"serverInfo":{"name":"harita","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"prompts":{"listChanged":false}},"instructions":WORKFLOW.trim()}),
         );
         res.headers_mut()
             .insert("Mcp-Session-Id", session.parse().unwrap());
@@ -1074,6 +1087,14 @@ async fn handle(
             },
             None,
         );
+    }
+    if has_id {
+        if let Some(result) = super::guide::dispatch(method, message.get("params").unwrap_or(&Value::Null)) {
+            return match result {
+                Ok(result) => rpc(id, result),
+                Err(failure) => error(id, failure.code, failure.message),
+            };
+        }
     }
     match method {
         "notifications/initialized" if !has_id => {

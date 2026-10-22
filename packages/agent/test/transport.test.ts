@@ -28,6 +28,7 @@ describe("cross-transport conformance", () => {
     expect(vectors.limits).toEqual(AGENT_LIMITS);
     expect(vectors.protocolVersions).toEqual(MCP_PROTOCOL_VERSIONS);
     expect(vectors.errorCodes).toEqual(Object.values(AgentErrorCode));
+    expect(schema.$defs.Error.properties.code.enum).toEqual(Object.values(AgentErrorCode));
   });
   it("validates request, reply, control, error and image envelopes", () => {
     const validate = new Ajv2020({ strict: true }).compile(schema);

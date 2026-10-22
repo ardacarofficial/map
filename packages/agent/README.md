@@ -1,6 +1,8 @@
-# MCP asset discovery and capture
+# Harita MCP: authoring and editor control
 
 The editor owns the live world. Read tools inspect it; `create_stamp` and map edits require the existing `begin_edit` → tools → `finish_edit` → user approval workflow. No MCP tool reads arbitrary paths, writes source PNGs, or approves its own work.
+
+For authoring judgment, start with the [progressive map-design guide](guide/overview.md) or the repository [Harita map authoring skill](../../.agents/skills/harita-map-authoring/SKILL.md). The guide covers readable composition, reusable semantic layers, art discovery, region collaboration and visual review. MCP resources expose the same sections on demand; the tool catalogue remains the argument reference.
 
 All transports publish the same concise [working guide](schema/workflow.txt) during initialization; the stdio proxy preserves upstream instructions. Inspect editor context, discover assets, plan bounded edits, preview and correct, then check integrity and explicit task goals before submitting for human review. After a timeout, read the session before deciding how to proceed; writes are never automatically replayed.
 
@@ -127,7 +129,7 @@ The [five representative scripted workloads and before/after results](bench/READ
 
 ## Editor and application controls
 
-The catalogue now includes **45 tools**. `get_editor_state` inspects tool options, viewport, atlas filters, panel layout, colors, locale, effective/default shortcuts and capability boundaries. `list_editor_commands` lists real registered commands with current enablement, shortcuts and an explicit `remoteExecutable` flag. Document commands report typed-tool alternatives where available.
+The catalogue includes document tools and explicit editor controls. `get_editor_state` inspects tool options, viewport, atlas filters, panel layout, colors, locale, effective/default shortcuts and capability boundaries. `list_editor_commands` lists real registered commands with current enablement, shortcuts and an explicit `remoteExecutable` flag. Document commands report typed-tool alternatives where available.
 
 These controls work independently of a document edit, including while an AI proposal awaits approval:
 

@@ -9,10 +9,15 @@ import { deliverFile } from "../../export/exportActions";
 import { toast } from "../toast/toastStore";
 import { activityOutcome, groupActivity } from "./selectors";
 import { agentErrorMessage } from "./errorMessages";
+import { useAgentUiState } from "../../agent/agentUiState";
+import { getLevelWorkspace } from "../../io/session";
+import { CollaborationSummary } from "./CollaborationSummary";
 
 export function AiActivityPanel() {
   const entries = useSyncExternalStore(agentActivity.subscribe, agentActivity.entries);
   const levels = useProjectLibrary(s => s.levels);
+  const transaction = useAgentUiState(s => s.transaction);
+  const collaboration = transaction && transaction.state !== "approved" && transaction.state !== "cancelled" ? transaction.collaboration : undefined;
   const mapName = (id: string) => levels.find(level => level.id === id)?.name ?? id;
   const [cleared, setCleared] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -26,6 +31,7 @@ export function AiActivityPanel() {
       <Button size="sm" variant="ghost" disabled={!entries.some(row => !cleared.has(row.id))} onClick={() => setCleared(new Set(entries.map(row => row.id)))}>{t("ai.activity.clear")}</Button>
     </div>
     <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={t("ai.activity.title")} tabIndex={0}>
+      {collaboration && <CollaborationSummary members={collaboration.members} fault={!!collaboration.fault} mapName={mapName} layerName={(mapId, layerId) => getLevelWorkspace()?.entry(mapId)?.store.document.getLayer(layerId)?.name ?? layerId} />}
       {!rows.length ? <p className="px-3 py-2 text-sm text-muted">{t("ai.activity.empty")}</p> : <table className="w-full text-left text-sm whitespace-nowrap">
         <thead className="text-muted"><tr>{(["time", "tool", "client", "map", "result", "duration"] as const).map(key => <th className="h-control-sm px-2 font-medium" scope="col" key={key}>{t(`ai.activity.${key}`)}</th>)}<th className="px-2 font-medium" scope="col">{t("ai.activity.changes")}</th></tr></thead>
         <tbody>{groupActivity(rows).map(group => <Fragment key={group.id}>
@@ -39,7 +45,7 @@ export function AiActivityPanel() {
 function ActivityRow({ row, entries, mapNames }: { row: ActivityLogEntry; entries: readonly ActivityLogEntry[]; mapNames: string[] }) {
   const outcome = activityOutcome(row, entries);
   const outcomeText = row.code ? agentErrorMessage(row.code) : t(`ai.activity.${outcome}`);
-  return <tr data-ai-entry={row.id} className="h-control-sm border-t border-line-subtle text-muted">
+  return <tr data-ai-entry={row.id} data-ai-entry-member={row.memberId} className="h-control-sm border-t border-line-subtle text-muted">
     <td className="px-2"><time dateTime={new Date(row.timestamp).toISOString()}>{new Date(row.timestamp).toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></td>
     <td className="max-w-40 px-2 text-text"><details><summary className="cursor-pointer truncate" title={row.tool ?? t("ai.activity.details")}>{row.tool ?? t("ai.activity.details")}</summary><p className="max-w-80 py-1 text-wrap break-words text-muted">{row.summary.slice(0, 256)}</p></details></td>
     <td className="max-w-32 truncate px-2">{row.clientInfo?.name.slice(0, 128)}</td>

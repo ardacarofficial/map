@@ -7,10 +7,10 @@ import { KbdText } from '../ui/primitives/Kbd';
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass, menuShortcutClass } from '../ui/primitives/menuStyles';
 import { bookmarkCommand, useBookmarks } from './bookmarkActions';
 
-export function BookmarksMenu() {
+export function BookmarksMenu({ hoverEnabled = true }: { hoverEnabled?: boolean }) {
   const entries = useBookmarks(s => s.entries);
-  return <Menu.SubmenuRoot>
-    <Menu.SubmenuTrigger data-submenu="bookmarks" className={menuItemClass}>
+  return <Menu.SubmenuRoot highlightItemOnHover={hoverEnabled}>
+    <Menu.SubmenuTrigger openOnHover={hoverEnabled} data-submenu="bookmarks" className={menuItemClass}>
       <span className="flex-1">{t('bookmarks.title')}</span><Icon name="chevronRight" size={12} className="text-faint" />
     </Menu.SubmenuTrigger>
     <Menu.Portal><Menu.Positioner side="right" align="start" className={menuPositionerClass}>
@@ -20,8 +20,8 @@ export function BookmarksMenu() {
         </Menu.Item>
         <Menu.Separator className={menuSeparatorClass} />
         {!entries.length && <Menu.Item className={menuItemClass} disabled>{t('bookmarks.empty')}</Menu.Item>}
-        {entries.map((bookmark, index) => <Menu.SubmenuRoot key={bookmark.id}>
-          <Menu.SubmenuTrigger className={menuItemClass} data-bookmark={bookmark.id}>
+        {entries.map((bookmark, index) => <Menu.SubmenuRoot highlightItemOnHover={hoverEnabled} key={bookmark.id}>
+          <Menu.SubmenuTrigger openOnHover={hoverEnabled} className={menuItemClass} data-bookmark={bookmark.id}>
             <span className="min-w-0 flex-1 truncate">{bookmark.name}</span>
             {index < 9 && <KbdText keys={keysFor(`bookmark.${index + 1}` as 'bookmark.1')[0] ?? ''} className={menuShortcutClass} />}
             <Icon name="chevronRight" size={12} className="text-faint" />

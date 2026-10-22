@@ -227,6 +227,7 @@ function applyPaint(
     point(store, w);
     tileValue(store, w.value, layerKind(target));
   }
+  tx.authorizeCells(mapId,layerId,writes);
   const refs = writes.flatMap((w) =>
     w.value && "tilesetId" in w.value ? [w.value] : [],
   );
@@ -475,6 +476,7 @@ export async function mutate<N extends ToolName>(
           "Portal target point outside target map",
         );
       }
+      tx.authorizeEntity(a.mapId,a.layerId,null,entity);
       const retained = 512 + utf8ByteLength(JSON.stringify(entity)) * 2;
       tx.charge(0, retained);
       tx.run(() =>
@@ -778,6 +780,7 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
       }
     }
   }
+  check(!tx.pending!.collaboration||!create.length,E.EXCLUSIVE_OPERATION_REQUIRED,"Collaborative stamps require existing claimed destination layers");
   budget(store.document.layers.length + create.length, L.layersPerMap);
   for (const [source, targetId] of mapping) {
     const sourceLayer = clip.layers.find((l) => l.layerId === source)!,
@@ -808,6 +811,7 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
           tileValue(store, ref, "tile");
           refs.set(`${ref.tilesetId}:${ref.tileId}`, ref);
         }
+  for(const sourceLayer of needed){const targetId=mapping.get(sourceLayer.layerId);if(targetId){const points=[];for(let i=0;i<sourceLayer.cells.length;i++)if(a.emptyCells==="erase"||sourceLayer.cells[i])points.push({x:a.at.x+i%clip.width,y:a.at.y+Math.floor(i/clip.width)});tx.authorizeCells(a.mapId,targetId,points);}}
   const retained =
     planned * 32 + paletteRetained(store, refs.values()) + create.length * 512;
   tx.charge(planned, retained);
@@ -1082,6 +1086,8 @@ function smart(
   for (const l of plan.layers) {
     if (l.layerId) protect(tx, a.mapId, layer(store, l.layerId));
     for (const w of l.writes) point(store, w);
+    check(l.layerId||!tx.pending!.collaboration,E.EXCLUSIVE_OPERATION_REQUIRED,"Collaborative smart brushes require existing claimed layers");
+    if(l.layerId)tx.authorizeCells(a.mapId,l.layerId,l.writes);
   }
   const result = tx.run(() => {
     store.dispatch({
