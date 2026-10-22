@@ -38,7 +38,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
   const tx = new Transactions(host),
     cache = new Map<string, Cached>();
   const endedSessions = new Set<string>();
+  let referenceWorld = host.session().worldSessionId;
+  function syncReferenceWorld() {
+    const current = host.session().worldSessionId;
+    if (current !== referenceWorld) { host.visualReferences?.clear(); referenceWorld = current; }
+  }
   let activeClient: string | undefined;
+  let activeTool: string | undefined;
   let queue: Promise<unknown> = Promise.resolve(),
     active: CallSignal | undefined,
     queued = 0;
@@ -53,7 +59,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
   }
   tx.interrupt = interrupt;
   tx.onExternal = () => {
-    interrupt();
+    const worldChanged = host.session().worldSessionId !== referenceWorld;
+    syncReferenceWorld();
+    // An explicit reference upload does not depend on map contents.
+    if (worldChanged || activeTool !== "visual_ingest_reference") interrupt();
     if (tx.pending) {
       tx.seal("stopped");
       void enqueue(() => tx.cancel());
@@ -201,6 +210,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     let result: AgentToolResult, transactionId: string | undefined;
     active = signal;
     activeClient = call.clientSessionId;
+    activeTool = call.name;
     let enteredApply = false;
     try {
       signal.throwIfAborted();
@@ -209,6 +219,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         E.CANCELLED,
         "Authenticated client session has ended",
       );
+      syncReferenceWorld();
       validate(call.name, call.arguments);
       const name = call.name as ToolName,
         args = call.arguments as ToolArguments[ToolName];
@@ -352,7 +363,14 @@ export function createAgentApi(host: AgentHost): AgentApi {
       } else {
         const revision = tx.revision,
           worldId = host.session().worldSessionId;
-        const output = await read(tx, name, args, callContext);
+        let output;
+        if (name === "visual_ingest_reference" || name === "visual_match_reference") {
+          const port = host.visualReferences;
+          check(port, E.EDITOR_UNAVAILABLE, "Visual reference matching is unavailable in this host");
+          output = { data: await waitFor<unknown>(name === "visual_ingest_reference"
+            ? port.ingestReference(args as ToolArguments["visual_ingest_reference"], callContext)
+            : port.matchReference(args as ToolArguments["visual_match_reference"], callContext), signal), image: undefined };
+        } else output = await read(tx, name, args, callContext);
         signal.throwIfAborted();
         check(
           host.session().worldSessionId === worldId,
@@ -360,7 +378,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
           "World was replaced",
         );
         check(
-          tx.revision === revision,
+          name === "visual_ingest_reference" || tx.revision === revision,
           E.REVISION_CONFLICT,
           "World changed while reading",
         );
@@ -430,6 +448,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       if (active === signal) {
         active = undefined;
         activeClient = undefined;
+        activeTool = undefined;
       }
     }
     log(
@@ -468,7 +487,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
           : call.name === "render_preview" ||
               call.name === "get_tile_catalog" ||
               call.name === "list_stamps" ||
-              call.name === "prepare_smart_source"
+              call.name === "prepare_smart_source" ||
+              call.name === "visual_ingest_reference" ||
+              call.name === "visual_match_reference"
             ? L.imageSourceTimeoutMs
             : L.callTimeoutMs;
       const duration = Math.min(timeout, call.deadline - host.clock.now());
@@ -531,6 +552,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     },
     sessionEnded: (clientSessionId) => {
       endedSessions.add(clientSessionId);
+      host.visualReferences?.sessionEnded(clientSessionId);
       const pending = tx.pending;
       const owned = pending?.summary.owner.clientSessionId === clientSessionId;
       // Capture before interruption: aborting an active mutation can seal it as stopped.

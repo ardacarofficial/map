@@ -8,6 +8,7 @@ import {
   tileCount,
   tileRect,
   type MapStore,
+  type Tileset,
 } from "@smap/core";
 import {
   AGENT_LIMITS as L,
@@ -26,7 +27,7 @@ import {
 } from "../contracts";
 import { TOOL_CATALOGUE_HASH } from "../catalogue.generated";
 import { canonicalJson } from "../toolSchemas";
-import { hashCanonical } from "../tags";
+import { hashCanonical, semanticMatches } from "../tags";
 import { type Transactions, waitFor } from "../transactions";
 import { budget, check, fail, rect } from "../validation";
 import { compactFlags, layer, layerInfo, mapInfo } from "./mutations";
@@ -37,6 +38,9 @@ interface Cursor {
   filter: string;
   offset: number;
   invalid?: boolean;
+  hostCursor?: string | undefined;
+  hostItems?: TagRecord[];
+  hostMore?: boolean;
 }
 const cursors = new WeakMap<Transactions, Map<Id, Cursor>>();
 function cursor(
@@ -128,6 +132,15 @@ function tag(tx: Transactions, target: TagTarget, current: string): TagRecord {
     ...(stored ? { storedFingerprint: stored.fingerprint } : {}),
   };
 }
+const catalogTileCount = (tileset: Tileset): number => tileset.edited?.nextTileId ?? tileCount(tileset);
+interface TilesetSummary {
+  source: string;
+  fingerprints: string[];
+  fingerprint: string;
+  tagsKey: string;
+  tagCounts: { current: number; stale: number; missing: number };
+}
+const tilesetSummaries = new WeakMap<Transactions, Map<string, TilesetSummary>>();
 export async function read<N extends ToolName>(
   tx: Transactions,
   name: N,
@@ -242,18 +255,42 @@ export async function read<N extends ToolName>(
         selected = all.slice(c.offset, c.offset + (a.limit ?? 64)),
         items = [];
       for (const ts of selected) {
-        const fingerprints: string[] = [],
-          tagCounts = { current: 0, stale: 0, missing: 0 };
-        for (let tileId = 0; tileId < tileCount(ts); tileId++) {
-          const fingerprint = await waitFor(
-            tx.host.images.tileFingerprint(ts.id, tileId, call.signal),
-            call.signal,
-          );
-          fingerprints.push(fingerprint);
-          tagCounts[
-            tag(tx, { kind: "tile", tilesetId: ts.id, tileId }, fingerprint)
-              .status
-          ]++;
+        const sourceKey = tx.host.images.catalogSourceKey?.(ts.id);
+        const source = canonicalJson([tx.host.session().worldSessionId, sourceKey,
+          ts.tileWidth, ts.tileHeight, ts.columns, ts.rows, ts.margin, ts.spacing, ts.edited, catalogTileCount(ts)]);
+        let cache = tilesetSummaries.get(tx);
+        if (!cache) { cache = new Map(); tilesetSummaries.set(tx, cache); }
+        let summary = sourceKey == null ? undefined : cache.get(ts.id);
+        if (summary?.source !== source) summary = undefined;
+        if (!summary) {
+          const fingerprints: string[] = [];
+          for (let tileId = 0; tileId < catalogTileCount(ts); tileId++) {
+            call.signal.throwIfAborted();
+            if (tileId % 128 === 0) check(tx.host.clock.now() < call.deadline, E.TIMEOUT, "Catalog deadline expired");
+            fingerprints.push(await waitFor(tx.host.images.tileFingerprint(ts.id, tileId, call.signal), call.signal));
+          }
+          check(sourceKey == null || tx.host.images.catalogSourceKey?.(ts.id) === sourceKey,
+            E.SOURCE_CHANGED, "Tileset changed while building catalog");
+          summary = { source, fingerprints, fingerprint: hashCanonical(fingerprints), tagsKey: "", tagCounts: {current:0,stale:0,missing:0} };
+          if (sourceKey != null && fingerprints.length * 160 <= L.retainedBytes) {
+            const retained = () => [...cache.values()].reduce((bytes, entry) => bytes + entry.fingerprints.length * 160 + entry.tagsKey.length * 2, 0);
+            while (cache.size && (cache.size >= 256 || retained() + fingerprints.length * 160 > L.retainedBytes)) cache.delete(cache.keys().next().value!);
+            cache.set(ts.id, summary);
+          }
+        }
+        const available = tx.host.tags.availability();
+        const tagsKey = canonicalJson(available.state === "ready"
+          ? available.sidecar.tiles.filter(record => record.tilesetId === ts.id)
+          : available);
+        if (summary.tagsKey !== tagsKey) {
+          const records = new Map(available.state === "ready"
+            ? available.sidecar.tiles.filter(record => record.tilesetId === ts.id).map(record => [record.tileId, record]) : []);
+          summary.tagCounts = { current: 0, stale: 0, missing: 0 };
+          for (let tileId = 0; tileId < summary.fingerprints.length; tileId++) {
+            const record = records.get(tileId);
+            summary.tagCounts[!record ? "missing" : record.fingerprint === summary.fingerprints[tileId] ? "current" : "stale"]++;
+          }
+          summary.tagsKey = tagsKey;
         }
         items.push({
           id: ts.id,
@@ -264,10 +301,10 @@ export async function read<N extends ToolName>(
           rows: ts.rows,
           margin: ts.margin,
           spacing: ts.spacing,
-          tileCount: tileCount(ts),
+          tileCount: catalogTileCount(ts),
           kind: ts.edited ? "edited" : ts.generated ? "generated" : "source",
-          fingerprint: hashCanonical(fingerprints),
-          tagCounts,
+          fingerprint: summary.fingerprint,
+          tagCounts: { ...summary.tagCounts },
         });
       }
       return {
@@ -295,32 +332,26 @@ export async function read<N extends ToolName>(
         E.INVALID_ARGUMENT,
         "sheetRegion requires sheet image mode",
       );
-      const limit = a.limit ?? 64,
-        offset = a.offset ?? 0;
-      const ids =
-        a.tileIds ??
-        Array.from(
-          { length: Math.min(limit, Math.max(0, tileCount(ts) - offset)) },
-          (_, i) => offset + i,
-        );
-      check(
-        offset < tileCount(ts),
-        E.OUT_OF_BOUNDS,
-        "Catalog offset outside tileset",
-      );
-      budget(
-        ids.length,
-        imageMode !== "none" ? L.catalogImagePage : L.catalogPage,
-      );
-      for (const id of ids)
-        check(isValidTileId(ts, id), E.UNKNOWN_ID, "Unknown tile");
-      if (a.sheetRegion)
-        check(
-          a.sheetRegion.x + a.sheetRegion.width <= ts.columns &&
-            a.sheetRegion.y + a.sheetRegion.height <= ts.rows,
-          E.OUT_OF_BOUNDS,
-          "Sheet crop outside tileset",
-        );
+      check(imageMode !== "sheet" || !a.tileIds, E.INVALID_ARGUMENT, "Sheet mode uses sheetRegion, not tileIds");
+      const region = a.sheetRegion ?? { x: 0, y: 0, width: ts.columns, height: ts.rows };
+      if (imageMode === "sheet") check(
+        region.x + region.width <= ts.columns && region.y + region.height <= ts.rows,
+        E.OUT_OF_BOUNDS, "Sheet crop outside tileset");
+      const limit = a.limit ?? 64, offset = a.offset ?? 0;
+      const completeRows = Math.max(0, Math.min(region.height, Math.floor(catalogTileCount(ts) / ts.columns) - region.y));
+      const partialRow = Math.floor(catalogTileCount(ts) / ts.columns);
+      const partialCount = partialRow >= region.y && partialRow < region.y + region.height
+        ? Math.max(0, Math.min(region.width, catalogTileCount(ts) % ts.columns - region.x)) : 0;
+      const total = imageMode === "sheet" ? completeRows * region.width + partialCount : catalogTileCount(ts);
+      check(offset < total || total === 0 && offset === 0, E.OUT_OF_BOUNDS, "Catalog offset outside tileset");
+      const ids = a.tileIds ?? Array.from({ length: Math.min(limit, Math.max(0, total - offset)) }, (_, i) => {
+        const index = offset + i;
+        return imageMode === "sheet"
+          ? (region.y + Math.floor(index / region.width)) * ts.columns + region.x + index % region.width
+          : index;
+      });
+      budget(ids.length, imageMode === "tiles" ? L.catalogImagePage : L.catalogPage);
+      for (const id of ids) check(isValidTileId(ts, id), E.UNKNOWN_ID, "Unknown tile");
       const items = [];
       for (const tileId of ids) {
         const fingerprint = await waitFor(
@@ -356,7 +387,7 @@ export async function read<N extends ToolName>(
           tilesetId: ts.id,
           items,
           ...(image ? { image: image.image } : {}),
-          ...(!a.tileIds && offset + ids.length < tileCount(ts)
+          ...(!a.tileIds && offset + ids.length < total
             ? { nextOffset: offset + ids.length }
             : {}),
         },
@@ -365,21 +396,28 @@ export async function read<N extends ToolName>(
     }
     case "list_stamps": {
       const a = args as ToolArguments["list_stamps"],
-        c = cursor(tx, a.cursor, ["stamps", a.query, a.limit]),
-        all = tx.host.world
-          .stamps()
-          .filter(
-            (s) =>
-              !a.query || s.name.toLowerCase().includes(a.query.toLowerCase()),
-          ),
-        selected = all.slice(c.offset, c.offset + (a.limit ?? 16)),
-        items = [];
+        c = cursor(tx, a.cursor, ["stamps", a.query, a.limit, a.query ? hashCanonical(tx.host.tags.availability()) : null]),
+        all = [],
+        prepared = new Map<string, { fingerprint: string; record: TagRecord }>();
+      const availableTags = tx.host.tags.availability();
+      const stampTags = new Map(availableTags.state === "ready"
+        ? availableTags.sidecar.stamps.map(record => [record.stampId, record.tags]) : []);
+      for (const stamp of tx.host.world.stamps()) {
+        if (!a.query) { all.push(stamp); continue; }
+        if (!semanticMatches(a.query, [stamp.name, stamp.category ?? "", ...(stamp.tags ?? []), ...(stampTags.get(stamp.id) ?? [])])) continue;
+        const fingerprint = await waitFor(tx.host.images.stampFingerprint(stamp.id, call.signal), call.signal);
+        const record = tag(tx, { kind: "stamp", stampId: stamp.id }, fingerprint);
+        prepared.set(stamp.id, { fingerprint, record });
+        if (semanticMatches(a.query, [stamp.name, stamp.category ?? "", ...(stamp.tags ?? []),
+          ...(record.status === "current" ? record.tags : [])])) all.push(stamp);
+      }
+      const selected = all.slice(c.offset, c.offset + (a.limit ?? 16)), items = [];
       for (const s of selected) {
-        const fingerprint = await waitFor(
+        const fingerprint = prepared.get(s.id)?.fingerprint ?? await waitFor(
             tx.host.images.stampFingerprint(s.id, call.signal),
             call.signal,
           ),
-          record = tag(tx, { kind: "stamp", stampId: s.id }, fingerprint);
+          record = prepared.get(s.id)?.record ?? tag(tx, { kind: "stamp", stampId: s.id }, fingerprint);
         items.push({
           id: s.id,
           name: s.name,
@@ -459,13 +497,35 @@ export async function read<N extends ToolName>(
           call,
         ),
       };
-    case "get_tags":
-      return {
-        data: await waitFor(
-          tx.host.tags.get(args as ToolArguments["get_tags"], call),
-          call.signal,
-        ),
-      };
+    case "get_tags": {
+      const a = args as ToolArguments["get_tags"];
+      if (!a.query?.trim()) return { data: await waitFor(tx.host.tags.get(a, call), call.signal) };
+      const queryFilter = () => ["tags-query", a.kind, a.tilesetId, a.status, a.query, a.limit, hashCanonical(tx.host.tags.availability())];
+      const c = cursor(tx, a.cursor, queryFilter());
+      const items: TagRecord[] = [], limit = a.limit ?? 64;
+      let hostCursor = c.hostCursor, more = c.hostMore ?? true, scanned = 0;
+      const remainder = [...(c.hostItems ?? [])];
+      while ((more || remainder.length) && items.length < limit && scanned < 4096) {
+        call.signal.throwIfAborted();
+        check(tx.host.clock.now() < call.deadline, E.TIMEOUT, "Semantic search deadline expired");
+        if (!remainder.length) {
+          const page = await waitFor(tx.host.tags.get({ context: a.context, ...(a.kind ? { kind: a.kind } : {}), ...(a.tilesetId ? { tilesetId: a.tilesetId } : {}), ...(hostCursor ? { cursor: hostCursor } : {}), status: "all", limit: L.tagsPage }, call), call.signal);
+          remainder.push(...page.items);
+          more = page.nextCursor !== null;
+          hostCursor = page.nextCursor ?? undefined;
+          // An adapter returning empty pages still consumes the bounded scan budget.
+          if (!page.items.length) { scanned++; continue; }
+        }
+        const record = remainder.shift()!;
+        scanned++;
+        if ((a.status ?? "current") !== "all" && record.status !== (a.status ?? "current")) continue;
+        const target = record.target;
+        const stamp = target.kind === "stamp" ? tx.host.world.stamps().find(stamp => stamp.id === target.stampId) : undefined;
+        if (semanticMatches(a.query, [...record.tags, record.note, ...(stamp ? [stamp.name, stamp.category ?? "", ...(stamp.tags ?? [])] : [])])) items.push(record);
+      }
+      const nextCursor = more || remainder.length ? next(tx, { ...c, filter: canonicalJson(queryFilter()), hostCursor, hostItems: remainder, hostMore: more }, c.offset + scanned) : null;
+      return { data: { items, nextCursor } };
+    }
     default:
       fail(E.INVALID_ARGUMENT, "Unknown read tool");
   }

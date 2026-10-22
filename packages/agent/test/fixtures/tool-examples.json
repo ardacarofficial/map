@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "9e49885ab28326ebd5b95c0d80952e9920fbe53e8b0b6de99a813aa602ee2bf9",
+  "catalogueSha256": "1c6ad008981d8fa4d0331c3f77315b039b0ddc06806ba7c65690cebe49234851",
   "tools": {
     "get_session": {
       "valid": [
@@ -1112,6 +1112,12 @@
           "kind": "stamps",
           "status": "stale",
           "limit": 128
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "query": "çatı"
         }
       ],
       "invalid": [
@@ -1224,6 +1230,150 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    "visual_ingest_reference": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "pngBase64": "aA=="
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "pngBase64": ""
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "path": "/tmp/ref.png"
+        }
+      ]
+    },
+    "visual_match_reference": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "referenceId": "ref-1"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "referenceId": "ref-1",
+          "tilesetIds": [
+            "tiles-1"
+          ],
+          "maxScale": 8,
+          "topK": 32
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "referenceId": "ref-1",
+          "topK": 33
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "referenceId": "ref-1",
+          "maxScale": 0
+        }
+      ]
+    },
+    "create_stamp": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "stamp-001",
+            "expectedRevision": 0
+          },
+          "source": {
+            "mapId": "map-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            },
+            "layerIds": [
+              "ground"
+            ]
+          },
+          "name": "House"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "stamp-001",
+            "expectedRevision": 0
+          },
+          "source": {
+            "tilesetId": "tiles-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            }
+          },
+          "name": "House",
+          "category": "Buildings",
+          "tags": [
+            "house"
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "source": {
+            "tilesetId": "tiles-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            }
+          },
+          "name": "House"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "stamp-001",
+            "expectedRevision": 0
+          },
+          "source": {
+            "mapId": "map-1",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 2,
+              "height": 2
+            },
+            "layerIds": []
+          },
+          "name": "House"
         }
       ]
     }

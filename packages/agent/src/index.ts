@@ -20,3 +20,5 @@ export {
   stampFingerprint,
   hashCanonical,
 } from "./tags";
+
+export * from "./tools/visual";

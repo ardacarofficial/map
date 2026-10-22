@@ -75,3 +75,26 @@ describe("edge validation", () => {
     expect(host.snapshot()).toEqual(before);
   });
 });
+
+
+it("keeps explicit reference ingestion independent of map revision changes", async () => {
+  const host = createMemoryHost();
+  let resolve!: (value: { referenceId: string; width: number; height: number }) => void;
+  let started!: () => void;
+  const entered = new Promise<void>(r => { started = r; });
+  host.visualReferences = {
+    ingestReference: () => { started(); return new Promise(r => { resolve = r; }); },
+    matchReference: async () => ({ status: "no_match", candidates: [], truncated: false, revision: 0 }),
+    sessionEnded() {}, clear() {},
+  };
+  const api = createAgentApi(host);
+  const pending = api.executeTool(memoryCall("visual_ingest_reference", {
+    context: { worldSessionId: "world-1" }, pngBase64: "aA==",
+  }));
+  await entered;
+  host.contentChanged();
+  resolve({ referenceId: "reference-1", width: 1, height: 1 });
+  expect((await pending).structuredContent).toMatchObject({
+    ok: true, data: { referenceId: "reference-1" },
+  });
+});

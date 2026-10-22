@@ -49,6 +49,24 @@ impl Default for Options {
         }
     }
 }
+
+impl Options {
+    fn tool_timeout(&self, name: &str, arguments: &Value) -> Duration {
+        let renders_image = match name {
+            "render_preview" | "prepare_smart_source" | "begin_edit"
+            | "visual_ingest_reference" | "visual_match_reference" => true,
+            // The agent defaults an omitted image mode to "tiles".
+            "get_tile_catalog" => arguments["image"].as_str() != Some("none"),
+            "list_stamps" => arguments["previewStampId"].is_string(),
+            _ => false,
+        };
+        if renders_image {
+            self.image_timeout
+        } else {
+            self.call_timeout
+        }
+    }
+}
 struct Session {
     info: Value,
     version: String,
@@ -578,18 +596,7 @@ impl Transport {
             };
             let info = client.info.clone();
             let name = params["name"].as_str().unwrap_or("");
-            let image_call = ["render_preview", "prepare_smart_source", "begin_edit"]
-                .contains(&name)
-                || (name == "get_tile_catalog"
-                    && params["arguments"]["image"]
-                        .as_str()
-                        .is_some_and(|s| s != "none"))
-                || (name == "list_stamps" && params["arguments"]["previewStampId"].is_string());
-            let duration = if image_call {
-                self.options.image_timeout
-            } else {
-                self.options.call_timeout
-            };
+            let duration = self.options.tool_timeout(name, &params["arguments"]);
             let id = match random_hex() {
                 Ok(id) => id,
                 Err(_) => return failure(&inner, "INTERNAL_ERROR"),
@@ -714,6 +721,50 @@ fn error(id: Value, code: i32, message: &str) -> Response {
 }
 async fn fallback() -> Response {
     response(StatusCode::NOT_FOUND, None)
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn image_defaults_and_reference_work_use_image_timeout() {
+        let options = Options::default();
+        assert_eq!(options.call_timeout, Duration::from_secs(10));
+        assert_eq!(options.image_timeout, Duration::from_secs(30));
+        for name in [
+            "render_preview",
+            "prepare_smart_source",
+            "begin_edit",
+            "visual_ingest_reference",
+            "visual_match_reference",
+        ] {
+            assert_eq!(options.tool_timeout(name, &json!({})), options.image_timeout, "{name}");
+        }
+        for arguments in [json!({}), Value::Null, json!({"image":"tiles"}), json!({"image":"sheet"})] {
+            assert_eq!(options.tool_timeout("get_tile_catalog", &arguments), options.image_timeout);
+        }
+        assert_eq!(options.tool_timeout("list_stamps", &json!({"previewStampId":"house"})), options.image_timeout);
+    }
+
+    #[test]
+    fn metadata_and_ordinary_calls_keep_configured_call_timeout() {
+        let options = Options {
+            call_timeout: Duration::from_millis(17),
+            image_timeout: Duration::from_millis(51),
+            ..Options::default()
+        };
+        for (name, arguments) in [
+            ("get_tile_catalog", json!({"image":"none"})),
+            ("list_stamps", json!({})),
+            ("get_session", json!({})),
+            ("create_stamp", json!({})),
+            ("paint_cells", json!({})),
+        ] {
+            assert_eq!(options.tool_timeout(name, &arguments), options.call_timeout, "{name}");
+        }
+        assert_eq!(options.tool_timeout("get_tile_catalog", &json!({})), options.image_timeout);
+    }
 }
 fn depth(value: &Value, n: usize) -> bool {
     if n > 32 {

@@ -41,6 +41,8 @@ Hepsi depo kökünden çalışır.
 | `pnpm desktop:build` | Masaüstü sürümü ve kurulum paketi |
 | `pnpm --filter @smap/desktop test:rust` | Rust çekirdeğinin (`smap-host`) testleri |
 
+MCP ile görsel referans eşleştirme, katalog arama ve onaylı stamp oluşturma akışı: [Agent API rehberi](packages/agent/README.md).
+
 ## Klasör yapısı
 
 ```text

@@ -206,7 +206,11 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         .json()
         .await
         .unwrap();
-    assert_eq!(body["result"]["tools"].as_array().unwrap().len(), 26);
+    let tools = body["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 29);
+    for name in ["visual_ingest_reference", "visual_match_reference", "create_stamp"] {
+        assert!(tools.iter().any(|tool| tool["name"] == name), "missing {name}");
+    }
     assert_eq!(
         h.client
             .delete(format!("http://{}/mcp", h.server.addr))

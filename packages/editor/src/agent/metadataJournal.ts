@@ -3,6 +3,7 @@ import { AgentError, AgentErrorCode, type AgentMetadataOperation, type AgentMeta
 import { useEditorStore } from "../state/editorStore";
 import { getLevelWorkspace, publishLevelState } from "../io/session";
 import { useProjectLibrary } from "../io/projectLibrary";
+import { sortStamps } from "../io/stampsIo";
 
 export function createMetadataJournal(): AgentMetadataPort {
   let operations: AgentMetadataOperation[] = [];
@@ -14,6 +15,17 @@ export function createMetadataJournal(): AgentMetadataPort {
   const apply = (operation: AgentMetadataOperation, side: "before" | "after") => {
     if (operation.kind === "mapPosition") ws().setWorldPosition(operation.mapId, operation[side]);
     else if (operation.kind === "recipes") useProjectLibrary.setState(s => ({ generatedRecipes: operation[side], revision: s.revision + 1 }));
+    else if (operation.kind === "stamps") {
+      // Manual library additions/renames are independent of world history. Replay
+      // only the ids this action changed, retaining later edits to other stamps.
+      const before = new Map(operation.before.map(stamp => [stamp.id, stamp])),
+        after = new Map(operation.after.map(stamp => [stamp.id, stamp])),
+        changed = new Set([...before.keys(), ...after.keys()].filter(id => before.get(id) !== after.get(id)));
+      useProjectLibrary.setState(s => ({ stamps: sortStamps([
+        ...s.stamps.filter(stamp => !changed.has(stamp.id)),
+        ...operation[side].filter(stamp => changed.has(stamp.id)),
+      ]), revision: s.revision + 1 }));
+    }
     else if (operation.kind === "projectData") {
       // MapStore project metadata operations are owned by the coordinator's lease.
       const store = ws().entry(operation.mapId)?.store;

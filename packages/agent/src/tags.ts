@@ -47,6 +47,29 @@ export function normalizeTags(tags: readonly string[]): string[] {
   );
   return result.sort(compareCodeUnits);
 }
+/** Search folding is deliberately separate from persisted tag spelling. */
+export function normalizeSemanticText(value: string): string {
+  return value.normalize("NFKD").toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i").replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+// A small bilingual vocabulary, limited to common map objects/materials.
+const semanticAliases: readonly (readonly string[])[] = [
+  ["agac", "tree", "trees"], ["ev", "house", "houses"],
+  ["yol", "road", "roads", "path"], ["su", "water"],
+  ["cimen", "grass"], ["tas", "stone", "rock"],
+  ["cali", "bush", "bushes"], ["kapi", "door", "doors"],
+  ["merdiven", "stairs", "stair", "steps"], ["cati", "roof"],
+];
+export function semanticMatches(query: string | undefined, values: readonly string[]): boolean {
+  if (!query?.trim()) return true;
+  const text = normalizeSemanticText(values.join(" "));
+  const words = new Set(text.split(" "));
+  return normalizeSemanticText(query).split(" ").filter(Boolean).every(term => {
+    const aliases = semanticAliases.find(group => group.includes(term));
+    return aliases ? aliases.some(alias => words.has(alias)) : text.includes(term);
+  });
+}
 export const emptyTags = (): TagsSidecar => ({
   format: "smap-ai-tags",
   tagFormatVersion: 1,

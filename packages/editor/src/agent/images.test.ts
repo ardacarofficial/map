@@ -39,3 +39,31 @@ it("catalog IDs have a readable ten-pixel glyph height outside the sprite", asyn
   }
   expect(inkRows.size).toBeGreaterThanOrEqual(10);
 });
+
+it("renders a continuous sheet with source margin/spacing and compact coordinate metadata", async () => {
+  const original=encodeRgbaPng(7,4,pixels());image(original);const port=createImagePort(world,()=>1);
+  const result=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",image:"sheet",scale:2},call);
+  expect(result.image.placements).toEqual([]);
+  expect(result.image.sheet).toMatchObject({sourceRect:{x:1,y:1,width:5,height:2},region:{x:0,y:0,width:2,height:1},grid:{margin:1,spacing:1,columns:2}});
+  const png=decodeWorkingSourcePng(result.png),rect=result.image.sheet!.contentRect;
+  const pixel=(x:number)=>[...png.data.slice(((rect.y)*png.width+rect.x+x)*4,((rect.y)*png.width+rect.x+x)*4+4)];
+  expect(pixel(0)).toEqual([255,0,0,255]);expect(pixel(6)).toEqual([0,255,0,255]);
+  expect(original).toEqual(encodeRgbaPng(7,4,pixels()));
+  const crop=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",image:"sheet",sheetRegion:{x:1,y:0,width:1,height:1},scale:2},call);
+  expect(crop.image.sheet!.sourceRect).toEqual({x:4,y:1,width:2,height:2});
+});
+
+it("fits large sheets within image budgets without per-tile placement metadata", async () => {
+  const large={...ts,columns:128,rows:128,tileWidth:16,tileHeight:16,margin:0,spacing:0};
+  setTilesetImage({tilesetId:"art",bytes:encodeRgbaPng(2048,2048,new Uint8Array(2048*2048*4)),bitmap:{width:2048,height:2048,close:vi.fn()} as unknown as ImageBitmap});
+  const port=createImagePort({tilesets:()=>[large],stamps:()=>[]} as unknown as AgentWorldPort,()=>1);
+  const result=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",image:"sheet",scale:4},call);
+  expect(result.width).toBeLessThanOrEqual(2048);expect(result.height).toBeLessThanOrEqual(2048);
+  expect(result.image.scale).toBeLessThan(1);expect(JSON.stringify(result.image).length).toBeLessThan(1000);
+});
+
+it("changes catalog source identities on replacement and leaves stable reads cached", async () => {
+  const port=createImagePort(world,()=>1);expect(port.catalogSourceKey!("art")).toBeNull();
+  image(encodeRgbaPng(7,4,pixels()));const key=port.catalogSourceKey!("art");expect(port.catalogSourceKey!("art")).toBe(key);
+  image(encodeRgbaPng(7,4,pixels()));expect(port.catalogSourceKey!("art")).not.toBe(key);
+});

@@ -85,7 +85,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   let observedWorld=getLevelWorkspace(),observedFolder=getProjectFolder();
   const offWorld=useEditorStore.subscribe(()=>{
     const world=getLevelWorkspace(),folder=getProjectFolder();
-    if(world!==observedWorld){observedWorld=world;observedFolder=folder;void live?.tags.reload().catch(log);}
+    if(world!==observedWorld){host.visualReferences?.clear();observedWorld=world;observedFolder=folder;void live?.tags.reload().catch(log);}
     else if(folder!==observedFolder){observedFolder=folder;void live?.tags.folderChanged().catch(log);}
   });
   if(live)void live.tags.reload().catch(log);
@@ -94,6 +94,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     for(const entry of requests.values()){entry.controller.abort();clearTimeout(entry.timer);}
     await api.userAction("discard");
     await live?.tags.flush();
+    host.visualReferences?.clear();
     disposed=true;requests.clear();offFlush();offRequest();offControl();offState();offUi();offCancellation();offUnsaved();offStatus();offFile();offWorld();live?.tags.dispose();
     if(installed===runtime)installed=null;
   }};

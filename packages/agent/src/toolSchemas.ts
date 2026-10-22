@@ -1,4 +1,4 @@
-/** Frozen v2 catalogue. Each published input schema contains all local definitions. */
+/** Frozen v2 catalogue. Each published input schema contains its reachable local definitions. */
 import type { AgentToolDefinition } from "./contracts.ts";
 
 const SHARED_DEFS = {
@@ -440,7 +440,7 @@ const DEFINITIONS = [
   {
     "name": "get_tile_catalog",
     "title": "Get Tile Catalog",
-    "description": "Inspect real tile art and stable numeric tile IDs before choosing tiles. context is {worldSessionId}. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
+    "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is {worldSessionId}. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -511,7 +511,7 @@ const DEFINITIONS = [
   {
     "name": "list_stamps",
     "title": "List Stamps",
-    "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is {worldSessionId}. Search with query, paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
+    "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is {worldSessionId}. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1510,7 +1510,7 @@ const DEFINITIONS = [
   {
     "name": "get_tags",
     "title": "Get Tags",
-    "description": "Discover semantic labels and tiles/stamps needing annotation. context is {worldSessionId}, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; status all|missing|stale (default missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
+    "description": "Discover semantic labels and tiles/stamps needing annotation. context is {worldSessionId}, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; optional query searches Turkish/English normalized labels and notes with small explicit aliases; status all|current|missing|stale (default current with query, otherwise missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1520,6 +1520,7 @@ const DEFINITIONS = [
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "query": {"type": "string", "maxLength": 128},
         "context": {
           "$ref": "#/$defs/ReadContext"
         },
@@ -1538,6 +1539,7 @@ const DEFINITIONS = [
           "type": "string",
           "enum": [
             "all",
+            "current",
             "missing",
             "stale"
           ],
@@ -1613,11 +1615,190 @@ const DEFINITIONS = [
       ],
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
+  },
+  {
+    "name": "visual_ingest_reference",
+    "title": "Ingest Visual Reference",
+    "description": "Retain an explicitly supplied PNG reference for this client and world session. pngBase64 is raw base64 PNG, never a path or URL. Chat attachments are not automatically accessible. Request limit 1 MiB; decoded image at most 2048 per side and 4M pixels, total retained images at most 64 MiB and 32 handles. Returns a temporary referenceId for visual_match_reference. No project or source image changes.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/ReadContext"
+        },
+        "pngBase64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        }
+      },
+      "required": [
+        "context",
+        "pngBase64"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "name": "visual_match_reference",
+    "title": "Match Visual Reference",
+    "description": "Find exact RGBA matches of a retained reference in tile-aligned tileset regions. Tries D4 orientations and integer nearest-neighbor reference scales up to maxScale (default 4, maximum 8). Returns bounded candidates with source region, flags and scale; matched, ambiguous or no_match are exact results, not semantic confidence. Cropped screenshots with backgrounds, fractional scaling or compression are not supported. All source pixels remain unchanged. Workload limits fail explicitly instead of returning false no_match.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/ReadContext"
+        },
+        "referenceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tilesetIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "topK": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 8
+        },
+        "maxScale": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 4
+        }
+      },
+      "required": [
+        "context",
+        "referenceId"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "name": "create_stamp",
+    "title": "Create Stamp",
+    "description": "Capture a reusable stamp from explicit map region/layerIds or a tileset region. Requires begin_edit and current WriteContext; it is provisional until the user approves, discard restores the stamp library, and approval joins the world undo group. Source PNGs are never modified. Region is in source cells. Name is required, category and tags are optional. Map source must belong to this transaction. Entity layers are not supported.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WriteContext"
+        },
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mapId": {
+                  "$ref": "#/$defs/Id"
+                },
+                "region": {
+                  "$ref": "#/$defs/Rect"
+                },
+                "layerIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/Id"
+                  }
+                }
+              },
+              "required": [
+                "mapId",
+                "region",
+                "layerIds"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tilesetId": {
+                  "$ref": "#/$defs/Id"
+                },
+                "region": {
+                  "$ref": "#/$defs/Rect"
+                }
+              },
+              "required": [
+                "tilesetId",
+                "region"
+              ]
+            }
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "tags": {
+          "$ref": "#/$defs/TagWords"
+        }
+      },
+      "required": [
+        "context",
+        "source",
+        "name"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
   }
 ] as const;
 
+/** Keep each schema self-contained without repeating definitions it cannot reach. */
+export function reachableSchemaDefinitions<T>(schema: unknown, definitions: Readonly<Record<string, T>>): Record<string, T> {
+  const reachable = new Set<string>();
+  function visit(value: unknown): void {
+    if (value === null || typeof value !== "object") return;
+    if ("$ref" in value && typeof value.$ref === "string" && value.$ref.startsWith("#/$defs/")) {
+      const name = value.$ref.slice("#/$defs/".length).split("/")[0]!.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (!Object.hasOwn(definitions, name)) throw new Error(`Unknown schema definition: ${name}`);
+      if (!reachable.has(name)) {
+        reachable.add(name);
+        visit(definitions[name]);
+      }
+    }
+    for (const child of Object.values(value)) visit(child);
+  }
+  visit(schema);
+  return Object.fromEntries(Object.entries(definitions).filter(([name]) => reachable.has(name)));
+}
+
 export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = DEFINITIONS.map(tool => ({
-  ...tool, inputSchema: { ...tool.inputSchema, $defs: SHARED_DEFS },
+  ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 
 /** Code-unit key order, LF, two spaces and one final newline, independent of host locale. */

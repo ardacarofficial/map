@@ -501,6 +501,7 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
       snapshot: snapshotMetadata,
       stage: (op: AgentMetadataOperation) => {
         if (op.kind === "recipes") recipes = op.after;
+        else if (op.kind === "stamps") stamps = [...op.after];
         else if (op.kind === "mapPosition")
           project = normalizeProject({
             ...project,
@@ -524,6 +525,9 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
         if (!metadataBaseline) return undefined;
         const before = metadataBaseline,
           after = snapshotMetadata();
+        const beforeStamps = new Map(before.stamps.map(stamp => [stamp.id, stamp])),
+          afterStamps = new Map(after.stamps.map(stamp => [stamp.id, stamp])),
+          changedStampIds = new Set([...beforeStamps.keys(), ...afterStamps.keys()].filter(id => beforeStamps.get(id) !== afterStamps.get(id)));
         // O1: map-list membership is deliberately excluded from world undo.
         const originalIds = new Set(before.project.levels.map((l) => l.id));
         const metadata = (s: MetadataSnapshot) => ({
@@ -540,7 +544,8 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
           apply: (side) => {
             const s = side === "before" ? before : after;
             recipes = s.recipes;
-            stamps = [...s.stamps];
+            stamps = [...stamps.filter(stamp => !changedStampIds.has(stamp.id)),
+              ...s.stamps.filter(stamp => changedStampIds.has(stamp.id))];
             project = normalizeProject({
               ...s.project,
               levels: project.levels.map(
@@ -1054,6 +1059,7 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
       })),
       history: history.entries(),
       recipes: hashCanonical(recipes),
+      stamps: hashCanonical(stamps),
       libraryDirty,
       libraryRevision,
     }),

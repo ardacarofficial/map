@@ -4,6 +4,8 @@ import {
   FLIP_V,
   applySmartStampPlan,
   cellPaletteIndex,
+  clipFromTileset,
+  createStamp as captureStamp,
   defaultEntityFields,
   entityProblem,
   flipClip,
@@ -13,6 +15,8 @@ import {
   isTileLayer,
   isValidTileId,
   makeCell,
+  makeStampId,
+  normalizeStampMeta,
   orthogonalBridge,
   pasteClip,
   patchCellCount,
@@ -21,6 +25,7 @@ import {
   roadMembership,
   rotateClip,
   stampLayerMapping,
+  stampMetaProblem,
   type LayerPatch,
   type MapStore,
   type SmartStampPlan,
@@ -614,6 +619,8 @@ export async function mutate<N extends ToolName>(
     }
     case "place_stamp":
       return place(tx, args as ToolArguments["place_stamp"]);
+    case "create_stamp":
+      return createStamp(tx, args as ToolArguments["create_stamp"]);
     case "prepare_smart_source":
       return prepare(tx, args as ToolArguments["prepare_smart_source"], call);
     case "smart_brush":
@@ -626,6 +633,65 @@ export async function mutate<N extends ToolName>(
     default:
       fail(E.INVALID_ARGUMENT, "Unknown mutation");
   }
+}
+
+/** Capture library metadata inside the same approval/undo journal as map edits.
+ * Paths and caller-provided ids are deliberately absent from this operation. */
+function createStamp(tx: Transactions, a: ToolArguments["create_stamp"]) {
+  const name = a.name.trim();
+  check(name.length > 0, E.INVALID_ARGUMENT, "Stamp name must not be blank");
+  const problem = stampMetaProblem(a);
+  check(!problem, E.INVALID_ARGUMENT, problem ?? "Invalid stamp metadata");
+  const snapshot = tx.host.metadata.snapshot(),
+    before = [...tx.host.world.stamps()],
+    taken = [
+      ...before.map(s => s.id),
+      ...snapshot.brokenStampFiles.map(path =>
+        path.slice(path.lastIndexOf("/") + 1).replace(/\.json$/, ""),
+      ),
+    ],
+    meta = { id: makeStampId(name, taken), name, ...normalizeStampMeta(a) },
+    source = a.source,
+    area = source.region.width * source.region.height;
+  let stamp: Stamp, retained: number;
+  if ("mapId" in source) {
+    const store = tx.store(source.mapId);
+    rect(store, source.region);
+    check(source.layerIds.length > 0 && new Set(source.layerIds).size === source.layerIds.length,
+      E.INVALID_ARGUMENT, "Select unique stamp source layers");
+    for (const id of source.layerIds)
+      check(!isEntityLayer(layer(store, id)), E.LAYER_KIND, "Stamp sources require tile or collision layers");
+    // Preserve the map's stack order even when the caller lists ids in another order.
+    const selected = store.document.layers.filter(l => source.layerIds.includes(l.id));
+    budget(area * selected.length);
+    const maxIdLength = store.document.tilesets.reduce((max, t) => Math.max(max, t.id.length), 0);
+    retained = 2048 + before.length * 16 + area * selected.length * 8 +
+      Math.min(area * selected.filter(isTileLayer).length, store.document.palette.size) * (128 + maxIdLength * 2);
+    tx.charge(0, retained);
+    stamp = captureStamp(store.document, selected.map(l => l.id), source.region, meta);
+    for (const ref of stamp.palette) tileValue(store, ref, "tile");
+  } else {
+    const tileset = tx.host.world.tilesets().find(t => t.id === source.tilesetId);
+    check(tileset, E.UNKNOWN_ID, "Unknown tileset");
+    check(source.region.x + source.region.width <= tileset.columns &&
+      source.region.y + source.region.height <= tileset.rows,
+      E.OUT_OF_BOUNDS, "Stamp source outside tileset");
+    budget(area);
+    retained = 2048 + before.length * 16 + area * (136 + tileset.id.length * 2);
+    tx.charge(0, retained);
+    const clip = clipFromTileset(tileset, {
+      x: source.region.x, y: source.region.y,
+      w: source.region.width, h: source.region.height,
+    });
+    check(clip, E.INVALID_ARGUMENT, "Stamp source is empty");
+    stamp = Object.freeze({ ...meta, ...clip });
+  }
+  check(stamp.layers.some(l => l.cells.some(Boolean)), E.INVALID_ARGUMENT, "Stamp source is empty");
+  tx.run(() => tx.host.metadata.stage({ kind: "stamps", before, after: [...before, stamp] }));
+  const result = change();
+  tx.record(result, retained);
+  return { change: result, stampId: stamp.id, name: stamp.name, width: stamp.width,
+    height: stamp.height, sourceLayerIds: stamp.layers.map(l => l.layerId) };
 }
 
 function transform(stamp: Stamp, a: ToolArguments["place_stamp"]): TileClip {

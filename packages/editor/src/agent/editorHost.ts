@@ -13,6 +13,7 @@ import { agentActivity } from "./activity";
 import { agentWorldChanging, editGate, getAgentWorldSessionId } from "./editGate";
 import { createMetadataJournal } from "./metadataJournal";
 import { createImagePort } from "./images";
+import { createVisualReferencePort } from "./visualReferences";
 import { createSmartSourcePort } from "./smartSources";
 import { createTagsPort, type TagsIoPort } from "./tagsIo";
 
@@ -83,6 +84,7 @@ export function createEditorHost(): EditorAgentHost {
     },
     setClients(value){clients=value;},
     loadMap:world.loadMap,subscribeWorldContent:subscribeContent,world,metadata,images,
+    visualReferences:createVisualReferencePort(world,contentRevision),
     smartSources:createSmartSourcePort(world,metadata,()=>{const ws=getLevelWorkspace();return ws?.cachedIds().map(id=>ws.entry(id)!.store)??[];}),
     tags:createTagsPort({world,images,folder:()=>getProjectFolder()?.fs??null,worldId:getAgentWorldSessionId}),
     activity:agentActivity,

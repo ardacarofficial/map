@@ -49,7 +49,7 @@ export async function startDevMcp(options: DevMcpOptions) {
     const page = session.page;
     if (!page || pages.get(session.pair!) !== page) return Promise.resolve(failure("EDITOR_UNAVAILABLE", "No paired editor is available"));
     if (pending.size >= 64 || [...pending.values()].filter((call) => call.session === session).length >= 32) return Promise.resolve(failure("LIMIT_EXCEEDED", "Too many pending requests"));
-    const timeout = ["render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps"].includes(name) ? 30000 : 10000;
+    const timeout = ["begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference"].includes(name) ? 30000 : 10000;
     const request: BridgeRequest = { type: "tools/call", bridgeEpoch: page.epoch, clientSessionId: session.id, clientInfo: session.info, requestId: secret(), name, arguments: args as BridgeRequest["arguments"], deadline: now() + timeout };
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

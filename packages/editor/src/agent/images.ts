@@ -33,6 +33,8 @@ export function encodeAgentPng(image: RgbaImage): Uint8Array {
   if (png.length > AGENT_LIMITS.pngBytes) throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"PNG exceeds image budget");
   return png;
 }
+const sourceIds = new WeakMap<TilesetImage, string>();
+let sourceSequence = 0;
 const hashTuple = (value: unknown) => pngHash(new TextEncoder().encode(JSON.stringify(value)));
 function assertTile(tileset: Tileset | undefined, tileId: number): asserts tileset is Tileset {
   const count=tileset?.edited?.nextTileId ?? (tileset ? tileset.columns*tileset.rows : 0);
@@ -64,33 +66,63 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
   }
   return {
     tileFingerprint, stampFingerprint,
+    catalogSourceKey(id) {
+      const image = getTilesetImage(id);
+      if (!image) return null;
+      let key = sourceIds.get(image);
+      if (!key) { key = String(++sourceSequence); sourceIds.set(image, key); }
+      return key;
+    },
     async tileCatalog(args,call) {
       const rev=revision(),tileset=world.tilesets().find(t=>t.id===args.tilesetId);
       if(!tileset)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown tileset");
-      const ids=args.tileIds??Array.from({length:Math.min(args.limit??64,(tileset.edited?.nextTileId??tileset.columns*tileset.rows)-(args.offset??0))},(_,i)=>i+(args.offset??0));
-      if(ids.length>AGENT_LIMITS.catalogImagePage)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Too many image tiles");
+      const pixels=await imagePixels(tileset.id,call.signal),requestedScale=args.scale??1;
+      const sheet=args.image==="sheet";
+      if (sheet) {
+        if (args.tileIds) throw new AgentError(AgentErrorCode.INVALID_ARGUMENT,"Sheet mode uses sheetRegion, not tileIds");
+        const region=args.sheetRegion??{x:0,y:0,width:tileset.columns,height:tileset.rows};
+        if (![region.x,region.y,region.width,region.height].every(Number.isSafeInteger) || region.x<0 || region.y<0 || region.width<1 || region.height<1 || region.x+region.width>tileset.columns || region.y+region.height>tileset.rows)
+          throw new AgentError(AgentErrorCode.OUT_OF_BOUNDS,"Sheet crop outside tileset");
+        const sourceRect={x:tileset.margin+region.x*(tileset.tileWidth+tileset.spacing),y:tileset.margin+region.y*(tileset.tileHeight+tileset.spacing),width:region.width*tileset.tileWidth+(region.width-1)*tileset.spacing,height:region.height*tileset.tileHeight+(region.height-1)*tileset.spacing};
+        if(sourceRect.x+sourceRect.width>pixels.width||sourceRect.y+sourceRect.height>pixels.height)throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Sheet outside current image");
+        const left=40,top=20;
+        const scale=Math.min(requestedScale,(AGENT_LIMITS.imageSide-left)/sourceRect.width,(AGENT_LIMITS.imageSide-top)/sourceRect.height,Math.sqrt((AGENT_LIMITS.imagePixels-left*top)/(sourceRect.width*sourceRect.height)));
+        const contentRect={x:left,y:top,width:Math.max(1,Math.floor(sourceRect.width*scale)),height:Math.max(1,Math.floor(sourceRect.height*scale))};
+        const width=left+contentRect.width,height=top+contentRect.height;
+        if(width*height>AGENT_LIMITS.imagePixels)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Catalog image exceeds pixel budget");
+        const canvas=new RasterReplay(width,height);canvas.fill({x:0,y:0,width,height},[27,33,42,255]);canvas.checker(contentRect);
+        canvas.drawImage(pixels as unknown as CanvasImageSource,sourceRect.x,sourceRect.y,sourceRect.width,sourceRect.height,contentRect.x,contentRect.y,contentRect.width,contentRect.height);
+        // Coordinate gutters stay outside the original artwork; no gaps split multi-tile sprites.
+        const xStep=Math.max(1,Math.ceil(48/((tileset.tileWidth+tileset.spacing)*scale)));
+        const yStep=Math.max(1,Math.ceil(16/((tileset.tileHeight+tileset.spacing)*scale)));
+        for(let x=0;x<region.width;x+=xStep)canvas.text(String(region.x+x),left+x*(tileset.tileWidth+tileset.spacing)*scale,3);
+        for(let y=0;y<region.height;y+=yStep)canvas.text(String(region.y+y),2,top+y*(tileset.tileHeight+tileset.spacing)*scale);
+        call.signal.throwIfAborted();
+        const image:CatalogImage={width,height,mode:"sheet",scale,placements:[],sheet:{region,sourceRect,contentRect,grid:{columns:tileset.columns,rows:tileset.rows,tileWidth:tileset.tileWidth,tileHeight:tileset.tileHeight,margin:tileset.margin,spacing:tileset.spacing}}};
+        return {png:encodeAgentPng(canvas),width,height,revision:rev,warnings:[],image};
+      }
+      const count=tileset.edited?.nextTileId??tileset.columns*tileset.rows;
+      const ids=args.tileIds??Array.from({length:Math.max(0,Math.min(args.limit??64,count-(args.offset??0)))},(_,i)=>i+(args.offset??0));
+      if(!ids.length||ids.length>AGENT_LIMITS.catalogImagePage)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Choose between 1 and 64 image tiles");
       ids.forEach(id=>assertTile(tileset,id));
-      const pixels=await imagePixels(tileset.id,call.signal),scale=args.scale??1;
-      const gutter=18,gap=4,tw=tileset.tileWidth*scale,th=tileset.tileHeight*scale;
-      const sheet=args.image==="sheet",region=args.sheetRegion??{x:0,y:0,width:tileset.columns,height:tileset.rows};
-      const cellWidth=Math.max(tw,8*String(tileset.columns*tileset.rows-1).length);
-      const cols=sheet?region.width:Math.max(1,Math.min(ids.length,Math.floor((AGENT_LIMITS.imageSide-gap)/(cellWidth+gap))));
-      const rows=sheet?region.height:Math.ceil(ids.length/cols);
+      const scale=requestedScale,gutter=18,gap=4,tw=tileset.tileWidth*scale,th=tileset.tileHeight*scale;
+      const cellWidth=Math.max(tw,8*String(count-1).length);
+      const cols=Math.max(1,Math.min(ids.length,Math.floor((AGENT_LIMITS.imageSide-gap)/(cellWidth+gap))));
+      const rows=Math.ceil(ids.length/cols);
       const width=cols*(cellWidth+gap)+gap,height=rows*(th+gutter+gap)+gap;
-      if(width>AGENT_LIMITS.imageSide||height>AGENT_LIMITS.imageSide)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Catalog image too large; select a smaller page");
+      if(width>AGENT_LIMITS.imageSide||height>AGENT_LIMITS.imageSide||width*height>AGENT_LIMITS.imagePixels)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Catalog image too large; select a smaller page");
       const canvas=new RasterReplay(width,height);canvas.fill({x:0,y:0,width,height},[27,33,42,255]);
       const placements:CatalogImage["placements"]=[];
-      const visible=sheet?Array.from({length:region.width*region.height},(_,i)=>(region.y+Math.floor(i/region.width))*tileset.columns+region.x+i%region.width):ids;
-      for(const [i,tileId]of visible.entries()){
-        assertTile(tileset,tileId);
+      for(const [i,tileId]of ids.entries()){
         const rect={x:gap+(i%cols)*(cellWidth+gap),y:gap+Math.floor(i/cols)*(th+gutter+gap),width:tw,height:th};
         canvas.checker(rect);const src=tileRect(tileset,tileId);
+        if(src.x+src.width>pixels.width||src.y+src.height>pixels.height)throw new AgentError(AgentErrorCode.SOURCE_CHANGED,"Tile outside current image");
         canvas.drawImage(pixels as unknown as CanvasImageSource,src.x,src.y,src.width,src.height,rect.x,rect.y,tw,th);
         const labelRect={x:rect.x,y:rect.y+th,width:cellWidth,height:gutter};
         canvas.text(String(tileId),labelRect.x,labelRect.y+3);placements.push({tileId,rect,labelRect});
       }
       call.signal.throwIfAborted();
-      const image:CatalogImage={width,height,mode:sheet?"sheet":"tiles",scale,placements};
+      const image:CatalogImage={width,height,mode:"tiles",scale,placements};
       return {png:encodeAgentPng(canvas),width,height,revision:rev,warnings:[],image};
     },
     async renderPreview(args,call) {

@@ -35,7 +35,7 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   const client = new Client({ name: "real-stdio-client", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(26);
+  expect((await client.listTools()).tools).toHaveLength(29);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -144,5 +144,5 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(26);
+  expect((await client.listTools()).tools).toHaveLength(29);
 });
