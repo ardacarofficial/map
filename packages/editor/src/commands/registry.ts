@@ -19,6 +19,8 @@ export interface Command {
   enabled?(): boolean;
   /** Set false to keep the command out of the palette (e.g. the palette itself). */
   inPalette?: boolean;
+  /** Opens an inspector; its mutation controls enforce the pending-edit gate. */
+  allowDuringEdit?: boolean;
   /** On / off state of a toggle command (menus show it as a check mark). */
   checked?(): boolean;
 }
@@ -38,7 +40,7 @@ export function allCommands(): Command[] {
 }
 
 export function commandAllowedDuringEdit(command: Command): boolean {
-  return command.id.startsWith("ai.") || command.category === "view" || command.category === "general" || command.category === "tool" || ["file.save", "file.saveAs", "file.close", "file.new", "file.open", "level.next", "level.previous", "edit.copy"].includes(command.id);
+  return command.allowDuringEdit === true || command.id.startsWith("ai.") || command.category === "view" || command.category === "general" || command.category === "tool" || ["file.save", "file.saveAs", "file.close", "file.new", "file.open", "level.next", "level.previous", "edit.copy"].includes(command.id);
 }
 
 export function isEnabled(command: Command): boolean {

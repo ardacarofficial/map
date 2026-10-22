@@ -39,6 +39,9 @@ export interface RevealRequest {
 export type LibraryView = "single" | "all";
 
 interface TilesetViewState {
+  /** The all-sources view can pan past either content edge, like the single-source view. */
+  stackOffset: { readonly x: number; readonly y: number };
+  setStackOffset(offset: { readonly x: number; readonly y: number }): void;
   focusedSource: string | null;
   focusSource(key: string): void;
   transforms: Readonly<Record<string, ViewportTransform>>;
@@ -130,6 +133,8 @@ let nonce = 0;
 const prefs = readPrefs();
 
 export const useTilesetView = create<TilesetViewState>()((set, get) => ({
+  stackOffset: { x: 0, y: 0 },
+  setStackOffset: (stackOffset) => set({ stackOffset }),
   focusedSource: null,
   focusSource: (focusedSource) => set({ focusedSource }),
   transforms: {},

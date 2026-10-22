@@ -26,13 +26,13 @@ export function ColorFields() {
     }
     setDraft(null);
   };
-  return <div className="flex flex-col gap-2" data-color-fields>
-    <Segmented label={t('colorPanel.fields')} value={mode} onValueChange={next => { commit(); useColorPanel.setState({ mode: next }); }} items={[{ value: 'rgb', label: t('colorPanel.rgb') }, { value: 'hsl', label: t('colorPanel.hsl') }]} />
-    <div className="grid grid-cols-2 gap-2">{channels.map((value, index) => {
+  return <div className="color-field flex shrink-0 flex-col gap-2" data-color-fields>
+    <Segmented fill label={t('colorPanel.fields')} value={mode} onValueChange={next => { commit(); useColorPanel.setState({ mode: next }); }} items={[{ value: 'rgb', label: t('colorPanel.rgb') }, { value: 'hsl', label: t('colorPanel.hsl') }]} />
+    <div className="color-channel-grid grid grid-cols-4 gap-2">{channels.map((value, index) => {
       const key = String(index), text = draft?.key === key ? draft.text : String(value), invalid = !text.trim() || !Number.isFinite(Number(text));
-      return <label key={index} className="flex min-w-0 items-center gap-2 text-sm text-muted"><span>{t(labels[index]!)}</span><TextField size="sm" className="w-full min-w-0" type="number" aria-label={t(labels[index]!)} value={text} min={0} max={mode === 'rgb' || index === 3 ? 255 : index === 0 ? 359 : 100} step={1} aria-invalid={invalid || undefined} onChange={e => setDraft({ key, text: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { cancelBlur.current = true; setDraft(null); e.currentTarget.blur(); } }} /></label>;
+      return <label key={index} className="color-channel flex min-w-0 flex-col gap-1 text-xs text-muted"><span className="truncate">{t(labels[index]!)}</span><TextField size="sm" className="w-full min-w-0" type="number" aria-label={t(labels[index]!)} value={text} min={0} max={mode === 'rgb' || index === 3 ? 255 : index === 0 ? 359 : 100} step={1} aria-invalid={invalid || undefined} onChange={e => setDraft({ key, text: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { cancelBlur.current = true; setDraft(null); e.currentTarget.blur(); } }} /></label>;
     })}</div>
-    <label className="flex items-center gap-2 text-sm text-muted">{t('colorPanel.hex')}<TextField size="sm" className="min-w-0 flex-1" aria-label={t('pixel.hex')} spellCheck={false} value={draft?.key === 'hex' ? draft.text : hex} aria-invalid={draft?.key === 'hex' && !parseHex(draft.text) || undefined} onChange={e => setDraft({ key: 'hex', text: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { cancelBlur.current = true; setDraft(null); e.currentTarget.blur(); } }} /></label>
-    {draft && (draft.key === 'hex' ? !parseHex(draft.text) : !draft.text.trim() || !Number.isFinite(Number(draft.text))) && <span role="status" className="text-xs text-muted">{t('colorPanel.invalid')}</span>}
+    <label className="flex flex-col gap-1 text-xs text-muted">{t('colorPanel.hex')}<TextField size="sm" className="w-full min-w-0" aria-label={t('pixel.hex')} autoComplete="off" autoCapitalize="off" spellCheck={false} value={draft?.key === 'hex' ? draft.text : hex} aria-invalid={draft?.key === 'hex' && !parseHex(draft.text) || undefined} onChange={e => setDraft({ key: 'hex', text: e.target.value })} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { cancelBlur.current = true; setDraft(null); e.currentTarget.blur(); } }} /></label>
+    {draft && (draft.key === 'hex' ? !parseHex(draft.text) : !draft.text.trim() || !Number.isFinite(Number(draft.text))) && <span role="status" className="text-xs text-danger">{t('colorPanel.invalid')}</span>}
   </div>;
 }

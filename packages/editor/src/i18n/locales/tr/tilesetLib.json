@@ -34,7 +34,7 @@
   "allLabel": "Tüm tileset''ler",
   "search": "Tileset ara",
   "noMatch": "Eşleşen tileset yok",
-  "wheelHint": "Tümü: tekerlek kaydırır · Ctrl+tekerlek yakınlaştırır",
+  "wheelHint": "Tekerlek yakınlaştırır · Shift+tekerlek yatay kaydırır · Boşluk/orta tuş sürükleyerek kaydırır",
   "zoomOverrideReset": "Bu tileset''in kendi yakınlaştırmasını sıfırla",
   "viewSingle": "Tek",
   "viewAll": "Tümü"

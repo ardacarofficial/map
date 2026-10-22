@@ -4,8 +4,9 @@
 mod ai;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -13,7 +14,7 @@ use smap_host::close_guard::{CloseDecision, CloseGuard};
 use smap_host::settings::SettingsFile;
 use smap_host::{find_open_arg, percent_decode, ErrorKind, FileChange, Host, HostError, OpenedProject};
 use tauri::ipc::{InvokeBody, Request, Response};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, Window, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuilder, WebviewUrl, Window, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 const MAIN: &str = "main";
@@ -25,10 +26,124 @@ pub const EVENT_OPEN_FILE: &str = "smap://open-file";
 pub const EVENT_CLOSE_REQUESTED: &str = "smap://close-requested";
 const PATH_HEADER: &str = "x-smap-path";
 
-struct Shown(AtomicBool);
+struct WorldWindow {
+    host: Host,
+    shown: AtomicBool,
+    close_guard: CloseGuard,
+    opening_path: Mutex<Option<PathBuf>>,
+}
+
+struct WindowHosts {
+    worlds: Mutex<HashMap<String, Arc<WorldWindow>>>,
+    recents: Arc<smap_host::recent::RecentStore>,
+    next: AtomicU64,
+    opening: Mutex<()>,
+}
+
+impl WindowHosts {
+    fn get(&self, label: &str) -> Result<Arc<WorldWindow>, HostError> {
+        self.worlds.lock().unwrap().get(label).cloned().ok_or_else(|| bad_input("unknown world window"))
+    }
+    fn insert(&self, app: &AppHandle, label: &str) -> Arc<WorldWindow> {
+        let emitter = app.clone();
+        let target = label.to_owned();
+        let world = Arc::new(WorldWindow {
+            host: Host::with_recents(self.recents.clone(), Arc::new(move |change: FileChange| {
+                let _ = emitter.emit_to(&target, EVENT_FILE_CHANGED, change);
+            })),
+            shown: AtomicBool::new(false),
+            close_guard: CloseGuard::new(),
+            opening_path: Mutex::new(None),
+        });
+        self.worlds.lock().unwrap().insert(label.to_owned(), world.clone());
+        world
+    }
+}
+
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// One JS realm per world keeps histories, images, stamp editors and pending
+/// AI transactions alive while the user works in another native window.
+fn create_world_window(app: &AppHandle, path: Option<PathBuf>, template: Option<String>) -> Result<String, String> {
+    let hosts = app.state::<WindowHosts>();
+    let _opening = hosts.opening.lock().unwrap();
+    let canonical = path.as_ref().map(|p| smap_host::scope::normalize(p).map_err(|e| e.to_string())).transpose()?;
+    if let Some(file) = &canonical {
+        let existing = hosts.worlds.lock().unwrap().iter().find_map(|(label, world)| {
+            (world.opening_path.lock().unwrap().as_ref() == Some(file)
+                || world.host.project_root().as_deref() == file.parent()).then(|| label.clone())
+        });
+        if let Some(label) = existing {
+            if let Some(window) = app.get_webview_window(&label) {
+                show_world(app, &label, "existing world");
+                let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
+                return Ok(label);
+            }
+        }
+    }
+    let label = format!("world-{}", hosts.next.fetch_add(1, Ordering::Relaxed));
+    let world = hosts.insert(app, &label);
+    if let Some(file) = canonical {
+        *world.opening_path.lock().unwrap() = Some(file.clone());
+        if world.host.offer_open(&file).is_none() {
+            hosts.worlds.lock().unwrap().remove(&label);
+            return Err("Could not open the selected world".into());
+        }
+    }
+    let services = app.state::<smap_host::mcp::WindowServices>();
+    let emitter = app.clone();
+    let target = label.clone();
+    let service = match services.register(&label, Arc::new(move |event, payload| {
+        emitter.emit_to(&target, event, payload).map_err(|_| "renderer unavailable".into())
+    })) {
+        Ok(service) => service,
+        Err(error) => { hosts.worlds.lock().unwrap().remove(&label); return Err(error.to_string()); }
+    };
+    // Templates are a fixed enum; never interpolate arbitrary text into a URL.
+    let url = if template.is_some() { "index.html?newWorld=1" } else { "index.html" };
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title("Harita Tasarlayıcı").inner_size(1440.0, 900.0)
+        .min_inner_size(960.0, 600.0).visible(false)
+        .theme(Some(tauri::Theme::Dark)).center()
+        .zoom_hotkeys_enabled(false).disable_drag_drop_handler().build();
+    match window {
+        Ok(window) => {
+            tauri::async_runtime::spawn(async move { service.start().await; });
+            #[cfg(windows)] harden_webview(&window);
+            let fallback = app.clone();
+            let target = label.clone();
+            std::thread::spawn(move || { std::thread::sleep(SHOW_FALLBACK); show_world(&fallback, &target, "fallback timeout"); });
+            Ok(label)
+        }
+        Err(error) => {
+            hosts.worlds.lock().unwrap().remove(&label);
+            if let Some(service) = services.remove(&label) {
+                tauri::async_runtime::spawn(async move { service.finish_shutdown().await; });
+            }
+            Err(error.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn world_window_open(window: WebviewWindow, app: AppHandle, hosts: State<'_, WindowHosts>, kind: String, path: Option<String>) -> Result<bool, String> {
+    let world = hosts.get(window.label()).map_err(|e| e.to_string())?;
+    let selected = match kind.as_str() {
+        "new" => return create_world_window(&app, None, Some("empty".into())).map(|_| true),
+        "picker" => {
+            let picked = window.dialog().file().set_parent(&window).add_filter("Harita Tasarlayıcı", &["smap"]).blocking_pick_file();
+            let Some(picked) = picked else { return Ok(false) };
+            let file = to_path(picked).map_err(|e| e.to_string())?;
+            world.host.allow_user_file(&file).map_err(|e| e.to_string())?
+        }
+        "path" | "recent" => path.ok_or("missing world path")?,
+        _ => return Err("unknown world action".into()),
+    };
+    let file = world.host.authorize_project_path(&selected).map_err(|e| e.to_string())?;
+    create_world_window(&app, Some(file), None).map(|_| true)
 }
 
 fn bad_input(message: &str) -> HostError {
@@ -40,19 +155,25 @@ fn bad_input(message: &str) -> HostError {
 // disk beklerken arayüz donmasın.
 
 #[tauri::command]
-async fn read_file(host: State<'_, Host>, path: String) -> Result<Response, HostError> {
+async fn read_file(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<Response, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.read_file(&path).map(Response::new)
 }
 
 #[tauri::command]
-async fn read_text(host: State<'_, Host>, path: String) -> Result<String, HostError> {
+async fn read_text(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<String, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.read_text(&path)
 }
 
 /// İkili gövde (JSON'a çevirmeden): yol `x-smap-path` başlığında,
 /// `encodeURIComponent` ile kodlanmış.
 #[tauri::command]
-async fn write_file_atomic(host: State<'_, Host>, request: Request<'_>) -> Result<(), HostError> {
+async fn write_file_atomic(window: WebviewWindow, hosts: State<'_, WindowHosts>, request: Request<'_>) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let path = request
         .headers()
         .get(PATH_HEADER)
@@ -66,37 +187,51 @@ async fn write_file_atomic(host: State<'_, Host>, request: Request<'_>) -> Resul
 }
 
 #[tauri::command]
-async fn write_text_atomic(host: State<'_, Host>, path: String, text: String) -> Result<(), HostError> {
+async fn write_text_atomic(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String, text: String) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.write_file_atomic(&path, text.as_bytes())
 }
 
 #[tauri::command]
-async fn list_dir(host: State<'_, Host>, path: String) -> Result<Vec<String>, HostError> {
+async fn list_dir(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<Vec<String>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.list_dir(&path)
 }
 
 #[tauri::command]
-async fn create_dir_all(host: State<'_, Host>, path: String) -> Result<(), HostError> {
+async fn create_dir_all(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.create_dir_all(&path)
 }
 
 #[tauri::command]
-async fn remove_file(host: State<'_, Host>, path: String) -> Result<(), HostError> {
+async fn remove_file(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.remove_file(&path)
 }
 
 #[tauri::command]
-async fn exists(host: State<'_, Host>, path: String) -> Result<bool, HostError> {
+async fn exists(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<bool, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.exists(&path)
 }
 
 #[tauri::command]
-async fn dir_has_entries(host: State<'_, Host>, path: String) -> Result<bool, HostError> {
+async fn dir_has_entries(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<bool, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.dir_has_entries(&path)
 }
 
 #[tauri::command]
-async fn replace_png_guarded(host: State<'_, Host>, request: Request<'_>) -> Result<(), HostError> {
+async fn replace_png_guarded(window: WebviewWindow, hosts: State<'_, WindowHosts>, request: Request<'_>) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
     let path = header(PATH_HEADER).and_then(percent_decode).ok_or_else(|| bad_input("missing x-smap-path header"))?;
     let backup = header("x-smap-backup").and_then(percent_decode).ok_or_else(|| bad_input("missing x-smap-backup header"))?;
@@ -140,13 +275,13 @@ fn window_set_title(window: WebviewWindow, title: String) {
 // yüz sorar (Kaydet / Kaydetme / Vazgeç) ve kararı `window_close` ile verir.
 
 #[tauri::command]
-fn close_guard_set(guard: State<'_, CloseGuard>, unsaved: bool) {
-    guard.set_unsaved(unsaved);
+fn close_guard_set(window: WebviewWindow, hosts: State<'_, WindowHosts>, unsaved: bool) {
+    if let Ok(world) = hosts.get(window.label()) { world.close_guard.set_unsaved(unsaved); }
 }
 
 #[tauri::command]
-fn close_request_ack(guard: State<'_, CloseGuard>) {
-    guard.ack();
+fn close_request_ack(window: WebviewWindow, hosts: State<'_, WindowHosts>) {
+    if let Ok(world) = hosts.get(window.label()) { world.close_guard.ack(); }
 }
 
 /// Ön yüz "kapat" dedi. `destroy` `CloseRequested` üretmez; son pencereyle uygulama çıkar.
@@ -157,16 +292,25 @@ fn window_close(window: WebviewWindow) {
 }
 
 fn on_window_event(window: &Window, event: &WindowEvent) {
-    let WindowEvent::CloseRequested { api, .. } = event else { return };
-    if window.label() != MAIN {
+    if let WindowEvent::Destroyed = event {
+        if let Some(hosts) = window.try_state::<WindowHosts>() {
+            hosts.worlds.lock().unwrap().remove(window.label());
+        }
+        if let Some(services) = window.try_state::<smap_host::mcp::WindowServices>() {
+            if let Some(service) = services.remove(window.label()) {
+                tauri::async_runtime::spawn(async move { service.finish_shutdown().await; });
+            }
+        }
         return;
     }
-    let Some(guard) = window.try_state::<CloseGuard>() else { return };
-    match guard.on_close_requested(Instant::now()) {
-        CloseDecision::Close => log::info!("window closing"),
+    let WindowEvent::CloseRequested { api, .. } = event else { return };
+    let Some(hosts) = window.try_state::<WindowHosts>() else { return };
+    let Ok(world) = hosts.get(window.label()) else { return };
+    match world.close_guard.on_close_requested(Instant::now()) {
+        CloseDecision::Close => log::info!("window closing {}", window.label()),
         CloseDecision::Ask => {
             api.prevent_close();
-            let _ = window.app_handle().emit_to(MAIN, EVENT_CLOSE_REQUESTED, Poke {});
+            let _ = window.app_handle().emit_to(window.label(), EVENT_CLOSE_REQUESTED, Poke {});
         }
     }
 }
@@ -182,10 +326,12 @@ fn to_path(fp: FilePath) -> Result<PathBuf, HostError> {
 #[tauri::command]
 async fn dialog_open_project(
     window: WebviewWindow,
-    host: State<'_, Host>,
+    hosts: State<'_, WindowHosts>,
     title: Option<String>,
     filter_name: Option<String>,
 ) -> Result<Option<String>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let mut d = window
         .dialog()
         .file()
@@ -198,7 +344,9 @@ async fn dialog_open_project(
 }
 
 #[tauri::command]
-async fn dialog_pick_folder(window: WebviewWindow, host: State<'_, Host>, title: Option<String>) -> Result<Option<String>, HostError> {
+async fn dialog_pick_folder(window: WebviewWindow, hosts: State<'_, WindowHosts>, title: Option<String>) -> Result<Option<String>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let mut d = window.dialog().file().set_parent(&window);
     if let Some(t) = title {
         d = d.set_title(t);
@@ -209,11 +357,13 @@ async fn dialog_pick_folder(window: WebviewWindow, host: State<'_, Host>, title:
 #[tauri::command]
 async fn dialog_pick_files(
     window: WebviewWindow,
-    host: State<'_, Host>,
+    hosts: State<'_, WindowHosts>,
     title: Option<String>,
     filter_name: Option<String>,
     extensions: Vec<String>,
 ) -> Result<Vec<String>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let mut d = window.dialog().file().set_parent(&window);
     if !extensions.is_empty() {
         let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
@@ -229,12 +379,14 @@ async fn dialog_pick_files(
 #[tauri::command]
 async fn dialog_save_file(
     window: WebviewWindow,
-    host: State<'_, Host>,
+    hosts: State<'_, WindowHosts>,
     title: Option<String>,
     default_name: Option<String>,
     filter_name: Option<String>,
     extensions: Vec<String>,
 ) -> Result<Option<String>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     let mut d = window.dialog().file().set_parent(&window);
     if !extensions.is_empty() {
         let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
@@ -252,39 +404,54 @@ async fn dialog_save_file(
 // ---- proje, son projeler ---------------------------------------------------
 
 #[tauri::command]
-async fn project_open(host: State<'_, Host>, path: String, name: Option<String>) -> Result<OpenedProject, HostError> {
-    host.open_project(&path, name.as_deref().unwrap_or(""), now_ms())
+async fn project_open(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String, name: Option<String>) -> Result<OpenedProject, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
+    let opened = host.open_project(&path, name.as_deref().unwrap_or(""), now_ms());
+    *world.opening_path.lock().unwrap() = None;
+    opened
 }
 
 #[tauri::command]
-async fn project_set_root(host: State<'_, Host>, dir: String) -> Result<String, HostError> {
+async fn project_set_root(window: WebviewWindow, hosts: State<'_, WindowHosts>, dir: String) -> Result<String, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.set_project_root(&dir)
 }
 
 #[tauri::command]
-async fn project_close(host: State<'_, Host>) -> Result<(), HostError> {
+async fn project_close(window: WebviewWindow, hosts: State<'_, WindowHosts>) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.close_project();
+    *world.opening_path.lock().unwrap() = None;
     Ok(())
 }
 
 /// Çift tıklamayla gelen, henüz işlenmemiş `.smap` yolu (bir kez döner).
 #[tauri::command]
-fn take_open_request(host: State<'_, Host>) -> Option<String> {
-    host.take_pending_open()
+fn take_open_request(window: WebviewWindow, hosts: State<'_, WindowHosts>) -> Option<String> {
+    hosts.get(window.label()).ok()?.host.take_pending_open()
 }
 
 #[tauri::command]
-async fn recent_list(host: State<'_, Host>) -> Result<Vec<smap_host::recent::RecentView>, HostError> {
+async fn recent_list(window: WebviewWindow, hosts: State<'_, WindowHosts>) -> Result<Vec<smap_host::recent::RecentView>, HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     Ok(host.recent_list())
 }
 
 #[tauri::command]
-async fn recent_add(host: State<'_, Host>, path: String, name: String, thumbnail: Option<String>) -> Result<(), HostError> {
+async fn recent_add(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String, name: String, thumbnail: Option<String>) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.recent_add(&path, &name, thumbnail.as_deref(), now_ms()).map(|_| ())
 }
 
 #[tauri::command]
-async fn recent_remove(host: State<'_, Host>, path: String) -> Result<(), HostError> {
+async fn recent_remove(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<(), HostError> {
+    let world = hosts.get(window.label())?;
+    let host = &world.host;
     host.recent_remove(&path).map(|_| ())
 }
 
@@ -304,15 +471,19 @@ fn log_write(level: String, message: String) {
 
 /// Ön yüz ilk karesini çizdi: pencereyi şimdi göster (beyaz/boş kare yok).
 #[tauri::command]
-fn app_ready(app: AppHandle) {
-    show_main(&app, "frontend ready");
+fn app_ready(window: WebviewWindow) {
+    show_world(window.app_handle(), window.label(), "frontend ready");
 }
 
 fn show_main(app: &AppHandle, why: &str) {
-    if app.state::<Shown>().0.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    if let Some(w) = app.get_webview_window(MAIN) {
+    show_world(app, MAIN, why);
+}
+
+fn show_world(app: &AppHandle, label: &str, why: &str) {
+    let Some(hosts) = app.try_state::<WindowHosts>() else { return };
+    let Ok(world) = hosts.get(label) else { return };
+    if world.shown.swap(true, Ordering::SeqCst) { return; }
+    if let Some(w) = app.get_webview_window(label) {
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -321,7 +492,7 @@ fn show_main(app: &AppHandle, why: &str) {
 
 fn focus_main(app: &AppHandle) {
     show_main(app, "second instance");
-    if let Some(w) = app.get_webview_window(MAIN) {
+    if let Some(w) = app.get_webview_window(MAIN).or_else(|| app.webview_windows().into_values().next()) {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -387,11 +558,15 @@ pub fn run() {
         // İlk eklenti olmalı: ikinci örnek hiçbir şey kurmadan çıkar.
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             if let Some(path) = find_open_arg(&argv, Path::new(&cwd)) {
-                if app.state::<Host>().offer_open(&path).is_some() {
-                    let _ = app.emit_to(MAIN, EVENT_OPEN_FILE, Poke {});
-                }
+                // WM_COPYDATA runs on the Windows UI thread. Building another
+                // webview can wait for that thread, so never hold launch locks here.
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(error) = create_world_window(&handle, Some(path), None) { log::error!("open world: {error}"); }
+                });
+            } else {
+                focus_main(app);
             }
-            focus_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
@@ -407,29 +582,27 @@ pub fn run() {
             let recent_file = config_dir.join("recent.json");
             let settings = SettingsFile::new(config_dir.join("settings.json"));
             let ai_emitter = handle.clone();
-            let ai_service = Arc::new(smap_host::mcp::Service::new(
-                settings.clone(),
-                smap_host::mcp::SecretFile::new(config_dir.join("ai-secret.json")),
+            let ai_services = smap_host::mcp::WindowServices::new(config_dir.clone(), settings.clone());
+            let ai_service = ai_services.register(MAIN,
                 Arc::new(move |event, payload| ai_emitter.emit_to(MAIN, event, payload).map_err(|_| "renderer unavailable".into())),
-            )?);
-            app.manage(ai_service.clone());
+            )?;
+            app.manage(ai_services);
             tauri::async_runtime::spawn(async move { ai_service.start().await; });
             app.manage(settings);
-            let emitter = handle.clone();
-            let host = Host::new(
-                recent_file,
-                Arc::new(move |change: FileChange| {
-                    let _ = emitter.emit_to(MAIN, EVENT_FILE_CHANGED, change);
-                }),
-            );
+            let hosts = WindowHosts {
+                worlds: Mutex::new(HashMap::new()),
+                recents: Arc::new(smap_host::recent::RecentStore::new(recent_file)),
+                next: AtomicU64::new(1),
+                opening: Mutex::new(()),
+            };
+            let world = hosts.insert(&handle, MAIN);
             let args: Vec<String> = std::env::args().collect();
             let cwd = std::env::current_dir().unwrap_or_default();
             if let Some(path) = find_open_arg(&args, &cwd) {
-                host.offer_open(&path);
+                *world.opening_path.lock().unwrap() = smap_host::scope::normalize(&path).ok();
+                world.host.offer_open(&path);
             }
-            app.manage(host);
-            app.manage(Shown(AtomicBool::new(false)));
-            app.manage(CloseGuard::new());
+            app.manage(hosts);
 
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window(MAIN) {
@@ -444,9 +617,11 @@ pub fn run() {
             Ok(())
         })
         .on_page_load(|window, payload| {
-            if window.label() == MAIN && matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
-                if let Some(service) = window.try_state::<Arc<smap_host::mcp::Service>>() {
-                    service.transport().renderer_lost();
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(services) = window.try_state::<smap_host::mcp::WindowServices>() {
+                    if let Some(service) = services.get(window.label()) {
+                        service.transport().renderer_lost();
+                    }
                 }
             }
         })
@@ -482,6 +657,7 @@ pub fn run() {
             recent_remove,
             log_write,
             app_ready,
+            world_window_open,
             ai::ai_get_status,
             ai::ai_set_config,
             ai::ai_reveal_token,
@@ -494,7 +670,7 @@ pub fn run() {
         .expect("error while building Harita Tasarlayıcı")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                if let Some(service) = app.try_state::<Arc<smap_host::mcp::Service>>() { service.shutdown(); }
+                if let Some(services) = app.try_state::<smap_host::mcp::WindowServices>() { services.shutdown_all(); }
             }
         });
 }

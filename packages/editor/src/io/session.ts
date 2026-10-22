@@ -503,9 +503,9 @@ async function promptTilesetGrid(png: DecodedPng, mode: CardMode, mapTile: { til
   const { width, height } = png.bitmap;
   const alpha = readAlpha(png.bitmap);
   const last = readLastSpec();
-  const hintSize = last && last.tileWidth === last.tileHeight ? last.tileWidth : mapTile?.tileWidth === mapTile?.tileHeight ? mapTile?.tileWidth : null;
+  const hintSize = mapTile ? (mapTile.tileWidth === mapTile.tileHeight ? mapTile.tileWidth : null) : last && last.tileWidth === last.tileHeight ? last.tileWidth : null;
   const name = tilesetDisplayName(png.file.name);
-  const { draft, suggestions } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null });
+  const { draft, suggestions } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null, initialTile: mapTile });
   const result = await openTilesetCard({
     mode,
     fileName: png.file.name,
@@ -594,9 +594,9 @@ function guessGrid(png: DecodedPng, mapTile: { tileWidth: number; tileHeight: nu
   const { width, height } = png.bitmap;
   const alpha = readAlpha(png.bitmap);
   const last = readLastSpec();
-  const hintSize = last && last.tileWidth === last.tileHeight ? last.tileWidth : mapTile?.tileWidth === mapTile?.tileHeight ? mapTile?.tileWidth : null;
+  const hintSize = mapTile ? (mapTile.tileWidth === mapTile.tileHeight ? mapTile.tileWidth : null) : last && last.tileWidth === last.tileHeight ? last.tileWidth : null;
   const name = tilesetDisplayName(png.file.name);
-  const inferred = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null });
+  const inferred = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha }, hintSize: hintSize ?? null, initialTile: mapTile });
   return { name, alpha, hintSize: hintSize ?? null, ...inferred };
 }
 
@@ -611,12 +611,9 @@ export async function planStartingTileset(file: File, hintSize: number | null): 
   if (!png) return null;
   const { width, height } = png.bitmap;
   const name = tilesetDisplayName(png.file.name);
-  const { suggestions } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha: readAlpha(png.bitmap) }, hintSize });
-  const best = suggestions[0];
-  const fallback = hintSize ?? 32;
-  const spec: TileGridSpec = best
-    ? { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }
-    : { tileWidth: fallback, tileHeight: fallback, margin: 0, spacing: 0 };
+  const { draft } = inferDraft({ name, fileName: png.file.name, image: { width, height, alpha: readAlpha(png.bitmap) }, hintSize,
+    initialTile: hintSize ? { tileWidth: hintSize, tileHeight: hintSize } : null });
+  const spec: TileGridSpec = { tileWidth: Number(draft.tileWidth), tileHeight: Number(draft.tileHeight), margin: Number(draft.margin), spacing: Number(draft.spacing) };
   return { png, name, spec };
 }
 
@@ -1071,6 +1068,12 @@ async function openLocation(location: ProjectLocation): Promise<boolean> {
 
 /** Ctrl+O: pick a project and open it. */
 export async function openProjectFromPicker(): Promise<void> {
+  const platform = getPlatform();
+  if (platform.openWorldWindow) {
+    try { await platform.openWorldWindow({ kind: "picker" }); }
+    catch (error) { toast.error(t("toast.openFailed", { detail: describeError(error) })); }
+    return;
+  }
   if (!(await confirmDiscard())) return;
   await withBusy(async () => {
     try {
@@ -1085,14 +1088,23 @@ export async function openProjectFromPicker(): Promise<void> {
 
 /**
  * Opens a project the OS handed us (desktop: double-clicked `.smap`, startup
- * argument, second instance). Asks about unsaved changes first.
+ * argument, second instance). Hosts with world windows preserve the current
+ * world; other hosts ask about unsaved changes before replacement.
  */
 export async function openProjectPath(path: string): Promise<boolean> {
+  const platform = getPlatform();
+  if (useEditorStore.getState().project && platform.openWorldWindow) {
+    try { return await platform.openWorldWindow({ kind: "path", path }); }
+    catch (error) { toast.error(t("toast.openFailed", { detail: describeError(error) })); return false; }
+  }
   if (!(await confirmDiscard())) return false;
   const result = await withBusy(async () => {
     try {
       return await openLocation(await getPlatform().openPath(path));
     } catch (error) {
+      // A newly created world window may receive an unreadable project.
+      // Release its host reservation so a later Open can retry that file.
+      if (!useEditorStore.getState().project) getPlatform().watchProject(null);
       console.error(error);
       toast.error(t("toast.openFailed", { detail: describeError(error) }));
       return false;
@@ -1103,6 +1115,12 @@ export async function openProjectPath(path: string): Promise<boolean> {
 
 /** Opens an entry of the recent-projects list (asks for permission again if needed). */
 export async function openRecentProject(recent: RecentEntry): Promise<void> {
+  const platform = getPlatform();
+  if (platform.openWorldWindow) {
+    try { await platform.openWorldWindow({ kind: "recent", path: recent.key }); }
+    catch (error) { toast.error(t("toast.openFailed", { detail: describeError(error) })); }
+    return;
+  }
   if (!(await confirmDiscard())) return;
   await withBusy(async () => {
     try {

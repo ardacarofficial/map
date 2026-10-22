@@ -502,6 +502,8 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
       stage: (op: AgentMetadataOperation) => {
         if (op.kind === "recipes") recipes = op.after;
         else if (op.kind === "stamps") stamps = [...op.after];
+        else if (op.kind === "worldSettings") project = normalizeProject({...project,settings:op.after});
+        else if (op.kind === "mapName") project = normalizeProject({...project,levels:project.levels.map(l=>l.id===op.mapId?{...l,name:op.after}:l)});
         else if (op.kind === "mapPosition")
           project = normalizeProject({
             ...project,

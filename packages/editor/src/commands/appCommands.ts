@@ -12,6 +12,7 @@ import {
 import { useEditorStore } from "../state/editorStore";
 import { getCanvasHandle } from "../ui/canvas/canvasHandle";
 import { useUiStore } from "../ui/uiStore";
+import { openNewProjectDialog } from "../ui/dialogs/NewProjectDialog";
 import { pickFiles } from "../ui/pickFiles";
 import { registerCommands, type Command } from "./registry";
 import { registerProjectCommands } from "../io/projectRename";
@@ -146,9 +147,7 @@ const COMMANDS: Command[] = [
     id: "file.new",
     title: "commands.file.new",
     category: "file",
-    run: () => {
-      void confirmDiscard().then((ok) => ok && ui().setNewProjectOpen(true));
-    },
+    run: () => openNewProjectDialog(),
   },
   { id: "file.open", title: "commands.file.open", category: "file", run: () => void openProjectFromPicker() },
   {
@@ -345,8 +344,8 @@ const COMMANDS: Command[] = [
     enabled: hasProject,
     run: () => ui().setEntityTypesOpen(true),
   },
-  { id: "map.settings", title: "commands.map.settings", category: "map", enabled: hasProject, run: () => openMapSettings("name") },
-  { id: "map.resize", title: "commands.map.resize", category: "map", enabled: hasProject, run: () => openMapSettings("size") },
+  { id: "map.settings", allowDuringEdit: true, title: "commands.map.settings", category: "map", enabled: hasProject, run: () => openMapSettings("name") },
+  { id: "map.resize", allowDuringEdit: true, title: "commands.map.resize", category: "map", enabled: hasProject, run: () => openMapSettings("size") },
   // ---- Levels (v1.0)
   { id: "level.new", title: "commands.level.new", category: "level", enabled: noPick, run: () => openNewLevelDialog() },
   {

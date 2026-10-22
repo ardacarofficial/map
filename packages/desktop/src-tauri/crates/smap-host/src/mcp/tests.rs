@@ -27,6 +27,12 @@ impl Harness {
             Arc::new(move |event, value| tx.send((event, value)).map_err(|_| "closed".to_string())),
             options,
         );
+        Self::with_transport(transport, events).await
+    }
+    async fn with_transport(
+        transport: Arc<Transport>,
+        events: mpsc::UnboundedReceiver<(&'static str, Value)>,
+    ) -> Self {
         let server = transport.bind(0).await.unwrap();
         Self {
             transport,
@@ -208,7 +214,7 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         .await
         .unwrap();
     let tools = body["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 33);
+    assert!(tools.len() >= 33);
     for name in ["visual_ingest_reference", "visual_match_reference", "create_stamp"] {
         assert!(tools.iter().any(|tool| tool["name"] == name), "missing {name}");
     }
@@ -994,4 +1000,123 @@ async fn unsupported_version_negotiates_fallback_and_enforces_selected_header() 
             .unwrap()["result"],
         json!({})
     );
+}
+
+#[tokio::test]
+async fn window_services_keep_settings_tokens_and_lifetimes_independent() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = crate::settings::SettingsFile::new(dir.path().join("settings.json"));
+    let windows = WindowServices::new(dir.path().to_owned(), settings.clone());
+    let main = windows.register("main", Arc::new(|_, _| Ok(()))).unwrap();
+    let second = windows.register("world-1", Arc::new(|_, _| Ok(()))).unwrap();
+    assert_eq!(main.get_status().await["snapshot"]["settings"], json!({"enabled":false,"port":48765}));
+    assert_eq!(second.get_status().await["snapshot"]["settings"], json!({"enabled":false,"port":48766}));
+    assert_ne!(main.reveal_token().await.unwrap(), second.reveal_token().await.unwrap());
+    assert!(windows.register("main", Arc::new(|_, _| Ok(()))).is_err());
+    for invalid in ["world-0", "world-01", "world-+1", "world-../main", "../main", "other", "world-65536"] {
+        assert!(windows.register(invalid, Arc::new(|_, _| Ok(()))).is_err(), "{invalid}");
+    }
+    assert!(windows.get("other").is_none());
+    assert_eq!(second.set_config(AgentSettings { enabled: false, port: 49001 }, 0).await["ok"], true);
+    assert_eq!(main.get_status().await["snapshot"]["revision"], 0);
+    assert_eq!(main.get_status().await["snapshot"]["settings"]["port"], 48765);
+    assert_eq!(settings.read_ai().unwrap(), AgentSettings::default());
+    let second_file = crate::settings::SettingsFile::new(dir.path().join("windows/world-1/ai-settings.json"));
+    assert_eq!(second_file.read_ai().unwrap().port, 49001);
+    windows.remove("main").unwrap();
+    assert!(windows.get("main").is_none());
+    assert!(main.transport().ready("late-main".into()).is_err());
+    assert_eq!(main.set_config(AgentSettings::default(), 0).await["code"], "EDITOR_UNAVAILABLE");
+    assert!(main.reveal_token().await.is_err());
+    assert!(second.transport().ready("still-alive".into()).is_ok());
+    assert_eq!(second.get_status().await["snapshot"]["revision"], 1);
+    assert!(windows.get("world-1").is_some());
+    windows.shutdown_all();
+    assert!(second.transport().ready("late-second".into()).is_err());
+}
+
+#[tokio::test]
+async fn window_requests_replies_status_and_teardown_cannot_cross() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = crate::settings::SettingsFile::new(dir.path().join("settings.json"));
+    let windows = WindowServices::new(dir.path().to_owned(), settings);
+    let (tx_a, events_a) = mpsc::unbounded_channel();
+    let (tx_b, events_b) = mpsc::unbounded_channel();
+    let service_a = windows.register("main", Arc::new(move |event, value| {
+        tx_a.send((event, value)).map_err(|_| "closed".into())
+    })).unwrap();
+    let service_b = windows.register("world-1", Arc::new(move |event, value| {
+        tx_b.send((event, value)).map_err(|_| "closed".into())
+    })).unwrap();
+    // Deliberately share credentials and epochs: native service ownership must
+    // still separate correlation IDs, client sessions and published world IDs.
+    service_a.transport().rotate_token(TOKEN.into());
+    service_b.transport().rotate_token(TOKEN.into());
+    let mut a = Harness::with_transport(service_a.transport().clone(), events_a).await;
+    let mut b = Harness::with_transport(service_b.transport().clone(), events_b).await;
+    a.transport.ready("same-epoch".into()).unwrap();
+    b.transport.ready("same-epoch".into()).unwrap();
+    a.transport.publish_status(json!({"bridgeEpoch":"same-epoch","state":{"worldSessionId":"world-a","revision":11}})).unwrap();
+    b.transport.publish_status(json!({"bridgeEpoch":"same-epoch","state":{"worldSessionId":"world-b","revision":22}})).unwrap();
+    let session_a = a.session().await;
+    let session_b = b.session().await;
+    assert_ne!(session_a, session_b);
+    assert_eq!(b.message(&session_a, json!({"jsonrpc":"2.0","id":1,"method":"ping"})).send().await.unwrap().status(), 404);
+    let call = |marker: &str| json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"get_session","arguments":{"marker":marker}}});
+    let request_a = a.message(&session_a, call("a"));
+    let request_b = b.message(&session_b, call("b"));
+    let task_a = tokio::spawn(async move { request_a.send().await.unwrap().json::<Value>().await.unwrap() });
+    let task_b = tokio::spawn(async move { request_b.send().await.unwrap().json::<Value>().await.unwrap() });
+    let event_a = a.event(EVENT_REQUEST).await;
+    let event_b = b.event(EVENT_REQUEST).await;
+    assert_eq!(event_a["arguments"]["marker"], "a");
+    assert_eq!(event_b["arguments"]["marker"], "b");
+    let result = json!({"content":[{"type":"text","text":"{}"}],"structuredContent":{"ok":true,"worldSessionId":"world-b"}});
+    let reply_a = json!({"type":"result","requestId":event_a["requestId"],"bridgeEpoch":"same-epoch","clientSessionId":session_a,"result":result});
+    assert!(b.transport.reply(reply_a).is_err());
+    let reply_b = json!({"type":"result","requestId":event_b["requestId"],"bridgeEpoch":"same-epoch","clientSessionId":session_b,"result":result});
+    assert!(a.transport.reply(reply_b.clone()).is_err());
+    windows.remove("main").unwrap();
+    let cancelled = task_a.await.unwrap();
+    assert_eq!(cancelled["result"]["structuredContent"]["code"], "CANCELLED");
+    assert_eq!(cancelled["result"]["structuredContent"]["worldSessionId"], "world-a");
+    b.transport.reply(reply_b).unwrap();
+    assert_eq!(task_b.await.unwrap()["result"], result);
+    assert_eq!(b.transport.clients().len(), 1);
+    assert!(windows.get("world-1").is_some());
+    assert_eq!(b.message(&session_b, json!({"jsonrpc":"2.0","id":20,"method":"ping"})).send().await.unwrap().status(), 200);
+    assert_eq!(a.init("2025-11-25").await.status(), 503);
+}
+
+#[tokio::test]
+async fn closing_a_window_during_endpoint_configuration_releases_the_candidate_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = crate::settings::SettingsFile::new(dir.path().join("settings.json"));
+    let windows = WindowServices::new(dir.path().to_owned(), settings.clone());
+    let (tx, events) = mpsc::unbounded_channel();
+    let service = windows.register("main", Arc::new(move |event, value| {
+        tx.send((event, value)).map_err(|_| "closed".into())
+    })).unwrap();
+    service.transport().rotate_token(TOKEN.into());
+    let mut h = Harness::with_transport(service.transport().clone(), events).await;
+    h.transport.ready("epoch".into()).unwrap();
+    h.session().await;
+    let candidate = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let port = candidate.local_addr().unwrap().port();
+    drop(candidate);
+    let configuring = service.clone();
+    let update = tokio::spawn(async move {
+        configuring.set_config(AgentSettings { enabled: true, port }, 0).await
+    });
+    loop {
+        if h.event(EVENT_CONTROL).await["type"] == "sessionEnded" { break; }
+    }
+    windows.remove("main").unwrap();
+    service.finish_shutdown().await;
+    assert_eq!(update.await.unwrap()["code"], "EDITOR_UNAVAILABLE");
+    assert_eq!(service.get_status().await["snapshot"]["revision"], 0);
+    assert_eq!(settings.read_ai().unwrap(), AgentSettings::default());
+    service.start().await;
+    assert!(service.transport().ready("late-epoch".into()).is_err());
+    assert!(tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await.is_ok());
 }

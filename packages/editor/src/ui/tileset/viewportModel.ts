@@ -12,6 +12,14 @@ export function zoomViewport(v: ViewportTransform, scale: number, x: number, y: 
 }
 export const snapOrigin = (v: ViewportTransform, dpr: number): ViewportTransform => ({ ...v, x: Math.round(v.x * dpr) / dpr, y: Math.round(v.y * dpr) / dpr });
 
+/** Leave a viewport of reachable space around the content, including its top and left edges. */
+export function scrollProjection(offset: { readonly x: number; readonly y: number }, size: { readonly width: number; readonly height: number }, dpr: number) {
+  const x = Math.round(offset.x * dpr) / dpr;
+  const y = Math.round(offset.y * dpr) / dpr;
+  const origin = { x: Math.max(size.width, x), y: Math.max(size.height, y) };
+  return { origin, scrollLeft: origin.x - x, scrollTop: origin.y - y };
+}
+
 /** Reconcile only against a usable viewport; preserve zoom and every reachable pan. */
 export function clampViewport(v: ViewportTransform, viewW: number, viewH: number, sourceW: number, sourceH: number): ViewportTransform {
   if (!(viewW > 0 && viewH > 0)) return v;

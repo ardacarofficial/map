@@ -7,7 +7,8 @@
  * / son projelerden seçtiği yollara dokunabilir.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { TauriFileSystem, toFsError } from "./tauriFileSystem";
 
 export { isTauri } from "./isTauri";
@@ -16,6 +17,10 @@ export { DesktopFsError, TauriFileSystem, joinPath, toProjectPath, type HostErro
 export const EVENT_FILE_CHANGED = "smap://file-changed";
 export const EVENT_OPEN_FILE = "smap://open-file";
 export const EVENT_CLOSE_REQUESTED = "smap://close-requested";
+
+export function openWorldWindow(request: { kind: "new" | "picker" | "path" | "recent"; path?: string }): Promise<boolean> {
+  return command("world_window_open", request);
+}
 
 export type FileChangeKind = "created" | "modified" | "removed";
 
@@ -125,14 +130,14 @@ export async function onOpenFile(cb: (path: string) => void): Promise<UnlistenFn
     const path = await invoke<string | null>("take_open_request");
     if (path) cb(path);
   };
-  const unlisten = await listen(EVENT_OPEN_FILE, () => void drain());
+  const unlisten = await getCurrentWebviewWindow().listen(EVENT_OPEN_FILE, () => void drain());
   await drain();
   return unlisten;
 }
 
 /** Dışarıdan gelen gerçek değişiklikler (kendi kayıtlarımız ve tekrarlanan olaylar elenmiş). */
 export function onFileChanged(cb: (change: FileChange) => void): Promise<UnlistenFn> {
-  return listen<FileChange>(EVENT_FILE_CHANGED, (event) => cb(event.payload));
+  return getCurrentWebviewWindow().listen<FileChange>(EVENT_FILE_CHANGED, (event) => cb(event.payload));
 }
 
 // ---- son projeler -----------------------------------------------------------
@@ -191,7 +196,7 @@ export function setCloseGuard(unsaved: boolean): Promise<void> {
  * bildirilir (bildirilmezse sayfa donmuş sayılır, ikinci istek kapatır).
  */
 export function onCloseRequested(cb: () => void): Promise<UnlistenFn> {
-  return listen(EVENT_CLOSE_REQUESTED, () => {
+  return getCurrentWebviewWindow().listen(EVENT_CLOSE_REQUESTED, () => {
     void invoke("close_request_ack").catch(() => undefined);
     cb();
   });

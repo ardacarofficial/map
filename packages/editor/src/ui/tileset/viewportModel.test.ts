@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { clampViewport, inversePoint, panViewport, snapOrigin, sourceCellAt, zoomViewport, wheelScale } from "./viewportModel";
+import { clampViewport, inversePoint, panViewport, scrollProjection, snapOrigin, sourceCellAt, zoomViewport, wheelScale } from "./viewportModel";
 
 describe("single PNG viewport", () => {
   it("keeps the cursor source point through random zoom and pan sequences", () => {
@@ -36,6 +36,16 @@ describe("single PNG viewport", () => {
 });
 
 describe("viewport restoration", () => {
+  it("projects all-view free panning on both axes without clipping at the top or left", () => {
+    for (const dpr of [1, 1.25, 1.5, 2]) for (const offset of [{ x: 0, y: 0 }, { x: 120, y: 240 }, { x: -700, y: -500 }, { x: 900, y: 800 }]) {
+      const { origin, scrollLeft, scrollTop } = scrollProjection(offset, { width: 260, height: 400 }, dpr);
+      expect(scrollLeft).toBeGreaterThanOrEqual(0);
+      expect(scrollTop).toBeGreaterThanOrEqual(0);
+      expect(origin.x - scrollLeft).toBeCloseTo(offset.x);
+      expect(origin.y - scrollTop).toBeCloseTo(offset.y);
+    }
+  });
+
   it("preserves a reachable pan and zoom, and never reconciles a hidden viewport", () => {
     const v = { x: -90, y: 70, scale: 2.5 };
     expect(clampViewport(v, 280, 300, 256, 256)).toEqual(v);

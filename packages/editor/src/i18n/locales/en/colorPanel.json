@@ -43,5 +43,11 @@
   "rightFast": "Color cursor right 10",
   "upFast": "Color cursor up 10",
   "downFast": "Color cursor down 10",
-  "show": "Show color panel"
+  "show": "Show color panel",
+  "recentEmpty": "Your next colors appear here.",
+  "palettesEmpty": "Save colors together in a palette, or open an existing palette.",
+  "paletteEmpty": "Add the current color to start your palette.",
+  "pickerHelp": "Arrow keys adjust color · Shift for larger steps",
+  "picker": "Picker",
+  "views": "Color panel view"
 }

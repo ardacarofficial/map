@@ -301,6 +301,7 @@ test("single PNG survives dock collapse, visibility, moves and zero viewport wit
   expect(await savedTransform()).toEqual(saved);
   for (const action of ['hide', 'show']) {
     await page.locator('[data-menu=view]').click();
+    await page.locator("[data-submenu=docks]").hover();
     await page.locator(`[data-command="dock.left.${action}"]`).click();
   }
   await reachable();

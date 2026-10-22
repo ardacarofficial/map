@@ -32,6 +32,21 @@ function alphaWithEmptyTiles(w: number, h: number, tile: number, empty: number[]
 }
 
 describe("inferDraft", () => {
+  it.each([16, 32])("uses the active %s px map for every image regardless of filename, dimensions or a remembered hint", tile => {
+    for (const [width, height, fileName] of [[96, 64, "dungeon-16.png"], [256, 128, "overworld-32.png"], [53, 71, "small.png"]] as const) {
+      const { draft, suggestions } = inferDraft({ name: "Source", fileName, image: { width, height, alpha: null }, hintSize: 64,
+        initialTile: { tileWidth: tile, tileHeight: tile } });
+      expect(draft).toMatchObject({ tileWidth: String(tile), tileHeight: String(tile), margin: "0", spacing: "0", linked: true });
+      expect(suggestions.length).toBeGreaterThan(0);
+      expect(setDraftField(draft, "tileWidth", "24")).toMatchObject({ tileWidth: "24", tileHeight: "24" });
+    }
+  });
+
+  it("keeps a rectangular map's independent width and height", () => {
+    const { draft } = inferDraft({ name: "Source", fileName: "source-32.png", image: { width: 128, height: 128, alpha: null }, initialTile: { tileWidth: 16, tileHeight: 32 } });
+    expect(draft).toMatchObject({ tileWidth: "16", tileHeight: "32", linked: false });
+  });
+
   it("prefills from the file name", () => {
     const { draft, suggestions } = inferDraft({ name: "dungeon-16", fileName: "dungeon-16.png", image: { width: 96, height: 64, alpha: null }, hintSize: 32 });
     expect(draft).toMatchObject({ name: "dungeon-16", tileWidth: "16", tileHeight: "16", margin: "0", spacing: "0", linked: true });

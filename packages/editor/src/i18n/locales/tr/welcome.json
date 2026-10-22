@@ -9,5 +9,6 @@
   "templates": "Şablonlar",
   "dropShort": "Tileset bırak",
   "recentMissing": "Klasör bulunamadı",
-  "noThumbnail": "Önizleme yok"
+  "noThumbnail": "Önizleme yok",
+  "multipleWorlds": "Her dünya ayrı bir pencerede açılır. Açık dünyalar ve kaydedilmemiş değişiklikler korunur."
 }

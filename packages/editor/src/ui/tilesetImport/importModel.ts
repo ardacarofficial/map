@@ -92,6 +92,8 @@ export function inferDraft(input: {
   fileName: string;
   image: CardImageInfo;
   hintSize?: number | null;
+  /** The active map's grid wins over image inference; suggestions remain available to choose. */
+  initialTile?: { readonly tileWidth: number; readonly tileHeight: number } | null;
 }): InferredDraft {
   const { width, height, alpha } = input.image;
   const result = inferTileGrid({
@@ -102,7 +104,9 @@ export function inferDraft(input: {
     ...(input.hintSize ? { hintSize: input.hintSize } : {}),
   });
   const fallback = input.hintSize ?? 32;
-  const spec = result.best ?? { tileWidth: fallback, tileHeight: fallback, margin: 0, spacing: 0 };
+  const spec = input.initialTile
+    ? { ...input.initialTile, margin: 0, spacing: 0 }
+    : result.best ?? { tileWidth: fallback, tileHeight: fallback, margin: 0, spacing: 0 };
   return { draft: draftFromSpec(input.name, spec), suggestions: result.suggestions };
 }
 

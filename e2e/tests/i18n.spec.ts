@@ -36,7 +36,7 @@ test("Settings language previews, cancels, saves and persists after offline rest
 test("direct locale changes refresh open menus, tooltips, canvas hints and HUD without remounting", async ({ page }) => {
   await openDockMap(page);
   await page.locator("[data-menu=view]").click();
-  await page.getByRole("menu").hover({ position: { x: 50, y: 80 } });
+  await page.locator("[data-submenu=panels]").hover();
   const canvas = page.locator("[data-canvas-host] canvas").first();
   await canvas.evaluate(element => { element.setAttribute("data-i18n-retained", "true"); });
   await page.evaluate(async () => {

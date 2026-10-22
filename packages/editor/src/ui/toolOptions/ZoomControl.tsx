@@ -2,6 +2,7 @@ import { Menu } from "../primitives/Overlays";
 import { useRef, useState, useSyncExternalStore } from "react";
 
 import { runCommand } from "../../commands/registry";
+import { ZOOM_PRESETS } from "../../canvas/camera";
 import { getLocale, t } from "../../i18n";
 import { keysFor } from "../../shortcuts/shortcuts";
 import { useEditorStore } from "../../state/editorStore";
@@ -15,9 +16,6 @@ const ZOOM_ITEMS: { command: "view.zoomIn" | "view.zoomOut"; icon: IconName }[] 
   { command: "view.zoomIn", icon: "zoomIn" },
   { command: "view.zoomOut", icon: "zoomOut" },
 ];
-
-/** The menu's presets (DESIGN.md §4.7): 50, 100, 200 and 400 %. */
-const MENU_PRESETS: readonly number[] = [0.5, 1, 2, 4];
 
 /**
  * [ 100 % ⌄ ]: the percentage is a field (type a value, Enter), the
@@ -34,7 +32,7 @@ export function ZoomControl() {
   const cancelled = useRef(false);
   const handle = useSyncExternalStore(watchCanvasHandle, getCanvasHandle);
   // Labelled with the zoom each preset really gives (what the field then shows).
-  const presets = [...new Set(MENU_PRESETS.map((p) => handle?.effectiveZoom(p) ?? p))];
+  const presets = [...new Set((handle?.zoomPresets ?? ZOOM_PRESETS).map((p) => handle?.effectiveZoom(p) ?? p))];
   const resetKeys = keysFor("view.zoomReset")[0];
   const fitKeys = keysFor("view.frameMap")[0];
   const percent = (value: number) => formatZoomLabel(value, locale);

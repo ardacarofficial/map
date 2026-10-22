@@ -24,6 +24,7 @@ for (const home of ["left", "right", "bottom"]) {
     await zone.locator("[data-panel-tab=recent]").click();
     await expect(zone.locator("[data-recent-strip]")).toBeVisible();
     await page.locator("[data-menu=view]").click();
+    await page.locator("[data-submenu=panels]").hover();
     await page.locator('[data-command="panel.project.show"]').click();
     await expect(zone.locator("[data-panel=project]")).toBeVisible();
     await expect(page.locator("[data-panel=project]")).toHaveCount(1);
@@ -92,10 +93,14 @@ for (const [locale, label] of [["tr", "Son kullanılanlar"], ["en", "Recent"]] a
     await openDockMap(page);
     if (locale === "en") {
       await page.locator("[data-menu=help]").click();
-      await page.locator('[data-command="settings.language"]').click();
+      await page.locator('[data-command="settings.editShortcuts"]').click();
+      await page.locator('[data-settings-category=language]').click();
+      await page.locator('#settings-locale').selectOption('en');
+      await page.getByRole('button', { name: 'Save and apply', exact: true }).click();
       await expect(page.locator("html")).toHaveAttribute("lang", "en");
     }
     await page.locator("[data-menu=view]").click();
+    await page.locator("[data-submenu=panels]").hover();
     const recent = page.locator('[data-command="view.toggleRecent"]');
     await expect(recent).toHaveText(label);
     await recent.click();
@@ -109,3 +114,41 @@ for (const [locale, label] of [["tr", "Son kullanılanlar"], ["en", "Recent"]] a
     await expect(page.locator("[data-panel-tab=recent]")).toBeVisible();
   });
 }
+
+test("View groups open on hover and keyboard focus, keep shortcuts and fit a short viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 911, height: 512 });
+  await openDockMap(page);
+  await page.locator("[data-menu=view]").click();
+  await expect(page.locator('[data-command="view.zoomIn"]')).toHaveCount(0);
+  await expect(page.locator('[data-command="view.toggleRecent"]')).toHaveCount(0);
+  for (const group of ["zoom", "overlays", "panels", "docks", "layout"]) {
+    await page.locator(`[data-submenu=${group}]`).hover();
+    const popup = page.getByRole("menu").last();
+    await expect(popup).toBeVisible();
+    const bounds = (await popup.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(911);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(512);
+    await page.keyboard.press("Escape");
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-menu=view]").focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("[data-submenu=zoom]")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('[data-command="view.zoomIn"]')).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator("[data-submenu=zoom]")).toBeFocused();
+  await page.keyboard.press("ArrowDown"); // Bookmarks.
+  await page.keyboard.press("ArrowDown"); // Canvas overlays.
+  await page.keyboard.press("ArrowRight");
+  const grid = page.locator('[data-command="view.toggleGrid"]');
+  await expect(grid).toBeFocused();
+  await expect(grid).toContainText("Ctrl");
+  const checked = await grid.getAttribute("aria-checked");
+  await page.keyboard.press("Enter");
+  await page.locator("[data-menu=view]").click();
+  await page.locator("[data-submenu=overlays]").hover();
+  await expect(grid).toHaveAttribute("aria-checked", checked === "true" ? "false" : "true");
+});

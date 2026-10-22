@@ -66,7 +66,9 @@ export function TilesetStack({
     const section = rootRef.current?.querySelector<HTMLElement>(`[data-tileset-section="${CSS.escape(jump.tilesetId)}"]`);
     if (!vp || !section) return;
     jumped.current = jump.nonce;
-    vp.scrollTop += section.getBoundingClientRect().top - vp.getBoundingClientRect().top - (labelled ? HEADER_H : 0);
+    const state = useTilesetView.getState();
+    const dy = vp.getBoundingClientRect().top + (labelled ? HEADER_H : 0) - section.getBoundingClientRect().top;
+    state.setStackOffset({ ...state.stackOffset, y: state.stackOffset.y + dy });
   }, [jump, tilesets, collapsed, labelled, toggleCollapsed]);
 
   const dragProps = (target: DropTarget) => ({

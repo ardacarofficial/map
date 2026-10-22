@@ -141,5 +141,6 @@
   "activity.exportFailed": "Tanılama dosyası kaydedilemedi.",
   "action.shareReference": "Seçimi referans olarak paylaş",
   "action.shareReferenceReady": "Seçilen görüntü AI referansı olarak hazır.",
-  "action.shareReferenceFailed": "Dikdörtgen bir tileset seçimi yapıp tekrar dene."
+  "action.shareReferenceFailed": "Dikdörtgen bir tileset seçimi yapıp tekrar dene.",
+  "settings.pendingReadOnly": "AI değişiklikleri beklerken bağlantıyı inceleyebilir ve ayarlarını kopyalayabilirsin. Bağlantıyı değiştirmek için değişiklikleri onayla veya vazgeç."
 }

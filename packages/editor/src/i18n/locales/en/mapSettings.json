@@ -19,5 +19,6 @@
   "applied": "Map settings applied",
   "unchanged": "No changes",
   "x": "X",
-  "y": "Y"
+  "y": "Y",
+  "aiReadOnly": "You can inspect map settings while AI changes are pending. Approve or discard the changes to edit them."
 }

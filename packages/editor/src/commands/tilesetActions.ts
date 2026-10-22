@@ -655,6 +655,7 @@ const COMMANDS: Command[] = [
   {
     // The palette lists "Tileset'e git: X" for each tileset; the command itself opens the library search.
     id: "tileset.goto",
+    allowDuringEdit: true,
     title: "commands.tileset.goto",
     category: "tileset",
     enabled: hasTileset,

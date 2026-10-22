@@ -176,6 +176,14 @@ export async function startEditor(rootElement: HTMLElement, options: StartEditor
   }
   starting = false;
 
+  // A separate host window owns this dialog; the original world's stores
+  // and pending edits have never been touched.
+  if (new URLSearchParams(window.location.search).get("newWorld") === "1") {
+    window.history.replaceState(null, "", window.location.pathname);
+    const { openNewProjectDialog } = await import("./ui/dialogs/NewProjectDialog");
+    openNewProjectDialog();
+  }
+
   mark("listening");
   // React has committed by now; one frame (or 50 ms in a hidden window, which gets no
   // frames) lets the first picture (welcome or skeleton) be painted when the window appears.

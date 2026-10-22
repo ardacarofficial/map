@@ -3,6 +3,7 @@ import { IntlMessageFormat } from "intl-messageformat";
 import { escapeLegacyMessage, mergeFeature, pluralize } from "../../scripts/i18n-migrate.ts";
 import expected from "./__fixtures__/migration.expected.json";
 import terminology from "./__fixtures__/world-terminology.expected.json";
+import productCopy from "./__fixtures__/product-copy.expected.json";
 import mergedMain from "./__fixtures__/merged-main.legacy.json";
 import { createCatalog } from "./catalog";
 import { localeResources } from "./resources";
@@ -11,11 +12,12 @@ import { messageArguments } from "./messages.generated";
 describe("mechanical catalog migration", () => {
   const catalog = createCatalog(localeResources, message => { throw new Error(message); });
   for (const id of ["tr", "en"] as const) {
-    it(`preserves legacy output with reviewed world/map terminology for every ${id} key with sample arguments`, () => {
+    it(`preserves legacy output with reviewed terminology and product copy for every ${id} key with sample arguments`, () => {
       const imported = Object.fromEntries(Object.entries(mergedMain[id]).map(([key, text]) => [key, text.replace(/\{\w+\}/g, "2")]));
+      const reviewed: Record<string, string> = { ...terminology[id], ...productCopy[id] };
       for (const [key, rendered] of Object.entries({ ...expected[id], ...imported })) {
         const params = Object.fromEntries(Object.keys(messageArguments[key as keyof typeof messageArguments]).map(arg => [arg, 2]));
-        expect(catalog.format(id, key, params), `${id}:${key}`).toBe(key in terminology[id] ? new IntlMessageFormat(terminology[id][key as keyof typeof terminology[typeof id]], id).format(params) : rendered);
+        expect(catalog.format(id, key, params), `${id}:${key}`).toBe(key in reviewed ? new IntlMessageFormat(reviewed[key]!, id).format(params) : rendered);
       }
     });
   }

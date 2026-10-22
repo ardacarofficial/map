@@ -16,5 +16,6 @@
   "tilesetsHint": "Find and edit the world''s tilesets",
   "appSettings": "App settings",
   "appSettingsHint": "Language and shortcuts (for all worlds)",
-  "saved": "World settings saved"
+  "saved": "World settings saved",
+  "aiReadOnly": "You can inspect world settings while AI changes are pending. Approve or discard the changes to edit them."
 }

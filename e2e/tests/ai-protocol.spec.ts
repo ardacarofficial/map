@@ -14,8 +14,14 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   const agent = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
   try {
-    expect((await agent.listTools()).tools.map((tool) => tool.name)).toContain("get_session");
-    expect((await agent.listTools()).tools).toHaveLength(33);
+    const tools = (await agent.listTools()).tools;
+    expect(tools).toHaveLength(45);
+    expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+      "get_session", "get_editor_state", "configure_editor", "configure_layout",
+      "configure_application", "list_editor_commands", "run_editor_command",
+      "get_export_settings", "configure_export", "get_world_settings",
+      "configure_world", "edit_map", "edit_stamp",
+    ]));
     const result = await agent.getSession();
     expect(result.structuredContent).toHaveProperty("ok");
     expect(result.content[0].type).toBe("text");

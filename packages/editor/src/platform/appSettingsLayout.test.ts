@@ -101,3 +101,65 @@ it("merges a layout commit queued during a shortcut save against the newly saved
   await vi.waitFor(() => expect(JSON.parse(file).layout.zones.left.expandedPx).toBe(350));
   expect(JSON.parse(file)).toMatchObject({ locale: "en", shortcuts: { "tool.brush": ["Q"] }, $future: 1 });
 });
+
+it("patches application preferences atomically, validates bindings, and preserves unrelated settings", async () => {
+  const { platform, app } = await setup();
+  let file = '{"locale":"tr","shortcuts":{},"$future":19}';
+  const writes = vi.fn(async (text: string) => { file = text; });
+  platform.setPlatform({ ...platform.getPlatform(), readSettings: async () => file, writeSettings: writes });
+  await Promise.all([
+    app.updateAppPreferences({ locale: "en" }),
+    app.updateAppPreferences({ shortcuts: { "tool.brush": ["Q"] } }),
+  ]);
+  expect(JSON.parse(file)).toMatchObject({ locale: "en", shortcuts: { "tool.brush": ["Q"] }, $future: 19 });
+  await expect(app.updateAppPreferences({ shortcuts: { "tool.brush": ["E"] } })).rejects.toThrow();
+  expect(writes).toHaveBeenCalledTimes(2);
+  await app.updateAppPreferences({ shortcuts: { "tool.brush": null } });
+  expect(JSON.parse(file).shortcuts ?? {}).not.toHaveProperty("tool.brush");
+  const preview = await app.beginSettingsPreview();
+  await expect(app.updateAppPreferences({ locale: "tr" })).rejects.toThrow("settings are open");
+  preview.cancel();
+  app.useAppSettings.getState().setDialogOpen(true);
+  await expect(app.updateAppPreferences({ locale: "tr" })).rejects.toThrow("settings are open");
+});
+
+it("applies agent application preferences only after persistence succeeds", async () => {
+  const { platform, app } = await setup();
+  const { getLocale, setLocale } = await import("../i18n");
+  setLocale("tr");
+  platform.setPlatform({ ...platform.getPlatform(), readSettings: async () => '{"locale":"tr"}', writeSettings: async () => { throw Error("disk full"); } });
+  await expect(app.updateAppPreferences({ locale: "en" })).rejects.toThrow("disk full");
+  expect(getLocale()).toBe("tr");
+});
+
+it("does not overwrite live dock or debounced pixel preferences while patching application settings", async () => {
+  const { platform, app, dock } = await setup();
+  const { usePixelColors } = await import("../state/pixelColors");
+  let file = JSON.stringify({ locale: "tr", shortcuts: {}, layout: defaultDockLayout(), pixelColors: { fg: "#000000ff", bg: "#ffffffff", recent: [] } });
+  platform.setPlatform({ ...platform.getPlatform(), kind: "desktop", readSettings: async () => file, writeSettings: async text => { file = text; } });
+  await app.loadAppSettings();
+  usePixelColors.getState().setFg("#ff0000ff");
+  dock.getState().setSize("left", 367, false);
+  await app.updateAppPreferences({ locale: "en" });
+  expect(usePixelColors.getState().fg).toBe("#ff0000ff");
+  expect(dock.getState().layout.zones.left.expandedPx).toBe(367);
+  await vi.waitFor(() => expect(JSON.parse(file).pixelColors.fg).toBe("#ff0000ff"));
+  expect(JSON.parse(file).locale).toBe("en");
+});
+
+it("checks request admission again after a queued settings read before persisting preferences", async () => {
+  const { platform, app } = await setup();
+  const { setLocale, getLocale } = await import("../i18n");
+  setLocale("tr");
+  let resolveRead!: (text: string) => void;
+  const write = vi.fn();
+  platform.setPlatform({ ...platform.getPlatform(), readSettings: () => new Promise<string>(resolve => { resolveRead = resolve; }), writeSettings: write });
+  let current = true;
+  const update = app.updateAppPreferences({ locale: "en" }, () => { if (!current) throw Error("request cancelled"); });
+  await vi.waitFor(() => expect(resolveRead).toBeDefined());
+  current = false;
+  resolveRead('{"locale":"tr"}');
+  await expect(update).rejects.toThrow("request cancelled");
+  expect(write).not.toHaveBeenCalled();
+  expect(getLocale()).toBe("tr");
+});

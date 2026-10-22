@@ -23,3 +23,5 @@ export {
 } from "./tags";
 
 export * from "./tools/visual";
+
+export * from "./editorControls";

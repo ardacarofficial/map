@@ -1,4 +1,5 @@
 /// <reference types="node" />
+
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -60,7 +61,7 @@ vi.mock('@tauri-apps/api/core',()=>({invoke:async(command:string,args:Record<str
  case 'recent_list':return [];default:return null;
  }
 }}));
-vi.mock('@tauri-apps/api/event',()=>({listen:async(name:string,fn:(event:{payload:{path:string;kind:string}})=>void)=>{if(name==='smap://file-changed')cb=fn;return()=>{};}}));
+vi.mock('@tauri-apps/api/webviewWindow',()=>({getCurrentWebviewWindow:()=>({listen:async(name:string,fn:(event:{payload:{path:string;kind:string}})=>void)=>{if(name==='smap://file-changed')cb=fn;return()=>{};}})}));
 const {createDesktopPlatform}=await import('./desktopPlatform');
 const {TauriFileSystem}=await import('./tauriFileSystem');
 const winRoot='C:/Maps/Dunya';let tick=0;
@@ -72,7 +73,9 @@ beforeEach(async()=>{
  vi.stubGlobal('window',{addEventListener(){},removeEventListener(){}});
  vi.stubGlobal('document',{addEventListener(){},removeEventListener(){},documentElement:{lang:'tr'}});
  vi.stubGlobal('createImageBitmap',async()=>bitmap());
- setPlatform(createDesktopPlatform());
+ // Persistence integration recreates one renderer in this process; native
+ // world-window delegation is covered separately by multiWorldWindows.test.
+ const platform=createDesktopPlatform();delete platform.openWorldWindow;setPlatform(platform);
  stops=[installSession(),installFileChangeHandling()];installSmartStamps();
  useToastStore.setState({toasts:[]});vi.mocked(bakeSmartStamp).mockClear();
 });

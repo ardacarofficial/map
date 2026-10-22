@@ -19,5 +19,6 @@
   "applied": "Harita ayarları uygulandı",
   "unchanged": "Değişiklik yok",
   "x": "X",
-  "y": "Y"
+  "y": "Y",
+  "aiReadOnly": "AI değişiklikleri beklerken harita ayarlarını inceleyebilirsin. Düzenlemek için değişiklikleri onayla veya vazgeç."
 }

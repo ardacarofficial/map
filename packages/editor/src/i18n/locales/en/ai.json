@@ -141,5 +141,6 @@
   "activity.exportFailed": "Could not save the diagnostics file.",
   "action.shareReference": "Share selection as reference",
   "action.shareReferenceReady": "Selected image is ready as an AI reference.",
-  "action.shareReferenceFailed": "Select a rectangular tileset region and try again."
+  "action.shareReferenceFailed": "Select a rectangular tileset region and try again.",
+  "settings.pendingReadOnly": "You can inspect and copy connection settings while AI changes are pending. Approve or discard the changes to change the connection."
 }

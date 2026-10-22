@@ -38,10 +38,13 @@ pub struct Service {
 }
 impl Service {
     pub fn new(settings: SettingsFile, secret: SecretFile, sink: BridgeSink) -> io::Result<Self> {
-        let (config, state, detail) = match settings.read_ai() {
+        Self::with_defaults(settings, secret, sink, AgentSettings::default())
+    }
+    pub(super) fn with_defaults(settings: SettingsFile, secret: SecretFile, sink: BridgeSink, defaults: AgentSettings) -> io::Result<Self> {
+        let (config, state, detail) = match settings.read_ai_or(defaults.clone()) {
             Ok(config) if config.port >= 1024 => (config, "disabled", None),
             _ => (
-                AgentSettings::default(),
+                defaults,
                 "failed",
                 Some("Invalid AI settings".to_owned()),
             ),
@@ -66,7 +69,7 @@ impl Service {
     }
     pub async fn start(&self) {
         let mut config = self.config.lock().await;
-        if !config.snapshot.settings.enabled || config.running.is_some() {
+        if self.transport.is_shutdown() || !config.snapshot.settings.enabled || config.running.is_some() {
             return;
         }
         let result = match self.secret.load_or_create() {
@@ -78,6 +81,7 @@ impl Service {
         };
         match result {
             Ok(server) => {
+                if self.transport.is_shutdown() { return; }
                 config.running = Some(server);
                 config.state = "listening".into();
             }
@@ -127,6 +131,7 @@ impl Service {
     pub async fn set_config(&self, settings: AgentSettings, expected_revision: u64) -> Value {
         let mut config = self.config.lock().await;
         let failure = |code: &str, config: &Config| json!({"ok":false,"code":code,"snapshot":config.snapshot,"status":self.status_locked(config)});
+        if self.transport.is_shutdown() { return failure("EDITOR_UNAVAILABLE", &config); }
         if expected_revision != config.snapshot.revision {
             return failure("CONFLICT", &config);
         }
@@ -176,6 +181,7 @@ impl Service {
                 return failure("IO", &config);
             }
         }
+        if self.transport.is_shutdown() { return failure("EDITOR_UNAVAILABLE", &config); }
         if self.settings.write_ai(&settings).is_err() {
             return failure("IO", &config);
         }
@@ -207,6 +213,7 @@ impl Service {
     }
     pub async fn reveal_token(&self) -> Result<String, String> {
         let _guard = self.config.lock().await;
+        if self.transport.is_shutdown() { return Err("window closed".into()); }
         self.secret
             .load_or_create()
             .map_err(|_| "AI secret unavailable; regenerate it".into())
@@ -216,6 +223,7 @@ impl Service {
         expected_revision: u64,
     ) -> Result<SettingsSnapshot, String> {
         let mut config = self.config.lock().await;
+        if self.transport.is_shutdown() { return Err("window closed".into()); }
         if expected_revision != config.snapshot.revision {
             return Err("CONFLICT".into());
         }
@@ -225,6 +233,7 @@ impl Service {
             .wait_for_ends()
             .await
             .map_err(|_| "Editor cancellation timed out".to_string())?;
+        if self.transport.is_shutdown() { return Err("window closed".into()); }
         let token = self
             .secret
             .regenerate()
@@ -261,5 +270,10 @@ impl Service {
         if let Ok(mut config) = self.config.try_lock() {
             config.running.take();
         }
+    }
+    /// Finish releasing a socket if shutdown raced a settings operation.
+    pub async fn finish_shutdown(&self) {
+        self.transport.end_all("shutdown");
+        self.config.lock().await.running.take();
     }
 }

@@ -13,7 +13,7 @@ import { registerBrushCommands } from "../toolOptions/brushCommands";
 import { registerHistoryCommands } from "../history/historyCommands";
 import { registerRulerCommands } from "../layout/rulers";
 import { registerProjectSettingsCommands } from "../projectSettings/ProjectSettingsDialog";
-import { MENUS, menuCommands, resolveMenu, type CommandLookup } from "./menuModel";
+import { MENUS, menuCommands, resolveMenu, type CommandLookup, type ResolvedEntry, type MenuEntry } from "./menuModel";
 
 /** Everything the app registers at startup (bootstrap.tsx, App, ToolOptionsBar, ToolBar, HistoryPanel). */
 function registerAll(): void {
@@ -28,6 +28,9 @@ function registerAll(): void {
   registerProjectSettingsCommands();
   installWorldActions();
 }
+
+const entryIds = (entries: readonly MenuEntry[]): CommandId[] => entries.flatMap(entry => typeof entry !== "string" ? entryIds(entry.entries) : entry === "-" ? [] : [entry]);
+const flattenItems = (entries: ResolvedEntry[]): ResolvedEntry[] => entries.flatMap(entry => entry.kind === "submenu" ? flattenItems(entry.entries) : [entry]);
 
 const live: CommandLookup = {
   command(id) {
@@ -59,9 +62,22 @@ describe("menu bar model", () => {
     for (const id of menuCommands()) expect(getCommand(id), id).toBeDefined();
     // Resolving against the real registry drops nothing.
     for (const menu of MENUS) {
-      const items = resolveMenu(menu, live).filter((e) => e.kind === "item");
-      expect(items.length).toBe(menu.entries.filter((e) => e !== "-").length);
+      const items = flattenItems(resolveMenu(menu, live)).filter((e) => e.kind === "item");
+      expect(items.map(item => item.kind === "item" ? item.command : "-")).toEqual(entryIds(menu.entries));
     }
+  });
+
+  it("groups View controls into shallow, non-empty submenus and keeps language in settings", () => {
+    const lookup: CommandLookup = { command: () => ({ title: "commands.view.toggleGrid", enabled: true }), keys: () => [] };
+    const entries = resolveMenu(MENUS.find(menu => menu.id === "view")!, lookup);
+    const groups = entries.filter(entry => entry.kind === "submenu");
+    expect(groups.map(group => group.id)).toEqual(["zoom", "overlays", "panels", "docks", "layout"]);
+    expect(entries.filter(entry => entry.kind !== "separator")).toHaveLength(6);
+    for (const group of groups) expect(group.entries.some(entry => entry.kind === "item")).toBe(true);
+    expect(menuCommands()).not.toContain("settings.language");
+    // Missing optional registrations remove empty groups and their separators.
+    expect(resolveMenu(MENUS.find(menu => menu.id === "view")!, { ...lookup, command: id => id === "view.world" ? lookup.command(id) : undefined }))
+      .toEqual([expect.objectContaining({ kind: "item", command: "view.world" })]);
   });
 
   it("shows each command's first shortcut (settings overrides included) and its enabled state", () => {

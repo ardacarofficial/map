@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { create } from "zustand";
 
 import { t } from "../../i18n";
+import { useEditorStore } from "../../state/editorStore";
+import { toast } from "../toast/toastStore";
 import { confirmDiscard, describeError, newProject, planStartingTileset, type PlannedTileset } from "../../io/session";
 import { FolderTakenError, getPlatform, type ProjectLocation } from "../../platform";
 import { TextField } from "../primitives/TextField";
@@ -39,9 +41,17 @@ const useNewProjectPreset = create<{ template: ProjectTemplateId | null }>()(() 
 
 /**
  * Opens the new project dialog, prefilled from a template (welcome screen
- * cards) or with the empty defaults. Asks about unsaved work first.
+ * cards) or with the empty defaults. Desktop worlds get independent windows;
+ * hosts without that capability ask about unsaved work before replacement.
  */
 export function openNewProjectDialog(template: ProjectTemplateId | null = null): void {
+  const platform = getPlatform();
+  if (useEditorStore.getState().project && platform.openWorldWindow) {
+    void platform.openWorldWindow({ kind: "new" }).catch(error => {
+      toast.error(t("toast.openFailed", { detail: describeError(error) }));
+    });
+    return;
+  }
   void confirmDiscard().then((ok) => {
     if (!ok) return;
     useNewProjectPreset.setState({ template });

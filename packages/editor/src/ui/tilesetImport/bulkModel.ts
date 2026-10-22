@@ -45,7 +45,7 @@ export function parseSize(text: string): { tileWidth: number; tileHeight: number
   return ok(w) && ok(h) ? { tileWidth: w, tileHeight: h } : null;
 }
 
-/** A row for an image, prefilled from the best suggestion (`fallback` px when none). */
+/** The active map supplies the initial grid; inference is used only without a map. */
 export function makeRow(input: {
   key: string;
   fileName: string;
@@ -54,9 +54,12 @@ export function makeRow(input: {
   height: number;
   suggestions: readonly TileGridSuggestion[];
   fallback: number;
+  mapTile?: MapTile;
 }): BulkRow {
   const best = input.suggestions[0];
-  const spec: TileGridSpec = best
+  const spec: TileGridSpec = input.mapTile
+    ? { ...input.mapTile, margin: 0, spacing: 0 }
+    : best
     ? { tileWidth: best.tileWidth, tileHeight: best.tileHeight, margin: best.margin, spacing: best.spacing }
     : { tileWidth: input.fallback, tileHeight: input.fallback, margin: 0, spacing: 0 };
   return { ...input, sizeText: sizeText(spec), spec };

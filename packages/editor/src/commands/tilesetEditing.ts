@@ -79,7 +79,7 @@ export function installTilesetEditingCommands(): void {
     { id: "tileset.cut", title: "tilesetEditing.cut", category: "tileset", enabled: hasProject, run: () => { copyReferences(true); } },
     { id: "tileset.paste", title: "tilesetEditing.paste", category: "tileset", enabled: hasProject, run: pasteReferences },
     { id: "tileset.pasteToPalette", title: "tilesetEditing.pasteToPalette", category: "tileset", enabled: hasProject, run: openPalettePastePicker },
-    { id: "tileset.fit", title: "tilesetEditing.fit", category: "tileset", enabled: () => hasProject() && useTilesetView.getState().view === "single", run: fitTilesetViewport },
+    { id: "tileset.fit", allowDuringEdit: true, title: "tilesetEditing.fit", category: "tileset", enabled: () => hasProject() && useTilesetView.getState().view === "single", run: fitTilesetViewport },
     { id: "palette.trimRows", title: "tilesetEditing.trimCommand", category: "tileset", enabled: () => !!selectedPalette(), run: () => void promptTrimRows() },
   ]);
 }

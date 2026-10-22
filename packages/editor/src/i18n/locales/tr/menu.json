@@ -5,5 +5,10 @@
   "view": "Görünüm",
   "layer": "Katman",
   "map": "Harita",
-  "help": "Yardım"
+  "help": "Yardım",
+  "zoom": "Yakınlaştırma",
+  "overlays": "Tuval göstergeleri",
+  "panels": "Paneller",
+  "docks": "Bölge görünürlüğü",
+  "layout": "Yerleşim"
 }

@@ -76,18 +76,24 @@ pub struct Host {
     scope: Mutex<Scope>,
     known: Arc<Mutex<KnownHashes>>,
     watcher: Mutex<Option<ProjectWatcher>>,
-    recents: RecentStore,
+    recents: Arc<RecentStore>,
     pending_open: Mutex<Option<String>>,
     on_change: ChangeSink,
 }
 
 impl Host {
     pub fn new(recent_file: PathBuf, on_change: ChangeSink) -> Self {
+        Self::with_recents(Arc::new(RecentStore::new(recent_file)), on_change)
+    }
+
+    /// Windows share the recent-list transaction lock, while file scopes,
+    /// watcher hashes and pending open requests remain private to each world.
+    pub fn with_recents(recents: Arc<RecentStore>, on_change: ChangeSink) -> Self {
         Self {
             scope: Mutex::new(Scope::new()),
             known: Arc::new(Mutex::new(KnownHashes::new())),
             watcher: Mutex::new(None),
-            recents: RecentStore::new(recent_file),
+            recents,
             pending_open: Mutex::new(None),
             on_change,
         }
@@ -287,6 +293,24 @@ impl Host {
 
     // ---- proje -----------------------------------------------------------
 
+    /// Validate a UI-chosen or recent project without replacing this world's
+    /// scope, watcher or known file hashes. Used when another window opens it.
+    pub fn authorize_project_path(&self, path: &str) -> HostResult<PathBuf> {
+        let file = crate::scope::normalize(Path::new(path)).map_err(|e| HostError::scope(path, e))?;
+        if self.resolve(path).is_err() && !self.recents.contains(&file.to_string_lossy()) {
+            return Err(HostError::new(ErrorKind::OutOfScope, path, "not chosen by the user"));
+        }
+        if !file.is_file() { return Err(HostError::new(ErrorKind::NotFound, path, "project file not found")); }
+        if !file.extension().is_some_and(|e| e.eq_ignore_ascii_case("smap")) {
+            return Err(HostError::new(ErrorKind::InvalidPath, path, "not a .smap file"));
+        }
+        Ok(file)
+    }
+
+    pub fn project_root(&self) -> Option<PathBuf> {
+        self.scope.lock().unwrap().project_root().map(Path::to_path_buf)
+    }
+
     /// `project.smap`'i açar: klasörü kök yapar, izleyiciyi başlatır, son
     /// projelere ekler. Yol ya kullanıcının seçtiği/izin verilmiş bir yol
     /// ya da son projeler listesinde olmalı.
@@ -415,6 +439,43 @@ mod tests {
         fs::create_dir_all(root.join("levels")).unwrap();
         fs::write(root.join("project.smap"), b"{}\n").unwrap();
         root
+    }
+
+    #[test]
+    fn separate_world_hosts_keep_save_scopes_hashes_and_close_independent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let recents = Arc::new(RecentStore::new(tmp.path().join("config/recent.json")));
+        let a = Host::with_recents(recents.clone(), Arc::new(|_| {}));
+        let b = Host::with_recents(recents, Arc::new(|_| {}));
+        let first = project(&tmp.path().join("first"));
+        let second = project(&tmp.path().join("second"));
+        let a_file = a.allow_user_file(&first.join("project.smap")).unwrap();
+        let b_file = b.allow_user_file(&second.join("project.smap")).unwrap();
+        a.open_project(&a_file, "First", 1).unwrap();
+        b.open_project(&b_file, "Second", 2).unwrap();
+        let a_level = s(&first.join("levels/main.json"));
+        let b_level = s(&second.join("levels/main.json"));
+        a.write_file_atomic(&a_level, b"first unsaved changes saved").unwrap();
+        b.write_file_atomic(&b_level, b"second world").unwrap();
+        assert_eq!(a.read_text(&b_level).unwrap_err().kind, ErrorKind::OutOfScope);
+        assert_eq!(b.read_text(&a_level).unwrap_err().kind, ErrorKind::OutOfScope);
+        // Authorizing a recent for another window never replaces A's root.
+        assert!(a.authorize_project_path(&b_file).is_ok());
+        assert_eq!(a.project_root(), Some(crate::scope::normalize(&first).unwrap()));
+        b.close_project();
+        assert_eq!(a.read_text(&a_level).unwrap(), "first unsaved changes saved");
+        a.write_file_atomic(&a_level, b"first still writable").unwrap();
+        assert_eq!(b.read_text(&b_level).unwrap_err().kind, ErrorKind::OutOfScope);
+        assert_eq!(a.recent_list().len(), 2);
+    }
+
+    #[test]
+    fn choosing_an_untrusted_project_for_a_window_cannot_expand_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (host, _) = host(tmp.path());
+        let project = project(tmp.path());
+        assert_eq!(host.authorize_project_path(&s(&project.join("project.smap"))).unwrap_err().kind, ErrorKind::OutOfScope);
+        assert_eq!(host.project_root(), None);
     }
 
     #[test]

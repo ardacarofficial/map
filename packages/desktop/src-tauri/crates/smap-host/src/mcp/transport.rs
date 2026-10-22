@@ -101,6 +101,7 @@ struct Inner {
     heartbeat: Option<(String, Instant)>,
     last_heartbeat: Instant,
     admission_pauses: usize,
+    closed: bool,
 }
 pub struct Transport {
     inner: Mutex<Inner>,
@@ -175,6 +176,7 @@ impl Transport {
                 heartbeat: None,
                 last_heartbeat: Instant::now(),
                 admission_pauses: 0,
+                closed: false,
             }),
             sink,
             options,
@@ -279,6 +281,7 @@ impl Transport {
         }
         let (ended, sessions) = {
             let mut inner = self.inner.lock().unwrap();
+            if inner.closed { return Err("window closed".into()); }
             let ended = if inner.epoch.as_ref().is_some_and(|e| e != &epoch) {
                 let ended = revoke(&mut inner);
                 clear_ends(&mut inner);
@@ -433,10 +436,16 @@ impl Transport {
             let ended = revoke(&mut inner);
             if reason == "shutdown" {
                 clear_ends(&mut inner);
+                inner.closed = true;
+                inner.epoch = None;
+                inner.published = None;
             }
             ended
         };
         self.emit_ended(epoch, sessions, reason);
+    }
+    pub(super) fn is_shutdown(&self) -> bool {
+        self.inner.lock().unwrap().closed
     }
     fn emit_ended(&self, epoch: Option<String>, sessions: Vec<String>, reason: &str) {
         if let Some(epoch) = epoch {
@@ -601,7 +610,7 @@ impl Transport {
     async fn call(&self, session: &str, rpc_id: Value, params: &Value) -> Value {
         let (id, rx, envelope, duration) = {
             let mut inner = self.inner.lock().unwrap();
-            if inner.admission_pauses > 0 || !inner.ending.is_empty() {
+            if inner.closed || inner.admission_pauses > 0 || !inner.ending.is_empty() {
                 return failure(&inner, "EDITOR_UNAVAILABLE");
             }
             let Some(epoch) = inner.epoch.clone() else {
@@ -888,7 +897,7 @@ async fn handle(
             .insert("WWW-Authenticate", "Bearer".parse().unwrap());
         return res;
     }
-    if transport.inner.lock().unwrap().generation != generation {
+    if transport.is_shutdown() || transport.inner.lock().unwrap().generation != generation {
         return response(StatusCode::SERVICE_UNAVAILABLE, None);
     }
     let host = format!("127.0.0.1:{port}");

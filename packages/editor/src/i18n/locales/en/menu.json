@@ -5,5 +5,10 @@
   "view": "View",
   "layer": "Layer",
   "map": "Map",
-  "help": "Help"
+  "help": "Help",
+  "zoom": "Zoom",
+  "overlays": "Canvas overlays",
+  "panels": "Panels",
+  "docks": "Dock visibility",
+  "layout": "Layout"
 }

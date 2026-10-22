@@ -366,6 +366,7 @@ for (const [width, height] of [[1366, 768], [1024, 600]] as const) for (const de
       await expect.poll(() => page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.document.tilesets.some(source => source.edited))).toBe(true);
       const colors = page.locator('[data-color-panel]');
       await expect(colors).toBeVisible();
+      await colors.getByRole('radio', { name: 'Paletler', exact: true }).click();
       const add = colors.getByRole('button', { name: 'Yeni renk paleti', exact: true });
       await add.scrollIntoViewIfNeeded(); await add.hover();
       const tip = page.getByRole('tooltip');

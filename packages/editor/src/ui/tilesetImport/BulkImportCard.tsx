@@ -51,7 +51,7 @@ function BulkCard({ request }: { request: BulkRequest }) {
   const close = useBulkCard((s) => s.close);
   const [rows, setRows] = useState<BulkRow[]>(() =>
     request.files.map((f, i) =>
-      makeRow({ key: String(i), fileName: f.fileName, name: f.name, width: f.width, height: f.height, suggestions: f.suggestions, fallback: request.fallback }),
+      makeRow({ key: String(i), fileName: f.fileName, name: f.name, width: f.width, height: f.height, suggestions: f.suggestions, fallback: request.fallback, mapTile: request.mapTile }),
     ),
   );
   const [groupChoice, setGroupChoice] = useState("");

@@ -1,7 +1,19 @@
-# @smap/desktop — Tauri kabuğu (v0.5)
+# @smap/desktop — Tauri kabuğu (v0.15)
 
 Editörü (`packages/editor`) Windows uygulaması olarak paketler. Bağımlılık yönü
 `desktop → editor → core`.
+
+## Aynı anda birden fazla dünya
+
+Masaüstünde bir dünya açıkken **Dosya → Yeni/Aç** veya son dünyalardan seçim,
+ayrı bir çalışma penceresi açar. Mevcut dünyanın kaydedilmemiş çizimleri,
+geri alma geçmişi ve bekleyen AI taslağı korunur. Aynı dünya tekrar açılırsa
+mevcut pencereye odaklanılır. Her pencere kendi kapatma/kaydetme sorusunu yönetir.
+Bu özellik masaüstüne aittir; tarayıcı sürümünün mevcut tek dünya akışı korunur.
+
+Her pencerenin MCP bağlantısı, portu ve token'ı ayrıdır. Yeni pencerede
+**Uygulama ayarları → AI** bölümünden bağlantıyı etkinleştirip o pencerenin
+istemci ayarını kopyalayın. Ana pencerenin mevcut bağlantı ayarı korunur.
 
 ## Gerekenler (Windows)
 
@@ -14,7 +26,7 @@ Editörü (`packages/editor`) Windows uygulaması olarak paketler. Bağımlılı
 | Komut | İş |
 |---|---|
 | `pnpm desktop:dev` | Masaüstü Vite uygulamasını (5173) açar, Tauri penceresini ona bağlar |
-| `pnpm desktop:build` | Masaüstü ön yüzünü (`packages/desktop/dist`) derler, sürüm exe'sini ve kurulumu üretir. Windows: NSIS (`src-tauri/target/release/bundle/nsis/Harita Tasarlayıcı_0.5.0_x64-setup.exe`); Linux: `.deb` + AppImage (`tauri.linux.conf.json`, yalnız hattı denemek için) |
+| `pnpm desktop:build` | Masaüstü ön yüzünü (`packages/desktop/dist`) derler, sürüm exe'sini ve kurulumu üretir. Windows: NSIS (`src-tauri/target/release/bundle/nsis/Harita Tasarlayıcı_0.15.0_x64-setup.exe`); Linux: `.deb` + AppImage (`tauri.linux.conf.json`, yalnız hattı denemek için) |
 | `pnpm --filter @smap/desktop build` | Yalnız ön yüz (`dist/`) |
 | `pnpm --filter @smap/desktop test:rust` | Rust çekirdeğinin testleri (`crates/smap-host`, ekransız) |
 | `pnpm --filter @smap/desktop test` | TS platformunun testleri |
@@ -50,7 +62,7 @@ varsayılmamalıdır.
 4. Node 22 ve pnpm (`corepack enable`), depo kökünde `pnpm install`.
 5. `pnpm desktop:build`. NSIS'i Tauri ilk derlemede kendisi indirir
    (`%LOCALAPPDATA%\tauri\NSIS`); ağ yoksa NSIS 3'ü elle kurup PATH'e ekleyin.
-6. Kurulum: `packages\desktop\src-tauri\target\release\bundle\nsis\Harita Tasarlayıcı_0.5.0_x64-setup.exe`.
+6. Kurulum: `packages\desktop\src-tauri\target\release\bundle\nsis\Harita Tasarlayıcı_0.15.0_x64-setup.exe`.
 7. Açılış süresini ölçmek: programı açıp kapatın, log'da
    `startup ms: script …, ready …` satırı ve `window shown (frontend ready)`
    zaman damgası. Bitti ölçütü: süreç başlangıcından pencere görünene < 1 sn.

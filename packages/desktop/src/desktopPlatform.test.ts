@@ -1,3 +1,4 @@
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FolderTakenError, RecentGoneError } from "@smap/editor";
 
@@ -20,12 +21,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: (event: string, cb: (event: { payload: unknown }) => void) => {
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ listen: (event: string, cb: (event: { payload: unknown }) => void) => {
     if (event === "smap://file-changed") fileChanged = cb;
     if (event === "smap://close-requested") closeRequested = cb;
     return Promise.resolve(() => undefined);
-  },
+  } }),
 }));
 
 const { createDesktopPlatform, listenCloseRequests } = await import("./desktopPlatform");
@@ -43,6 +44,13 @@ beforeEach(() => {
 });
 
 describe("desktop platform", () => {
+  it("launches another world without replacing the current host root or watcher", async () => {
+    const platform = createDesktopPlatform();
+    handlers.set("world_window_open", () => true);
+    expect(await platform.openWorldWindow!({ kind: "path", path: "C:/other/project.smap" })).toBe(true);
+    expect(calls).toContainEqual(["world_window_open", { kind: "path", path: "C:/other/project.smap" }]);
+    expect(calls.some(([cmd]) => ["project_open", "project_close", "project_set_root"].includes(cmd))).toBe(false);
+  });
   it("saves a new project into an empty picked folder, else into a sub-folder", async () => {
     const platform = createDesktopPlatform();
     handlers.set("dialog_pick_folder", () => "/home/a/maps");

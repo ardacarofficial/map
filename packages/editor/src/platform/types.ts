@@ -55,6 +55,10 @@ export interface Platform {
   agent?: AgentConnection;
   readonly kind: "browser" | "desktop";
 
+  /** Opens another world in an independent host window, preserving this
+   * world's complete editor state (including unsaved work and AI review). */
+  openWorldWindow?(request: { kind: "new" | "picker" | "path" | "recent"; path?: string }): Promise<boolean>;
+
   /** Asks for an existing project. `null` = cancelled. */
   openProjectDialog(): Promise<ProjectLocation | null>;
   /**

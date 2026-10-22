@@ -1,6 +1,7 @@
 /** Native transport only. The editor installs and owns the Agent API handlers. */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type {
   AgentConnection, AgentConnectionStatus, AgentSettingsSnapshot, BridgeControl, BridgeReply, BridgeRequest,
 } from "../../agent/src/contracts";
@@ -12,7 +13,10 @@ export interface AgentTransport {
 }
 const nativeTransport: AgentTransport = {
   invoke,
-  listen: (event, handler) => listen(event, ({ payload }) => handler(payload)),
+  listen: async (event, handler) => listen(event, ({ payload }) => handler(payload), {
+    // EventTarget::Any (the default) also hears emit_to for other windows.
+    target: { kind: "WebviewWindow", label: getCurrentWebviewWindow().label },
+  }),
   copy: (text) => navigator.clipboard.writeText(text),
 };
 function object(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }

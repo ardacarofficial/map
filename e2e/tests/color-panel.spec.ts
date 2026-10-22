@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
+import type { Page } from '@playwright/test';
 import { expect, readOpfsText, test } from '../support/fixtures';
 import { open, click, key, rgba, point, type Hook } from '../support/pixelHarness';
+
+async function colorView(page: Page, palettes = false) {
+  await page.locator('[data-color-panel]').getByRole('radio', { name: palettes ? 'Paletler' : 'Renk seçici', exact: true }).click();
+}
 
 test('Renk picker, fields, background, palette file round trip and world persistence', async ({ page }) => {
   test.setTimeout(180_000); await open(page); await key(page, 'm');
@@ -8,7 +13,7 @@ test('Renk picker, fields, background, palette file round trip and world persist
   const square = panel.locator('[data-color-control=square]'), box = (await square.boundingBox())!;
   await page.mouse.move(box.x + 20, box.y + 30); await page.mouse.down(); await page.mouse.move(box.x + 120, box.y + 40, { steps: 6 }); await page.mouse.up();
   const chosen = await panel.getByRole('textbox', { name: 'HEX', exact: true }).inputValue(); expect(chosen).not.toBe('#000000ff');
-  await expect(panel.locator('[data-color-recents] button')).toHaveCount(1);
+  await colorView(page, true); await expect(panel.locator('[data-color-recents] button')).toHaveCount(1); await colorView(page);
   const hex = panel.getByRole('textbox', { name: 'HEX', exact: true }); await hex.fill('#2468acff');
   // Drafts leave the live picker untouched until committed.
   expect(await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.pixelColors.getState().fg)).toBe(chosen);
@@ -16,7 +21,7 @@ test('Renk picker, fields, background, palette file round trip and world persist
   await key(page, 'Shift+x'); await click(page, 3, 2); expect(await rgba(page, 0, 0, 3, 2)).toEqual([255, 255, 255, 255]);
   await click(page, 4, 2, 'right'); expect(await rgba(page, 0, 0, 4, 2)).toEqual([36, 104, 172, 255]);
   await panel.getByRole('button', { name: 'Arka rengi düzenle', exact: true }).click();
-  await panel.getByRole('button', { name: 'Yeni renk paleti', exact: true }).click();
+  await colorView(page, true); await panel.getByRole('button', { name: 'Yeni renk paleti', exact: true }).click();
   await panel.getByRole('textbox', { name: 'Palet adı' }).fill('Deniz'); await panel.getByRole('textbox', { name: 'Palet adı' }).press('Enter');
   await panel.getByRole('button', { name: 'Renk ekle', exact: true }).click();
   const downloading = page.waitForEvent('download'); await panel.getByRole('button', { name: 'Renk paleti kaydet…', exact: true }).click();
@@ -31,7 +36,7 @@ test('Renk picker, fields, background, palette file round trip and world persist
     const text = await readOpfsText(page, 'project.smap');
     return text ? (JSON.parse(text) as { colorPalettes?: unknown }).colorPalettes : null;
   }).toEqual([{ name: 'Deniz', colors: ['#2468acff'] }]);
-  await page.reload(); await page.getByRole('button', { name: /^Aç/ }).click(); await expect(page.locator('canvas[aria-label="map canvas"]').first()).toBeVisible(); await key(page, 'm');
+  await page.reload(); await page.getByRole('button', { name: /^Aç/ }).click(); await expect(page.locator('canvas[aria-label="map canvas"]').first()).toBeVisible(); await key(page, 'm'); await colorView(page, true);
   await expect(panel.getByRole('textbox', { name: 'Palet adı' })).toHaveValue('Deniz'); await expect(panel.locator('[aria-label="Palet renkleri"] button')).toHaveCount(1);
 });
 
@@ -56,13 +61,13 @@ test('keyboard controls, numeric clamping, hue preservation, recent selection an
   await page.mouse.move(squareBox.x + 60, squareBox.y + 60); await page.mouse.down(); await page.keyboard.press('Escape'); await page.mouse.up();
   await expect(hex).toHaveValue('#eeddccff');
   await hex.fill('#123456ff'); await hex.press('Enter'); await key(page, 'b'); await click(page, 5, 5); await key(page, 'd'); await key(page, 'i'); await click(page, 5, 5); await expect(hex).toHaveValue('#123456ff');
-  await panel.locator('[data-color-recents] button').filter({ has: page.locator('span') }).last().click(); expect(await hex.inputValue()).not.toBe('#123456ff');
+  await colorView(page, true); await panel.locator('[data-color-recents] button').filter({ has: page.locator('span') }).last().click(); await colorView(page); expect(await hex.inputValue()).not.toBe('#123456ff');
 });
 
 test('palette rename, reorder, remove, undo/redo and corrupt file preserve world data', async ({ page }) => {
   await open(page); await key(page, 'm'); const panel = page.locator('[data-color-panel]'), hex = panel.getByRole('textbox', { name: 'HEX', exact: true });
-  await panel.getByRole('button', { name: 'Yeni renk paleti', exact: true }).click();
-  for (const color of ['#112233ff', '#445566ff']) { await hex.fill(color); await hex.press('Enter'); await panel.getByRole('button', { name: 'Renk ekle', exact: true }).click(); }
+  await colorView(page, true); await panel.getByRole('button', { name: 'Yeni renk paleti', exact: true }).click();
+  for (const color of ['#112233ff', '#445566ff']) { await colorView(page); await hex.fill(color); await hex.press('Enter'); await colorView(page, true); await panel.getByRole('button', { name: 'Renk ekle', exact: true }).click(); }
   const swatches = panel.locator('[aria-label="Palet renkleri"] button'); await swatches.last().click(); await panel.getByRole('button', { name: 'Rengi öne taşı', exact: true }).click(); await expect(swatches.first()).toHaveAttribute('aria-label', 'Renk #445566ff');
   await panel.getByRole('button', { name: 'Rengi sil', exact: true }).click(); await expect(swatches).toHaveCount(1); await key(page, 'Control+z'); await expect(swatches).toHaveCount(2); await key(page, 'Control+Shift+z'); await expect(swatches).toHaveCount(1);
   await page.getByRole('tab', { name: 'Geçmiş', exact: true }).click(); await expect(page.locator('[data-history-panel]')).toContainText('Renk paleti düzenle'); await page.getByRole('tab', { name: 'Renk', exact: true }).click();
@@ -103,4 +108,52 @@ test('mirror preferences and half-pixel origin survive save, reopen and map-stor
     const h = (window as unknown as { __smap: Hook }).__smap, s = h.pixelUi.getState();
     return { h: s.mirrorH, v: s.mirrorV, origin: s.mirrorOrigins.get(h.store) };
   })).toEqual({ h: true, v: true, origin: { x: 10.5, y: 12 } });
+});
+
+test('color controls fit narrow docks; slider endpoints and palette rename cancellation preserve state', async ({ page }) => {
+  await open(page); await key(page, 'm');
+  const panel = page.locator('[data-color-panel]'), hex = panel.getByRole('textbox', { name: 'HEX', exact: true });
+  await hex.fill('#69c9aeff'); await hex.press('Enter');
+  const hue = panel.getByRole('slider', { name: 'Ton', exact: true });
+  await hue.focus(); await hue.press('End'); await expect(hue).toHaveAttribute('aria-valuenow', '359');
+  await hue.press('Home'); await expect(hue).toHaveAttribute('aria-valuenow', '0');
+  const alpha = panel.getByRole('slider', { name: 'Alfa', exact: true });
+  await alpha.focus(); await alpha.press('Home'); await expect(hex).toHaveValue(/00$/);
+  await alpha.press('End'); await expect(hex).toHaveValue(/ff$/);
+  await colorView(page, true); await panel.getByRole('button', { name: 'Yeni renk paleti', exact: true }).click();
+  const name = panel.getByRole('textbox', { name: 'Palet adı' }), originalName = await name.inputValue();
+  const before = await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.undoDepth);
+  await name.fill('Uncommitted name'); await name.press('Escape'); await expect(name).toHaveValue(originalName);
+  expect(await page.evaluate(() => (window as unknown as { __smap: Hook }).__smap.store.undoDepth)).toBe(before);
+  await name.fill('Kıyı renkleri'); await name.press('Enter');
+  for (const color of ['#315d6aff', '#69c9aeff', '#e7b75fff', '#f0707aff']) {
+    await colorView(page); await hex.fill(color); await hex.press('Enter'); await colorView(page, true); await panel.getByRole('button', { name: 'Renk ekle', exact: true }).click();
+  }
+  await colorView(page);
+  for (const width of [260, 320]) {
+    await page.evaluate(async width => {
+      const { useDockStore } = await import(/* @vite-ignore */ String('/src/ui/layout/dockStore.ts'));
+      useDockStore.getState().setSize('right', width);
+    }, width);
+    await expect.poll(() => panel.locator('[data-color-view]').evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+    const box = (await panel.boundingBox())!, square = (await panel.locator('[data-color-control=square]').boundingBox())!;
+    expect(square.width).toBeGreaterThan(160);
+    expect(square.x + square.width).toBeLessThanOrEqual(box.x + box.width);
+    await panel.getByRole('radio', { name: 'HSL', exact: true }).click();
+    await expect(panel.getByRole('spinbutton', { name: 'Doygunluk', exact: true })).toBeVisible();
+    await panel.getByRole('radio', { name: 'RGB', exact: true }).click();
+  }
+  await panel.evaluate(element => { element.scrollTop = 0; });
+  await page.screenshot({ path: test.info().outputPath('color-panel-desktop.png') });
+  await panel.screenshot({ path: test.info().outputPath('color-panel-320.png') });
+  await colorView(page, true);
+  await expect(panel.getByRole('textbox', { name: 'Palet adı' })).toBeVisible();
+  await expect(panel.locator('[aria-label="Palet renkleri"] button')).toHaveCount(4);
+  await panel.locator('[aria-label="Palet renkleri"] button').nth(1).click();
+  await colorView(page); await colorView(page, true);
+  await expect(panel.locator('[aria-label="Palet renkleri"] button').nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(panel.locator('[aria-label="Palet renkleri"] button').last()).toBeInViewport();
+  await expect(panel.getByRole('button', { name: 'Renk ekle', exact: true })).toBeInViewport();
+  await panel.locator('[data-color-palettes]').scrollIntoViewIfNeeded();
+  await panel.screenshot({ path: test.info().outputPath('color-panel-palettes.png') });
 });

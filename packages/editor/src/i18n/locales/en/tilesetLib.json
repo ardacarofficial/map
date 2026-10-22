@@ -34,7 +34,7 @@
   "allLabel": "All tilesets",
   "search": "Search tilesets",
   "noMatch": "No matching tileset",
-  "wheelHint": "All: wheel scrolls · Ctrl+wheel zooms",
+  "wheelHint": "Wheel zooms · Shift+wheel pans horizontally · Space/middle drag pans",
   "zoomOverrideReset": "Reset this tileset''s own zoom",
   "viewSingle": "One",
   "viewAll": "All"

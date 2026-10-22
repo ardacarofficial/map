@@ -24,7 +24,7 @@ export function ModeSelector({ disabled = false }: { disabled?: boolean }) {
 function Swatch({ background = false }: { background?: boolean }) {
   const value = usePixelColors(s => background ? s.bg : s.fg);
   const label = t(background ? 'pixel.background' : 'pixel.foreground');
-  return <ColorSwatch color={value} label={label} quick={background ? 'bg' : 'fg'} onClick={() => { useColorPanel.setState({ target: background ? 'bg' : 'fg' }); revealPanel('color'); }} />;
+  return <ColorSwatch color={value} label={label} quick={background ? 'bg' : 'fg'} onClick={() => { useColorPanel.setState({ target: background ? 'bg' : 'fg', view: 'picker' }); revealPanel('color'); }} />;
 }
 export function PixelOptions() {
   const tool = useEditorStore(s => s.tool), p = usePixelUi(useShallow(s => ({ size: s.size, shape: s.shape, scope: s.scope, fillMode: s.fillMode, filled: s.filled, mirrorH: s.mirrorH, mirrorV: s.mirrorV, pending: s.pending, setSize: s.setSize })));

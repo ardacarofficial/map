@@ -68,10 +68,14 @@ impl SettingsFile {
     }
 
     pub fn read_ai(&self) -> io::Result<crate::mcp::AgentSettings> {
+        self.read_ai_or(crate::mcp::AgentSettings::default())
+    }
+
+    pub fn read_ai_or(&self, defaults: crate::mcp::AgentSettings) -> io::Result<crate::mcp::AgentSettings> {
         let _guard = self.lock.lock().unwrap();
         let value: serde_json::Value = serde_json::from_str(&self.read_unlocked()?.unwrap_or_else(|| "{}".into()))?;
         if !value.is_object() {return Err(io::Error::new(io::ErrorKind::InvalidData,"expected settings object"));}
-        match value.get("ai") { Some(ai) => serde_json::from_value(ai.clone()).map_err(Into::into), None => Ok(crate::mcp::AgentSettings::default()) }
+        match value.get("ai") { Some(ai) => serde_json::from_value(ai.clone()).map_err(Into::into), None => Ok(defaults) }
     }
 
     pub fn write_ai(&self, settings: &crate::mcp::AgentSettings) -> io::Result<()> {

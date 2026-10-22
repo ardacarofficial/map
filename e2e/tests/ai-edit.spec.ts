@@ -219,3 +219,51 @@ test("AI follows UI-created maps and worlds reopened after pairing", async ({ pa
     expect(layer.cells.every(cell => cell > 0)).toBe(true);
   } finally { await client.close(); }
 });
+
+for (const phase of ["running", "awaitingApproval"] as const) test(`settings stay inspectable and application preferences writable during ${phase}`, async ({ page }) => {
+  const client = await setup(page);
+  try {
+    const edit = await begin(client);
+    await paint(client, edit);
+    if (phase === "awaitingApproval") success(await client.callTool("finish_edit", { context: edit.context }));
+    const pendingCells = await cells(client, edit);
+    const stateBefore = success(await client.getSession());
+    await page.locator("[data-menu=file]").click();
+    await page.locator('[data-command="project.settings"]').click();
+    const world = page.locator('[data-dialog="project-settings"]');
+    await expect(world).toBeVisible();
+    await expect(world.locator('p[role="status"]')).toContainText("inceleyebilirsin");
+    await expect(world.locator("input").first()).toBeDisabled();
+    await expect(world.getByRole("button", { name: "Kaydet", exact: true })).toBeDisabled();
+    await world.getByRole("tab").nth(1).click();
+    await expect(world.locator("input").first()).toBeDisabled();
+    await world.getByRole("tab").nth(2).click();
+    await world.getByRole("button", { name: "Uygulama ayarları", exact: true }).click();
+    await expect(page.locator("[data-settings-category=language]")).toBeVisible();
+    await page.locator("[data-settings-category=language]").click();
+    await page.locator("#settings-locale").selectOption("en");
+    await page.getByRole("button", { name: "Save and apply", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("[data-ai-bar]")).toBeVisible();
+
+    await page.locator("[data-menu=map]").click();
+    await page.locator('[data-command="map.settings"]').click();
+    const map = page.locator("[data-map-settings]");
+    await expect(map).toBeVisible();
+    await expect(map.locator('p[role="status"]')).toContainText("inspect map settings");
+    await expect(map.locator('[data-field="name"]')).toBeDisabled();
+    await expect(map.locator('[data-field="width"]')).toBeDisabled();
+    await expect(map.locator('[data-map-settings-apply]')).toBeDisabled();
+    await map.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(map.locator('[data-field="seed"]')).toBeVisible();
+    await expect(map.locator('[data-field="background"]')).toBeDisabled();
+    await page.keyboard.press("Escape");
+    expect(await cells(client, edit)).toEqual(pendingCells);
+    const stateAfter = success(await client.getSession());
+    expect(stateAfter.revision).toBe(stateBefore.revision);
+    expect(stateAfter.data.transaction?.id).toBe(stateBefore.data.transaction?.id);
+    await page.locator("[data-ai-bar]").getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(page.locator("[data-ai-bar]")).toBeHidden();
+  } finally { await client.close(); }
+});

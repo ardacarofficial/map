@@ -98,6 +98,33 @@ describe("opening frame density", () => {
 });
 
 describe("zoom readout during animation", () => {
+  it.each([1, 1.25, 1.5, 2])("accepts 25/50/150 percent and custom input without integer-scale jumps at DPR %s", resolution => {
+    const cam = new CameraController(() => map, () => {});
+    cam.resize(824, 544, resolution);
+    const anchor = { x: 317, y: 223 };
+    const world = () => ({ x: (anchor.x - cam.camera.x) / cam.camera.zoom, y: (anchor.y - cam.camera.y) / cam.camera.zoom });
+    for (const zoom of [0.25, 0.5, 1.5, 0.87]) {
+      const before = world();
+      cam.animateZoomTo(zoom, anchor);
+      expect(cam.displayZoom).toBe(cam.effectiveZoom(zoom));
+      cam.step(1000);
+      expect(cam.camera.zoom).toBe(cam.effectiveZoom(zoom));
+      expect(world().x).toBeCloseTo(before.x);
+      expect(world().y).toBeCloseTo(before.y);
+      expect(Math.abs(cam.camera.zoom - zoom)).toBeLessThanOrEqual(0.5 / (32 * resolution));
+    }
+    cam.setZoom(1, anchor);
+    cam.zoomStep(1, anchor);
+    cam.step(1000);
+    expect(cam.camera.zoom).toBe(1.5);
+    cam.zoomStep(-1, anchor);
+    cam.step(1000);
+    expect(cam.camera.zoom).toBe(1);
+    cam.zoomSteps(-2, anchor);
+    cam.step(1000);
+    expect(cam.camera.zoom).toBe(0.5);
+  });
+
   it("reports the requested preset immediately, so a slow frame does not invite an extra wheel notch", () => {
     const cam = new CameraController(() => map, () => {});
     cam.resize(824, 544, 1);

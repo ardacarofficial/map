@@ -31,7 +31,7 @@ for(const size of [16,32])for(const saved of [false,true])test(`Arda ${size}px $
 async function mismatch(page:Page,adopt=false){
  await openRoadSheet(page,32);await watchErrors(page);
  const bytes=[...readFileSync(new URL("../fixtures/smart-road-16.png",import.meta.url))];
- await dropFile(page,"body","source-road-16.png",bytes);await confirmTilesetCard(page,{gridChoice:"ask"});
+ await dropFile(page,"body","source-road-16.png",bytes);await page.getByTestId("tileset-card").getByLabel("Tile genişliği").fill("16");await confirmTilesetCard(page,{gridChoice:"ask"});
  const question=page.locator("[data-dialog='smart-grid']");await expect(question).toBeVisible();
  await question.getByRole("button",{name:adopt?"Haritayı 16 px yap":"Harita ölçüsünü koru",exact:true}).click();
  await selectRoad(page);await page.keyboard.press("b");

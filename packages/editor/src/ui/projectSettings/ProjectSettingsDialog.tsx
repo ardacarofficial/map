@@ -5,6 +5,8 @@
  * settings file). Edits apply on "Kaydet" as one settings change, saved with
  * the project by the next (auto)save.
  */
+import { manualEditAllowed } from "../../agent/editGate";
+import { usePendingAiEdit } from "../../platform/settingsUi/usePendingAiEdit";
 import { Dialog } from "../primitives/Overlays";
 import { Tabs } from "../primitives/Tabs";
 import { normalizeProjectSettings, type ProjectSettings } from "@smap/core";
@@ -62,6 +64,7 @@ export function registerProjectSettingsCommands(): void {
   registerCommands([
     {
       id: "project.settings",
+      allowDuringEdit: true,
       title: "commands.project.settings",
       category: "file",
       enabled: () => useEditorStore.getState().project !== null,
@@ -76,17 +79,18 @@ export function registerProjectSettingsCommands(): void {
 export function ProjectSettingsDialog() {
   const popupRef = useRef<HTMLDivElement>(null);
   const open = useProjectSettingsDialog((s) => s.open);
+  const readOnly = usePendingAiEdit();
   return (
     <Dialog.Root open={open} onOpenChange={(next) => useProjectSettingsDialog.setState({ open: next })}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
         <Dialog.Popup
           ref={popupRef}
-          initialFocus={() => popupRef.current?.querySelector<HTMLElement>('input:not(:disabled), [role="tabpanel"] button:not(:disabled), footer button:not(:disabled)') ?? popupRef.current}
+          initialFocus={() => popupRef.current?.querySelector<HTMLElement>('input:not(:disabled), [role="tab"][aria-selected="true"], [role="tabpanel"] button:not(:disabled), footer button:not(:disabled)') ?? popupRef.current}
           className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`}
           data-dialog="project-settings"
         >
-          {open && <SettingsForm onDone={() => useProjectSettingsDialog.setState({ open: false })} />}
+          {open && <SettingsForm key={String(readOnly)} onDone={() => useProjectSettingsDialog.setState({ open: false })} />}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
@@ -101,6 +105,7 @@ function templateValue(settings: ProjectSettings): LayerTemplateValue {
 
 function SettingsForm({ onDone }: { onDone(): void }) {
   const project = useEditorStore((s) => s.project);
+  const readOnly = usePendingAiEdit();
   const stored = useProjectLibrary((s) => s.settings);
   const tab = useProjectSettingsDialog((s) => s.tab);
   const doc = project?.store.document;
@@ -123,7 +128,7 @@ function SettingsForm({ onDone }: { onDone(): void }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
-    if (!valid || !tileSize || !mapSize) return;
+    if (!valid || !tileSize || !mapSize || !manualEditAllowed()) return;
     const finalLayers = cleanLayers(layersOf(layers));
     let next: ProjectSettings;
     try {
@@ -160,7 +165,8 @@ function SettingsForm({ onDone }: { onDone(): void }) {
       <Tabs value={tab} onValueChange={tab => useProjectSettingsDialog.setState({ tab })} label={t("projectSettings.title")}
         items={([{ value: "general", label: t("projectSettings.tabGeneral"), attrs: { id: "project-settings-tab-general", "aria-controls": "project-settings-general" } }, { value: "unity", label: t("projectSettings.tabUnity"), attrs: { id: "project-settings-tab-unity", "aria-controls": "project-settings-unity" } }, { value: "more", label: t("projectSettings.tabMore"), attrs: { id: "project-settings-tab-more", "aria-controls": "project-settings-more" } }] as const)} />
       <DialogBody role="tabpanel" id={`project-settings-${tab}`} aria-labelledby={`project-settings-tab-${tab}`} className="flex flex-col gap-3 pt-3">
-        {tab === "general" && <>
+        {readOnly && <p role="status" className="rounded-sm bg-warning-soft px-3 py-2 text-sm text-warning">{t("projectSettings.aiReadOnly")}</p>}
+        {tab === "general" && <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-3">
           <Section label={t("projectSettings.name")} htmlFor={nameId}>
             <TextField size="md"
               id={nameId}
@@ -190,8 +196,8 @@ function SettingsForm({ onDone }: { onDone(): void }) {
           <Section label={t("newProject.background")} hint={t("projectSettings.backgroundHint")}>
             <BackgroundField value={background} onChange={setBackground} />
           </Section>
-        </>}
-        {tab === "unity" && <>
+        </fieldset>}
+        {tab === "unity" && <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-3">
           <Section label={t("newProject.unityFolder")} htmlFor={hintId} hint={t("projectSettings.unityFolderHint")}>
             <TextField size="md"
               id={hintId}
@@ -218,9 +224,9 @@ function SettingsForm({ onDone }: { onDone(): void }) {
             <Icon name="upload" size={16} />
             {t("projectSettings.openExport")}
           </Button>
-        </>}
+        </fieldset>}
         {tab === "more" && <>
-          <LinkRow icon="flag" title={t("projectSettings.entityTypes")} hint={t("projectSettings.entityTypesHint")} onClick={() => go("entity.editTypes")} />
+          <LinkRow disabled={readOnly} icon="flag" title={t("projectSettings.entityTypes")} hint={t("projectSettings.entityTypesHint")} onClick={() => go("entity.editTypes")} />
           <LinkRow icon="image" title={t("projectSettings.tilesets")} hint={t("projectSettings.tilesetsHint")} onClick={() => go("tileset.goto")} />
           <LinkRow
             icon="sliders"
@@ -236,19 +242,20 @@ function SettingsForm({ onDone }: { onDone(): void }) {
 
       <DialogFooter>
         <Button variant="secondary" onClick={onDone}>{t("common.cancel")}</Button>
-        <Button type="submit" variant="primary" disabled={touched && !valid}>{t("common.save")}</Button>
+        <Button type="submit" variant="primary" disabled={readOnly || touched && !valid}>{t("common.save")}</Button>
       </DialogFooter>
     </form>
   );
 }
 
-function LinkRow({ icon, title, hint, onClick }: { icon: IconName; title: string; hint: string; onClick(): void }) {
+function LinkRow({ icon, title, hint, onClick, disabled }: { icon: IconName; title: string; hint: string; onClick(): void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={hint}
-      className="group flex h-control-md items-center gap-3 rounded-sm px-2 text-left hover:bg-hover-popup"
+      className="group flex h-control-md items-center gap-3 rounded-sm px-2 text-left hover:bg-hover-popup disabled:cursor-default disabled:opacity-50"
     >
       <Icon name={icon} size={16} className="shrink-0 text-muted group-hover:text-text" />
       <span className="flex min-w-0 flex-col">

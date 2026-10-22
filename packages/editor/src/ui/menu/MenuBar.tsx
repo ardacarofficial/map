@@ -11,7 +11,7 @@ import { Icon } from "../primitives/Icon";
 import { Tooltip } from "../primitives/Tooltip";
 import { KbdText } from "../primitives/Kbd";
 import { menuItemClass, menuPopupClass, menuPositionerClass, menuSeparatorClass, menuShortcutClass, menuDangerItemClass } from "../primitives/menuStyles";
-import { MENUS, resolveMenu, type CommandLookup, type MenuDef } from "./menuModel";
+import { MENUS, resolveMenu, type CommandLookup, type MenuDef, type ResolvedEntry } from "./menuModel";
 
 /** Live registry + shortcut list (read each time a menu opens). */
 const registryLookup: CommandLookup = {
@@ -72,9 +72,28 @@ function CheckSlot({ on }: { on: boolean }) {
 /** Rendered only while the menu is open, so titles / enabled / keys / checks are current. */
 function MenuItems({ menu }: { menu: MenuDef }) {
   const entries = resolveMenu(menu, registryLookup);
+  return <ResolvedMenuItems entries={entries} menu={menu} />;
+}
+
+function ResolvedMenuItems({ entries, menu }: { entries: ResolvedEntry[]; menu: MenuDef }) {
   const checks = entries.some((e) => e.kind === "item" && e.checked !== undefined);
   return entries.map((entry, i) => {
     if (entry.kind === "separator") return <Menu.Separator key={`sep-${i}`} className={menuSeparatorClass} />;
+    if (entry.kind === "submenu") {
+      const submenu = <Menu.SubmenuRoot key={entry.id}>
+      <Menu.SubmenuTrigger data-submenu={entry.id} className={`${menuItemClass} data-popup-open:bg-hover-popup`}>
+        {checks && <CheckSlot on={false} />}
+        <span className="min-w-0 flex-1 truncate">{t(entry.label)}</span>
+        <Icon name="chevronRight" size={12} className="ml-6 shrink-0 text-faint" />
+      </Menu.SubmenuTrigger>
+      <Menu.Portal><Menu.Positioner side="right" align="start" className={menuPositionerClass}>
+        <Menu.Popup className={`${menuPopupClass} max-h-(--available-height) min-w-56 overflow-y-auto`}>
+          <ResolvedMenuItems entries={entry.entries} menu={menu} />
+        </Menu.Popup>
+      </Menu.Positioner></Menu.Portal>
+    </Menu.SubmenuRoot>;
+      return menu.id === "view" && entry.id === "zoom" ? [submenu, <BookmarksMenu key="submenu-bookmarks" />] : submenu;
+    }
     const label = (
       <>
         {checks && <CheckSlot on={entry.checked === true} />}
@@ -106,7 +125,6 @@ function MenuItems({ menu }: { menu: MenuDef }) {
           {label}
         </Menu.Item>
       );
-    if (menu.id === "view" && entry.command === "view.frameMap") return [item, <BookmarksMenu key="submenu-bookmarks" />];
     if (menu.submenu?.after === entry.command) return [item, <RecentProjectsSubmenu key="submenu-recent" />];
     return item;
   });

@@ -1,3 +1,6 @@
+import { manualEditAllowed } from "../../agent/editGate";
+import { usePendingAiEdit } from "../../platform/settingsUi/usePendingAiEdit";
+import { useStructureVersion } from "../hooks";
 import { Dialog } from "../primitives/Overlays";
 import { entityCell, SPAWN_TYPE_ID } from "@smap/core";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -52,12 +55,13 @@ export function MapSettingsDialog() {
   const open = useUiStore((s) => s.resizeOpen);
   const setOpen = useUiStore((s) => s.setResizeOpen);
   const project = useEditorStore((s) => s.project);
+  const readOnly = usePendingAiEdit();
   return (
     <Dialog.Root open={open && project !== null} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop className={backdropClass} />
-        <Dialog.Popup ref={popupRef} initialFocus={() => popupRef.current?.querySelector<HTMLElement>(`[data-field="${useMapSettingsFocus.getState().focus === "size" ? "width" : "name"}"]`) ?? popupRef.current} className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`} data-map-settings>
-          {open && project && <MapSettingsForm project={project} />}
+        <Dialog.Popup ref={popupRef} initialFocus={() => popupRef.current?.querySelector<HTMLElement>(`[data-field="${useMapSettingsFocus.getState().focus === "size" ? "width" : "name"}"]:not(:disabled)`) ?? popupRef.current?.querySelector<HTMLElement>('[data-dialog-body] button:not(:disabled)') ?? popupRef.current} className={`${popupClass} ${dialogWidthM} ${dialogLayoutClass}`} data-map-settings>
+          {open && project && <MapSettingsForm key={String(readOnly)} project={project} />}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
@@ -66,6 +70,8 @@ export function MapSettingsDialog() {
 
 function MapSettingsForm({ project }: { project: OpenProject }) {
   const store = project.store;
+  const readOnly = usePendingAiEdit();
+  useStructureVersion(store);
   const doc = store.document;
   const map = doc.map;
   const focus = useMapSettingsFocus((s) => s.focus);
@@ -107,7 +113,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!changes || !dirty) return;
+    if (!changes || !dirty || !manualEditAllowed()) return;
     try {
       applyMapOps(store, changes.ops, t("history.mapProps"));
     } catch (error) {
@@ -122,6 +128,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
   };
 
   const placeSpawn = () => {
+    if (!manualEditAllowed()) return;
     closeMapSettings();
     chooseEntityType(SPAWN_TYPE_ID);
   };
@@ -135,11 +142,13 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
     <form onSubmit={submit} noValidate className="flex min-h-0 flex-col">
       <DialogHeader title={t("mapSettings.title")} onClose={closeMapSettings} />
       <DialogBody className="flex flex-col gap-3">
+        {readOnly && <p role="status" className="rounded-sm bg-warning-soft px-3 py-2 text-sm text-warning">{t("mapSettings.aiReadOnly")}</p>}
+        <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-3">
           <Row label={t("mapSettings.name")}>
             {(id) => (
               <TextField size="md"
                 id={id}
-                value={name}
+                value={readOnly ? current.name : name}
                 {...selectAll}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus={focus === "name"}
@@ -155,10 +164,10 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
 
         <div className="grid grid-cols-2 gap-3">
           <Row label={t("resize.width")} error={w === null ? sizeErr : null}>
-            {id => <NumberField id={id} label={t("resize.width")} value={width} onChange={setWidth} invalid={w === null} autoFocus={focus === "size"} field="width" width="w-full" unit={t("newProject.cellsUnit")} />}
+            {id => <NumberField id={id} label={t("resize.width")} value={readOnly ? String(map.width) : width} onChange={setWidth} invalid={w === null} autoFocus={focus === "size"} field="width" width="w-full" unit={t("newProject.cellsUnit")} />}
           </Row>
           <Row label={t("resize.height")} error={h === null ? sizeErr : null}>
-            {id => <NumberField id={id} label={t("resize.height")} value={height} onChange={setHeight} invalid={h === null} field="height" width="w-full" unit={t("newProject.cellsUnit")} />}
+            {id => <NumberField id={id} label={t("resize.height")} value={readOnly ? String(map.height) : height} onChange={setHeight} invalid={h === null} field="height" width="w-full" unit={t("newProject.cellsUnit")} />}
           </Row>
         </div>
         <AnchorPicker anchor={anchor} onChange={setAnchor} />
@@ -168,6 +177,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
               {t("resize.cropWarning")}
             </div>
           )}
+        </fieldset>
         <Group title={t("mapSettings.spawn")}>
           <div className="flex items-center gap-2" data-map-settings-spawn={spawnCell ? "set" : "none"}>
             <Icon name="flag" size={16} className={`shrink-0 ${spawnCell ? "text-muted" : "text-warning"}`} />
@@ -180,22 +190,25 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
                 {t("mapSettings.spawnGo")}
               </Button>
             )}
-            <Button onClick={placeSpawn}>
+            <Button disabled={readOnly} onClick={placeSpawn}>
               {t("mapSettings.spawnPlace")}
             </Button>
           </div>
         </Group>
 
+        <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-3">
         {level && (
           <Group title={t("mapSettings.world")}>
             <div className="flex gap-3">
-              <NumberField value={worldX} onChange={setWorldX} prefix={t("mapSettings.x")} unit={t("newProject.pxUnit")} width="w-full" invalid={wx === null} field="worldX" label={`${t("mapSettings.world")} ${t("mapSettings.x")}`} />
-              <NumberField value={worldY} onChange={setWorldY} prefix={t("mapSettings.y")} unit={t("newProject.pxUnit")} width="w-full" invalid={wy === null} field="worldY" label={`${t("mapSettings.world")} ${t("mapSettings.y")}`} />
+              <NumberField value={readOnly ? String(current.world?.x ?? 0) : worldX} onChange={setWorldX} prefix={t("mapSettings.x")} unit={t("newProject.pxUnit")} width="w-full" invalid={wx === null} field="worldX" label={`${t("mapSettings.world")} ${t("mapSettings.x")}`} />
+              <NumberField value={readOnly ? String(current.world?.y ?? 0) : worldY} onChange={setWorldY} prefix={t("mapSettings.y")} unit={t("newProject.pxUnit")} width="w-full" invalid={wy === null} field="worldY" label={`${t("mapSettings.world")} ${t("mapSettings.y")}`} />
             </div>
           </Group>
         )}
 
+        </fieldset>
         <AdvancedDisclosure open={advanced} onChange={setAdvanced} label={t("mapSettings.advanced")}>
+          <fieldset disabled={readOnly} className="min-w-0">
           <Row label={t("mapSettings.background")} error={bg === undefined ? t("mapSettings.backgroundInvalid") : null}>
             {(id) => (
               <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -211,7 +224,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
                 </label>
                 <TextField size="md"
                   id={id}
-                  value={bgText}
+                  value={readOnly ? current.background ?? "" : bgText}
                   placeholder={t("mapSettings.backgroundNone")}
                   onChange={(e) => setBgText(e.target.value)}
                   spellCheck={false}
@@ -227,6 +240,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
               </div>
             )}
           </Row>
+          </fieldset>
             <Row label={t("mapSettings.tile")}>{() => <span className="text-md text-text tabular" title={t("mapSettings.tileReadOnly")}>{map.tileWidth} × {map.tileHeight} {t("newProject.pxUnit")}</span>}</Row>
             <FormField label={t("mapSettings.seed")}><span className="text-md text-text tabular select-all" data-field="seed">{doc.seed}</span></FormField>
         </AdvancedDisclosure>
@@ -239,7 +253,7 @@ function MapSettingsForm({ project }: { project: OpenProject }) {
               : " "
       }>
         <Button variant="secondary" onClick={closeMapSettings}>{t("common.cancel")}</Button>
-        <Button type="submit" variant="primary" disabled={!valid || !dirty} data-map-settings-apply>{t("mapSettings.apply")}</Button>
+        <Button type="submit" variant="primary" disabled={readOnly || !valid || !dirty} data-map-settings-apply>{t("mapSettings.apply")}</Button>
       </DialogFooter>
     </form>
   );

@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "72106cdcf420e71e55da8db31ab56560e4fff1b1f04ea91245740ff7c4955fc0",
+  "catalogueSha256": "159fb939dd1b22a10237623867b4b54a3f097aeeac742998f8be9824b03965d2",
   "tools": {
     "get_session": {
       "valid": [
@@ -1678,6 +1678,336 @@
               }
             }
           ]
+        }
+      ]
+    },
+    "get_editor_state": {
+      "valid": [
+        {}
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": ""
+          }
+        }
+      ]
+    },
+    "configure_editor": {
+      "valid": [
+        {
+          "gridVisible": false
+        },
+        {
+          "pixel": {
+            "size": 64,
+            "foreground": "#ff00ffff"
+          }
+        },
+        {
+          "selection": {
+            "tile": null
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "brush": {
+            "size": 0
+          }
+        },
+        {
+          "pixel": {
+            "foreground": "bad"
+          }
+        },
+        {
+          "camera": {
+            "zoom": 1000
+          }
+        }
+      ]
+    },
+    "configure_layout": {
+      "valid": [
+        {
+          "action": "reset"
+        },
+        {
+          "action": "zone",
+          "zone": "left",
+          "state": "collapsed"
+        },
+        {
+          "action": "move",
+          "panel": "aiActivity",
+          "zone": "right",
+          "split": "end"
+        }
+      ],
+      "invalid": [
+        {
+          "action": "zone",
+          "zone": "left"
+        },
+        {
+          "action": "show",
+          "panel": "unknown"
+        },
+        {
+          "action": "reset",
+          "panel": "tileset"
+        }
+      ]
+    },
+    "configure_application": {
+      "valid": [
+        {
+          "locale": "en"
+        },
+        {
+          "shortcuts": {
+            "tool.brush": [
+              "B"
+            ],
+            "tool.fill": null
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "shortcuts": {
+            "tool.brush": [
+              ""
+            ]
+          }
+        },
+        {
+          "locale": ""
+        }
+      ]
+    },
+    "list_editor_commands": {
+      "valid": [
+        {},
+        {
+          "limit": 128,
+          "query": "view"
+        }
+      ],
+      "invalid": [
+        {
+          "limit": 129
+        },
+        {
+          "offset": -1
+        }
+      ]
+    },
+    "run_editor_command": {
+      "valid": [
+        {
+          "commandId": "view.toggleGrid"
+        }
+      ],
+      "invalid": [
+        {},
+        {
+          "commandId": ""
+        }
+      ]
+    },
+    "edit_map": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "mapId": "map",
+          "name": "Village",
+          "world": {
+            "x": -32,
+            "y": 48
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "mapId": "map"
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "mapId": "map",
+          "world": {
+            "x": 0.5,
+            "y": 0
+          }
+        }
+      ]
+    },
+    "edit_stamp": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "stampId": "house",
+          "action": "update",
+          "props": {
+            "name": "Home",
+            "tags": [
+              "roof"
+            ],
+            "favorite": true
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "stampId": "house",
+          "action": "duplicate",
+          "name": "Villa"
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "stampId": "house",
+          "action": "remove"
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "stampId": "house",
+          "action": "update",
+          "props": {}
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "stampId": "house",
+          "action": "remove",
+          "name": "no"
+        }
+      ]
+    },
+    "get_world_settings": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world"
+          }
+        }
+      ],
+      "invalid": [
+        {}
+      ]
+    },
+    "configure_world": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "settings": {
+            "tileWidth": 16,
+            "newLevel": {
+              "width": 20
+            },
+            "background": null
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "settings": {}
+        },
+        {
+          "context": {
+            "worldSessionId": "world",
+            "transactionId": "transaction",
+            "idempotencyKey": "request-123",
+            "expectedRevision": 1
+          },
+          "settings": {
+            "background": "red"
+          }
+        }
+      ]
+    },
+    "get_export_settings": {
+      "valid": [
+        {}
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": ""
+          }
+        }
+      ]
+    },
+    "configure_export": {
+      "valid": [
+        {
+          "preferences": {
+            "target": "png",
+            "pngScale": 4,
+            "autoUnity": false
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "preferences": {}
+        },
+        {
+          "preferences": {
+            "target": "bad"
+          }
         }
       ]
     }

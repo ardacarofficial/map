@@ -1,3 +1,4 @@
+import { AgentError, AgentErrorCode } from "@smap/agent";
 import { formatUiError } from "./errorMessages";
 import { pixelColorSettings, usePixelColors } from "../state/pixelColors";
 /**
@@ -22,7 +23,7 @@ interface AppSettingsState {
   revision: number;
   /** The settings-file dialog is open. */
   dialogOpen: boolean;
-  settingsCategory: "ai" | null;
+  settingsCategory: "ai" | "language" | null;
   setDialogOpen(open: boolean): void;
 }
 
@@ -157,6 +158,38 @@ export async function setAppLocale(locale: Locale): Promise<void> {
   } catch (error) {
     platform.log("warn", `settings: could not save language: ${String(error)}`);
   }
+}
+
+/** Atomically patch application preferences for the agent's UI controls. */
+export async function updateAppPreferences(patch: { locale?: string; shortcuts?: Record<string, string[] | null> }, assertCurrent?: () => void): Promise<void> {
+  const assertAvailable = () => {
+    assertCurrent?.();
+    if (settingsPreview || useAppSettings.getState().dialogOpen) throw new AgentError(AgentErrorCode.WRITER_BUSY, "Application settings are open; close them before changing preferences");
+  };
+  assertAvailable();
+  const next = await settingsWrites.update(text => {
+    assertAvailable();
+    const raw: unknown = JSON.parse(text ?? defaultSettingsText(SHORTCUTS, getLocale()));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new SyntaxError("Expected a settings object");
+    const record = raw as Record<string, unknown>;
+    const shortcuts = record.shortcuts && typeof record.shortcuts === "object" && !Array.isArray(record.shortcuts)
+      ? { ...record.shortcuts as Record<string, unknown> } : {};
+    if (patch.shortcuts) for (const [id, keys] of Object.entries(patch.shortcuts)) {
+      if (keys === null) delete shortcuts[id]; else shortcuts[id] = keys;
+    }
+    const result = formatSettings({ ...record, ...(patch.locale === undefined ? {} : { locale: patch.locale }), ...(patch.shortcuts ? { shortcuts } : {}) });
+    const { problems } = parseSettings(result, SHORTCUTS, getLocale());
+    if (problems.length) throw new AgentError(AgentErrorCode.INVALID_ARGUMENT, problems.map(describeProblem).join("; "));
+    return compactSettingsText(result, SHORTCUTS);
+  });
+  if (next === null) throw new Error("Application preferences could not be saved");
+  // Apply only the requested fields. Reapplying the whole file here would
+  // replace live dock gestures and colors still waiting for their save debounce.
+  const { settings } = parseSettings(next, SHORTCUTS, getLocale());
+  const previousLocale = getLocale();
+  if (patch.shortcuts !== undefined) setShortcutOverrides(settings.shortcuts);
+  if (patch.locale !== undefined) applyLocale(settings.locale);
+  if (getLocale() === previousLocale) bump();
 }
 
 /** Saves the text from the settings dialog and applies it. Throws `SyntaxError` for invalid JSON. */

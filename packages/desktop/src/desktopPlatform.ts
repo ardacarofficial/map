@@ -80,6 +80,7 @@ export function createDesktopPlatform(): Platform {
   return {
     kind: "desktop",
     agent: createAgentConnection(),
+    openWorldWindow: bridge.openWorldWindow,
 
     async openProjectDialog() {
       const path = await bridge.openProjectDialog();

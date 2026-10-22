@@ -7,13 +7,14 @@ import { getLevelWorkspace } from '../io/session';
 import { saveColorPalette, loadColorPalette } from '../io/colorPaletteIo';
 import { useEditorStore } from '../state/editorStore';
 import { isWorldView } from './worldActions';
+import { revealPanel } from '../ui/layout/dockStore';
 
 export function registerColorCommands(): void {
   const ready = () => !!useEditorStore.getState().project && !useEditorStore.getState().project?.levelId?.startsWith('stamp:') && !isWorldView();
   const control = () => typeof document === 'undefined' ? null : document.activeElement?.getAttribute('data-color-control');
   registerCommands([
-    { id: 'colorPalette.load', title: 'colorPanel.load', category: 'file', enabled: ready, run: () => { void loadColorPalette(); } },
-    { id: 'colorPalette.save', title: 'colorPanel.save', category: 'file', enabled: () => ready() && useProjectLibrary.getState().colorPalettes.length > 0, run: () => { void saveColorPalette(); } },
+    { id: 'colorPalette.load', title: 'colorPanel.load', category: 'file', enabled: ready, run: () => { useColorPanel.setState({ view: 'palettes' }); revealPanel('color'); void loadColorPalette(); } },
+    { id: 'colorPalette.save', title: 'colorPanel.save', category: 'file', enabled: () => ready() && useProjectLibrary.getState().colorPalettes.length > 0, run: () => { useColorPanel.setState({ view: 'palettes' }); revealPanel('color'); void saveColorPalette(); } },
     { id: 'pixel.resetOrigin', title: 'colorPanel.resetOrigin', category: 'tool', enabled: () => ready() && usePixelUi.getState().mode === 'pixel', run: () => { const store = getLevelWorkspace()?.active.store; if (store) { usePixelUi.getState().mirrorOrigins.delete(store); usePixelUi.setState(s => ({ originRevision: s.originRevision + 1 })); } } },
     ...(['left', 'right', 'up', 'down', 'leftFast', 'rightFast', 'upFast', 'downFast'] as const).map(direction => ({
       id: `color.${direction}` as const, title: `colorPanel.${direction}` as const, category: 'tool' as const, inPalette: false,

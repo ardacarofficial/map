@@ -1,3 +1,5 @@
+import { editGate } from "../../agent/editGate";
+import { usePendingAiEdit } from "./usePendingAiEdit";
 import { formatUiError } from "../errorMessages";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { loadExportSettings, updateExportSettings, type ExportSettings } from "../../export/exportSettings";
@@ -38,6 +40,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
   const [exportSettings, setExportSettings] = useState<ExportSettings | null>(null);
   const [exportPatch, setExportPatch] = useState<Partial<ExportSettings>>({});
   const aiDraft = useAiSettingsDraft();
+  const pendingAiEdit = usePendingAiEdit();
   const project = useEditorStore(s => s.project);
   const layout = useDockStore(s => s.layout);
   useEffect(() => {
@@ -65,12 +68,12 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (text === null || !session.current || busy) return;
-    if (aiDraft.connection && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))) { setError(t("ai.settings.invalidPort")); return; }
+    if (aiDraft.connection && !editGate.blocked && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))) { setError(t("ai.settings.invalidPort")); return; }
     setBusy(true); onBusyChange(true); setError(null);
     let aiReceipt: Awaited<ReturnType<typeof commitAiSettings>> = null;
     try {
       draftObject(text);
-      if (aiDraft.connection && aiDraft.snapshot) aiReceipt = await commitAiSettings(aiDraft.connection, aiDraft.snapshot, { enabled: aiDraft.enabled, port: Number(aiDraft.port) });
+      if (aiDraft.connection && aiDraft.snapshot && !editGate.blocked) aiReceipt = await commitAiSettings(aiDraft.connection, aiDraft.snapshot, { enabled: aiDraft.enabled, port: Number(aiDraft.port) });
       const problems = await session.current.save(text);
       if (aiReceipt) aiDraft.acceptSnapshot(aiReceipt.snapshot);
       if (exportSettings && Object.keys(exportPatch).length) { await updateExportSettings(exportSettings.project, exportPatch); useExportStore.getState().bump(); }
@@ -119,7 +122,7 @@ export function SettingsShell({ onDone, onBusyChange }: { onDone(): void; onBusy
       </div>
     </div>
     {error && <p role="alert" className="shrink-0 px-4 pb-2 text-sm text-danger">{error}</p>}
-    <DialogFooter><Button variant="secondary" disabled={busy} onClick={onDone}>{t("settings.dialogCancel")}</Button><Button variant="primary" type="submit" disabled={text === null || busy || !!aiDraft.connection && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))}>{t("settings.dialogSave")}</Button></DialogFooter>
+    <DialogFooter><Button variant="secondary" disabled={busy} onClick={onDone}>{t("settings.dialogCancel")}</Button><Button variant="primary" type="submit" disabled={text === null || busy || !!aiDraft.connection && !pendingAiEdit && (!aiDraft.snapshot || !validAgentPort(aiDraft.port))}>{t("settings.dialogSave")}</Button></DialogFooter>
   </form>;
 }
 function editDraftSafe(text: string, layout: DockLayout): string {

@@ -43,5 +43,11 @@
   "rightFast": "Renk imleci sağa 10",
   "upFast": "Renk imleci yukarı 10",
   "downFast": "Renk imleci aşağı 10",
-  "show": "Renk panelini göster"
+  "show": "Renk panelini göster",
+  "recentEmpty": "Kullandığın renkler burada görünür.",
+  "palettesEmpty": "Renklerini bir palette sakla veya kayıtlı bir palet aç.",
+  "paletteEmpty": "Paletine başlamak için seçili rengi ekle.",
+  "pickerHelp": "Ok tuşları rengi ayarlar · Shift ile büyük adım",
+  "picker": "Renk seçici",
+  "views": "Renk paneli görünümü"
 }

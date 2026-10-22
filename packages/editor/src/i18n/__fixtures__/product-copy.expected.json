@@ -1,0 +1,8 @@
+{
+  "tr": {
+    "tilesetLib.wheelHint": "Tekerlek yakınlaştırır · Shift+tekerlek yatay kaydırır · Boşluk/orta tuş sürükleyerek kaydırır"
+  },
+  "en": {
+    "tilesetLib.wheelHint": "Wheel zooms · Shift+wheel pans horizontally · Space/middle drag pans"
+  }
+}

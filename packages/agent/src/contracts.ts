@@ -1,6 +1,8 @@
 /** Frozen B0 contract. No DOM, Node, editor or transport implementation dependencies. */
 import type { EntityFieldType, EntityFieldValue, MapStore, Project, ProjectData, ProjectSettings, Stamp, Tileset, WorldHistoryEntry } from "@smap/core";
 
+import type { AgentEditorControlsPort, ConfigureExportArgs, EditorExportPreferences, ConfigureApplicationArgs, ConfigureEditorArgs, ConfigureLayoutArgs, EditorControlContext, EditorControlState, EditorControlToolName, ListEditorCommandsArgs, RunEditorCommandArgs } from "./editorControls";
+
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type Unsubscribe = () => void;
@@ -89,7 +91,14 @@ export interface RenderPreviewArgs extends GetMapInfoArgs { region?: Rect; layer
 export interface ValidateMapArgs extends GetMapInfoArgs { region?: Rect; limit?: number; cursor?: string }
 export interface GetTagsArgs { context: ReadContext; query?: string; kind?: "tiles" | "stamps"; tilesetId?: Id; status?: "all" | "current" | "missing" | "stale"; cursor?: string; limit?: number }
 export interface SetTagsArgs { context: TagWriteContext; entries: TagWrite[] }
+export interface EditMapArgs { context: WriteContext; mapId: Id; name?: string; world?: Point }
+export type EditStampArgs = { context: WriteContext; stampId: Id } & ({ action: "remove" } | { action: "duplicate"; name: string } | { action: "update"; props: {name?: string; category?: string; tags?: string[]; favorite?: boolean} });
+export interface ConfigureWorldArgs { context: WriteContext; settings: {tileWidth?: number;tileHeight?: number;newLevel?:{width?:number;height?:number};layerTemplate?:{name:string;kind:LayerKind}[];background?:string|null} }
+
 export interface ToolArguments {
+  get_export_settings: EditorControlContext; configure_export: ConfigureExportArgs;
+  edit_map: EditMapArgs; edit_stamp: EditStampArgs; configure_world: ConfigureWorldArgs; get_world_settings: { context: ReadContext };
+  get_editor_state: EditorControlContext; configure_editor: ConfigureEditorArgs; configure_layout: ConfigureLayoutArgs; configure_application: ConfigureApplicationArgs; list_editor_commands: ListEditorCommandsArgs; run_editor_command: RunEditorCommandArgs;
   get_editor_context: GetEditorContextArgs; apply_operations: ApplyOperationsArgs; edit_entity: EditEntityArgs; validate_goals: ValidateGoalsArgs;
   visual_ingest_reference: IngestReferenceArgs; visual_match_reference: MatchReferenceArgs; create_stamp: CreateStampArgs;
   get_session: GetSessionArgs; get_map_info: GetMapInfoArgs; read_region: ReadRegionArgs;
@@ -187,6 +196,11 @@ export interface PreviewImage { width: number; height: number; scale: number; pi
 export interface AgentWarning { code: string; detail: string }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
 export interface ToolData {
+  get_export_settings: EditorExportPreferences; configure_export: EditorExportPreferences;
+  edit_map: ChangedData & { map: MapSummary }; edit_stamp: ChangedData & { stamp: {id: Id;name:string;width:number;height:number;category:string;tags:string[];favorite:boolean}|null;stampId:Id;action:EditStampArgs["action"] };
+  configure_world: ChangedData & { settings: ProjectSettings }; get_world_settings: { settings: ProjectSettings };
+  get_editor_state: EditorControlState; configure_editor: EditorControlState; configure_layout: EditorControlState; configure_application: EditorControlState;
+  list_editor_commands: ReturnType<AgentEditorControlsPort["listCommands"]>; run_editor_command: ReturnType<AgentEditorControlsPort["runCommand"]>;
   get_editor_context: EditorContext;
   apply_operations: ChangedData & { items: { tool: BatchToolName; changedCells: number; entityId?: Id }[] };
   edit_entity: ChangedData & { entity: EntityInfo | null; entityId: Id; action: EditEntityArgs["action"] };
@@ -218,7 +232,7 @@ export interface ToolData {
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
-export type MutationToolName = Exclude<ToolName, "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
+export type MutationToolName = Exclude<ToolName, EditorControlToolName | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
 export interface AgentEnvelope<T> { ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
 export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
 export interface AgentFailure { ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
@@ -285,6 +299,8 @@ export interface AgentBaseline {
 /** Map membership is provisional until approval; it never enters world undo (O1). */
 export type AgentMetadataOperation =
   | { kind: "stamps"; before: readonly Stamp[]; after: readonly Stamp[] }
+  | { kind: "worldSettings"; before: ProjectSettings; after: ProjectSettings }
+  | { kind: "mapName"; mapId: Id; before: string; after: string }
   | { kind: "mapPosition"; mapId: Id; before: Point; after: Point }
   | { kind: "recipes"; before: readonly AgentGeneratedRecipe[]; after: readonly AgentGeneratedRecipe[] }
   | { kind: "projectData"; mapId: Id; before: ProjectData; after: ProjectData };
@@ -368,6 +384,7 @@ export interface AgentHost {
   world: AgentWorldPort; transactions: AgentTransactionsPort; metadata: AgentMetadataPort;
   visualReferences?: AgentVisualReferencePort;
   editorContext?: () => EditorContext;
+  editorControls?: AgentEditorControlsPort;
   images: AgentImagePort; smartSources: AgentSmartSourcePort; tags: AgentTagsPort;
   activity: AgentActivityPort; clock: AgentClock; ids: AgentIds;
 }

@@ -33,6 +33,6 @@ export async function loadColorPalette(): Promise<void> {
     if (!file || getLevelWorkspace() !== ws) return;
     const palette = parseColorPalette(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
     const index = useProjectLibrary.getState().colorPalettes.length;
-    editColorPalette({ type: 'add', palette }); useColorPanel.setState({ palette: index });
+    editColorPalette({ type: 'add', palette }); useColorPanel.setState({ palette: index, colorIndex: null, view: 'palettes' });
   } catch { toast.error(t('colorPanel.loadFailed')); }
 }

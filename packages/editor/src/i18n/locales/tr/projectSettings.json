@@ -16,5 +16,6 @@
   "tilesetsHint": "Dünyadaki tileset''leri bul ve düzenle",
   "appSettings": "Uygulama ayarları",
   "appSettingsHint": "Dil ve kısayollar (tüm dünyalar için)",
-  "saved": "Dünya ayarları kaydedildi"
+  "saved": "Dünya ayarları kaydedildi",
+  "aiReadOnly": "AI değişiklikleri beklerken dünya ayarlarını inceleyebilirsin. Düzenlemek için değişiklikleri onayla veya vazgeç."
 }

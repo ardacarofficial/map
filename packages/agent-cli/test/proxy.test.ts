@@ -37,7 +37,7 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   cleanup.push(() => client.close());
   await client.connect(transport);
   expect(client.getInstructions()).toBe(readFileSync(new URL("../../agent/schema/workflow.txt",import.meta.url),"utf8").trim());
-  expect((await client.listTools()).tools).toHaveLength(33);
+  expect((await client.listTools()).tools).toHaveLength(45);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -147,5 +147,5 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(33);
+  expect((await client.listTools()).tools).toHaveLength(45);
 });

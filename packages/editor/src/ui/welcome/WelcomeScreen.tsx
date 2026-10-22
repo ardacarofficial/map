@@ -3,7 +3,7 @@ import { type ReactNode } from "react";
 import { runCommand } from "../../commands/registry";
 import { getLocale, t } from "../../i18n";
 import { createProjectFromTilesets, openRecentProject } from "../../io/session";
-import { type RecentEntry } from "../../platform";
+import { getPlatform, type RecentEntry } from "../../platform";
 import { forgetRecentProject, useRecentProjects } from "../../platform/recentProjects";
 import { LanguageSwitch } from "../../platform/LanguageSwitch";
 import { keysFor, type CommandId } from "../../shortcuts/shortcuts";
@@ -26,6 +26,7 @@ export function WelcomeScreen() {
             <section className="flex flex-col gap-2">
               <ActionRow icon="file-plus" title={t("welcome.newProject")} command="file.new" onClick={() => openNewProjectDialog()} />
               <ActionRow icon="folder" title={t("welcome.open")} command="file.open" />
+              {getPlatform().openWorldWindow && <p className="px-2 text-xs leading-relaxed text-muted">{t("welcome.multipleWorlds")}</p>}
               <DropZone />
             </section>
             <section className="flex flex-col gap-2">

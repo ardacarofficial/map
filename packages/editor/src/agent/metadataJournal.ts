@@ -13,7 +13,9 @@ export function createMetadataJournal(): AgentMetadataPort {
     return value;
   };
   const apply = (operation: AgentMetadataOperation, side: "before" | "after") => {
-    if (operation.kind === "mapPosition") ws().setWorldPosition(operation.mapId, operation[side]);
+    if (operation.kind === "worldSettings") useProjectLibrary.getState().setSettings(operation[side]);
+    else if (operation.kind === "mapName") ws().rename(operation.mapId, operation[side]);
+    else if (operation.kind === "mapPosition") ws().setWorldPosition(operation.mapId, operation[side]);
     else if (operation.kind === "recipes") useProjectLibrary.setState(s => ({ generatedRecipes: operation[side], revision: s.revision + 1 }));
     else if (operation.kind === "stamps") {
       // Manual library additions/renames are independent of world history. Replay
@@ -56,7 +58,7 @@ export function createMetadataJournal(): AgentMetadataPort {
     stage(operation) { apply(operation, "after"); operations.push(operation); },
     restore(snapshot) {
       // Provisional membership is removed by AgentWorldPort before restoring this journal.
-      for (const level of snapshot.project.levels) if (ws().level(level.id)) ws().setWorldPosition(level.id, level.world);
+      for (const level of snapshot.project.levels) if (ws().level(level.id)) { ws().setWorldPosition(level.id, level.world); if (ws().level(level.id)!.name !== level.name) ws().rename(level.id, level.name); }
       useProjectLibrary.setState({ generatedRecipes: snapshot.recipes, stamps: [...snapshot.stamps], brokenStampFiles: [...snapshot.brokenStampFiles],
         settings: snapshot.project.settings, colorPalettes: snapshot.project.colorPalettes ?? [], levels: [...ws().levels], revision: snapshot.libraryRevision });
       operations = [];

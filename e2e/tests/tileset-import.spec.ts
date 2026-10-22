@@ -45,7 +45,7 @@ const tileAt = (page: Page, x: number, y: number) =>
     [x, y],
   );
 
-test("tileset import card: inferred 16 px in a 32 px project, then settings to 32 px and undo", async ({ page }) => {
+test("tileset import card: map defaults, explicit 16 px override, then settings to 32 px and undo", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -56,11 +56,13 @@ test("tileset import card: inferred 16 px in a 32 px project, then settings to 3
   await confirmTilesetCard(page);
   await expect(page.locator("canvas[aria-label='map canvas']").first()).toBeVisible();
 
-  // Drop a 16 px tileset anywhere on the editor: the card infers 16 × 16.
+  // Drop a 16 px source: the active map supplies 32 × 32 until the user chooses another grid.
   await dropFile(page, "body", "dungeon-16.png", sampleBytes("tilesets/dungeon-16.png"));
   const card = page.getByTestId("tileset-card");
   await expect(card).toBeVisible();
-  await expect(card.getByLabel("Tile genişliği")).toHaveValue("16");
+  await expect(card.getByLabel("Tile genişliği")).toHaveValue("32");
+  await expect(card.getByLabel("Tile yüksekliği")).toHaveValue("32");
+  await card.getByLabel("Tile genişliği").fill("16");
   await expect(card.getByLabel("Tile yüksekliği")).toHaveValue("16");
   await expect(page.getByTestId("tileset-card-summary")).toHaveText(/6 × 4 = 24 tile/);
   await expect(card.getByText(/Haritanın tile'ı 32×32 px, bu tileset 16×16 px/)).toBeVisible();

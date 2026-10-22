@@ -4395,6 +4395,1475 @@
       },
       "name": "validate_goals",
       "title": "Validate Goals"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read the current world export target, PNG scale, Unity tile/collision/texture preferences, automatic Unity export flag and per-map excluded layers. No output paths, file handles or tokens. Does not export or write document data.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "get_export_settings",
+      "title": "Get Export Settings"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Patch export preferences for the current world. Supports target, PNG scale and Unity tiles/collision/copy-textures and autoUnity flags through the normal export-settings persistence. No folder/path or file output. Turning on autoUnity affects later saves only when a destination is already configured. Pending AI proposals remain excluded by normal save/export gates. Optional world context prevents writing a replaced world.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "preferences": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "autoUnity": {
+                "type": "boolean"
+              },
+              "copyTextures": {
+                "type": "boolean"
+              },
+              "pngScale": {
+                "enum": [
+                  1,
+                  2,
+                  4
+                ],
+                "type": "integer"
+              },
+              "target": {
+                "enum": [
+                  "unity",
+                  "png",
+                  "json",
+                  "tmj",
+                  "zip",
+                  "godot",
+                  "defold"
+                ],
+                "type": "string"
+              },
+              "unityCollision": {
+                "type": "boolean"
+              },
+              "unityTiles": {
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        "required": [
+          "preferences"
+        ],
+        "type": "object"
+      },
+      "name": "configure_export",
+      "title": "Configure Export"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Inspect live editor view, tool/brush/rectangle/selection/pixel options, tileset filters, panel layout, locale, effective and default shortcuts, and capability boundaries. Works on welcome screen. Optional context binds this window's current world. No secrets or filesystem paths. UI state is independent of document revision and pending review.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "get_editor_state",
+      "title": "Get Editor State"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Set explicit UI controls without changing document data or requiring begin_edit. Available during running/stopped/awaitingApproval proposals. Activate map/layer, select existing tile/stamp/entity, set marquee, tile/pixel tools, brush/rectangle options, grid/major grid/collision/minimap/rulers/canvas mode, camera view/zoom/center (map cells), atlas filter/view/zoom and pixel colors/mirrors. All target IDs and bounds validate before applying settings; no painting, PNG write, undo or proposal approval. Camera animation may settle after reply. Optional context rejects replaced worlds.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Point": {
+            "additionalProperties": false,
+            "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
+            "properties": {
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Tile": {
+            "additionalProperties": false,
+            "description": "Stable tilesetId/tileId from catalog, with optional compact D4 flags H=1,V=2,D=4; not a palette integer.",
+            "properties": {
+              "flags": {
+                "default": 0,
+                "maximum": 7,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tileId": {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tilesetId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "tilesetId",
+              "tileId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "activeLayerId": {
+            "$ref": "#/$defs/Id"
+          },
+          "activeMapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "brush": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "collisionValue": {
+                "maximum": 2,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "shape": {
+                "enum": [
+                  "square",
+                  "circle"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "maximum": 16,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "camera": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "center": {
+                "$ref": "#/$defs/Point"
+              },
+              "frame": {
+                "type": "boolean"
+              },
+              "view": {
+                "enum": [
+                  "level",
+                  "world"
+                ],
+                "type": "string"
+              },
+              "zoom": {
+                "maximum": 32,
+                "minimum": 0.002,
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "collisionOverlay": {
+            "type": "boolean"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "gridVisible": {
+            "type": "boolean"
+          },
+          "majorGrid": {
+            "additionalProperties": false,
+            "properties": {
+              "interval": {
+                "enum": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24,
+                  25,
+                  26,
+                  27,
+                  28,
+                  29,
+                  30,
+                  31,
+                  32,
+                  33,
+                  34,
+                  35,
+                  36,
+                  37,
+                  38,
+                  39,
+                  40,
+                  41,
+                  42,
+                  43,
+                  44,
+                  45,
+                  46,
+                  47,
+                  48,
+                  49,
+                  50,
+                  51,
+                  52,
+                  53,
+                  54,
+                  55,
+                  56,
+                  57,
+                  58,
+                  59,
+                  60,
+                  61,
+                  62,
+                  63,
+                  64
+                ],
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 1000000,
+                "minimum": -1000000,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 1000000,
+                "minimum": -1000000,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "interval",
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "minimapVisible": {
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "tile",
+              "pixel"
+            ],
+            "type": "string"
+          },
+          "panelsHidden": {
+            "type": "boolean"
+          },
+          "pixel": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "background": {
+                "pattern": "^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$",
+                "type": "string"
+              },
+              "fillMode": {
+                "enum": [
+                  "contiguous",
+                  "global"
+                ],
+                "type": "string"
+              },
+              "filled": {
+                "type": "boolean"
+              },
+              "foreground": {
+                "pattern": "^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$",
+                "type": "string"
+              },
+              "mirrorH": {
+                "type": "boolean"
+              },
+              "mirrorV": {
+                "type": "boolean"
+              },
+              "scope": {
+                "enum": [
+                  "cell",
+                  "world"
+                ],
+                "type": "string"
+              },
+              "shape": {
+                "enum": [
+                  "square",
+                  "circle"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "rectangle": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "mode": {
+                "enum": [
+                  "filled",
+                  "outline"
+                ],
+                "type": "string"
+              },
+              "thickness": {
+                "maximum": 8,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "rulersVisible": {
+            "type": "boolean"
+          },
+          "selection": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "entityId": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "entityTypeId": {
+                "$ref": "#/$defs/Id"
+              },
+              "mode": {
+                "enum": [
+                  "rectangle",
+                  "connected"
+                ],
+                "type": "string"
+              },
+              "pickScope": {
+                "enum": [
+                  "active",
+                  "all"
+                ],
+                "type": "string"
+              },
+              "region": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Rect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "active",
+                  "visible"
+                ],
+                "type": "string"
+              },
+              "stampId": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tile": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Tile"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "tileset": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "activeId": {
+                "$ref": "#/$defs/Id"
+              },
+              "query": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "view": {
+                "enum": [
+                  "single",
+                  "all"
+                ],
+                "type": "string"
+              },
+              "zoom": {
+                "anyOf": [
+                  {
+                    "maximum": 32,
+                    "minimum": 0.125,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "tool": {
+            "enum": [
+              "line",
+              "brush",
+              "eraser",
+              "fill",
+              "rect",
+              "select",
+              "eyedropper",
+              "entity",
+              "hand"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "configure_editor",
+      "title": "Configure Editor"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Show/hide/reveal and move/reorder panels, split groups, expand/collapse/hide dock zones, resize zones (UI clamps normal size limits), or reset layout. Persists through the normal dock settings writer. Independent of document review; cannot approve edits. group/index are zero-based, split creates a group at start/end.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "reset"
+              },
+              "context": {
+                "$ref": "#/$defs/ReadContext"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "state": {}
+                },
+                "required": [
+                  "state"
+                ]
+              },
+              {
+                "properties": {
+                  "size": {}
+                },
+                "required": [
+                  "size"
+                ]
+              }
+            ],
+            "properties": {
+              "action": {
+                "const": "zone"
+              },
+              "context": {
+                "$ref": "#/$defs/ReadContext"
+              },
+              "size": {
+                "maximum": 1000,
+                "minimum": 64,
+                "type": "integer"
+              },
+              "state": {
+                "enum": [
+                  "expanded",
+                  "collapsed",
+                  "hidden"
+                ],
+                "type": "string"
+              },
+              "zone": {
+                "enum": [
+                  "left",
+                  "right",
+                  "bottom"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "zone"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "show",
+                  "hide"
+                ],
+                "type": "string"
+              },
+              "context": {
+                "$ref": "#/$defs/ReadContext"
+              },
+              "panel": {
+                "enum": [
+                  "tileset",
+                  "stamps",
+                  "project",
+                  "recent",
+                  "inspector",
+                  "history",
+                  "layers",
+                  "entities",
+                  "color",
+                  "aiActivity"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "panel"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "move"
+              },
+              "context": {
+                "$ref": "#/$defs/ReadContext"
+              },
+              "group": {
+                "maximum": 20,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "index": {
+                "maximum": 20,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "panel": {
+                "enum": [
+                  "tileset",
+                  "stamps",
+                  "project",
+                  "recent",
+                  "inspector",
+                  "history",
+                  "layers",
+                  "entities",
+                  "color",
+                  "aiActivity"
+                ],
+                "type": "string"
+              },
+              "split": {
+                "enum": [
+                  "start",
+                  "end"
+                ],
+                "type": "string"
+              },
+              "zone": {
+                "enum": [
+                  "left",
+                  "right",
+                  "bottom"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "panel",
+              "zone"
+            ],
+            "type": "object"
+          }
+        ],
+        "type": "object"
+      },
+      "name": "configure_layout",
+      "title": "Configure Layout"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Persist locale and shortcut overrides with the application's serialized settings writer, rejecting unknown commands, malformed chords and shortcut conflicts. null removes an override and restores defaults; [] unbinds. Read get_editor_state for available locales and defaults. Rejects an open settings preview to preserve the user's draft. Never changes MCP server/token or writes document/PNG data. Works without a world and during proposal review.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "locale": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "shortcuts": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 4,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 512,
+            "propertyNames": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "configure_application",
+      "title": "Configure Application"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Discover current command IDs, translated labels, categories, enabled/check state, shortcuts and remoteExecutable status/reason. Query matches ID/title/category. Only the explicit UI allowlist can execute via run_editor_command; document mutations use transaction tools and AI approval remains human-only. Paginated, at most 128 commands per page.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "limit": {
+            "maximum": 128,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "list_editor_commands",
+      "title": "List Editor Commands"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Invoke one enabled UI command from list_editor_commands where remoteExecutable=true. Explicit allowlist covers view navigation/toggles, tool switches, settings dialogs, palette, pixel colors and selection-only commands. Does not execute arbitrary command IDs, file operations, document mutations or AI approval/discard. This action is not replay-cached: toggles execute once per call; use configure_editor/configure_layout for retry-safe absolute setters.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "$ref": "#/$defs/Id"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          }
+        },
+        "required": [
+          "commandId"
+        ],
+        "type": "object"
+      },
+      "name": "run_editor_command",
+      "title": "Run Editor Command"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Rename an existing transaction target map and/or move it in world view. world coordinates are signed whole pixels (not map cells). IDs, files and map cells remain stable. Requires begin_edit; joins the same pending approval, cancellation, replay and world undo action as painting.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "properties": {
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "properties": {
+              "name": {}
+            },
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "properties": {
+              "world": {}
+            },
+            "required": [
+              "world"
+            ]
+          }
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "world": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "maximum": 1000000000,
+                "minimum": -1000000000,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 1000000000,
+                "minimum": -1000000000,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "context",
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "edit_map",
+      "title": "Edit Map Metadata"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Update a saved stamp's name/category/tags/favorite, duplicate it with a unique stable ID, or remove it from the library. Already placed map cells remain ordinary tiles. Metadata and library membership are staged in the current edit; cancellation restores originals and approval joins one reversible world action. Does not touch source PNGs or regenerate artwork. Requires begin_edit and replay key.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "properties": {
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "update"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "props": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "category": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "favorite": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tags": {
+                    "items": {
+                      "maxLength": 48,
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "stampId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "stampId",
+              "action",
+              "props"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "duplicate"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "stampId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "stampId",
+              "action",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "remove"
+              },
+              "context": {
+                "$ref": "#/$defs/WriteContext"
+              },
+              "stampId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "context",
+              "stampId",
+              "action"
+            ],
+            "type": "object"
+          }
+        ],
+        "type": "object"
+      },
+      "name": "edit_stamp",
+      "title": "Edit Stamp Library"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read this world's new-map tile size, dimensions, layer template, canvas background and Unity defaults. Inspect before configure_world. No changes.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "type": "object"
+      },
+      "name": "get_world_settings",
+      "title": "Get World Settings"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Use current worldSessionId, begin_edit transactionId, latest response revision and a fresh idempotencyKey for each distinct write. Retry identical payload/key only.",
+            "properties": {
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "settings": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "background": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "pattern": "^#[a-fA-F0-9]{6}$",
+                    "type": "string"
+                  }
+                ]
+              },
+              "layerTemplate": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "tile",
+                        "collision",
+                        "entity"
+                      ],
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 128,
+                "type": "array"
+              },
+              "newLevel": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "height": {
+                    "maximum": 4096,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "maximum": 4096,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "tileHeight": {
+                "maximum": 1024,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "tileWidth": {
+                "maximum": 1024,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        "required": [
+          "context",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "name": "configure_world",
+      "title": "Configure World"
     }
   ]
 }

@@ -1,0 +1,20 @@
+/* Color values belong to the artwork; all surrounding chrome uses theme tokens. */
+.color-panel { container: color-panel / inline-size; }
+/* A wide bottom dock keeps controls within the same readable working width. */
+.color-panel-body > * { width: 100%; max-width: calc(var(--spacing-color-square) * 2.5); }
+.color-target { display: flex; min-width: 0; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2); }
+.color-target .color-swatch-preview { width: var(--spacing-control-rail); height: var(--spacing-control-rail); border: 1px solid var(--color-line-strong); }
+.color-swatch .color-swatch-preview { width: 100%; height: 100%; }
+.color-swatch[aria-pressed=true] { outline: 1px solid var(--color-accent); outline-offset: 1px; }
+.color-swatches { min-height: var(--spacing-color-swatch); }
+.color-picker-square { width: 100%; height: var(--spacing-color-square); }
+.color-picker-row { grid-template-columns: calc(var(--spacing) * 7) minmax(0, 1fr) calc(var(--spacing) * 8); }
+.color-picker-strip { width: 100%; height: calc(var(--spacing) * 4); }
+.color-field input { font-variant-numeric: tabular-nums; }
+.color-field input[aria-invalid=true] { border-color: var(--color-danger); }
+.color-channel input { padding-inline: calc(var(--spacing) * 1.5); }
+.color-palette-well { min-height: calc(var(--spacing-control-rail) * 2); }
+@container color-panel (max-width: 240px) {
+  .color-target { flex-direction: column; align-items: flex-start; }
+  .color-channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

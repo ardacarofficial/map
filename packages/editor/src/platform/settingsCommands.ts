@@ -1,8 +1,6 @@
-/** Palette commands for the settings file: language switch and the shortcut JSON. */
-import { availableLocales, getLocale, t } from "../i18n";
-import { toast } from "../ui/toast/toastStore";
+/** Palette commands open the corresponding application settings category. */
 import { registerCommands } from "../commands/registry";
-import { setAppLocale, useAppSettings } from "./appSettings";
+import { useAppSettings } from "./appSettings";
 
 let registered = false;
 
@@ -14,11 +12,7 @@ export function registerSettingsCommands(): void {
       id: "settings.language",
       title: "commands.settings.language",
       category: "general",
-      run: () => {
-        const locales = availableLocales();
-        const next = locales[(locales.findIndex(locale => locale.id === getLocale()) + 1) % locales.length]!;
-        void setAppLocale(next.id).then(() => toast.info(t("settings.languageSelected", { language: next.nativeName })));
-      },
+      run: () => useAppSettings.setState({ dialogOpen: true, settingsCategory: "language" }),
     },
     {
       id: "settings.editShortcuts",

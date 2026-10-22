@@ -9,5 +9,6 @@
   "templates": "Templates",
   "dropShort": "Drop a tileset",
   "recentMissing": "Folder not found",
-  "noThumbnail": "No preview"
+  "noThumbnail": "No preview",
+  "multipleWorlds": "Each world opens in its own window. Your other worlds and unsaved changes stay open."
 }

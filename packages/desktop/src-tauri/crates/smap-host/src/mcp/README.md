@@ -14,10 +14,22 @@ The desktop platform supplies the frozen `AgentConnection`. Native IPC:
 - `agent_ready({epoch})`, `agent_reply({reply})`,
   `agent_publish_status({status})`
 
-Only the main window may invoke these commands. Event payloads are the frozen
+Every native editor window owns an independent `Service`. IPC resolves the
+service using Tauri's authenticated caller window label, with no renderer
+argument for selecting another window. Each bridge emits only to its owner.
+Event payloads are the frozen
 `BridgeRequest`, `BridgeControl`, and `AgentConnectionStatus`, sent on
 `smap://agent-request`, `smap://agent-control`, and `smap://agent-status`.
 All listeners are installed before native readiness is announced.
+
+The main window retains `settings.json` and `ai-secret.json`. Additional
+`world-N` windows use `windows/world-N/ai-settings.json` and `ai-secret.json`,
+with AI disabled initially and a default port of 48765 + N (up to 65535).
+Enable and copy connection settings inside the intended world's window.
+Ports, token rotation, sessions, renderer reload and pending requests are
+independent. A port already in use produces an explicit error. Closing one
+window permanently revokes only its transport and releases its listener;
+late readiness or configuration calls cannot reopen the closed service.
 
 ## Rollback confirmation
 

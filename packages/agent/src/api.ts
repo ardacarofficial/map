@@ -13,11 +13,13 @@ import {
   type ToolName,
   type ToolSuccess,
 } from "./contracts";
+import { EDITOR_CONTROL_TOOLS, type EditorControlToolName } from "./editorControls";
 import { TOOL_DEFINITIONS, canonicalJson } from "./toolSchemas";
 import { toMcpToolResult } from "./result";
 import { CallSignal, Transactions, waitFor } from "./transactions";
 import { check, validate } from "./validation";
 import { hashCanonical, normalizeTags, tagKey, utf8ByteLength } from "./tags";
+import { editMap, editStamp, configureWorld } from "./tools/library";
 import { mutate } from "./tools/mutations";
 import { read } from "./tools/read";
 import { applyOperations, editEntity } from "./tools/operations";
@@ -26,7 +28,7 @@ import { pruneReplayCache, type ReplayRecord } from "./replayCache";
 
 const writes = new Set(
   TOOL_DEFINITIONS.filter(
-    (t) => !t.annotations.readOnlyHint && t.name !== "set_tags",
+    (t) => !t.annotations.readOnlyHint && t.name !== "set_tags" && !EDITOR_CONTROL_TOOLS.includes(t.name as EditorControlToolName),
   ).map((t) => t.name),
 );
 interface Cached extends ReplayRecord {
@@ -283,7 +285,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
         } else {
           const revision = tx.revision;
           try {
-            data = name === "apply_operations"
+            data = name === "edit_map" ? editMap(tx, args as ToolArguments["edit_map"])
+              : name === "edit_stamp" ? editStamp(tx, args as ToolArguments["edit_stamp"])
+              : name === "configure_world" ? configureWorld(tx, args as ToolArguments["configure_world"])
+              : name === "apply_operations"
               ? await applyOperations(tx, args as ToolArguments["apply_operations"], callContext)
               : name === "edit_entity"
                 ? await editEntity(tx, args as ToolArguments["edit_entity"], callContext)
@@ -378,7 +383,24 @@ export function createAgentApi(host: AgentHost): AgentApi {
         const revision = tx.revision,
           worldId = host.session().worldSessionId;
         let output;
-        if (name === "get_editor_context") {
+        if (name === "get_world_settings") {
+          output = {data: {settings: host.world.settings()}, image: undefined};
+        } else if (EDITOR_CONTROL_TOOLS.includes(name as EditorControlToolName)) {
+          const port = host.editorControls;
+          check(port, E.EDITOR_UNAVAILABLE, "Editor controls are unavailable in this host");
+          let controlData: unknown;
+          switch (name) {
+            case "get_export_settings": controlData = await waitFor(port.getExportSettings(callContext), signal); break;
+            case "configure_export": controlData = await waitFor(port.configureExport(args as ToolArguments["configure_export"], callContext), signal); break;
+            case "get_editor_state": controlData = port.getState(); break;
+            case "configure_editor": controlData = await waitFor(port.configure(args as ToolArguments["configure_editor"], callContext), signal); break;
+            case "configure_layout": controlData = port.configureLayout(args as ToolArguments["configure_layout"]); break;
+            case "configure_application": controlData = await waitFor(port.configureApplication(args as ToolArguments["configure_application"], callContext), signal); break;
+            case "list_editor_commands": controlData = port.listCommands(args as ToolArguments["list_editor_commands"]); break;
+            case "run_editor_command": controlData = port.runCommand(args as ToolArguments["run_editor_command"]); break;
+          }
+          output = { data: controlData, image: undefined };
+        } else if (name === "get_editor_context") {
           check(host.editorContext, E.EDITOR_UNAVAILABLE, "Editor context is unavailable in this host");
           output = { data: host.editorContext(), image: undefined };
         } else if (name === "validate_goals") {

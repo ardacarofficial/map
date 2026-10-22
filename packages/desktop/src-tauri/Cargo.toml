@@ -1,6 +1,6 @@
 [package]
 name = "harita-tasarlayici"
-version = "0.14.0"
+version = "0.15.0"
 description = "Harita Tasarlayıcı — 2D tile harita editörü (Tauri kabuğu)"
 edition = "2021"
 publish = false

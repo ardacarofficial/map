@@ -54,12 +54,14 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, no confi
   await expect(card).toBeVisible();
   await expect(page.getByTestId("tileset-card")).toHaveCount(0);
   await expect(card.locator("[data-bulk-row]")).toHaveCount(4);
-  // Inferred sizes per row; the 16 px one is flagged against the 32 px map.
-  await expect(card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-size]")).toHaveValue("16");
-  await expect(card.locator("[data-bulk-row='dungeon-16.png']")).toHaveAttribute("data-verdict", "warn");
+  // All rows start with the active map grid, even a source named 16 px.
+  await expect(card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-size]")).toHaveValue("32");
+
   await expect(card.locator("[data-bulk-row='wang16-32.png'] [data-bulk-grid]")).toHaveText("4×4");
 
   // Editing a size inline updates its grid.
+  await card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-size]").fill("16");
+  await expect(card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-grid]")).toHaveText("6×4");
   await card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-size]").fill("32");
   await expect(card.locator("[data-bulk-row='dungeon-16.png'] [data-bulk-grid]")).toHaveText("3×2");
 
@@ -100,21 +102,21 @@ test("bulk import: 4 PNGs → one card → Hepsini ekle → 4 tilesets, no confi
   await page.locator("[data-tileset-search]").press("Escape");
   await expect(page.locator("[data-tileset-section]")).toHaveCount(5);
 
-  // In "Tümü" a plain wheel scrolls the list; Ctrl + wheel zooms (all tilesets).
+  // Both views use mouse-wheel zoom; Shift + wheel pans horizontally.
   // The hint is an info icon with a tooltip (its label says it).
-  await expect(page.locator("[data-tileset-wheel-hint]")).toHaveAttribute("aria-label", /Ctrl\+tekerlek/);
+  await expect(page.locator("[data-tileset-wheel-hint]")).toHaveAttribute("aria-label", /Tekerlek yakınlaştırır/);
   const list = page.locator("[data-tileset-view='all']");
   const scales = () => page.locator("[data-tileset-grid]").evaluateAll((els) => els.map((el) => el.getAttribute("data-tileset-scale")));
   const scales0 = await scales();
   const listBox = (await list.boundingBox())!;
   await page.mouse.move(listBox.x + listBox.width / 2, listBox.y + listBox.height / 2);
   await page.mouse.wheel(0, 200);
-  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  expect(await scales()).toEqual(scales0);
+  await expect.poll(scales).not.toEqual(scales0);
+  const scales1 = await scales();
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -100);
   await page.keyboard.up("Control");
-  await expect.poll(scales).not.toEqual(scales0);
+  await expect.poll(scales).not.toEqual(scales1);
   await page.locator("[data-tileset-zoom] button[aria-pressed]").click();
   // Fit now respects each section's visible width and height.
   await expect.poll(scales).not.toEqual(scales0);

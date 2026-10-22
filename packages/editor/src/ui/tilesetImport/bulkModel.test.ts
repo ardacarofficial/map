@@ -9,6 +9,16 @@ const row = (fileName: string, width: number, height: number) =>
 const map32 = { tileWidth: 32, tileHeight: 32 };
 
 describe("bulk import rows", () => {
+  it.each([16, 32])("initializes every row from the active %s px map while keeping manual size overrides", tile => {
+    for (const [fileName, width, height] of [["dungeon-16.png", 96, 64], ["overworld-32.png", 256, 128]] as const) {
+      const r = makeRow({ key: fileName, fileName, name: fileName, width, height, suggestions: inferTileGrid({ width, height, fileName }).suggestions,
+        fallback: 64, mapTile: { tileWidth: tile, tileHeight: tile } });
+      expect(r.sizeText).toBe(String(tile));
+      expect(r.spec).toEqual({ tileWidth: tile, tileHeight: tile, margin: 0, spacing: 0 });
+      expect(setRowSize(r, "24×16").spec).toEqual({ tileWidth: 24, tileHeight: 16, margin: 0, spacing: 0 });
+    }
+  });
+
   it("parses sizes", () => {
     expect(parseSize("16")).toEqual({ tileWidth: 16, tileHeight: 16 });
     expect(parseSize("16x8")).toEqual({ tileWidth: 16, tileHeight: 8 });

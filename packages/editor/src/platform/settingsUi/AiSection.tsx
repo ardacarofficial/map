@@ -8,6 +8,8 @@ import { DialogToggle, FormField } from "../../ui/dialogs/DialogFrame";
 import { toast } from "../../ui/toast/toastStore";
 import { agentEndpoint, connectionSnippet, validAgentPort, type AgentClientFormat } from "../../ui/agent/connectionSnippet";
 import { useAgentUiState } from "../../agent/agentUiState";
+import { editGate } from "../../agent/editGate";
+import { usePendingAiEdit } from "./usePendingAiEdit";
 import type { AiSettingsDraft } from "./aiSettingsDraft";
 
 export function AiSection({ draft, onBusyChange }: { draft: AiSettingsDraft; onBusyChange(busy: boolean): void }) {
@@ -16,6 +18,7 @@ export function AiSection({ draft, onBusyChange }: { draft: AiSettingsDraft; onB
 }
 function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSettingsDraft; connection: AgentConnection; onBusyChange(busy: boolean): void }) {
   const agentState = useAgentUiState();
+  const readOnly = usePendingAiEdit();
   const transaction = agentState.phase === "ready" || agentState.phase === "disabled" ? null : agentState.transaction;
   const status = useSyncExternalStore(listener => connection.subscribeStatus(listener), () => connection.status);
   const [client, setClient] = useState<AgentClientFormat>("claude");
@@ -30,10 +33,11 @@ function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSett
     finally { setWorking(false); onBusyChange(false); }
   };
   return <section className="flex flex-col gap-3" data-ai-settings>
+    {readOnly && <p role="status" className="rounded-sm bg-warning-soft px-3 py-2 text-sm text-warning">{t("ai.settings.pendingReadOnly")}</p>}
     <fieldset disabled={working || !draft.snapshot} className="flex min-w-0 flex-col gap-3">
-      <div className="flex min-h-control-md items-center justify-between gap-3 text-sm"><span>{t("ai.settings.enabled")}</span><DialogToggle label={t("ai.settings.enabled")} checked={draft.enabled} onChange={draft.setEnabled} /></div>
+      <div className="flex min-h-control-md items-center justify-between gap-3 text-sm"><span>{t("ai.settings.enabled")}</span><DialogToggle label={t("ai.settings.enabled")} disabled={readOnly} checked={draft.enabled} onChange={draft.setEnabled} /></div>
       <FormField label={t("ai.settings.port")} htmlFor="ai-port" error={!validAgentPort(draft.port) ? t("ai.settings.invalidPort") : undefined}>
-        <TextField id="ai-port" inputMode="numeric" value={draft.port} aria-invalid={!validAgentPort(draft.port)} onChange={event => draft.setPort(event.target.value)} />
+        <TextField disabled={readOnly} id="ai-port" inputMode="numeric" value={draft.port} aria-invalid={!validAgentPort(draft.port)} onChange={event => draft.setPort(event.target.value)} />
       </FormField>
       <FormField label={t("ai.settings.endpoint")}><p className="break-all text-sm text-text" data-ai-endpoint>{agentEndpoint(status.port)}</p></FormField>
       <p role="status" aria-live="polite" className={`text-sm ${status.state === "failed" || status.state === "portInUse" ? "text-danger" : "text-muted"}`}>{transaction ? t(`ai.status.${agentState.phase}`) : connectionStatusText(status)}</p>
@@ -47,14 +51,14 @@ function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSett
             else void run(async () => setToken(await connection.revealToken()), "ai.settings.secretUnavailable");
           }}>{t(token === null ? "ai.settings.reveal" : "ai.settings.hide")}</Button>
           <Button onClick={() => void run(() => connection.copyToken(), "ai.settings.copyFailed")}>{t("ai.settings.copyToken")}</Button>
-          <Button onClick={() => setConfirming(true)}>{t("ai.settings.regenerate")}</Button>
+          <Button disabled={readOnly} onClick={() => { if (!editGate.blocked) setConfirming(true); }}>{t("ai.settings.regenerate")}</Button>
         </div>
       </FormField>
-      {confirming && <div role="group" aria-label={t("ai.settings.regenerate")} className="flex flex-wrap items-center gap-2 text-sm">
+      {confirming && !readOnly && <div role="group" aria-label={t("ai.settings.regenerate")} className="flex flex-wrap items-center gap-2 text-sm">
         <p className="w-full text-muted">{t("ai.settings.regenerateConfirm")}</p>
         <Button onClick={() => setConfirming(false)}>{t("common.cancel")}</Button>
         <Button onClick={() => void run(async () => {
-          if (!draft.snapshot) return;
+          if (!draft.snapshot || editGate.blocked) return;
           try {
             const latest = await connection.regenerateToken(draft.snapshot.revision);
             // Rotation updates the revision without committing the listener draft.

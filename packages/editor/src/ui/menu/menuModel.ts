@@ -9,8 +9,13 @@
 import type { MessageKey } from "../../i18n";
 import type { CommandId } from "../../shortcuts/shortcuts";
 
-/** A command, or a divider between groups. */
-export type MenuEntry = CommandId | "-";
+/** Command groups use the same accessible submenus as camera bookmarks. */
+export interface MenuGroup {
+  readonly id: string;
+  readonly label: MessageKey;
+  readonly entries: readonly MenuEntry[];
+}
+export type MenuEntry = CommandId | "-" | MenuGroup;
 
 export interface MenuDef {
   id: "file" | "edit" | "view" | "layer" | "map" | "help";
@@ -56,33 +61,20 @@ export const MENUS: readonly MenuDef[] = [
     id: "view",
     label: "menu.view",
     entries: [
-      "view.zoomIn",
-      "view.zoomOut",
-      "view.zoomReset",
-      "view.frameMap",
+      { id: "zoom", label: "menu.zoom", entries: ["view.zoomIn", "view.zoomOut", "view.zoomReset", "view.frameMap"] },
+      { id: "overlays", label: "menu.overlays", entries: ["view.toggleGrid", "view.toggleCollision", "view.toggleRulers", "view.toggleMinimap"] },
       "-",
-      "view.toggleGrid",
-      "view.toggleCollision",
-      "view.toggleRulers",
-      "view.toggleMinimap",
-      "-",
-      "view.toggleLibrary",
-      "view.toggleLevels",
-      "view.toggleInspector",
-      "view.history",
-      "view.toggleLayers",
-      "view.toggleRecent",
-      // Docking
-      "view.toggleBottom",
-      "dock.left.show", "dock.right.show", "dock.bottom.show",
-      "panel.tileset.show", "panel.stamps.show", "panel.project.show", "panel.entities.show",
-      "panel.inspector.show", "panel.history.show", "panel.layers.show", "panel.recent.show",
-      "dock.left.hide", "dock.right.hide", "dock.bottom.hide",
-      "-",
-      "view.togglePanels",
-      "view.resetLayout",
-      "-",
-      "view.world",
+      { id: "panels", label: "menu.panels", entries: [
+        "view.toggleLibrary", "view.toggleLevels", "view.toggleInspector", "view.history", "view.toggleLayers", "view.toggleRecent",
+        "-", "panel.tileset.show", "panel.stamps.show", "panel.project.show", "panel.entities.show",
+        "panel.inspector.show", "panel.history.show", "panel.layers.show", "panel.recent.show", "panel.color.show", "panel.aiActivity.show",
+      ] },
+      { id: "docks", label: "menu.docks", entries: [
+        "view.toggleBottom", "dock.left.show", "dock.right.show", "dock.bottom.show",
+        "-", "dock.left.hide", "dock.right.hide", "dock.bottom.hide",
+      ] },
+      { id: "layout", label: "menu.layout", entries: ["view.togglePanels", "view.resetLayout"] },
+      "-", "view.world",
     ],
   },
   {
@@ -113,7 +105,7 @@ export const MENUS: readonly MenuDef[] = [
   {
     id: "help",
     label: "menu.help",
-    entries: ["palette.open", "settings.editShortcuts", "settings.language"],
+    entries: ["palette.open", "settings.editShortcuts"],
   },
 ];
 
@@ -129,7 +121,7 @@ export interface ResolvedItem {
   checked?: boolean;
 }
 
-export type ResolvedEntry = ResolvedItem | { kind: "separator" };
+export type ResolvedEntry = ResolvedItem | { kind: "separator" } | { kind: "submenu"; id: string; label: MessageKey; entries: ResolvedEntry[] };
 
 export interface CommandLookup {
   /** Title and enabled state of a registered command; undefined when it is not registered. */
@@ -142,12 +134,20 @@ export interface CommandLookup {
  * registered are left out (a menu never shows an item that cannot run), and
  * separators never lead, trail or double up.
  */
-export function resolveMenu(menu: MenuDef, lookup: CommandLookup): ResolvedEntry[] {
+export function resolveMenu(menu: Pick<MenuDef, "entries">, lookup: CommandLookup): ResolvedEntry[] {
   const out: ResolvedEntry[] = [];
   let pendingSeparator = false;
   for (const entry of menu.entries) {
     if (entry === "-") {
       pendingSeparator = out.length > 0;
+      continue;
+    }
+    if (typeof entry !== "string") {
+      const entries = resolveMenu(entry, lookup);
+      if (!entries.length) continue;
+      if (pendingSeparator) out.push({ kind: "separator" });
+      pendingSeparator = false;
+      out.push({ kind: "submenu", id: entry.id, label: entry.label, entries });
       continue;
     }
     const command = lookup.command(entry);
@@ -163,5 +163,7 @@ export function resolveMenu(menu: MenuDef, lookup: CommandLookup): ResolvedEntry
 
 /** Every command id the menus reference (for tests and docs). */
 export function menuCommands(): CommandId[] {
-  return MENUS.flatMap((m) => m.entries.filter((e): e is CommandId => e !== "-"));
+  const commands = (entries: readonly MenuEntry[]): CommandId[] => entries.flatMap(entry =>
+    typeof entry !== "string" ? commands(entry.entries) : entry === "-" ? [] : [entry]);
+  return MENUS.flatMap(menu => commands(menu.entries));
 }

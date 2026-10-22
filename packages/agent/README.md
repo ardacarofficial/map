@@ -124,3 +124,37 @@ The new browser workflow is `e2e/tests/ai-assets.spec.ts`. Native deadline/secur
 Use the AI activity panel's **Export diagnostics** action to save the currently filtered rows locally. The file contains tool outcomes, elapsed time, cell totals, and request/text/image/result byte counts, without raw arguments, images, client identities or credentials. No export runs automatically.
 
 The [five representative scripted workloads and before/after results](bench/README.md) distinguish call/byte/capacity improvements from actual model quality or inference latency, which were not measured. These fixtures also exercise approval, exact undo/redo/discard, and preservation of earlier work after an invalid call.
+
+## Editor and application controls
+
+The catalogue now includes **45 tools**. `get_editor_state` inspects tool options, viewport, atlas filters, panel layout, colors, locale, effective/default shortcuts and capability boundaries. `list_editor_commands` lists real registered commands with current enablement, shortcuts and an explicit `remoteExecutable` flag. Document commands report typed-tool alternatives where available.
+
+These controls work independently of a document edit, including while an AI proposal awaits approval:
+
+| Tool | Controls |
+| --- | --- |
+| `configure_editor` | Active map/layer, tile/stamp/entity selection, rectangular marquee; tile/pixel mode and tools; brush size/shape/collision value; rectangle fill/outline/thickness; selection/pick scopes; basic and major grid, collision/minimap/rulers, hidden panels; camera level/world view, zoom, map-cell center or fit; atlas selection/filter/view/zoom; pixel brush/fill/colors/mirrors |
+| `configure_layout` | Reveal/hide/move/reorder panels, split groups, expand/collapse/hide/resize dock zones, reset persisted layout |
+| `configure_application` | Persist locale and validated shortcut overrides; `null` restores a binding's default, `[]` unbinds |
+| `get_export_settings`, `configure_export` | Read/patch remembered target, PNG scale, Unity tile/collision/texture/automatic export preferences; no export delivery or destination change |
+| `run_editor_command` | Execute enabled commands from an audited UI allowlist; document writes, file delivery and AI approval/discard are excluded |
+
+UI tools accept an optional `{context:{worldSessionId}}` to reject a replaced world. UI-only tools can also work on the welcome screen. Use explicit setters for retries: command toggles are intentionally not replay-cached. UI state does not change document revision, create undo steps, or disappear when a proposal is discarded. Camera transitions may still animate after the reply.
+
+```json
+{"context":{"worldSessionId":"<session>"},"gridVisible":false,"majorGrid":{"interval":8,"x":0,"y":0},"brush":{"size":3,"shape":"circle"},"camera":{"view":"level","zoom":2,"center":{"x":12,"y":8}}}
+```
+
+`configure_editor` validates IDs and bounds before changing controls. Camera centers and marquees use target-map cells; a camera center requires level view. `frame:true` excludes explicit center/zoom. An oriented tile selection uses the explicit target layer or the target map's default tile layer. A settings draft or panel drag owns its UI state until completed, so conflicting preference/layout calls return `WRITER_BUSY`.
+
+World/library changes use the reviewed document workflow:
+
+| Tool | Changes inside `begin_edit` |
+| --- | --- |
+| `edit_map` | Rename a target map or set its signed whole-pixel world position; stable map ID/path retained |
+| `edit_stamp` | Rename/category/tags/favorite, duplicate with a unique ID, or remove a library stamp; existing painted cells remain ordinary tiles |
+| `get_world_settings`, `configure_world` | Inspect/patch defaults for future maps: tile size, dimensions, layer templates and background; existing map dimensions remain intact |
+
+These metadata edits support the same revision checks, replay keys, discard and single approved world undo action as painting. Pending metadata never enters normal save/export. An agent cannot approve its own edits.
+
+The surface is deliberately explicit: tileset image import/regridding/removal, custom entity-type editing, pixel painting, arbitrary filesystem delivery and OS/file dialogs remain human workflows or future typed tools. The command catalogue advertises these as unavailable for remote execution; there is no generic command-category, shell or evaluation escape hatch. Each native world window owns its endpoint/session; connect to that window's displayed MCP configuration.
