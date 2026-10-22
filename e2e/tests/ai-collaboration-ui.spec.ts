@@ -71,7 +71,7 @@ test("three agents share a live draft; member cancellation preserves peers and o
     const activity = page.locator("[data-ai-activity]"), draft = activity.locator("[data-ai-collaboration]"), bar = page.locator("[data-ai-bar]");
     const prepareCapture = () => activity.locator('[role="region"]').evaluate(element => {
       // Capture the default overview after inspecting the expanded claim coordinates.
-      for (const disclosure of element.querySelectorAll<HTMLDetailsElement>("[data-ai-collaboration] details")) disclosure.open = false;
+      element.querySelectorAll<HTMLDetailsElement>("[data-ai-collaboration] details").forEach(disclosure => { disclosure.open = false; });
       element.scrollTop = 0;
     });
     await expect(draft.locator("[data-ai-member]")).toHaveCount(3);
