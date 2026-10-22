@@ -11,7 +11,7 @@ import { TileSwatch } from "../primitives/TileSwatch";
 import { Tooltip } from "../primitives/Tooltip";
 import { RowContextMenu } from "../contextMenus/RowContextMenu";
 import { SEPARATOR, type ContextEntry } from "../contextMenus/contextItems";
-import { stampThumbnail } from "../stamps/stampThumb";
+import { stampThumbnail } from "../stamps/stampThumbnailPixels";
 import { pickRecentStamp, pickRecentTile, recentStampLabel } from "./recentTiles";
 
 /** Height of an item (CSS px). */

@@ -2,7 +2,7 @@ import { manualEditAllowed } from "../agent/editGate";
 import { pngHash } from "../state/pngHash";
 import { tilesetImageBytes } from "../state/tilesetImages";
 import { waitForSmartStampRegeneration } from "../state/smartStampJobs";
-import { rememberSourcePreview, copySourcePreview } from "../ui/stamps/stampThumb";
+import { rememberSourcePreview, copySourcePreview } from "../ui/stamps/stampThumbnailPixels";
 /** Shared preparation for dock brushes and saved stamps. Library entries are always explicit user saves. */
 import { SmartBrushError, formatSmartBrushError, smartBrushError, logSmartBrush } from "./smartBrushErrors";
 import { imageContentVersion, sourceVersionMatches, tilesetSourceVersion, tilesetWorldVersion, type SourceVersion } from "../state/tilesetImages";

@@ -4,12 +4,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useEditorStore } from "../../state/editorStore";
 import { getTilesetImage } from "../../state/tilesetImages";
 import { useImageVersion, useStructureVersion } from "../hooks";
-import { stampThumbnail } from "./stampThumb";
+import { stampThumbnail } from "./stampThumbnailPixels";
 
 /**
  * A stamp's tile layers composited crisply into a box `height` CSS px tall
  * and as wide as its container (library cards, list rows, the Denetçi).
- * Flips and rotations (FLIP_D) are drawn as on export (`stampThumb.ts`).
+ * Flips and rotations (FLIP_D) are drawn as on export (`stampThumbnailPixels.ts`).
  */
 export function StampThumb({ stamp, height, pad = 4, className = "" }: { stamp: Stamp; height: number; pad?: number; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);

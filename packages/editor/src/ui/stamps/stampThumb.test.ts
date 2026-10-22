@@ -2,7 +2,7 @@ import { createDocument, createStamp, FLIP_D, FLIP_H, makeCell, MapStore, type T
 import { describe, expect, it } from "vitest";
 
 import { compositeOps } from "../../export/pngComposite";
-import { stampDrawList, stampLayerCounts, thumbScale } from "./stampThumb";
+import { stampDrawList, stampLayerCounts, thumbScale } from "./stampThumbnailPixels";
 
 const ts: Tileset = {
   id: "grass",
@@ -75,7 +75,7 @@ describe("stamp thumbnails", () => {
 });
 
 it("joins native source tiles with no PNG gutters while keeping map-region composition in map space",async()=>{
- const {clipFromTileset}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumb");
+ const {clipFromTileset}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumbnailPixels");
  const source={...ts,margin:1,spacing:2},clip=clipFromTileset(source,{x:0,y:0,w:3,h:3})!;
  expect(sourcePreviewGrid(clip,()=>source)).toBeUndefined();rememberSourcePreview(clip,source);
  const grid=sourcePreviewGrid(clip,()=>source)!;expect(grid).toEqual({tileWidth:16,tileHeight:16});
@@ -86,7 +86,7 @@ it("joins native source tiles with no PNG gutters while keeping map-region compo
 });
 
 it("derives a reopened mirrored or rotated rectangular source at its native oriented resolution",async()=>{
- const {clipFromTileset,flipClip,rotateClip}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumb");
+ const {clipFromTileset,flipClip,rotateClip}=await import("@smap/core");const {sourcePreviewGrid,rememberSourcePreview,copySourcePreview}=await import("./stampThumbnailPixels");
  const source={...ts,tileWidth:32,tileHeight:16,margin:1,spacing:2},original=clipFromTileset(source,{x:0,y:0,w:3,h:2})!;rememberSourcePreview(original,source);
  for(const clip of [flipClip(original,"x"),flipClip(original,"y"),rotateClip(original,"cw"),rotateClip(original,"ccw")]){
   copySourcePreview(clip,original);const saved={...clip,id:"object",name:"Object"},grid=sourcePreviewGrid(saved,()=>source)!;

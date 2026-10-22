@@ -1,4 +1,4 @@
-import { sourcePreviewGrid } from "../stamps/stampThumb";
+import { sourcePreviewGrid } from "../stamps/stampThumbnailPixels";
 import type { Stamp } from "@smap/core";
 import { SmartStampProperties } from "../stamps/SmartStampProperties";
 

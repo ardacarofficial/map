@@ -20,7 +20,7 @@ import { NO_FILTER, filterStamps, pruneFilter, stampCategories, stampTags, type 
 import { CARD_MAX, CARD_MIN, useStampLibrary } from "./stampLibraryStore";
 import { StampThumb } from "./StampThumb";
 import { askText } from "../tileset/TextPrompt";
-import { stampLayerCounts } from "./stampThumb";
+import { stampLayerCounts } from "./stampThumbnailPixels";
 
 installStampInspector();
 
