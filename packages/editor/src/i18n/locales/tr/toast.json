@@ -37,6 +37,8 @@
   "noProjectFile": "Bu klasörde project.smap yok.",
   "noLevel": "Dünyada harita yok.",
   "missingTilesetImage": "Tileset görseli bulunamadı: {path}",
+  "missingLevelFile": "Harita dosyası bulunamadı: {path}",
+  "missingFile": "Dosya bulunamadı: {path}",
   "permissionDenied": "Klasöre erişim izni verilmedi.",
   "fsUnsupported": "Bu tarayıcı klasöre kaydetmeyi desteklemiyor. Chrome ya da Edge kullan.",
   "folderTaken": "“{name}” klasörü zaten bir dünya içeriyor; başka bir yer seç.",

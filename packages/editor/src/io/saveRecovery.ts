@@ -57,7 +57,14 @@ export async function protectSavedProject(fs: ProjectFileSystem): Promise<void> 
   if (!root) return;
   const project = parseProject(decoder.decode(root));
   const files = new Map<string, Uint8Array>([[PROJECT_FILE_NAME, root]]);
-  for (const level of project.levels) files.set(level.path, await fs.readBytes(level.path));
+  // A listed map whose file is gone cannot be protected, but it must not make
+  // every later save fail: the save that follows rewrites it from memory when
+  // the map is loaded (see LevelWorkspace.save), so only the root is at stake.
+  for (const level of project.levels) {
+    const bytes = await readOptional(fs, level.path);
+    if (bytes) files.set(level.path, bytes);
+    else console.warn(`Save protection skipped missing map file ${level.path}`);
+  }
   for (const tileset of project.tilesets) if (tileset.generated) {
     for (const path of [tileset.imagePath, generatedRecipePath(tileset.id)]) {
       const bytes = await readOptional(fs, path);

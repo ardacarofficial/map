@@ -567,12 +567,37 @@ export class LevelWorkspace {
     return out;
   }
 
-  /** Levels a save would write: the active one, every dirty one and every one not on disk yet. */
-  #toWrite(): LevelEntry[] {
+  /**
+   * Levels a save would write: the active one, every dirty one, every one not
+   * on disk yet and every loaded one whose file went missing (`missing` ids),
+   * so a committed project.smap never lists a map file that does not exist.
+   */
+  #toWrite(missing: ReadonlySet<string> = new Set()): LevelEntry[] {
     const active = this.active;
     return this.#levels
       .map((l) => this.#entries.get(l.id))
-      .filter((e): e is LevelEntry => !!e && (e === active || e.dirty || e.knownText === null));
+      .filter((e): e is LevelEntry => !!e && (e === active || e.dirty || e.knownText === null || missing.has(e.id)));
+  }
+
+  /**
+   * Ids of listed levels whose file is not on disk although nothing about them
+   * is pending (clean and saved before). One listing per folder; a name the
+   * listing lacks is confirmed with a read, which also covers case-insensitive
+   * folders. Unloaded ones cannot be rewritten and are only reported.
+   */
+  async #missingFiles(fs: ProjectFileSystem): Promise<Set<string>> {
+    const missing = new Set<string>(), listings = new Map<string, Set<string>>();
+    for (const level of [...this.#levels]) {
+      const entry = this.#entries.get(level.id);
+      if (entry && (entry.dirty || entry.knownText === null)) continue;
+      const slash = level.path.lastIndexOf("/"), dir = slash < 0 ? "" : level.path.slice(0, slash);
+      let names = listings.get(dir);
+      if (!names) { names = new Set(await fs.list(dir)); listings.set(dir, names); }
+      if (names.has(level.path.slice(slash + 1)) || (await readOrNull(fs, level.path)) !== null) continue;
+      if (entry) missing.add(level.id);
+      else console.warn(`Map file ${level.path} is missing and the map is not loaded; it cannot be rewritten`);
+    }
+    return missing;
   }
 
   /**
@@ -612,9 +637,11 @@ export class LevelWorkspace {
    * files. A level edited while the files were written stays dirty.
    */
   async save(fs: ProjectFileSystem, input: SaveLevelsInput): Promise<SavedLevel[]> {
+    // Before anything is captured: the probe awaits, the save itself serializes synchronously.
+    const missing = input.allLevels ? new Set<string>() : await this.#missingFiles(fs);
     const active = this.active;
     const activeLevel = this.activeLevel;
-    const entries = input.allLevels ? this.#levels.map(level => this.#entries.get(level.id)!).filter(Boolean) : this.#toWrite();
+    const entries = input.allLevels ? this.#levels.map(level => this.#entries.get(level.id)!).filter(Boolean) : this.#toWrite(missing);
     const revisions = new Map(entries.map((e) => [e, e.store.revision]));
     const paths = new Map(entries.map((e) => [e, this.level(e.id)!.path]));
     const removed = [...this.#removedFiles];

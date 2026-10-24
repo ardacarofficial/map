@@ -37,6 +37,8 @@
   "noProjectFile": "This folder has no project.smap.",
   "noLevel": "The world has no map.",
   "missingTilesetImage": "Tileset image not found: {path}",
+  "missingLevelFile": "Map file not found: {path}",
+  "missingFile": "File not found: {path}",
   "permissionDenied": "Folder access was not granted.",
   "fsUnsupported": "This browser can''t save to folders. Use Chrome or Edge.",
   "folderTaken": "Folder “{name}” already contains a world; pick another place.",

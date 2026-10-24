@@ -35,7 +35,9 @@ export function createEditorHost(): EditorAgentHost {
     let observed=getLevelWorkspace(),off=observed?.subscribeContent(listener);
     const offEditor=useEditorStore.subscribe(()=>{const next=getLevelWorkspace();if(next!==observed){off?.();observed=next;off=next?.subscribeContent(listener);listener();}});
     const offLibrary=useProjectLibrary.subscribe((s,p)=>{if(s.revision!==p.revision)listener();});
-    const offImages=onTilesetImage(listener);
+    let images=tilesetImageRevision();
+    // Re-cut hints (map switch, regrid) keep the revision; only new bytes are content.
+    const offImages=onTilesetImage(()=>{const next=tilesetImageRevision();if(next!==images){images=next;listener();}});
     return()=>{off?.();offEditor();offLibrary();offImages();};
   };
   const world:AgentWorldPort={
