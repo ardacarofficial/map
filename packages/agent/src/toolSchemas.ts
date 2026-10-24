@@ -1940,8 +1940,20 @@ const LIBRARY_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("configure_world", "Configure World", "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.", objectSchema({context:ref("WriteContext"),settings:{...objectSchema({tileWidth:{type:"integer",minimum:1,maximum:1024},tileHeight:{type:"integer",minimum:1,maximum:1024},newLevel:{...objectSchema({width:{type:"integer",minimum:1,maximum:4096},height:{type:"integer",minimum:1,maximum:4096}},[]),minProperties:1},layerTemplate:{type:"array",maxItems:128,items:objectSchema({name:{type:"string",minLength:1,maxLength:128},kind:{type:"string",enum:["tile","collision","entity"]}})},background:{anyOf:[{type:"null"},{type:"string",pattern:"^#[a-fA-F0-9]{6}$"}]}},[]),minProperties:1}}), false),
 ];
 const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
+/** Map writes are drafts the human approves or discards (Onayla/Vazgeç), so they
+ * are not destructive. Only tools that persist outside that review are. */
+const PERSISTENT_WRITES: ReadonlySet<string> = new Set(["set_tags", "configure_export", "configure_layout", "configure_application"]);
+/** Repeating the same arguments leaves the same state (no new IDs, no toggles). */
+const IDEMPOTENT_WRITES: ReadonlySet<string> = new Set([
+  "finish_edit", "cancel_edit", "paint_cells", "paint_rect", "paint_line", "fill", "smart_brush", "draw_path", "place_stamp",
+  "resize_map", "edit_map", "configure_world", "set_tags", "configure_export", "configure_editor", "configure_layout", "configure_application",
+]);
+function annotate(tool: AgentToolDefinition): AgentToolDefinition["annotations"] {
+  if (tool.annotations.readOnlyHint) return tool.annotations;
+  return { ...tool.annotations, destructiveHint: PERSISTENT_WRITES.has(tool.name), ...(IDEMPOTENT_WRITES.has(tool.name) ? { idempotentHint: true } : {}) };
+}
 export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
-  ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
+  ...tool, annotations: annotate(tool), inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 
 /** Code-unit key order, LF, two spaces and one final newline, independent of host locale. */

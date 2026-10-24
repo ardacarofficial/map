@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { connectionSnippet, validAgentPort } from "./connectionSnippet";
+import { CLAUDE_PERMISSION_RULE, connectionSnippet, validAgentPort } from "./connectionSnippet";
 
-describe("AI connection snippets (O7)", () => {
-  it("copies Claude Code's HTTP registration with the effective port and token", () => {
-    expect(connectionSnippet("claude", 48781, "secret-token")).toBe('claude mcp add --transport http harita http://127.0.0.1:48781/mcp --header "Authorization: Bearer secret-token"');
+describe("AI connection snippets", () => {
+  it("copies a re-runnable user-scope Claude Code registration with the effective port and token", () => {
+    expect(connectionSnippet("claude", 48781, "secret-token")).toBe('claude mcp remove harita -s user\nclaude mcp add -s user --transport http harita http://127.0.0.1:48781/mcp --header "Authorization: Bearer secret-token"');
   });
-  it("copies Codex TOML and separate PowerShell session and persistent environment commands", () => {
-    expect(connectionSnippet("codex", 48765, "secret-token")).toBe('[mcp_servers.harita]\nurl = "http://127.0.0.1:48765/mcp"\nbearer_token_env_var = "HARITA_MCP_TOKEN"\n\n$env:HARITA_MCP_TOKEN="secret-token"\nsetx HARITA_MCP_TOKEN "secret-token"');
+  it("copies one pure Codex TOML block with the token header and no approval prompts", () => {
+    expect(connectionSnippet("codex", 48765, "secret-token")).toBe('[mcp_servers.harita]\nurl = "http://127.0.0.1:48765/mcp"\nhttp_headers = { Authorization = "Bearer secret-token" }\ndefault_tools_approval_mode = "approve"\ntool_timeout_sec = 120');
+  });
+  it("names every harita tool in the Claude Code permission rule", () => {
+    expect(CLAUDE_PERMISSION_RULE).toBe("mcp__harita");
   });
   it.each([0, 80, 1023, 65536, 1.5, NaN, Infinity])("refuses invalid port %s", port => {
     expect(validAgentPort(port)).toBe(false);
@@ -23,8 +26,8 @@ it.each(['bad"token', 'bad`token', 'bad$token', 'bad\ntoken'])("rejects unsafe s
   expect(() => connectionSnippet("codex", 48765, token)).toThrow();
 });
 
-it("Codex connection settings paste as real separate TOML and PowerShell lines", () => {
+it("Codex settings are valid TOML lines only (no shell commands mixed in)", () => {
   const lines = connectionSnippet("codex", 48765, "secret").split("\n");
-  expect(lines).toHaveLength(6);
-  expect(lines.slice(0,3)).toEqual(["[mcp_servers.harita]", 'url = "http://127.0.0.1:48765/mcp"', 'bearer_token_env_var = "HARITA_MCP_TOKEN"']);
+  expect(lines).toHaveLength(5);
+  for (const line of lines.slice(1)) expect(line).toMatch(/^[a-z_]+ = /);
 });

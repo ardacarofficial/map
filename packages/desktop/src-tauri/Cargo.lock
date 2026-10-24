@@ -3356,7 +3356,9 @@ name = "smap-host"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
  "dunce",
+ "futures-core",
  "getrandom 0.3.4",
  "log",
  "notify",

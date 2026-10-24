@@ -179,7 +179,8 @@ export interface MapSummary { id: Id; name: string; width?: number | null; heigh
 export interface MapInfo { id: Id; name: string; width: number; height: number; tileWidth: number; tileHeight: number; seed: number; world: Point; mapRevision: Revision }
 export interface CreatedMapInfo { id: Id; name: string; path: string; width: number; height: number; tileWidth: number; tileHeight: number; world: Point }
 export interface WorldInfo { name: string; locationLabel: string; saved: boolean; dirty: boolean }
-export interface SessionClient extends ClientInfo { state: "connected" | "idle"; isWriter: boolean }
+/** id is a short non-secret prefix of the session; lastSeen is ISO time of the last call; isSelf marks the caller. */
+export interface SessionClient extends ClientInfo { state: "connected" | "idle"; isWriter: boolean; id?: string; lastSeen?: string; isSelf?: boolean }
 export interface ChangeSummary {
   plannedCells: number; changedCells: number;
   affected: { mapId: Id; mapRevision: Revision; layerId?: Id; bounds?: Rect }[];
@@ -247,7 +248,7 @@ export interface ImageBlock { type: "image"; mimeType: "image/png"; data: string
 export type AgentToolResult<N extends ToolName = ToolName> =
   | { isError?: false; content: [TextBlock] | [TextBlock, ImageBlock]; structuredContent: ToolSuccess<N> }
   | { isError: true; content: [TextBlock]; structuredContent: AgentFailure };
-export interface AgentToolDefinition { name: ToolName; title: string; description: string; annotations: { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: false }; inputSchema: { readonly type: "object"; readonly $schema: string; readonly [key: string]: JsonValue } }
+export interface AgentToolDefinition { name: ToolName; title: string; description: string; annotations: { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint?: boolean; openWorldHint: false }; inputSchema: { readonly type: "object"; readonly $schema: string; readonly [key: string]: JsonValue } }
 export interface AgentSignal { readonly aborted: boolean; throwIfAborted(): void; onAbort(callback: () => void): Unsubscribe }
 /** Only transport-authenticated values belong here. Epoch/deadline times are milliseconds. */
 export interface AgentCallContext { clientSessionId: Id; clientInfo: ClientInfo; bridgeEpoch: Id; deadline: number; signal: AgentSignal }

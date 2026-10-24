@@ -30,7 +30,9 @@ test("auth, origin, Host, method, protocol, and initialization checks precede di
     req.end();
   });
   expect(badHost).toBe(403);
-  expect((await fetch(host.url, { headers: { Authorization: "Bearer private-token" } })).status).toBe(405);
+  expect((await fetch(host.url, { headers: { Authorization: "Bearer private-token" } })).status).toBe(400);
+  const put = await fetch(host.url, { method: "PUT", headers: { Authorization: "Bearer private-token" } });
+  expect(put.status).toBe(405); expect(put.headers.get("Allow")).toBe("GET, POST, DELETE");
   expect((await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status).toBe(400);
   const id = await init();
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "MCP-Protocol-Version": "wrong" })).status).toBe(400);
@@ -120,9 +122,94 @@ test("protocol envelopes, bounded ingress, exact endpoint Origin and session cap
   expect((await post({ jsonrpc: "2.0", id: null, method: "ping" }, id)).status).toBe(400);
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping", params: { large: "x".repeat(1024 * 1024) } }, id)).status).toBe(413);
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "Content-Type": "text/plain" })).status).toBe(415);
-  expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { Accept: "application/json" })).status).toBe(406);
-  for (let index = 1; index < 16; index++) await init();
-  expect((await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "fifth", version: "1" } } })).status).toBe(429);
+  expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { Accept: "text/html" })).status).toBe(406);
+  expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { Accept: "application/json" })).status).toBe(200);
+});
+
+const initBody = (name = "client") => ({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name, version: "1" } } });
+function rawPost(url: string, headers: Record<string, string>, body: unknown) {
+  return new Promise<{ status: number | undefined; headers: Record<string, unknown>; body: string }>((resolve, reject) => {
+    const req = request(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers } }, (res) => {
+      let text = ""; res.on("data", (chunk) => { text += String(chunk); }); res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+    });
+    req.on("error", reject); req.end(JSON.stringify(body));
+  });
+}
+
+test("access failures explain themselves; lowercase bearer and local Host aliases work", async () => {
+  const { host, post, init } = await setup();
+  const denied = await post({}, undefined, undefined, { Authorization: "Bearer nope" });
+  expect(denied.status).toBe(401);
+  expect(denied.headers.get("WWW-Authenticate")).toBe('Bearer error="invalid_token"');
+  expect((await denied.json()).error.message).toContain("Settings > AI");
+  for (const [scheme, name] of [["bearer", "localhost"], ["BEARER", "[::1]"], ["Bearer", "LocalHost"]] as const) {
+    const authority = `${name}:${host.port}`;
+    const res = await rawPost(host.url, { Authorization: `${scheme}  private-token`, Host: authority, Origin: `http://${authority}` }, initBody());
+    expect(res.status, authority).toBe(200);
+    expect(res.headers["mcp-session-id"]).toBeTruthy();
+  }
+  const foreign = await rawPost(host.url, { Authorization: "Bearer private-token", Host: `example.com:${host.port}` }, {});
+  expect(foreign.status).toBe(403); expect(JSON.parse(foreign.body).error.message).toContain("127.0.0.1");
+  const unknown = await post({ jsonrpc: "2.0", id: 2, method: "ping" }, "missing-session");
+  expect(unknown.status).toBe(404); expect((await unknown.json()).error.message).toContain("initialize");
+  const discover = await post({ jsonrpc: "2.0", id: 1, method: "server/discover", params: {} });
+  expect(discover.status).toBe(200); expect((await discover.json()).error.code).toBe(-32601);
+  const noSession = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+  expect(noSession.status).toBe(400); expect((await noSession.json()).error.message).toContain("Mcp-Session-Id");
+  const id = await init();
+  const ping = await post({ jsonrpc: "2.0", id: 4, method: "ping" }, undefined, undefined, { "Mcp-Session-Id": id });
+  expect((await ping.json()).result).toEqual({});
+});
+
+async function openStream(url: string, session: string) {
+  const controller = new AbortController();
+  const res = await fetch(url, { headers: { Authorization: "Bearer private-token", Accept: "text/event-stream", "Mcp-Session-Id": session }, signal: controller.signal });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+  const reader = res.body!.getReader();
+  return { read: async () => new TextDecoder().decode((await reader.read()).value), close: () => { controller.abort(); } };
+}
+
+test("an open stream keeps a quiet session; after it closes the session ends once the grace passes", async () => {
+  let now = 0;
+  const host = await startDevMcp({ port: 0, token: "private-token", now: () => now, streamKeepaliveMs: 20, streamGraceMs: 15000 });
+  cleanup.push(() => host.close());
+  const controls: { type: string; reason?: string; clientSessionId?: string }[] = [];
+  host.attach("a", "epoch", (message) => { controls.push(message as never); });
+  const res = await rawPost(`${host.url}?pair=a`, { Authorization: "Bearer private-token" }, initBody());
+  const session = String(res.headers["mcp-session-id"]);
+  const stream = await openStream(host.url, session);
+  expect(await stream.read()).toBe(": harita\n\n");
+  expect(await stream.read()).toBe(": keepalive\n\n");
+  now = 600000; host.expire();
+  expect(host.sessionCount).toBe(1);
+  stream.close();
+  // Let the server observe the closed stream before advancing the clock.
+  await expect.poll(() => host.streamCount).toBe(0);
+  now += 14000; host.expire();
+  expect(host.sessionCount).toBe(1);
+  now += 2000; host.expire();
+  expect(host.sessionCount).toBe(0);
+  expect(controls).toContainEqual(expect.objectContaining({ type: "sessionEnded", reason: "disconnect", clientSessionId: session }));
+});
+
+test("the client cap evicts the oldest quiet session but answers 429 when every client streams", async () => {
+  let now = 0;
+  const host = await startDevMcp({ port: 0, token: "private-token", now: () => now });
+  cleanup.push(() => host.close());
+  const controls: { type: string; reason?: string; clientSessionId?: string }[] = [];
+  host.attach("a", "epoch", (message) => { controls.push(message as never); });
+  const ids: string[] = [];
+  for (let index = 0; index < 16; index++) { now++; ids.push(String((await rawPost(`${host.url}?pair=a`, { Authorization: "Bearer private-token" }, initBody())).headers["mcp-session-id"])); }
+  const streams = [await openStream(host.url, ids[0]!)];
+  const res = await rawPost(`${host.url}?pair=a`, { Authorization: "Bearer private-token" }, initBody("17th"));
+  expect(res.status).toBe(200);
+  expect(controls).toContainEqual(expect.objectContaining({ type: "sessionEnded", reason: "expired", clientSessionId: ids[1] }));
+  for (const id of [...ids.slice(2), String(res.headers["mcp-session-id"])]) streams.push(await openStream(host.url, id));
+  const full = await rawPost(`${host.url}?pair=a`, { Authorization: "Bearer private-token" }, initBody("18th"));
+  expect(full.status).toBe(429);
+  expect(JSON.parse(full.body).error.message).toContain("Close an unused AI client");
+  for (const stream of streams) stream.close();
 });
 
 test("an occupied MCP port reports failure instead of selecting a different port", async () => {

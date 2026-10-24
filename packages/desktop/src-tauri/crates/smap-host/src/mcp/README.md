@@ -8,6 +8,29 @@ Each endpoint accepts at most 16 clients, with at most 64 pending calls in total
 and 32 per client. Calls and collaborative membership still have their own
 editor limits; the session cap does not grant concurrent write ownership.
 
+## Access and session liveness
+
+`Host` may be `127.0.0.1`, `localhost` or `[::1]` with the listener port (the
+socket itself is loopback-only); an `Origin`, when present, must be `http://`
+plus one of those. The `Bearer` scheme is case-insensitive. Every HTTP failure
+(400/401/403/404/405/406/409/413/415/429/503) carries a JSON-RPC error body
+whose message says what to do; 401 adds `WWW-Authenticate: Bearer
+error="invalid_token"`. A request without a session for an unknown method
+(for example a newer client's `server/discover` probe) gets JSON-RPC -32601,
+so the client falls back to `initialize`. After initialization an omitted
+`MCP-Protocol-Version` means the negotiated version.
+
+`GET /mcp` opens an optional event stream (at most two per session). Harita
+sends no server-initiated messages; the stream only carries comment
+keepalives every five seconds. An open stream or an in-flight call keeps a
+session alive indefinitely. When the last stream closes and the session stays
+quiet for fifteen seconds, the session ends with `disconnect`; a session that
+never opened a stream ends after the idle timeout with `expired`. At the
+16-client cap, `initialize` evicts the least recently used session without a
+stream or call in flight (`expired`); only when every client is live does it
+answer 429. Session end never rolls back a draft by itself: the editor's
+`sessionEnded` handling decides (orphaned for review, resumable by its agent).
+
 The desktop platform supplies the frozen `AgentConnection`. Native IPC:
 
 - `ai_get_status` → `{snapshot,status}`

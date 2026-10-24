@@ -12,36 +12,57 @@ Port kullanımdaysa başka boş bir port seç. Örneklerdeki portu ve `<TOKEN>` 
 
 ## Claude Code
 
-PowerShell’de çalıştır, sonra Claude Code’u yeniden aç. Harita uygulaması ve dünya açık kalsın:
+Ayarlar’da istemci olarak **Claude Code**’u seçip **Bağlantı ayarlarını kopyala**’ya bas ve kopyalanan iki satırı PowerShell’de çalıştır. Sonra Claude Code’u yeniden aç. Harita uygulaması ve dünya açık kalsın:
 
 ```powershell
-claude mcp add --transport http harita http://127.0.0.1:48765/mcp --header "Authorization: Bearer <TOKEN>"
+claude mcp remove harita -s user
+claude mcp add -s user --transport http harita http://127.0.0.1:48765/mcp --header "Authorization: Bearer <TOKEN>"
 ```
+
+`-s user` bağlantıyı bütün klasörlerde geçerli yapar. İlk satır eski kaydı siler; kayıt yoksa `No MCP server named "harita"` der, sorun değil. Anahtarı yenilediğinde aynı iki satırı yeniden çalıştırman yeter. Bağlantıyı `claude mcp list` ile kontrol edebilirsin; anahtar yanlışsa burada “Harita rejected the access token” görünür.
 
 ## Codex
 
-`%USERPROFILE%\.codex\config.toml` dosyasına ekle:
+Ayarlar’da istemci olarak **Codex**’i seçip **Bağlantı ayarlarını kopyala**’ya bas. Kopyalanan bloğu `%USERPROFILE%\.codex\config.toml` dosyasına yapıştır, sonra Codex’i yeniden başlat:
 
 ```toml
 [mcp_servers.harita]
 url = "http://127.0.0.1:48765/mcp"
-bearer_token_env_var = "HARITA_MCP_TOKEN"
+http_headers = { Authorization = "Bearer <TOKEN>" }
+default_tools_approval_mode = "approve"
+tool_timeout_sec = 120
 ```
 
-Codex’i başlatacağın PowerShell penceresinde anahtarı tanımla:
+Dosyada daha önce `[mcp_servers.harita]` bölümü varsa onu bu blokla değiştir. Anahtarı yenilediğinde bloğu yeniden kopyala. Bağlantıyı `codex mcp get harita` ile kontrol edebilirsin; anahtar yıldızlı görünür.
+
+**Gelişmiş: anahtarı dosyaya yazmadan.** `http_headers` satırı yerine `bearer_token_env_var = "HARITA_MCP_TOKEN"` yaz ve Codex’i başlatacağın PowerShell penceresinde anahtarı tanımla:
 
 ```powershell
 $env:HARITA_MCP_TOKEN="<TOKEN>"
 codex
 ```
 
-Sonraki terminaller için de saklamak istersen:
+Kalıcı yapmak için `setx HARITA_MCP_TOKEN "<TOKEN>"` kullan; `setx` açık pencereyi değiştirmez, yeni terminal aç. Değişken tanımlı değilse Codex Harita sunucusunu sessizce atlar; araçlar görünmüyorsa önce bunu kontrol et. Ayrıntılar [resmî OpenAI MCP belgesinde](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
 
-```powershell
-setx HARITA_MCP_TOKEN "<TOKEN>"
+## İzinler
+
+AI’ın çizdiği her şey sen **Onayla** diyene kadar taslaktır; **Vazgeç** hepsini birebir geri alır. Bu yüzden Harita araçlarına her çağrıda ayrıca izin vermek gerekmez. İzin ayarlanmazsa Claude Code salt okunur araçlar dahil her araç için sorar, Codex de çizim araçlarını “onay gerekiyor” diyerek reddedebilir.
+
+**Claude Code:** Ayarlar’daki **İzin kuralını kopyala** düğmesi `mcp__harita` kuralını kopyalar. Claude Code içinde `/permissions` komutunu aç ve bu kuralı **Allow** listesine ekle. Ya da `%USERPROFILE%\.claude\settings.json` dosyasına ekle (dosyada başka ayarlar varsa yalnız `allow` listesine `"mcp__harita"` satırını ekle):
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__harita"]
+  }
+}
 ```
 
-`setx` mevcut pencereyi değiştirmez; yeni terminal açıp Codex’i oradan başlat. Anahtarı yenilediğinde ortam değişkenini de güncelle. Yapılandırma ve `bearer_token_env_var` alanı [resmî OpenAI MCP belgesinde](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) açıklanıyor.
+`mcp__harita` kuralı Harita’nın bütün araçlarını kapsar; başka MCP sunucularına veya dosya/kabuk araçlarına izin vermez. Komut satırında tek seferlik çalıştırmada `claude -p "…" --allowedTools "mcp__harita"` aynı işi görür.
+
+**Codex:** Yukarıdaki bloktaki `default_tools_approval_mode = "approve"` satırı Harita araçlarını onay sormadan çalıştırır. Yalnız bu sunucuyu etkiler. `tool_timeout_sec = 120` uzun önizleme ve büyük çizim çağrılarının yarıda kesilmesini önler.
+
+Harita’da kalıcı etkisi olan, taslağa girmeyen araçlar (etiket yazma, dışa aktarma, panel düzeni ve uygulama ayarları) MCP’de “yıkıcı” olarak işaretlidir; istemci bunlar için ayrıca sorabilir. Hiçbir araç PNG yazamaz, dosya veya kabuk çalıştıramaz ve AI kendi işini onaylayamaz.
 
 ## Örnek istekler
 
@@ -67,13 +88,13 @@ AI oturumu kapanırsa, bağlantı boşta kalıp sona ererse, AI bağlantısını
 
 ## Güvenlik
 
-Bağlantı yalnız bilgisayarındaki `127.0.0.1` adresini dinler; erişim anahtarı gerekir. Başlangıçta kapalıdır. Anahtar projeye veya normal ayarlar metnine yazılmaz. AI kendi işini onaylayamaz, kaydetme aracı yoktur ve kullanıcı PNG’lerini değiştiremez.
+Bağlantı yalnız bilgisayarındaki `127.0.0.1` adresini dinler (`localhost` adıyla gelen yerel istekler de kabul edilir); erişim anahtarı gerekir. Anahtar yanlışsa istemci ne yapılacağını söyleyen bir hata alır. Başlangıçta kapalıdır. Anahtar projeye veya normal ayarlar metnine yazılmaz. AI kendi işini onaylayamaz, kaydetme aracı yoktur ve kullanıcı PNG’lerini değiştiremez.
 
 Katalog ve harita önizlemeleri bağlı AI uygulamasına gönderilir; oradan AI sağlayıcısına ulaşabilir. Paylaşmak istemediğin görselleri kullanma. Erişimi bitirmek için bağlantıyı kapat veya anahtarı yenile.
 
 ## Geliştirici için stdio köprüsü
 
-`harita-mcp`, stdio konuşan MCP istemcisini çalışan editörün HTTP bağlantısına bağlar. Doğrudan proje klasörü düzenlemez; editör açık olmalıdır.
+`harita-mcp`, stdio konuşan MCP istemcisini çalışan editörün HTTP bağlantısına bağlar. Doğrudan proje klasörü düzenlemez. Editör henüz açık değilse de başlar: araç listesini paketten verir, ilk çağrıda bağlanır; editör kapalıysa çağrı `EDITOR_UNAVAILABLE` ve ne yapılacağını döndürür. Editör oturumu sona ererse bir kez kendiliğinden yeniden bağlanır; `--token-file` kullanıyorsan yenilenen anahtarı da dosyadan okur.
 
 Depo kökünde PowerShell örneği:
 
