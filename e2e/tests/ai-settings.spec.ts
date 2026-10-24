@@ -19,7 +19,7 @@ test("AI settings browser fallback is a localized fact in Turkish and English", 
   await expect(page.locator("html")).toHaveAttribute("lang", "tr");
 });
 
-test("AI settings copy each O7 client format with one clipboard write per activation", async ({ page }) => {
+test("AI settings copy each client format and the Claude Code permission rule with one clipboard write per activation", async ({ page }) => {
   await page.goto(`/?agent=settings-${randomUUID()}`); await openAiSettings(page);
   await expect(page.locator("#ai-port")).toHaveValue(String(process.env.E2E_MCP_PORT ?? 48766));
   await page.evaluate(() => {
@@ -29,12 +29,17 @@ test("AI settings copy each O7 client format with one clipboard write per activa
     Object.defineProperty(navigator.clipboard, "writeCount", { get: () => count });
   });
   const copy = page.getByRole("button", { name: "Bağlantı ayarlarını kopyala", exact: true });
+  const port = process.env.E2E_MCP_PORT ?? 48766, token = process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol";
   await copy.click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`claude mcp add --transport http harita http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp --header "Authorization: Bearer ${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`claude mcp remove harita -s user\nclaude mcp add -s user --transport http harita http://127.0.0.1:${port}/mcp --header "Authorization: Bearer ${token}"`);
+  await expect(page.locator("[data-ai-setup-hint]")).toContainText("mcp__harita");
+  await page.getByRole("button", { name: "İzin kuralını kopyala", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("mcp__harita");
   await page.getByRole("radio", { name: "Codex", exact: true }).click();
+  await expect(page.getByRole("button", { name: "İzin kuralını kopyala", exact: true })).toHaveCount(0);
   await copy.click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.harita]\nurl = "http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 48766}/mcp"\nbearer_token_env_var = "HARITA_MCP_TOKEN"\n\n$env:HARITA_MCP_TOKEN="${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"\nsetx HARITA_MCP_TOKEN "${process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol"}"`);
-  expect(await page.evaluate(() => (navigator.clipboard as Clipboard & { writeCount: number }).writeCount)).toBe(2);
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.harita]\nurl = "http://127.0.0.1:${port}/mcp"\nhttp_headers = { Authorization = "Bearer ${token}" }\ndefault_tools_approval_mode = "approve"\ntool_timeout_sec = 120`);
+  expect(await page.evaluate(() => (navigator.clipboard as Clipboard & { writeCount: number }).writeCount)).toBe(3);
   await expect(page.getByLabel("Erişim anahtarı", { exact: true })).toHaveAttribute("type", "password");
   await expect(page.getByRole("button", { name: "Kaydet ve uygula", exact: true })).toBeInViewport();
   await page.screenshot({ path: test.info().outputPath("ai-settings.png") });

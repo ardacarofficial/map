@@ -6,7 +6,7 @@ import { Segmented } from "../../ui/primitives/Segmented";
 import { TextField } from "../../ui/primitives/TextField";
 import { DialogToggle, FormField } from "../../ui/dialogs/DialogFrame";
 import { toast } from "../../ui/toast/toastStore";
-import { agentEndpoint, connectionSnippet, validAgentPort, type AgentClientFormat } from "../../ui/agent/connectionSnippet";
+import { agentEndpoint, CLAUDE_PERMISSION_RULE, connectionSnippet, validAgentPort, type AgentClientFormat } from "../../ui/agent/connectionSnippet";
 import { useAgentUiState } from "../../agent/agentUiState";
 import { editGate } from "../../agent/editGate";
 import { usePendingAiEdit } from "./usePendingAiEdit";
@@ -75,11 +75,18 @@ function ConnectedAiSection({ draft, connection, onBusyChange }: { draft: AiSett
       <FormField label={t("ai.settings.clientFormat")}>
         <Segmented<AgentClientFormat> size="md" label={t("ai.settings.clientFormat")} value={client} onValueChange={setClient} items={[{ value: "claude", label: t("ai.settings.clientClaude") }, { value: "codex", label: t("ai.settings.clientCodex") }]} />
       </FormField>
-      <Button className="self-start" onClick={() => void run(async () => {
-        const secret = await connection.revealToken();
-        await navigator.clipboard.writeText(connectionSnippet(client, status.port, secret));
-        toast.success(t("ai.settings.copied"));
-      }, "ai.settings.copyFailed")}>{t("ai.settings.copy")}</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => void run(async () => {
+          const secret = await connection.revealToken();
+          await navigator.clipboard.writeText(connectionSnippet(client, status.port, secret));
+          toast.success(t("ai.settings.copied"));
+        }, "ai.settings.copyFailed")}>{t("ai.settings.copy")}</Button>
+        {client === "claude" && <Button onClick={() => void run(async () => {
+          await navigator.clipboard.writeText(CLAUDE_PERMISSION_RULE);
+          toast.success(t("ai.settings.permissionCopied"));
+        }, "ai.settings.copyFailed")}>{t("ai.settings.copyPermission")}</Button>}
+      </div>
+      <p className="text-sm text-muted" data-ai-setup-hint>{t(client === "claude" ? "ai.settings.claudeHint" : "ai.settings.codexHint", { rule: CLAUDE_PERMISSION_RULE })}</p>
       <p className="text-sm text-muted">{t("ai.settings.previewsShared")}</p>
     </fieldset>
     {draft.loadFailed && <p role="alert" className="text-sm text-danger">{t("ai.settings.saveFailed")}</p>}

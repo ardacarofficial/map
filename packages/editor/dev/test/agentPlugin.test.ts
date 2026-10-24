@@ -80,7 +80,7 @@ test("Vite restart awaits MCP shutdown and rebinds the same port", async () => {
   cleanup.push(() => vite.close());
   await vite.listen();
   const url = `http://127.0.0.1:${mcpPort}/mcp`;
-  expect((await fetch(url, { headers: { Authorization: "Bearer restart-token" } })).status).toBe(405);
+  expect((await fetch(url, { headers: { Authorization: "Bearer restart-token" } })).status).toBe(400);
   await vite.restart();
-  expect((await fetch(url, { headers: { Authorization: "Bearer restart-token" } })).status).toBe(405);
+  expect((await fetch(url, { headers: { Authorization: "Bearer restart-token" } })).status).toBe(400);
 });

@@ -20,7 +20,9 @@ export class CollaborationJournal {
   cells(call: CollaborativeCall, mapId: Id, layerId: Id, points: readonly Point[]): void {
     this.collaboration.assertCells(call.memberId, mapId, layerId, points);
     for (const point of points) call.cells.set(cellJournalKey(mapId, layerId, point), { mapId, layerId, x: point.x, y: point.y });
-    if (call.cells.size > AGENT_LIMITS.cellsPerCall) throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED, "Combined spatial footprint exceeds the per-call journal budget");
+    // A call may cover as much as the tool's own cap allows (paint_grid, uniform ops, replace_tiles);
+    // the draft-wide planned-cell and retained-memory budgets still bound the journal.
+    if (call.cells.size > AGENT_LIMITS.transactionPlannedWrites) throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED, "Combined spatial footprint exceeds the per-call journal budget");
   }
   entity(call: CollaborativeCall, mapId: Id, layerId: Id, before: Entity | null, after: Entity | null): void {
     if (before) this.collaboration.assertEntity(call.memberId, mapId, layerId, before);

@@ -171,8 +171,135 @@ async fn authentication_origin_host_and_limits() {
             .await
             .unwrap()
             .status(),
-        405
+        400
     );
+    let put = h.client.put(&url).bearer_auth(TOKEN).send().await.unwrap();
+    assert_eq!(put.status(), 405);
+    assert_eq!(put.headers()["Allow"], "GET, POST, DELETE");
+}
+
+#[tokio::test]
+async fn access_failures_explain_themselves_and_local_aliases_work() {
+    let h = Harness::new().await;
+    let url = format!("http://{}/mcp", h.server.addr);
+    let port = h.server.addr.port();
+    let res = h.client.post(&url).header("Authorization", "Bearer wrong").json(&json!({})).send().await.unwrap();
+    assert_eq!(res.status(), 401);
+    assert_eq!(res.headers()["WWW-Authenticate"], "Bearer error=\"invalid_token\"");
+    let body: Value = res.json().await.unwrap();
+    assert!(body["error"]["message"].as_str().unwrap().contains("Settings > AI"));
+    let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"alias","version":"1"},"capabilities":{}}});
+    // Lowercase scheme, localhost / [::1] Host names and matching Origins are local.
+    for (scheme, host) in [("bearer", format!("localhost:{port}")), ("BEARER", format!("[::1]:{port}")), ("Bearer", format!("LocalHost:{port}"))] {
+        let res = h.client.post(&url).header("Authorization", format!("{scheme}  {TOKEN}")).header("Host", &host)
+            .header("Origin", format!("http://{host}")).json(&init).send().await.unwrap();
+        assert_eq!(res.status(), 200, "{scheme} {host}");
+        assert!(res.headers().contains_key("Mcp-Session-Id"));
+    }
+    for (host, origin) in [(format!("example.com:{port}"), None), (format!("localhost:{}", port + 1), None), (format!("localhost:{port}"), Some("http://evil.test"))] {
+        let mut request = h.post(json!({})).header("Host", &host);
+        if let Some(origin) = origin { request = request.header("Origin", origin); }
+        let res = request.send().await.unwrap();
+        assert_eq!(res.status(), 403, "{host}");
+        assert!(res.json::<Value>().await.unwrap()["error"]["message"].is_string());
+    }
+    let missing = h.message("0".repeat(64).as_str(), json!({"jsonrpc":"2.0","id":2,"method":"ping"})).send().await.unwrap();
+    assert_eq!(missing.status(), 404);
+    assert!(missing.json::<Value>().await.unwrap()["error"]["message"].as_str().unwrap().contains("initialize"));
+    let not_found = h.client.get(format!("http://{}/other", h.server.addr)).send().await.unwrap();
+    assert_eq!(not_found.status(), 404);
+    assert!(not_found.json::<Value>().await.unwrap()["error"]["message"].as_str().unwrap().contains("/mcp"));
+    // A newer client's discovery probe gets a JSON-RPC answer, so it falls back to initialize.
+    let discover: Value = h.post(json!({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}})).send().await.unwrap().json().await.unwrap();
+    assert_eq!(discover["error"]["code"], -32601);
+    let no_session = h.post(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).send().await.unwrap();
+    assert_eq!(no_session.status(), 400);
+    assert!(no_session.json::<Value>().await.unwrap()["error"]["message"].as_str().unwrap().contains("Mcp-Session-Id"));
+    // After initialization an omitted MCP-Protocol-Version means the negotiated one.
+    let session = h.session().await;
+    let ping: Value = h.post(json!({"jsonrpc":"2.0","id":5,"method":"ping"})).header("Mcp-Session-Id", &session).send().await.unwrap().json().await.unwrap();
+    assert_eq!(ping["result"], json!({}));
+}
+
+async fn open_stream(h: &Harness, session: &str) -> reqwest::Response {
+    let res = h.client.get(format!("http://{}/mcp", h.server.addr)).bearer_auth(TOKEN)
+        .header("Accept", "text/event-stream").header("Mcp-Session-Id", session)
+        .header("MCP-Protocol-Version", "2025-11-25").send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.headers()["Content-Type"], "text/event-stream");
+    res
+}
+
+#[tokio::test]
+async fn an_open_stream_keeps_a_quiet_session_and_its_close_ends_it_after_the_grace() {
+    let mut h = Harness::with_options(Options {
+        session_idle: Duration::from_millis(300),
+        stream_keepalive: Duration::from_millis(50),
+        stream_grace: Duration::from_millis(300),
+        ..Options::default()
+    })
+    .await;
+    h.transport.ready("epoch".into()).unwrap();
+    let session = h.session().await;
+    let mut stream = open_stream(&h, &session).await;
+    assert_eq!(&stream.chunk().await.unwrap().unwrap()[..], b": harita\n\n");
+    // Longer than session_idle: the live stream proves the client still exists.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(&stream.chunk().await.unwrap().unwrap()[..], b": keepalive\n\n");
+    assert_eq!(h.message(&session, json!({"jsonrpc":"2.0","id":1,"method":"ping"})).send().await.unwrap().status(), 200);
+    let second = open_stream(&h, &session).await;
+    let third = h.client.get(format!("http://{}/mcp", h.server.addr)).bearer_auth(TOKEN)
+        .header("Accept", "text/event-stream").header("Mcp-Session-Id", &session).send().await.unwrap();
+    assert_eq!(third.status(), 409);
+    drop(second);
+    let closed = std::time::Instant::now();
+    drop(stream);
+    let mut control = h.event(EVENT_CONTROL).await;
+    while control["type"] != "sessionEnded" {
+        control = h.event(EVENT_CONTROL).await;
+    }
+    assert_eq!(control["reason"], "disconnect");
+    assert_eq!(control["clientSessionId"], session);
+    assert!(closed.elapsed() >= Duration::from_millis(250));
+    assert!(h.transport.clients().is_empty());
+}
+
+#[tokio::test]
+async fn the_client_cap_evicts_the_oldest_quiet_session_but_not_live_streams() {
+    let mut h = Harness::new().await;
+    h.transport.ready("epoch".into()).unwrap();
+    let mut sessions = Vec::new();
+    for _ in 0..MAX_CLIENTS {
+        sessions.push(h.session().await);
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    let _stream = open_stream(&h, &sessions[0]).await;
+    let res = h.init("2025-11-25").await;
+    assert_eq!(res.status(), 200);
+    let mut control = h.event(EVENT_CONTROL).await;
+    while control["type"] != "sessionEnded" {
+        control = h.event(EVENT_CONTROL).await;
+    }
+    assert_eq!(control["reason"], "expired");
+    // sessions[0] streams, so the next oldest quiet session made room.
+    assert_eq!(control["clientSessionId"], sessions[1]);
+    // Until the editor acknowledges the ended session, new clients are asked to retry.
+    let busy: Value = h.init("2025-11-25").await.json().await.unwrap();
+    assert!(busy["error"]["message"].as_str().unwrap().contains("Retry"));
+}
+
+#[tokio::test]
+async fn a_full_house_of_live_streams_answers_429_with_a_hint() {
+    let h = Harness::new().await;
+    let mut streams = Vec::new();
+    for _ in 0..MAX_CLIENTS {
+        let session = h.session().await;
+        streams.push(open_stream(&h, &session).await);
+    }
+    let res = h.init("2025-11-25").await;
+    assert_eq!(res.status(), 429);
+    assert!(res.json::<Value>().await.unwrap()["error"]["message"].as_str().unwrap().contains("Close an unused AI client"));
+    drop(streams);
 }
 
 #[tokio::test]
@@ -385,17 +512,6 @@ async fn initialize_ordering_session_cap_and_version_headers() {
             .status(),
         400
     );
-    for _ in 1..MAX_CLIENTS {
-        h.session().await;
-    }
-    assert!(h
-        .init("2025-11-25")
-        .await
-        .json::<Value>()
-        .await
-        .unwrap()
-        .get("error")
-        .is_some());
 }
 
 #[tokio::test]
@@ -675,7 +791,7 @@ async fn disabled_server_does_not_accept_messages_on_keepalive_connections() {
             .await
             .unwrap()
             .status(),
-        405
+        400
     );
     assert_eq!(
         service
@@ -847,7 +963,7 @@ async fn invalid_settings_and_failed_persistence_leave_endpoint_intact() {
             .await
             .unwrap()
             .status(),
-        405
+        400
     );
 }
 

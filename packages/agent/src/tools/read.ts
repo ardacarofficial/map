@@ -169,7 +169,7 @@ export async function read<N extends ToolName>(
           maps: tx.host.world.maps(),
           activeMapId: s.activeMapId,
           activeLayerId: s.activeLayerId,
-          clients: s.clients,
+          clients: s.clients.map((client) => client.id === undefined ? client : { ...client, isSelf: call.clientSessionId.startsWith(client.id) }),
           transaction: tx.copy(transaction),
           limits: L,
         },

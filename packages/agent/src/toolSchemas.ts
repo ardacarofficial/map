@@ -2044,6 +2044,18 @@ const LIFECYCLE_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("resume_edit", "Resume Edit", "Continue your own draft from this connection after a disconnect, client restart, lease expiry, Durdur or finish_edit. Pass transactionId and the resumeToken that begin_edit returned. Works while the draft is running, orphaned, stopped or awaitingApproval: it rebinds ownership to you and reopens writing (the review bar returns to AI çalışıyor). Previous work is kept. Fails once the user approved or discarded the draft; then begin a new edit. Exclusive drafts only.", objectSchema({ context: ref("ReadContext"), transactionId: ref("Id"), resumeToken: ref("ResumeToken") }, ["transactionId", "resumeToken"]), false),
 ];
 const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
+/** Map writes are drafts the human approves or discards (Onayla/Vazgeç), so they
+ * are not destructive. Only tools that persist outside that review are. */
+const PERSISTENT_WRITES: ReadonlySet<string> = new Set(["set_tags", "configure_export", "configure_layout", "configure_application"]);
+/** Repeating the same arguments leaves the same state (no new IDs, no toggles). */
+const IDEMPOTENT_WRITES: ReadonlySet<string> = new Set([
+  "resume_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_grid", "replace_tiles", "clear_region", "paint_rect", "paint_line", "fill", "smart_brush", "draw_path", "place_stamp",
+  "resize_map", "edit_map", "configure_world", "set_tags", "configure_export", "configure_editor", "configure_layout", "configure_application",
+]);
+function annotate(tool: AgentToolDefinition): AgentToolDefinition["annotations"] {
+  if (tool.annotations.readOnlyHint) return tool.annotations;
+  return { ...tool.annotations, destructiveHint: PERSISTENT_WRITES.has(tool.name), ...(IDEMPOTENT_WRITES.has(tool.name) ? { idempotentHint: true } : {}) };
+}
 /** C2: context is optional on every tool except collaborative join, which keeps its explicit rules. */
 function optionalContext(schema: Schema): Schema {
   const out: Record<string, JsonValue> = { ...schema };
@@ -2054,7 +2066,7 @@ function optionalContext(schema: Schema): Schema {
 }
 export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...LIFECYCLE_DEFINITIONS, ...GRID_DEFINITIONS, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => {
   const inputSchema = (tool.name === "join_edit" ? tool.inputSchema : optionalContext(tool.inputSchema)) as AgentToolDefinition["inputSchema"];
-  return { ...tool, inputSchema: { ...inputSchema, $defs: reachableSchemaDefinitions(inputSchema, SHARED_DEFS) } };
+  return { ...tool, annotations: annotate(tool), inputSchema: { ...inputSchema, $defs: reachableSchemaDefinitions(inputSchema, SHARED_DEFS) } };
 });
 
 /** Code-unit key order, LF, two spaces and one final newline, independent of host locale. */

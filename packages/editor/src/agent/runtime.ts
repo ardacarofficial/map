@@ -25,18 +25,19 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   const connection=options.connection,live=options.host?null:createEditorHost(),host=options.host??live!;
   const api=(options.apiFactory??createAgentApi)(host),bridgeEpoch=crypto.randomUUID();
   const requests=new Map<string,{controller:AbortController;request:BridgeRequest;timer:ReturnType<typeof setTimeout>}>();
-  const clients=new Map<string,BridgeRequest["clientInfo"]>();
+  const clients=new Map<string,BridgeRequest["clientInfo"]>(),lastSeen=new Map<string,number>();
   let disposed=false;
   let disposal:Promise<void>|undefined;
   const log=(error:unknown)=>{getPlatform().log("warn",error instanceof Error?error.name:"Agent runtime failure");};
   const updateClients=()=>{
     const writers=new Set(transactionClients(api.getState().transaction,false));
-    live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:writers.has(clientSessionId)})));
+    // A short prefix identifies a client to peers without exposing its session secret.
+    live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:writers.has(clientSessionId),id:clientSessionId.slice(0,12),...(lastSeen.has(clientSessionId)?{lastSeen:new Date(lastSeen.get(clientSessionId)!).toISOString()}:{})})));
   };
   const endSession=(clientSessionId:string,reason:SessionEndReason)=>{
     // Let the API inspect the pre-abort phase first: a running draft is orphaned for review, never rolled back.
     const ended=api.sessionEnded(clientSessionId,reason);
-    clients.delete(clientSessionId);
+    clients.delete(clientSessionId);lastSeen.delete(clientSessionId);
     for(const [id,entry] of requests)if(entry.request.clientSessionId===clientSessionId){
       entry.controller.abort();clearTimeout(entry.timer);requests.delete(id);
     }
@@ -51,7 +52,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     // Deadlines cancel one request. Only transport lifecycle controls end sessions;
     // the same authenticated client must remain able to inspect/recover its edit.
     const timer=setTimeout(()=>{controller.abort();},Math.max(0,request.deadline-Date.now()));
-    requests.set(request.requestId,{controller,request,timer});clients.set(request.clientSessionId,request.clientInfo);updateClients();
+    requests.set(request.requestId,{controller,request,timer});clients.set(request.clientSessionId,request.clientInfo);lastSeen.set(request.clientSessionId,Date.now());updateClients();
     void (async()=>{
       try{
         const result=await api.executeTool({clientSessionId:request.clientSessionId,clientInfo:request.clientInfo,bridgeEpoch,deadline:request.deadline,signal:createAgentSignal(controller),name:request.name,arguments:request.arguments});

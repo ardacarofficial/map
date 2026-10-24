@@ -32,6 +32,18 @@ describe("collaborative live region edits", () => {
     h.host.history.redo(); expect(serializeLevel(h.store.document)).toBe(after);
   });
 
+  it("lets a member paint a claim larger than the sparse 4096-cell call cap in one grid call", async () => {
+    const h = setup({ width: 128, height: 128 });
+    const claim = { mapId: "map-1", layerIds: ["ground"], region: { x: 0, y: 0, width: 128, height: 64 } };
+    await h.begin("A", [claim]);
+    const rows = Array.from({ length: 64 }, () => "g".repeat(128));
+    await h.ok("A", "paint_grid", { mapId: "map-1", layerId: "ground", rows, legend: { g: { tilesetId: "tiles", tileId: 1 } } });
+    expect(h.cell(127, 63)).not.toBe(0);
+    expect(h.cell(0, 64)).toBe(0);
+    await h.ok("A", "cancel_edit", {});
+    expect(h.cell(127, 63)).toBe(0);
+  });
+
   it("identifies the calling client and rejects overlapping claims before changing the draft", async () => {
     const h = setup(); await h.begin();
     const before = h.host.snapshot();

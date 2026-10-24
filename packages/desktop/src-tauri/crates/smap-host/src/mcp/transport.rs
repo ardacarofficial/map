@@ -8,11 +8,15 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
+use bytes::Bytes;
 use std::{
     collections::HashMap,
+    convert::Infallible,
     io,
     net::{Ipv4Addr, SocketAddr},
+    pin::Pin,
     sync::{Arc, Mutex, Weak},
+    task::{Context, Poll},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use subtle::ConstantTimeEq;
@@ -30,6 +34,8 @@ const CATALOGUE: &str = include_str!("../../../../../../agent/schema/tools.json"
 const WORKFLOW: &str = include_str!("../../../../../../agent/schema/workflow.txt");
 pub const MAX_REPLY: usize = 8 * 1024 * 1024;
 pub const MAX_CLIENTS: usize = 16;
+/// Optional server-to-client SSE streams per session (clients reconnect after drops).
+const MAX_STREAMS: u32 = 2;
 // AgentToolResult has its own full MAX_REPLY budget before bridge correlation.
 const BRIDGE_OVERHEAD_LIMIT: usize = 1024;
 pub type BridgeSink = Arc<dyn Fn(&'static str, Value) -> Result<(), String> + Send + Sync>;
@@ -41,6 +47,10 @@ pub struct Options {
     pub session_idle: Duration,
     pub heartbeat_interval: Duration,
     pub heartbeat_timeout: Duration,
+    /// Comment frames on open GET streams, so a vanished client is noticed.
+    pub stream_keepalive: Duration,
+    /// After its last stream closes, a quiet session is gone after this grace.
+    pub stream_grace: Duration,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -50,6 +60,8 @@ impl Default for Options {
             session_idle: Duration::from_secs(300),
             heartbeat_interval: Duration::from_secs(5),
             heartbeat_timeout: Duration::from_secs(15),
+            stream_keepalive: Duration::from_secs(5),
+            stream_grace: Duration::from_secs(15),
         }
     }
 }
@@ -83,6 +95,15 @@ struct Session {
     version: String,
     initialized: bool,
     touched: Instant,
+    /// Open GET event streams. A live stream proves the client process exists.
+    streams: u32,
+    /// When the last stream closed; a quiet session then ends after the grace.
+    stream_closed: Option<Instant>,
+}
+impl Session {
+    fn new(info: Value, version: String) -> Self {
+        Self { info, version, initialized: false, touched: Instant::now(), streams: 0, stream_closed: None }
+    }
 }
 struct Pending {
     epoch: String,
@@ -215,6 +236,7 @@ impl Transport {
             .session_idle
             .min(Duration::from_secs(1))
             .min(self.options.heartbeat_interval)
+            .min(self.options.stream_grace)
             .max(Duration::from_millis(10));
         let expiry = tokio::spawn(async move {
             let mut timer = tokio::time::interval(tick);
@@ -578,19 +600,61 @@ impl Transport {
             let _ = self.emit(EVENT_CONTROL, probe);
         }
     }
+    /// Sessions end without rollback (the editor keeps the draft for review or
+    /// resume). A session with an open stream or a call in flight is alive. One
+    /// whose stream closed and stayed quiet for the grace is gone; a stream-less
+    /// session ends after the idle timeout.
     fn expire(&self) {
-        let ids: Vec<_> = self
-            .inner
-            .lock()
-            .unwrap()
+        let ended: Vec<_> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .sessions
+                .iter()
+                .filter(|(id, s)| s.streams == 0 && !inner.pending.values().any(|p| &p.session == *id))
+                .filter_map(|(id, s)| {
+                    let quiet = s.touched.elapsed();
+                    if s.stream_closed.is_some_and(|closed| closed.elapsed() >= self.options.stream_grace)
+                        && quiet >= self.options.stream_grace
+                    {
+                        Some((id.clone(), "disconnect"))
+                    } else if quiet >= self.options.session_idle {
+                        Some((id.clone(), "expired"))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+        for (id, reason) in ended {
+            self.end_session(&id, reason);
+        }
+    }
+    fn stream_closed(&self, session: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(client) = inner.sessions.get_mut(session) {
+            client.streams = client.streams.saturating_sub(1);
+            // The stream proved liveness until now.
+            client.touched = Instant::now();
+            if client.streams == 0 {
+                client.stream_closed = Some(Instant::now());
+            }
+        }
+    }
+    fn stream_open(&self, session: &str) -> bool {
+        self.inner.lock().unwrap().sessions.contains_key(session)
+    }
+    /// At the client cap, the least recently used quiet session without a
+    /// stream or call in flight makes room. Its draft is kept by the editor.
+    fn evict_idle(inner: &mut Inner) -> Option<String> {
+        let victim = inner
             .sessions
             .iter()
-            .filter(|(_, s)| s.touched.elapsed() >= self.options.session_idle)
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in ids {
-            self.end_session(&id, "expired");
-        }
+            .filter(|(id, s)| s.streams == 0 && !inner.pending.values().any(|p| &p.session == *id))
+            .min_by_key(|(_, s)| s.touched)
+            .map(|(id, _)| id.clone())?;
+        inner.sessions.remove(&victim);
+        register_end(inner, vec![victim.clone()]);
+        Some(victim)
     }
     fn cancel(&self, session: &str, rpc_id: &Value, reason: &str) {
         let id = self
@@ -778,8 +842,76 @@ fn error(id: Value, code: i32, message: &str) -> Response {
         Some(json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})),
     )
 }
+/// HTTP-level failures carry a JSON-RPC error body whose message tells the
+/// person (or agent) what to do, since clients surface the body text.
+fn http_error(status: StatusCode, code: i32, message: &str) -> Response {
+    response(
+        status,
+        Some(json!({"jsonrpc":"2.0","id":null,"error":{"code":code,"message":message}})),
+    )
+}
+const HINT_TOKEN: &str = "Unauthorized: Harita rejected the access token. Copy the connection settings again from Harita: Settings > AI (regenerating the token disconnects old settings).";
+const HINT_UNAVAILABLE: &str = "Harita's AI server is restarting or closing. Retry in a moment.";
+fn unauthorized() -> Response {
+    let mut res = http_error(StatusCode::UNAUTHORIZED, -32001, HINT_TOKEN);
+    res.headers_mut().insert(
+        "WWW-Authenticate",
+        "Bearer error=\"invalid_token\"".parse().unwrap(),
+    );
+    res
+}
+fn session_not_found() -> Response {
+    http_error(
+        StatusCode::NOT_FOUND,
+        -32001,
+        "Session not found or expired: send initialize again to start a new MCP session. A pending Harita edit is kept; resume it with resume_edit.",
+    )
+}
+/// Case-insensitive `Bearer <token>` (RFC 6750 schemes are case-insensitive).
+fn bearer(value: &str) -> Option<&str> {
+    let (scheme, token) = value.trim().split_once(|c: char| c == ' ' || c == '\t')?;
+    scheme.eq_ignore_ascii_case("bearer").then(|| token.trim())
+}
+/// The listener is loopback-only; these are the names clients use for it.
+fn local_authority(value: &str, port: u16) -> bool {
+    let value = value.to_ascii_lowercase();
+    ["127.0.0.1", "localhost", "[::1]"]
+        .iter()
+        .any(|host| value == format!("{host}:{port}"))
+}
 async fn fallback() -> Response {
-    response(StatusCode::NOT_FOUND, None)
+    http_error(StatusCode::NOT_FOUND, -32000, "Not found: Harita's MCP endpoint is /mcp.")
+}
+/// GET event stream. Harita sends no server-initiated messages; the stream
+/// carries comment keepalives so a closed client is noticed promptly.
+struct EventStream {
+    transport: Weak<Transport>,
+    session: String,
+    timer: tokio::time::Interval,
+    primed: bool,
+}
+impl futures_core::Stream for EventStream {
+    type Item = Result<Bytes, Infallible>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if !self.primed {
+            self.primed = true;
+            return Poll::Ready(Some(Ok(Bytes::from_static(b": harita\n\n"))));
+        }
+        match self.timer.poll_tick(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(_) => {
+                let open = self.transport.upgrade().is_some_and(|t| t.stream_open(&self.session));
+                Poll::Ready(open.then(|| Ok(Bytes::from_static(b": keepalive\n\n"))))
+            }
+        }
+    }
+}
+impl Drop for EventStream {
+    fn drop(&mut self) {
+        if let Some(transport) = self.transport.upgrade() {
+            transport.stream_closed(&self.session);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -801,12 +933,7 @@ mod deadline_tests {
         transport.ready("epoch".into()).unwrap();
         transport.inner.lock().unwrap().sessions.insert(
             "session".into(),
-            Session {
-                info: json!({"name":"test","version":"1"}),
-                version: VERSIONS[0].into(),
-                initialized: true,
-                touched: Instant::now(),
-            },
+            Session { initialized: true, ..Session::new(json!({"name":"test","version":"1"}), VERSIONS[0].into()) },
         );
         let params = json!({"name":"get_session"});
         let mut call = Box::pin(transport.call("session", json!(1), &params));
@@ -899,6 +1026,61 @@ fn printable(value: &Value) -> String {
         .take(80)
         .collect()
 }
+const SESSION_METHODS: [&str; 9] = [
+    "ping",
+    "tools/list",
+    "tools/call",
+    "resources/list",
+    "resources/read",
+    "resources/templates/list",
+    "prompts/list",
+    "prompts/get",
+    "logging/setLevel",
+];
+fn open_stream(
+    transport: &Arc<Transport>,
+    headers: &HeaderMap,
+    session: Option<String>,
+    version: Option<String>,
+    token_revision: u64,
+) -> Response {
+    if !single(headers, "accept").is_some_and(|s| {
+        s.split(',')
+            .any(|v| matches!(v.trim().split(';').next(), Some("text/event-stream" | "*/*")))
+    }) {
+        return http_error(StatusCode::NOT_ACCEPTABLE, -32000, "Not acceptable: GET opens an event stream; accept text/event-stream.");
+    }
+    let Some(session) = session else {
+        return http_error(StatusCode::BAD_REQUEST, -32600, "Missing Mcp-Session-Id header: send initialize first.");
+    };
+    {
+        let mut inner = transport.inner.lock().unwrap();
+        if inner.token_revision != token_revision {
+            return unauthorized();
+        }
+        let Some(client) = inner.sessions.get_mut(&session) else {
+            return session_not_found();
+        };
+        if version.as_deref().is_some_and(|v| v != client.version) {
+            return http_error(StatusCode::BAD_REQUEST, -32600, &format!("MCP-Protocol-Version does not match the negotiated {}.", client.version));
+        }
+        if client.streams >= MAX_STREAMS {
+            return http_error(StatusCode::CONFLICT, -32000, "This session already has an open event stream.");
+        }
+        client.streams += 1;
+        client.stream_closed = None;
+        client.touched = Instant::now();
+    }
+    let mut timer = tokio::time::interval(transport.options.stream_keepalive);
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    timer.reset();
+    let stream = EventStream { transport: Arc::downgrade(transport), session, timer, primed: false };
+    let mut res = Response::new(Body::from_stream(stream));
+    let headers = res.headers_mut();
+    headers.insert("Content-Type", "text/event-stream".parse().unwrap());
+    headers.insert("Cache-Control", "no-store".parse().unwrap());
+    res
+}
 async fn handle(
     State((transport, port, generation)): State<(Arc<Transport>, u16, u64)>,
     request: Request<Body>,
@@ -908,7 +1090,7 @@ async fn handle(
         let inner = transport.inner.lock().unwrap();
         (
             single(headers, "authorization")
-                .and_then(|s| s.strip_prefix("Bearer "))
+                .and_then(bearer)
                 .is_some_and(|token| {
                     token.len() == 64 && bool::from(token.as_bytes().ct_eq(inner.token.as_bytes()))
                 }),
@@ -916,43 +1098,56 @@ async fn handle(
         )
     };
     if !authorized {
-        let mut res = response(StatusCode::UNAUTHORIZED, None);
-        res.headers_mut()
-            .insert("WWW-Authenticate", "Bearer".parse().unwrap());
-        return res;
+        return unauthorized();
     }
     if transport.is_shutdown() || transport.inner.lock().unwrap().generation != generation {
-        return response(StatusCode::SERVICE_UNAVAILABLE, None);
+        return http_error(StatusCode::SERVICE_UNAVAILABLE, -32000, HINT_UNAVAILABLE);
     }
-    let host = format!("127.0.0.1:{port}");
-    if single(headers, "host") != Some(host.as_str())
+    let local_hint = format!("Forbidden: Harita accepts only local MCP clients. Use http://127.0.0.1:{port}/mcp.");
+    if !single(headers, "host").is_some_and(|h| local_authority(h, port))
         || request
             .uri()
             .authority()
-            .is_some_and(|a| a.as_str() != host)
+            .is_some_and(|a| !local_authority(a.as_str(), port))
     {
-        return response(StatusCode::FORBIDDEN, None);
+        return http_error(StatusCode::FORBIDDEN, -32000, &local_hint);
     }
-    let origin = format!("http://{host}");
-    if headers.contains_key("origin") && single(headers, "origin") != Some(origin.as_str()) {
-        return response(StatusCode::FORBIDDEN, None);
+    if headers.contains_key("origin")
+        && !single(headers, "origin").is_some_and(|o| {
+            o.get(..7).is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+                && local_authority(&o[7..], port)
+        })
+    {
+        return http_error(
+            StatusCode::FORBIDDEN,
+            -32000,
+            "Forbidden: browser pages cannot use Harita's MCP server. Connect from an MCP client such as Claude Code or Codex.",
+        );
     }
     if request.uri().query().is_some_and(|q| {
         q.split('&').any(|p| {
             ["token", "access_token", "authorization"].contains(&p.split('=').next().unwrap_or(""))
         })
     }) {
-        return response(StatusCode::UNAUTHORIZED, None);
+        return http_error(
+            StatusCode::UNAUTHORIZED,
+            -32001,
+            "Unauthorized: send the token in the Authorization header, never in the URL.",
+        );
     }
-    if request.method() != Method::POST && request.method() != Method::DELETE {
-        let mut res = response(StatusCode::METHOD_NOT_ALLOWED, None);
+    let method_allowed = [Method::GET, Method::POST, Method::DELETE].contains(request.method());
+    if !method_allowed {
+        let mut res = http_error(StatusCode::METHOD_NOT_ALLOWED, -32000, "Method not allowed: use POST (GET opens an optional event stream, DELETE ends a session).");
         res.headers_mut()
-            .insert("Allow", "POST, DELETE".parse().unwrap());
+            .insert("Allow", "GET, POST, DELETE".parse().unwrap());
         return res;
     }
     transport.expire();
     let session_header = single(headers, "mcp-session-id").map(str::to_owned);
     let version_header = single(headers, "mcp-protocol-version").map(str::to_owned);
+    if request.method() == Method::GET {
+        return open_stream(&transport, headers, session_header, version_header, token_revision);
+    }
     let deleting = request.method() == Method::DELETE;
     if !deleting
         && !single(headers, "content-type").is_some_and(|s| {
@@ -963,7 +1158,7 @@ async fn handle(
                 .eq_ignore_ascii_case("application/json")
         })
     {
-        return response(StatusCode::UNSUPPORTED_MEDIA_TYPE, None);
+        return http_error(StatusCode::UNSUPPORTED_MEDIA_TYPE, -32000, "Unsupported media type: send JSON-RPC as Content-Type: application/json.");
     }
     if !deleting
         && headers.contains_key("accept")
@@ -972,14 +1167,14 @@ async fn handle(
                 .any(|v| matches!(v.trim().split(';').next(), Some("application/json" | "*/*")))
         })
     {
-        return response(StatusCode::NOT_ACCEPTABLE, None);
+        return http_error(StatusCode::NOT_ACCEPTABLE, -32000, "Not acceptable: accept application/json responses.");
     }
     let message: Value = if deleting {
         Value::Null
     } else {
         let bytes = match to_bytes(request.into_body(), 1024 * 1024).await {
             Ok(bytes) => bytes,
-            Err(_) => return response(StatusCode::PAYLOAD_TOO_LARGE, None),
+            Err(_) => return http_error(StatusCode::PAYLOAD_TOO_LARGE, -32000, "Request too large: keep one JSON-RPC message under 1 MiB."),
         };
         match serde_json::from_slice(&bytes) {
             Ok(value) => value,
@@ -989,10 +1184,10 @@ async fn handle(
     {
         let inner = transport.inner.lock().unwrap();
         if inner.generation != generation {
-            return response(StatusCode::SERVICE_UNAVAILABLE, None);
+            return http_error(StatusCode::SERVICE_UNAVAILABLE, -32000, HINT_UNAVAILABLE);
         }
         if inner.token_revision != token_revision {
-            return response(StatusCode::UNAUTHORIZED, None);
+            return unauthorized();
         }
     }
     let id = message.get("id").cloned().unwrap_or(Value::Null);
@@ -1039,18 +1234,34 @@ async fn handle(
             Ok(id) => id,
             Err(_) => return error(id, -32603, "Internal error"),
         };
-        {
+        let evicted = {
             let mut inner = transport.inner.lock().unwrap();
             if inner.generation != generation || inner.token_revision != token_revision {
-                return response(StatusCode::UNAUTHORIZED, None);
+                return unauthorized();
             }
             if inner.admission_pauses > 0 || !inner.ending.is_empty() {
-                return error(id, -32000, "Editor cancellation pending");
+                return error(id, -32000, "Harita is finishing a previous client's session. Retry initialize in a moment.");
             }
-            if inner.sessions.len() >= MAX_CLIENTS {
-                return error(id, -32000, "Client limit reached");
-            }
-            inner.sessions.insert(session.clone(),Session {info:json!({"name":printable(&params["clientInfo"]["name"]),"version":printable(&params["clientInfo"]["version"])}),version:version.into(),initialized:false,touched:Instant::now()});
+            let evicted = if inner.sessions.len() >= MAX_CLIENTS {
+                match Transport::evict_idle(&mut inner) {
+                    Some(victim) => inner.epoch.clone().map(|epoch| (epoch, victim)),
+                    None => {
+                        return http_error(
+                            StatusCode::TOO_MANY_REQUESTS,
+                            -32000,
+                            "Too many active MCP clients (16) are connected to Harita. Close an unused AI client and retry.",
+                        )
+                    }
+                }
+            } else {
+                None
+            };
+            inner.sessions.insert(session.clone(),Session::new(json!({"name":printable(&params["clientInfo"]["name"]),"version":printable(&params["clientInfo"]["version"])}),version.into()));
+            evicted
+        };
+        if let Some((epoch, victim)) = evicted {
+            let _ = transport.emit(EVENT_CONTROL, json!({"type":"sessionEnded","bridgeEpoch":epoch,"clientSessionId":victim,"reason":"expired"}));
+            transport.probe_ends();
         }
         transport.changed();
         let mut res = rpc(
@@ -1062,15 +1273,21 @@ async fn handle(
         return res;
     }
     let Some(session) = session_header else {
-        return response(StatusCode::BAD_REQUEST, None);
+        // Probes for newer protocol revisions (e.g. `server/discover`) get a
+        // JSON-RPC answer so the client falls back to initialize.
+        if has_id && !SESSION_METHODS.contains(&method) && !method.starts_with("notifications/") {
+            return error(id, -32601, "Method not found. Harita supports MCP 2025-11-25 and 2025-06-18: send initialize.");
+        }
+        return http_error(StatusCode::BAD_REQUEST, -32600, "Missing Mcp-Session-Id header: send initialize first, then repeat the request with the returned session ID.");
     };
     {
         let mut inner = transport.inner.lock().unwrap();
         let Some(client) = inner.sessions.get_mut(&session) else {
-            return response(StatusCode::NOT_FOUND, None);
+            return session_not_found();
         };
-        if version_header.as_deref() != Some(client.version.as_str()) {
-            return response(StatusCode::BAD_REQUEST, None);
+        // An omitted header means the negotiated version (MCP 2025-06-18+).
+        if version_header.as_deref().is_some_and(|v| v != client.version) {
+            return http_error(StatusCode::BAD_REQUEST, -32600, &format!("MCP-Protocol-Version does not match the negotiated {}.", client.version));
         }
         client.touched = Instant::now();
         if !deleting
@@ -1112,7 +1329,7 @@ async fn handle(
             let event = {
                 let mut inner = transport.inner.lock().unwrap();
                 let Some(client) = inner.sessions.get_mut(&session) else {
-                    return response(StatusCode::NOT_FOUND, None);
+                    return session_not_found();
                 };
                 let first = !client.initialized;
                 client.initialized = true;

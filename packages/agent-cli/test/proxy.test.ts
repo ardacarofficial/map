@@ -128,11 +128,58 @@ test("a lost editor reports EDITOR_UNAVAILABLE to an already connected stdio cli
   cleanup.push(() => client.close());
   await client.connect(transport);
   await host.close();
-  await expect(client.callTool({ name: "get_session", arguments: {} })).rejects.toThrow("EDITOR_UNAVAILABLE");
+  const result = await client.callTool({ name: "get_session", arguments: {} });
+  expect(result).toMatchObject({ isError: true, structuredContent: { code: "EDITOR_UNAVAILABLE", retryable: true, details: { cause: "editorUnreachable", nextAction: expect.stringContaining("Settings > AI") } } });
+});
+
+async function freePort() {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const port = (probe.address() as { port: number }).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+test("starts before the editor, serves the bundled catalogue, then connects lazily", async () => {
+  const port = await freePort();
+  const transport = new StdioClientTransport({ cwd, command: process.execPath, args: ["packages/agent-cli/dist/main.js", "--url", `http://127.0.0.1:${port}/mcp`], env: { HARITA_MCP_TOKEN: "test-token" }, stderr: "pipe" });
+  let stderr = "";
+  transport.stderr?.on("data", (data) => { stderr += String(data); });
+  const client = new Client({ name: "early-client", version: "1" });
+  cleanup.push(() => client.close());
+  await client.connect(transport);
+  expect(client.getInstructions()).toContain("not reachable yet");
+  expect((await client.listTools()).tools).toHaveLength(50);
+  expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ isError: true, structuredContent: { code: "EDITOR_UNAVAILABLE" } });
+  expect(stderr).toContain("Settings > AI");
+  const host = await startDevMcp({ port, token: "test-token" });
+  cleanup.push(() => host.close());
+  host.attach("test", "epoch", (message) => {
+    if (message.type === "tools/call") host.reply("test", { type: "result", requestId: message.requestId, bridgeEpoch: message.bridgeEpoch, clientSessionId: message.clientSessionId, result: { content: [{ type: "text", text: '{"ok":true}' }], structuredContent: { ok: true } } });
+  });
+  expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true } });
+  expect(stderr).not.toContain("test-token");
+});
+
+test("an expired upstream session is re-initialized once without surfacing an error", async () => {
+  const host = await startDevMcp({ port: 0, token: "test-token" });
+  cleanup.push(() => host.close());
+  host.attach("test", "epoch", (message) => {
+    if (message.type === "tools/call") host.reply("test", { type: "result", requestId: message.requestId, bridgeEpoch: message.bridgeEpoch, clientSessionId: message.clientSessionId, result: { content: [{ type: "text", text: '{"ok":true}' }], structuredContent: { ok: true } } });
+  });
+  const transport = new StdioClientTransport({ cwd, command: process.execPath, args: ["packages/agent-cli/dist/main.js", "--url", host.url], env: { HARITA_MCP_TOKEN: "test-token" }, stderr: "pipe" });
+  const client = new Client({ name: "reconnect", version: "1" });
+  cleanup.push(() => client.close());
+  await client.connect(transport);
+  expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true } });
+  // Ends every session server-side (same token), as an idle expiry would.
+  host.setToken("test-token");
+  expect(host.sessionCount).toBe(0);
+  expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true } });
+  expect(host.sessionCount).toBe(1);
 });
 
 test.each([
-  ["http://127.0.0.1:1/mcp", "test-token", "EDITOR_UNAVAILABLE"],
   ["http://example.com/mcp", "test-token", "literal 127.0.0.1"],
   ["http://127.0.0.1:1/mcp", "", "token"],
 ])("startup failure is clear and never contaminates stdout (%s)", async (url, token, diagnostic) => {
@@ -155,9 +202,11 @@ test("redirects never carry credentials to a second endpoint", async () => {
   });
   await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
   cleanup.push(() => new Promise<void>((resolve) => { upstream.closeAllConnections(); upstream.close(() => resolve()); }));
-  const child = spawn(process.execPath, ["packages/agent-cli/dist/main.js", "--url", `http://127.0.0.1:${(upstream.address() as { port: number }).port}/mcp`], { cwd, env: { ...process.env, HARITA_MCP_TOKEN: "private" } });
-  const [code] = await once(child, "exit");
-  expect(code).toBe(1);
+  const transport = new StdioClientTransport({ cwd, command: process.execPath, args: ["packages/agent-cli/dist/main.js", "--url", `http://127.0.0.1:${(upstream.address() as { port: number }).port}/mcp`], env: { HARITA_MCP_TOKEN: "private" }, stderr: "pipe" });
+  const client = new Client({ name: "redirect", version: "1" });
+  cleanup.push(() => client.close());
+  await client.connect(transport);
+  expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ isError: true, structuredContent: { code: "EDITOR_UNAVAILABLE" } });
   expect(leaked).toBe(false);
 });
 
