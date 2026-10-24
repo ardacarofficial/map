@@ -24,7 +24,7 @@ import { CallSignal, Transactions, waitFor, type CallCheckpoint } from "./transa
 import { check, validate } from "./validation";
 import { hashCanonical, normalizeTags, tagKey, utf8ByteLength } from "./tags";
 import { editMap, editStamp, configureWorld } from "./tools/library";
-import { mutate } from "./tools/mutations";
+import { keptPreparations, mutate } from "./tools/mutations";
 import { read } from "./tools/read";
 import { applyOperations, editEntity } from "./tools/operations";
 import { validateGoals } from "./tools/goals";
@@ -585,6 +585,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
         try {
           if (error instanceof AgentError && error.code === E.SOURCE_CHANGED) { tx.cancel("cancelled", "worldChanged"); extra = { applied: false }; }
           else if (!partial) extra = { applied: false };
+          else if (error !== null && typeof error === "object" && keptPreparations.has(error))
+            extra = { applied: false, preparedSourceId: keptPreparations.get(error)!, nextAction: "Nothing was painted; the smart source was prepared and kept in this draft. Fix the arguments and retry." };
           else if (checkpoint && tx.rollbackCall(checkpoint)) extra = { applied: false };
           else {
             extra = { applied: true, nextAction: "This call may have been applied; inspect with read_region/get_session before retrying." };

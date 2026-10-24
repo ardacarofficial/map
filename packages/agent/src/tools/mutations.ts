@@ -62,6 +62,8 @@ import {
   uniquePoints,
 } from "../validation";
 
+/** Errors from a smart call whose inline source was prepared (and kept) but whose paint was undone. */
+export const keptPreparations = new WeakMap<object, string>();
 export const rawFlags = (flags: number) =>
   ((flags & 1 ? FLIP_H : 0) |
     (flags & 2 ? FLIP_V : 0) |
@@ -688,8 +690,16 @@ export async function mutateRaw<N extends ToolName>(
       else if ("region" in a && a.region) rect(store, a.region);
       if (!reusablePrepared(tx, a.mapId, a.source, false)) tx.assertGlobal(call);
       const prepared = await prepare(tx, { context: a.context, mapId: a.mapId, source: a.source }, call);
+      // The preparation (generated atlas, recipe) stays in the draft for reuse; if painting fails,
+      // undo only the paint so the call reports applied:false instead of "may have been applied".
+      const afterPrepare = tx.checkpoint();
       const { source: _inline, ...rest } = a;
-      return smart(tx, name, { ...rest, sourceId: prepared.sourceId } as ToolArguments["smart_brush"] | ToolArguments["draw_path"]);
+      try {
+        return smart(tx, name, { ...rest, sourceId: prepared.sourceId } as ToolArguments["smart_brush"] | ToolArguments["draw_path"]);
+      } catch (error) {
+        if (afterPrepare && error !== null && typeof error === "object" && tx.rollbackCall(afterPrepare)) keptPreparations.set(error, prepared.sourceId);
+        throw error;
+      }
     }
     default:
       fail(E.INVALID_ARGUMENT, "Unknown mutation");

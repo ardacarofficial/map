@@ -23,7 +23,6 @@ import {
   type ImageBlock,
   type ResolvedTile,
   type SmartCandidateInfo,
-  type EntityInfo,
   type TagRecord,
   type TagTarget,
   type ToolArguments,
