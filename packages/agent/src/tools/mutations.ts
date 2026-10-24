@@ -94,7 +94,7 @@ export function mapInfo(tx: Transactions, mapId: string, store: MapStore) {
 }
 export function layer(store: MapStore, id: string): TileLayer {
   const found = store.document.getLayer(id);
-  check(found, E.UNKNOWN_ID, "Unknown layer");
+  check(found, E.UNKNOWN_ID, "Unknown layer", { layerId: id, validIds: store.document.layers.map(l => l.id).slice(0, 128) });
   return found;
 }
 export function protect(
@@ -402,6 +402,14 @@ export async function mutate<N extends ToolName>(
           });
         return a.layerId;
       });
+      // The draft's own unlock/show counts: later calls in this draft may paint the layer.
+      if (a.action === "update" && (a.props.locked === false || a.props.visible === true)) {
+        const key = layerProtectionKey(a.mapId, a.layerId), initial = tx.pending!.protection.get(key);
+        if (initial) tx.pending!.protection.set(key, {
+          locked: a.props.locked === false ? false : initial.locked,
+          hidden: a.props.visible === true ? false : initial.hidden,
+        });
+      }
       const result = change(
         a.mapId,
         store,

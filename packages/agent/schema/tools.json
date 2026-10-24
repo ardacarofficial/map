@@ -33,7 +33,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Inspect one map and its layers without changing the user’s selected map. Obtain stable mapId from get_session and layerId/kind/visibility/locks here before painting. context is {worldSessionId}. Dimensions are cells; tileWidth/tileHeight are native pixels.",
+      "description": "Inspect one map and its layers without changing the user’s selected map. Obtain stable mapId from get_session and layerId/kind/visibility/locks here before painting. context is optional. Dimensions are cells; tileWidth/tileHeight are native pixels.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -43,15 +43,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -66,7 +64,6 @@
           }
         },
         "required": [
-          "context",
           "mapId"
         ],
         "type": "object"
@@ -80,7 +77,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read a bounded rectangle from explicit mapId and layerIds. context is {worldSessionId}. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
+      "description": "Read a bounded rectangle from explicit mapId and layerIds. context is optional. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -90,15 +87,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -162,7 +157,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "region",
           "layerIds"
@@ -178,7 +172,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
+      "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is optional. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -188,15 +182,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -220,9 +212,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "list_tilesets",
@@ -234,7 +224,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is {worldSessionId}. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
+      "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is optional. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -244,15 +234,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -408,7 +396,6 @@
           }
         },
         "required": [
-          "context",
           "tilesetId"
         ],
         "type": "object"
@@ -422,7 +409,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is {worldSessionId}. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
+      "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is optional. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -432,15 +419,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -467,9 +452,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "list_stamps",
@@ -481,7 +464,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Begin one tentative action after get_session. context is {worldSessionId}; expectedRevision is the latest response revision, idempotencyKey is a unique 8–128 character key, requestLabel describes the user’s request, mapIds names 1–8 explicit targets. Save drains before running. Use returned transactionId in write contexts. One world writer, ≤256 mutation calls, 262144 planned cell writes, 64 MiB retained bytes. Running lifetime ≤30 minutes. finish_edit requests human review; only the user approves. User painting/save is blocked until approval/discard. Optional collaboration:{mode:'regions',claims?} creates one shared draft. Claims are explicit existing map/layer rectangles. Omit claims for coordinator metadata preparation, then self join_edit once to assign regions before peers join. Prepare shared metadata before any spatial write or peer join. Returns memberId/memberRevision for explicit member-scoped CAS.",
+      "description": "Begin one tentative draft. requestLabel describes the user’s request, mapIds names 1–8 explicit targets; context, expectedRevision (CAS) and idempotencyKey are optional. Later writes may omit context: they use this draft. unlockLayerIds unlocks/shows those layers inside the draft so you can paint them. Returns resumeToken: keep it secret; after a disconnect, restart or finish_edit call resume_edit({transactionId,resumeToken}) to continue the same draft. One world writer, ≤4096 mutation calls, 1048576 planned cell writes per draft. Inactivity lease 30 minutes, extended by every call; on lease end or disconnect the draft is sealed for human review, never rolled back. finish_edit requests review; only the user approves. Optional collaboration:{mode:'regions',claims?} creates one shared draft. Claims are explicit existing map/layer rectangles. Omit claims for coordinator metadata preparation, then self join_edit once to assign regions before peers join. Prepare shared metadata before any spatial write or peer join. Returns memberId/memberRevision for explicit member-scoped CAS.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -497,15 +480,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -615,12 +596,18 @@
             "maxLength": 160,
             "minLength": 1,
             "type": "string"
+          },
+          "unlockLayerIds": {
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
           }
         },
         "required": [
-          "context",
-          "idempotencyKey",
-          "expectedRevision",
           "requestLabel",
           "mapIds"
         ],
@@ -635,7 +622,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}, using the latest response revision and a fresh key. Optional summary describes changes. Writes are sealed and locks remain. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool. In a collaborative draft this marks only your member ready; peers remain writable. Coordinator finish closes new joins. The group awaits human approval once all members are ready/stopped/cancelled.",
+      "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is optional. Optional summary describes changes. Writes are sealed and locks remain; resume_edit with your resumeToken reopens the draft if you must amend it. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool. In a collaborative draft this marks only your member ready; peers remain writable. Coordinator finish closes new joins. The group awaits human approval once all members are ready/stopped/cancelled.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -656,25 +643,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -692,11 +671,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -711,9 +686,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "finish_edit",
@@ -725,7 +698,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}; unlike other writes, cancellation accepts a stale expectedRevision. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally. In a collaborative draft with peers this rolls back only your bounded spatial contribution and releases your claims; peer contributions/shared setup remain pending. Before any peer joined, cancellation can discard the whole proposal. No agent can discard peers or approve the group.",
+      "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is optional; cancellation accepts a stale expectedRevision. After a disconnect pass resumeToken (with context.transactionId) to discard your orphaned or submitted draft. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally. In a collaborative draft with peers this rolls back only your bounded spatial contribution and releases your claims; peer contributions/shared setup remain pending. Before any peer joined, cancellation can discard the whole proposal. No agent can discard peers or approve the group.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -739,6 +712,12 @@
             "pattern": "^[A-Za-z0-9._:-]+$",
             "type": "string"
           },
+          "ResumeToken": {
+            "maxLength": 128,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
           "Revision": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -746,25 +725,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -782,11 +753,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -799,11 +766,12 @@
           "reason": {
             "maxLength": 256,
             "type": "string"
+          },
+          "resumeToken": {
+            "$ref": "#/$defs/ResumeToken"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "cancel_edit",
@@ -815,7 +783,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
+      "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit; context is optional (add idempotencyKey to make retries safe). Changes remain tentative until human approval.",
       "inputSchema": {
         "$defs": {
           "CellWrite": {
@@ -909,25 +877,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -945,11 +905,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -975,7 +931,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "cells"
@@ -1094,25 +1049,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -1130,11 +1077,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -1164,7 +1107,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "region",
@@ -1272,25 +1214,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -1308,11 +1242,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -1345,7 +1275,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "from",
@@ -1363,7 +1292,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
+      "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit; context is optional.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -1487,25 +1416,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -1523,11 +1444,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -1560,7 +1477,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "start",
@@ -1632,25 +1548,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -1668,11 +1576,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -1723,7 +1627,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "source"
         ],
@@ -1813,25 +1716,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -1849,11 +1744,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -1968,7 +1859,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "sourceId",
@@ -2027,25 +1917,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2063,11 +1945,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2115,7 +1993,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "sourceId",
@@ -2133,7 +2010,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Place an existing stamp by ID with transformed top-left at at (map cells). rotation 0–3 quarter turns occurs before flipX/flipY. Uses compatible source/destination layers; supply layerMapping [{sourceLayerId,targetLayerId}] when ambiguous, or allowCreateLayers:true for missing layers. emptyCells:\"skip\" (default) preserves destination under holes; \"erase\" clears them. ≤4096 writes across layers; complete transformed bounds must fit. Protected layers reject atomically. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}.",
+      "description": "Place an existing stamp by ID with transformed top-left at at (map cells). rotation 0–3 quarter turns occurs before flipX/flipY. Uses compatible source/destination layers; supply layerMapping [{sourceLayerId,targetLayerId}] when ambiguous, or allowCreateLayers:true for missing layers. emptyCells:\"skip\" (default) preserves destination under holes; \"erase\" clears them. ≤4096 writes across layers; complete transformed bounds must fit. Protected layers reject atomically. Requires begin_edit; context is optional.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -2195,25 +2072,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2231,11 +2100,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2285,7 +2150,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "stampId",
           "at"
@@ -2322,25 +2186,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2358,11 +2214,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2400,7 +2252,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "action",
               "name",
@@ -2448,7 +2299,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "action",
               "layerId",
@@ -2478,7 +2328,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "action",
               "layerId",
@@ -2498,7 +2347,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Inspect available built-in spawn/portal and user entity schemas, field names/types/defaults/enums. context is {worldSessionId}. Use an existing typeId with place_entity. Tools cannot invent entity types or fields.",
+      "description": "Inspect available built-in spawn/portal and user entity schemas, field names/types/defaults/enums. context is optional. Use an existing typeId with place_entity. Tools cannot invent entity types or fields.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -2508,15 +2357,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2527,9 +2374,7 @@
             "$ref": "#/$defs/ReadContext"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "list_entity_types",
@@ -2622,25 +2467,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2658,11 +2495,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2698,7 +2531,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "layerId",
           "typeId",
@@ -2736,25 +2568,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2772,11 +2596,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2833,7 +2653,6 @@
           }
         },
         "required": [
-          "context",
           "name",
           "width",
           "height",
@@ -2851,7 +2670,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Resize an explicit map from its top-left, preserving native tile dimensions. width/height are cells (1–4096, area ≤1048576). Occupied content outside new bounds requires allowCrop:true; initially protected content cannot be silently cropped. Result is tentative/undoable. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}.",
+      "description": "Resize an explicit map from its top-left, preserving native tile dimensions. width/height are cells (1–4096, area ≤1048576). Occupied content outside new bounds requires allowCrop:true; initially protected content cannot be silently cropped. Result is tentative/undoable. Requires begin_edit; context is optional.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -2872,25 +2691,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -2908,11 +2719,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -2941,7 +2748,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "width",
           "height"
@@ -2957,7 +2763,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Inspect a real PNG of the current live/tentative map before finish_edit. context is {worldSessionId}; mapId required. Optional region is half-open map cells; otherwise whole map. maxSide (≤2048) fits large maps with nearest-neighbor scaling. grid:true and coordinates:true add cell grid and readable coordinate gutters; response image metadata gives contentRect, scale, pixelOrigin and cellSize for exact mapping. Hidden layers stay hidden. Collision overlay only for expressly requested collision layerIds. Optional entity markers are diagnostics. ≤1 PNG, 4 MiB, 30 seconds; no file export or save. Review both overview and close crop.",
+      "description": "Inspect a real PNG of the current live/tentative map before finish_edit. context is optional; mapId required. Optional region is half-open map cells; otherwise whole map. maxSide (≤2048) fits large maps with nearest-neighbor scaling. grid:true and coordinates:true add cell grid and readable coordinate gutters; response image metadata gives contentRect, scale, pixelOrigin and cellSize for exact mapping. Hidden layers stay hidden. Collision overlay only for expressly requested collision layerIds. Optional entity markers are diagnostics. ≤1 PNG, 4 MiB, 30 seconds; no file export or save. Review both overview and close crop.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -2967,15 +2773,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -3053,7 +2857,6 @@
           }
         },
         "required": [
-          "context",
           "mapId"
         ],
         "type": "object"
@@ -3067,7 +2870,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
+      "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is optional. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -3077,15 +2880,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -3145,7 +2946,6 @@
           }
         },
         "required": [
-          "context",
           "mapId"
         ],
         "type": "object"
@@ -3159,7 +2959,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Discover semantic labels and tiles/stamps needing annotation. context is {worldSessionId}, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; optional query searches Turkish/English normalized labels and notes with small explicit aliases; status all|current|missing|stale (default current with query, otherwise missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
+      "description": "Discover semantic labels and tiles/stamps needing annotation. context is optional, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; optional query searches Turkish/English normalized labels and notes with small explicit aliases; status all|current|missing|stale (default current with query, otherwise missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -3169,15 +2969,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3222,9 +3020,7 @@
             "$ref": "#/$defs/Id"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "get_tags",
@@ -3236,7 +3032,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Replace independent semantic tags for existing targets; [] clears. context is {worldSessionId,idempotencyKey} ONLY (no transactionId or expectedRevision). entries contain target, expectedFingerprint from get_tags, tags and optional note. ≤128 targets/batch, ≤16 tags of 1–48 chars, note ≤256. Fingerprint mismatch/duplicate targets rejects the batch. Written independently within 500ms, even while map edit pending; neither discard nor undo removes tags. Never changes PNGs/terrain/collision.",
+      "description": "Replace independent semantic tags for existing targets; [] clears. context is optional {worldSessionId?,idempotencyKey?} ONLY (no transactionId or expectedRevision). entries contain target, expectedFingerprint from get_tags, tags and optional note. ≤128 targets/batch, ≤16 tags of 1–48 chars, note ≤256. Fingerprint mismatch/duplicate targets rejects the batch. Written independently within 500ms, even while map edit pending; neither discard nor undo removes tags. Never changes PNGs/terrain/collision.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -3312,10 +3108,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3358,7 +3151,6 @@
           }
         },
         "required": [
-          "context",
           "entries"
         ],
         "type": "object"
@@ -3382,15 +3174,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3427,9 +3217,7 @@
             "$ref": "#/$defs/Id"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "visual_ingest_reference",
@@ -3451,15 +3239,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3495,7 +3281,6 @@
           }
         },
         "required": [
-          "context",
           "referenceId"
         ],
         "type": "object"
@@ -3573,25 +3358,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -3609,11 +3386,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3683,7 +3456,6 @@
           }
         },
         "required": [
-          "context",
           "source",
           "name"
         ],
@@ -3691,6 +3463,60 @@
       },
       "name": "create_stamp",
       "title": "Create Stamp"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Continue your own draft from this connection after a disconnect, client restart, lease expiry, Durdur or finish_edit. Pass transactionId and the resumeToken that begin_edit returned. Works while the draft is running, orphaned, stopped or awaitingApproval: it rebinds ownership to you and reopens writing (the review bar returns to AI çalışıyor). Previous work is kept. Fails once the user approved or discarded the draft; then begin a new edit. Exclusive drafts only.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "ResumeToken": {
+            "maxLength": 128,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext"
+          },
+          "resumeToken": {
+            "$ref": "#/$defs/ResumeToken"
+          },
+          "transactionId": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "required": [
+          "transactionId",
+          "resumeToken"
+        ],
+        "type": "object"
+      },
+      "name": "resume_edit",
+      "title": "Resume Edit"
     },
     {
       "annotations": {
@@ -3708,15 +3534,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3727,9 +3551,7 @@
             "$ref": "#/$defs/ReadContext"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "get_editor_context",
@@ -3822,25 +3644,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -3858,11 +3672,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -3888,7 +3698,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "entityId",
               "action",
@@ -3925,7 +3734,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "entityId",
               "action",
@@ -3950,7 +3758,6 @@
               }
             },
             "required": [
-              "context",
               "mapId",
               "entityId",
               "action"
@@ -4176,25 +3983,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -4212,11 +4011,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -4570,7 +4365,6 @@
           }
         },
         "required": [
-          "context",
           "operations"
         ],
         "type": "object"
@@ -4615,15 +4409,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -4803,7 +4595,6 @@
           }
         },
         "required": [
-          "context",
           "mapId",
           "checks"
         ],
@@ -4828,15 +4619,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -4869,15 +4658,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -4952,15 +4739,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5014,15 +4799,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {
@@ -5474,15 +5257,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5672,15 +5453,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5745,15 +5524,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5800,15 +5577,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5857,25 +5632,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -5893,11 +5660,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -5955,7 +5718,6 @@
           }
         },
         "required": [
-          "context",
           "mapId"
         ],
         "type": "object"
@@ -5990,25 +5752,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -6026,11 +5780,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -6078,7 +5828,6 @@
               }
             },
             "required": [
-              "context",
               "stampId",
               "action",
               "props"
@@ -6104,7 +5853,6 @@
               }
             },
             "required": [
-              "context",
               "stampId",
               "action",
               "name"
@@ -6125,7 +5873,6 @@
               }
             },
             "required": [
-              "context",
               "stampId",
               "action"
             ],
@@ -6153,15 +5900,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -6172,9 +5917,7 @@
             "$ref": "#/$defs/ReadContext"
           }
         },
-        "required": [
-          "context"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "get_world_settings",
@@ -6207,25 +5950,17 @@
           },
           "WriteContext": {
             "additionalProperties": false,
-            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
-            "oneOf": [
-              {
-                "properties": {
-                  "expectedRevision": {}
-                },
-                "required": [
-                  "expectedRevision"
-                ]
+            "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
+            "not": {
+              "properties": {
+                "expectedMemberRevision": {},
+                "expectedRevision": {}
               },
-              {
-                "properties": {
-                  "expectedMemberRevision": {}
-                },
-                "required": [
-                  "expectedMemberRevision"
-                ]
-              }
-            ],
+              "required": [
+                "expectedRevision",
+                "expectedMemberRevision"
+              ]
+            },
             "properties": {
               "expectedMemberRevision": {
                 "$ref": "#/$defs/Revision"
@@ -6243,11 +5978,7 @@
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId",
-              "transactionId",
-              "idempotencyKey"
-            ],
+            "required": [],
             "type": "object"
           }
         },
@@ -6333,7 +6064,6 @@
           }
         },
         "required": [
-          "context",
           "settings"
         ],
         "type": "object"
@@ -6363,15 +6093,13 @@
           },
           "ReadContext": {
             "additionalProperties": false,
-            "description": "World identity from get_session. Never infer identity from selected tabs.",
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
             "properties": {
               "worldSessionId": {
                 "$ref": "#/$defs/Id"
               }
             },
-            "required": [
-              "worldSessionId"
-            ],
+            "required": [],
             "type": "object"
           },
           "Rect": {

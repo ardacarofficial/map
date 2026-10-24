@@ -59,6 +59,13 @@ impl Options {
         let renders_image = match name {
             "render_preview" | "prepare_smart_source" | "begin_edit"
             | "visual_ingest_reference" | "visual_match_reference" => true,
+            // Draft writes and whole-map checks share the long budget (agent mutationTimeoutMs).
+            "paint_cells" | "paint_rect" | "paint_line" | "fill" | "smart_brush" | "draw_path"
+            | "place_stamp" | "place_entity" | "edit_entity" | "edit_layer" | "create_map"
+            | "resize_map" | "create_stamp" | "edit_map" | "edit_stamp" | "configure_world"
+            | "apply_operations" | "paint_grid" | "replace_tiles" | "clear_region"
+            | "resume_edit" | "finish_edit" | "cancel_edit" | "validate_map" | "validate_goals"
+            | "read_region" => true,
             // The agent defaults an omitted image mode to "tiles".
             "get_tile_catalog" => arguments["image"].as_str() != Some("none"),
             "list_stamps" => arguments["previewStampId"].is_string(),
@@ -334,7 +341,7 @@ impl Transport {
                 let owner = transaction["owner"]["clientSessionId"].as_str();
                 // Review belongs to the human after disconnect. Acknowledge its
                 // detached owner without demanding rollback of the retained edit.
-                let detached_review = matches!(phase, Some("stopped" | "awaitingApproval"))
+                let detached_review = matches!(phase, Some("orphaned" | "stopped" | "awaitingApproval"))
                     && transaction["state"].as_str() == phase
                     && transaction["owner"]
                         .get("clientSessionId")
@@ -839,6 +846,11 @@ mod deadline_tests {
             "begin_edit",
             "visual_ingest_reference",
             "visual_match_reference",
+            "paint_cells",
+            "create_stamp",
+            "apply_operations",
+            "resume_edit",
+            "validate_map",
         ] {
             assert_eq!(options.tool_timeout(name, &json!({})), options.image_timeout, "{name}");
         }
@@ -859,8 +871,7 @@ mod deadline_tests {
             ("get_tile_catalog", json!({"image":"none"})),
             ("list_stamps", json!({})),
             ("get_session", json!({})),
-            ("create_stamp", json!({})),
-            ("paint_cells", json!({})),
+            ("get_map_info", json!({})),
         ] {
             assert_eq!(options.tool_timeout(name, &arguments), options.call_timeout, "{name}");
         }

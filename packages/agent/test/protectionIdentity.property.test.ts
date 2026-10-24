@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { MapStore, createDocument } from "@smap/core";
 import { error, harness, success, tile } from "./helpers";
 
-it("initial layer protection keeps map/layer identities distinct across arbitrary colon boundaries", async () => {
+it("layer protection and in-draft unlocks keep map/layer identities distinct across arbitrary colon boundaries", async () => {
   await fc.assert(fc.asyncProperty(fc.record({
     map: fc.nat(10000), part: fc.nat(10000), layer: fc.nat(10000),
     hidden: fc.boolean(), reverse: fc.boolean(),
@@ -27,13 +27,16 @@ it("initial layer protection keeps map/layer identities distinct across arbitrar
     await h.begin(maps.map(map => map.id));
     success(await h.edit("paint_cells", { mapId: ordinaryMap, layerId: ordinaryLayer,
       cells: [{ x: 0, y: 0, value: tile }] }));
-    success(await h.edit("edit_layer", { mapId: protectedMap, action: "update", layerId: protectedLayer,
-      props: { locked: false, visible: true } }));
     const pending = h.host.snapshot(), counters = h.api.getState().transaction!.counters;
     error(await h.edit("paint_cells", { mapId: protectedMap, layerId: protectedLayer,
       cells: [{ x: 0, y: 0, value: tile }] }), value.hidden ? "LAYER_HIDDEN" : "LAYER_LOCKED");
     expect(h.host.snapshot()).toEqual(pending);
     expect(h.api.getState().transaction!.counters).toEqual(counters);
+    // Unlocking inside this draft counts only for that exact map/layer identity.
+    success(await h.edit("edit_layer", { mapId: protectedMap, action: "update", layerId: protectedLayer,
+      props: { locked: false, visible: true } }));
+    success(await h.edit("paint_cells", { mapId: protectedMap, layerId: protectedLayer,
+      cells: [{ x: 0, y: 0, value: tile }] }));
     await h.api.userAction("discard");
     expect(h.host.snapshot()).toEqual(before);
     await h.api.dispose();

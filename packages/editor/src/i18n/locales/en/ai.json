@@ -34,6 +34,7 @@
   "status.preparing": "AI is preparing",
   "status.running": "AI is working",
   "status.stopped": "AI stopped",
+  "status.orphaned": "AI connection closed; changes await review",
   "status.awaitingApproval": "AI changes await approval",
   "status.cancelling": "Reverting AI changes",
   "status.disconnected": "Disconnected",

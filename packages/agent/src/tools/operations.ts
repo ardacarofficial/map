@@ -117,6 +117,7 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
     run: <T>(apply: () => T) => apply(), emit: () => {}, owned: tx.owned.bind(tx),
   });
   const initialPlanned = shadow.pending!.summary.counters.plannedWrites;
+  let operationIndex = 0;
   // No live operation or ID allocation occurs until every child succeeds.
   try {
     for (const op of a.operations) {
@@ -130,10 +131,15 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
         ...(entityId ? { entityId } : {}) });
       budget(shadow.pending!.summary.counters.plannedWrites - initialPlanned);
       budget(projectionBytes + shadow.pending!.summary.counters.retainedBytes, L.retainedBytes);
+      operationIndex++;
     }
   } catch (error) {
-    if (error instanceof AgentError) throw error;
-    throw new AgentError(E.INVALID_ARGUMENT, "Batch preflight failed");
+    // Nothing was applied; name the failing child so the agent fixes only that item.
+    const tool = a.operations[operationIndex]?.tool;
+    if (error instanceof AgentError && (error.code === E.CANCELLED || error.code === E.TIMEOUT)) throw error;
+    if (error instanceof AgentError)
+      throw new AgentError(error.code, `operations[${operationIndex}] (${tool}): ${error.message}`, { ...error.details, operationIndex, ...(tool ? { tool } : {}) }, error.retryable);
+    throw new AgentError(E.INVALID_ARGUMENT, `operations[${operationIndex}] (${tool}): batch preflight failed`, { operationIndex, ...(tool ? { tool } : {}) });
   }
   tx.owned(a.context, call);
   const changes: ChangeSummary[] = [], items: ToolData["apply_operations"]["items"] = [];

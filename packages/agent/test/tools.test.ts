@@ -327,7 +327,7 @@ it("edit_layer creates, reorders, updates, and enforces layer count and index li
   await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
 });
-it("begin protection survives unlock/show and prevents indirect stamp and resize writes", async () => {
+it("begin protection blocks direct and indirect writes until this draft unlocks the layer; discard restores the lock", async () => {
   const h = harness({ stamps: [stamp] }),
     store = h.host.stores.get("map-1")!;
   store.dispatch({
@@ -340,44 +340,28 @@ it("begin protection survives unlock/show and prevents indirect stamp and resize
     layerId: "ground",
     props: { locked: true, visible: false },
   });
+  const original = serializeLevel(store.document);
   await h.begin();
-  success(
-    await h.edit("edit_layer", {
-      mapId: "map-1",
-      action: "update",
-      layerId: "ground",
-      props: { locked: false, visible: true },
-    }),
-  );
-  const before = serializeLevel(store.document);
-  error(
-    await h.edit("paint_rect", {
-      mapId: "map-1",
-      layerId: "ground",
-      region,
-      value: tile,
-    }),
-    "LAYER_LOCKED",
-  );
-  error(
-    await h.edit("place_stamp", {
-      mapId: "map-1",
-      stampId: "house",
-      at: { x: 1, y: 1 },
-    }),
-    "LAYER_LOCKED",
-  );
-  error(
-    await h.edit("resize_map", {
-      mapId: "map-1",
-      width: 8,
-      height: 8,
-      allowCrop: true,
-    }),
-    "LAYER_LOCKED",
-  );
-  expect(serializeLevel(store.document)).toBe(before);
+  const blocked = await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region, value: tile });
+  error(blocked, "LAYER_LOCKED");
+  expect(blocked.structuredContent).toMatchObject({ details: { mapId: "map-1", layerId: "ground", nextAction: expect.stringContaining("unlockLayerIds") } });
+  error(await h.edit("place_stamp", { mapId: "map-1", stampId: "house", at: { x: 1, y: 1 } }), "LAYER_LOCKED");
+  error(await h.edit("resize_map", { mapId: "map-1", width: 8, height: 8, allowCrop: true }), "LAYER_LOCKED");
+  expect(serializeLevel(store.document)).toBe(original);
+  // The draft's own unlock/show counts for later calls in the same draft.
+  success(await h.edit("edit_layer", { mapId: "map-1", action: "update", layerId: "ground", props: { locked: false, visible: true } }));
+  success(await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region, value: tile }));
   await h.api.userAction("discard");
+  expect(serializeLevel(store.document)).toBe(original);
+  // begin_edit.unlockLayerIds unlocks inside the draft before the first write.
+  const begun = await h.run("begin_edit", { requestLabel: "Unlock", mapIds: ["map-1"], unlockLayerIds: ["ground"] });
+  expect(success(begun).data).toMatchObject({ unlockedLayers: [{ mapId: "map-1", layerId: "ground" }] });
+  expect(store.document.getLayer("ground")).toMatchObject({ locked: false, visible: true });
+  success(await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region, value: tile }));
+  await h.api.userAction("discard");
+  expect(serializeLevel(store.document)).toBe(original);
+  error(await h.run("begin_edit", { requestLabel: "Unlock", mapIds: ["map-1"], unlockLayerIds: ["nope"] }), "UNKNOWN_ID");
+  expect(h.api.getState().phase).toBe("ready");
 });
 it("place_stamp uses explicit mapping, transforms flags, and refuses clipping or ambiguous targets", async () => {
   const h = harness({ stamps: [stamp] });

@@ -55,13 +55,13 @@ AI önce `get_session` ile açık dünyayı, katalog görselleriyle gerçek tile
 
 - **Onayla:** İstekteki bütün harita değişikliklerini kabul eder. Bir normal **Geri al** hepsini birlikte geri alır. Yeni harita listede kalır, içeriği geri alınır. Ardından normal kayıt/otomatik kayıt çalışır.
 - **Vazgeç:** Geçici değişiklikleri geri alır. AI’ın yeni oluşturduğu, henüz onaylanmamış haritalar kaldırılır.
-- **Durdur:** Yeni komutları ve sürmekte olan hazırlığı keser; tamamlanan çizimi incelemek için tutar. Sonra Onayla veya Vazgeç seçersin.
+- **Durdur:** Yeni komutları ve sürmekte olan hazırlığı keser; tamamlanan çizimi incelemek için tutar. Sonra Onayla veya Vazgeç seçersin. AI işine devam etmek isterse kendi taslağını `resume_edit` ile yeniden açabilir; çubuk yine “AI çalışıyor” gösterir.
 
 İş beklerken elle çizim ve harita kaydı kapalıdır. Kaydırma, yakınlaştırma ve harita sekmeleri çalışır. Ctrl+S onay vermez. AI çubuğu Tab ile paneller gizlenince de görünür. **Etkinlik** paneli hangi araçların ne yaptığını gösterir; diğer paneller gibi taşınabilir.
 
-AI oturumu kapanırsa, bağlantı boşta kalıp sona ererse, AI bağlantısını kapatırsan veya anahtarı yenilersen yalnız hazırlanmakta/çalışmakta olan iş geri alınır. AI `finish_edit` ile işi sunduysa ya da Durdur’a bastıysan çizim incelemen için kalır; çubuk istemci adını ve “bağlantı kapandı” bilgisini gösterir. Yeni istemciler bu işi görebilir ama değiştiremez, iptal edemez veya sen karar vermeden başka iş başlatamaz.
+AI oturumu kapanırsa, bağlantı boşta kalıp sona ererse, AI bağlantısını kapatırsan veya anahtarı yenilersen yapılmış çizim **geri alınmaz**. Çubuk “AI bağlantısı kapandı; değişiklikler onay bekliyor” der; Onayla veya Vazgeç seçersin. Yalnız henüz hiçbir şey çizmemiş, hazırlanmakta olan iş iptal edilir. Aynı AI yeniden bağlanınca `begin_edit`’in ona verdiği gizli `resumeToken` ile `resume_edit` diyerek taslağına döner ve devam eder; bu, `finish_edit` ile sunduğu veya senin Durdur’a bastığın işler için de geçerlidir. Anahtarı olmayan başka istemciler bu işi görebilir ama değiştiremez, iptal edemez veya sen karar vermeden başka iş başlatamaz.
 
-Çalışan işlerin süre sınırı 30 dakikadır. Durdurulmuş/onay bekleyen işin süresi dolsa da otomatik onay veya geri alma yapılmaz; Onayla ya da Vazgeç seçersin. Dünyayı kapatmak/değiştirmek bekleyen işi geri alır. Editörü kapatınca onaylanmamış çizim diske kaydedilmez.
+Çalışan işin 30 dakikalık süresi hareketsizlik süresidir: AI’ın her komutu süreyi uzatır. Süre dolarsa iş geri alınmaz, bağlantısı kapanmış gibi onayına bekler. Zaman aşımına uğrayan veya hata veren tek bir komut yalnız kendi değişikliğini geri alır; önceki çizim ve taslak sürer. Bekleyen işin süresi dolsa da otomatik onay veya geri alma yapılmaz. Dünyayı kapatmak/değiştirmek bekleyen işi geri alır. Editörü kapatınca onaylanmamış çizim diske kaydedilmez.
 
 **Etiketler ayrı kaydedilir:** `ai-tags.json` içindeki tile/stamp etiketleri Onayla/Vazgeç ve Geri al dışında kalır. Denetçi’de seçtiğin tile veya stamp’in etiketlerini düzenleyebilirsin. Kaynak pikseller değişirse eski etiketler “eski” görünür; kontrol edip yeniden etiketle.
 

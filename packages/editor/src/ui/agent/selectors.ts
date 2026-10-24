@@ -1,7 +1,7 @@
 import type { ActivityLogEntry, AgentPhase } from "@smap/agent";
 
 export function selectAiControls(phase: AgentPhase, applying: boolean) {
-  const review = phase === "running" || phase === "stopped" || phase === "awaitingApproval";
+  const review = phase === "running" || phase === "orphaned" || phase === "stopped" || phase === "awaitingApproval";
   return {
     visible: phase !== "disabled" && phase !== "ready",
     stop: phase === "preparing" || phase === "running",
