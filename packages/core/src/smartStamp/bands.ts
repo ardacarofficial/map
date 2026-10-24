@@ -1,7 +1,7 @@
 /** Layout 2: lossless tile patches, compact caps, then 47 row-major macro patches. */
 import { cellFlags, cellPaletteIndex, FLIP_D, FLIP_H, FLIP_V } from "../cell";
 import type { TileClip } from "../clip";
-import { inverseOrientation, orientPoint, nineSliceMaskSources, type NineSliceBlit, type NineSliceLayout, type NineSliceSample } from "../nineSlice";
+import { inverseOrientation, orientPoint, nineSliceMaskSources, isInnerJoinQuadrant, innerMiterSpans, type NineSliceBlit, type NineSliceLayout, type NineSliceSample } from "../nineSlice";
 import type { CellPoint, CellRect } from "../geometry";
 import { BLOB47_MASKS } from "./topology";
 
@@ -33,7 +33,7 @@ function spans(size:number,full:number,b:number,pixels:number):Span[] {
  if(size<2*b){const split=Math.ceil(size*pixels/2);return [{start:0,end:split,source:0},{start:split,end:size*pixels,source:full*pixels-size*pixels+split}];}
  return [{start:0,end:size*pixels,source:0}];
 }
-export function bandBlits(source:TileClip & BandedSource,layerId:string,tw:number,th:number):NineSliceBlit[] {
+export function bandBlits(source:TileClip & BandedSource,layerId:string,tw:number,th:number,miter=false):NineSliceBlit[] {
  const layer=source.layers.find(l=>l.layerId===layerId)!;
  const n=source.width,m=source.height,b=bandWidth(source),l=bandLayout(source),out:NineSliceBlit[]=[];
  const emit=(slot:number,dx:number,dy:number,sx:number,sy:number,width:number,height:number)=>{
@@ -73,11 +73,21 @@ export function bandBlits(source:TileClip & BandedSource,layerId:string,tw:numbe
  const mx=b*tw,my=b*th,left=Math.floor(mx/2),top=Math.floor(my/2);
  BLOB47_MASKS.forEach((mask,rank)=>{
   const roles=nineSliceMaskSources({width:3,height:3},mask);
-  for(let q=0;q<4;q++){
-   const role=roles[q]!,rx=role%3,ry=Math.floor(role/3),x=q===1||q===2?left:0,y=q>=2?top:0;
-   for(const ys of roleSpans(ry,y,q>=2?my-top:top,m,th))for(const xs of roleSpans(rx,x,q===1||q===2?mx-left:left,n,tw)){
+  const blit=(role:number,x:number,y:number,w:number,h:number)=>{
+   const rx=role%3,ry=Math.floor(role/3);
+   for(const ys of roleSpans(ry,y,h,m,th))for(const xs of roleSpans(rx,x,w,n,tw)){
     copy(l.bank+rank*b*b,b,xs.destination,ys.destination,xs.source,ys.source,xs.length,ys.length);
    }
+  };
+  for(let q=0;q<4;q++){
+   const x=q===1||q===2?left:0,y=q>=2?top:0,w=q===1||q===2?mx-left:left,h=q>=2?my-top:top;
+   if(miter&&isInnerJoinQuadrant(mask,q)){
+    // Mitered concave join at macro scale: vertical strip role (W/E band) and horizontal strip role (N/S band).
+    const vertical=q===1||q===2?5:3,horizontal=q>=2?7:1;
+    for(const span of innerMiterSpans(q,{x,y,width:w,height:h},mx,my))blit(span.strip==="vertical"?vertical:horizontal,span.x,span.y,span.width,span.height);
+    continue;
+   }
+   blit(roles[q]!,x,y,w,h);
   }
  });
  return out;

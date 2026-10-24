@@ -336,7 +336,7 @@ const DEFINITIONS = [
   {
     "name": "get_session",
     "title": "Get Session",
-    "description": "Start here. Inspect the open world, active map/layer, maps, revision, clients and transaction. No arguments or open world required. Use returned worldSessionId in every subsequent context. Workflow: get_session → inspect catalogs/maps → begin_edit → paint/place/preview/validate → finish_edit → wait for human Onayla or Vazgeç. Poll transactionId to learn the final approval/cancellation outcome. Never approve or save yourself.",
+    "description": "Start here. Inspect the open world, active map/layer, maps, revision, clients and transaction. No arguments or open world required. Use returned worldSessionId in every subsequent context. Workflow: get_session → inspect catalogs/maps → begin_edit → paint/place/preview/validate → finish_edit → wait for human Onayla or Vazgeç. Poll transactionId to learn the final approval/cancellation outcome. Never approve or save yourself. smart lists detected smart art [{tilesetId,rect,kind,band}] for draw_path/smart_brush source {tilesetId,region:rect}.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -428,7 +428,7 @@ const DEFINITIONS = [
   {
     "name": "list_tilesets",
     "title": "List Tilesets",
-    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
+    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art. Each source tileset lists smart:[{tilesetId,rect,kind,band}] detected edge/centre blocks; pass {tilesetId,region:rect} as smart_brush/draw_path source (kind road = paths/rivers and areas).",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -858,7 +858,7 @@ const DEFINITIONS = [
   {
     "name": "prepare_smart_source",
     "title": "Prepare Smart Source",
-    "description": "Prepare suitable existing art for smart_brush/draw_path inside the current edit. source is {stampId} or {tilesetId,region} with region in tileset grid cells (≤32×32). Native tile width AND height must match map; no rescaling. Returns opaque sourceId bound to this transaction/map, band b and usages (area, optionally road). Non-smart art fails; force:true explicitly overrides detection with band 1 and does not prove the art is suitable. Inspect catalog first; ordinary paint/stamps are appropriate when art lacks a smart layout. Generated atlases are transaction-owned. ≤30 seconds, 64 MiB. Requires write context with latest revision.",
+    "description": "Optional: smart_brush/draw_path accept source directly. Prepares suitable art inside the current edit and returns an opaque sourceId bound to this transaction/map, band b and usages (area, optionally road); repeating the same source in the same edit returns the same sourceId. source is {stampId} or {tilesetId,region} with region in tileset grid cells (≤32×32); get_session.smart lists detected candidates. Native tile width AND height must match map; no rescaling. Non-smart art fails; force:true overrides detection with band 1 and does not prove the art is suitable. Generated atlases are transaction-owned. ≤30 seconds, 64 MiB. Requires write context.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -922,7 +922,7 @@ const DEFINITIONS = [
   {
     "name": "smart_brush",
     "title": "Smart Brush",
-    "description": "Paint with a prepared sourceId on its bound map and explicit layerId. mode:\"area\" uses only region (map cells) and erase:false; mode:\"road\" uses distinct cells at macro-cell top-lefts aligned to source band b, optionally erase:true. Neighbor connection repairs are included in ≤4096 planned writes. Use prepare_smart_source first; check returned usages. Orientation 0–7 uses D4 bits; quarter turns require square cells. Multilayer source mapping must be unambiguous. Requires begin_edit and write context {worldSessionId,transactionId,idempotencyKey,expectedRevision}.",
+    "description": "Paint connected edge/centre art on an explicit tile layerId. Give source {tilesetId,region} (a smart candidate from get_session/list_tilesets) or {stampId}; it is prepared once per edit and reused. A sourceId from prepare_smart_source also works. mode:\"area\" fills region (map cells) with borders; overlapping or touching areas of the same source merge into one shape with correct inner corners, so build lakes/rivers from several rectangles. mode:\"road\" takes distinct cells at macro-cell top-lefts aligned to band b (any cell set works as a free-form mask), optionally erase:true. openEdges (default true) leaves shapes touching the map border open so they continue off-map; false draws a closing border there. Neighbour repairs count toward ≤4096 planned writes. Orientation 0–7 uses D4 bits; quarter turns require square cells. Multilayer source mapping must be unambiguous. Requires begin_edit and write context.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -986,7 +986,7 @@ const DEFINITIONS = [
   {
     "name": "draw_path",
     "title": "Draw Path",
-    "description": "Draw a connected path/river using a prepared road-capable sourceId, explicit mapId/layerId and 2–128 map-cell points (x right, y down). Snaps points by floor(cell/b) to source band b, joins orthogonally, and expands square width 1–16 macro cells (actual tile width=width*b). ≤4096 writes including neighbor repairs. kind:\"path\"|\"river\" records intent only; YOU select suitable art. No automatic water/bridge art. Place bridges separately with place_stamp or paint. Requires write context with latest revision; preview before finish_edit.",
+    "description": "Draw a road, path or river with smart art: the right tool for any connected road/river shape. source {tilesetId,region}|{stampId} (road-capable, prepared once per edit and reused) or sourceId. points: 2–128 map cells (x right, y down); consecutive points join by straight orthogonal runs, so give each bend as a point, e.g. [{x:0,y:5},{x:12,y:5},{x:12,y:31}]. Diagonal steps become staircases. width 1–16 macro cells (tiles = width*b; 3 suits a river) centred on the points. Bends, T-junctions, crossings and joins with earlier paths of the same source get matching corners. With openEdges (default true) a path reaching the map border runs off-map uncapped; parts of a wide path beyond the border are clipped. Points snap by floor(cell/b). ≤4096 writes including neighbour repairs. kind records intent only; place bridges with place_stamp. Preview before finish_edit.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1839,6 +1839,12 @@ const claimsSchema:Schema={type:"array",minItems:1,maxItems:16,items:claimSchema
 const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
   let schema: Schema = tool.inputSchema;
   if(tool.name==="begin_edit")schema={...schema,properties:{...(schema.properties as Record<string,JsonValue>),collaboration:objectSchema({mode:{const:"regions"},claims:claimsSchema},["mode"])}};
+  if (tool.name === "smart_brush" || tool.name === "draw_path") {
+    // Inline source (prepared once per edit and reused) or an explicit prepared sourceId; exactly one.
+    const prepareSource = (DEFINITIONS.find(t => t.name === "prepare_smart_source")!.inputSchema.properties as Record<string, JsonValue>)["source"]!;
+    schema = { ...schema, properties: { ...(schema.properties as Record<string, JsonValue>), source: prepareSource, openEdges: { type: "boolean", default: true } },
+      required: (schema.required as string[]).filter(key => key !== "sourceId"), oneOf: [requiredKeys("sourceId"), requiredKeys("source")] };
+  }
   if (tool.name === "smart_brush") schema = { ...schema, allOf: [
     { if: { properties: { mode: { const: "area" } } }, then: { ...requiredKeys("region"), not: { anyOf: [requiredKeys("cells"), { ...requiredKeys("erase"), properties: { erase: { const: true } } }] } } },
     { if: { properties: { mode: { const: "road" } } }, then: { ...requiredKeys("cells"), not: requiredKeys("region") } },

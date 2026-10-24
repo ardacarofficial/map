@@ -22,6 +22,7 @@ import {
   patchCellCount,
   planSmartStampArea,
   planSmartStampRoad,
+  openEdgeRect,
   roadMembership,
   rotateClip,
   stampLayerMapping,
@@ -47,6 +48,7 @@ import {
   type ToolName,
 } from "../contracts";
 import { utf8ByteLength } from "../tags";
+import { canonicalJson } from "../toolSchemas";
 import { linePoints, rectanglePoints } from "../geometry";
 import { layerProtectionKey, type Transactions, waitFor } from "../transactions";
 import {
@@ -623,12 +625,25 @@ export async function mutate<N extends ToolName>(
     case "prepare_smart_source":
       return prepare(tx, args as ToolArguments["prepare_smart_source"], call);
     case "smart_brush":
-    case "draw_path":
-      return smart(
-        tx,
-        name,
-        args as ToolArguments["smart_brush"] | ToolArguments["draw_path"],
-      );
+    case "draw_path": {
+      const a = args as ToolArguments["smart_brush"] | ToolArguments["draw_path"];
+      if (a.source === undefined) {
+        check(a.sourceId !== undefined, E.INVALID_ARGUMENT, "sourceId or source is required");
+        return smart(tx, name, a);
+      }
+      check(a.sourceId === undefined, E.INVALID_ARGUMENT, "Use either sourceId or source, not both");
+      // Inline source: reuse this edit's preparation of the same art, otherwise prepare it now.
+      // Reject an unusable target/geometry first, so a failing call does not stage a new atlas.
+      const store = tx.store(a.mapId), target = layer(store, a.layerId);
+      protect(tx, a.mapId, target);
+      check(isTileLayer(target), E.LAYER_KIND, "Smart brush requires tile layer");
+      if (name === "draw_path") for (const p of (a as ToolArguments["draw_path"]).points) point(store, p);
+      else if ("region" in a && a.region) rect(store, a.region);
+      if (!reusablePrepared(tx, a.mapId, a.source, false)) tx.assertGlobal(call);
+      const prepared = await prepare(tx, { context: a.context, mapId: a.mapId, source: a.source }, call);
+      const { source: _inline, ...rest } = a;
+      return smart(tx, name, { ...rest, sourceId: prepared.sourceId } as ToolArguments["smart_brush"] | ToolArguments["draw_path"]);
+    }
     default:
       fail(E.INVALID_ARGUMENT, "Unknown mutation");
   }
@@ -850,12 +865,46 @@ function place(tx: Transactions, a: ToolArguments["place_stamp"]) {
     transformedSize: { width: clip.width, height: clip.height },
   };
 }
+/** Preparation identity inside one edit: same map, same source art and same force choice. */
+const preparedKeys = new WeakMap<PreparedSmartSource, string>();
+const preparedKey = (mapId: string, source: ToolArguments["prepare_smart_source"]["source"], force: boolean) =>
+  canonicalJson(["stampId" in source ? { stampId: source.stampId } : { tilesetId: source.tilesetId, region: source.region }, mapId, force]);
+function reusablePrepared(tx: Transactions, mapId: string, source: ToolArguments["prepare_smart_source"]["source"], force: boolean): PreparedSmartSource | undefined {
+  const key = preparedKey(mapId, source, force);
+  return tx.pending?.sources.find(s => preparedKeys.get(s) === key && s.mapId === mapId && s.transactionId === tx.pending!.summary.id && tx.host.smartSources.get(s.sourceId) === s);
+}
+function preparedData(result: ReturnType<typeof change>, source: PreparedSmartSource, mapId: string) {
+  return {
+    change: result,
+    sourceId: source.sourceId,
+    mapId,
+    band: source.band,
+    usages: source.usages,
+    detectorVersion: source.detectorVersion,
+    fingerprint: source.fingerprint,
+    forced: source.forced,
+    generatedTilesetIds: source.generatedTilesetIds,
+    layerMapping: source.layerMapping,
+  };
+}
 async function prepare(
   tx: Transactions,
   a: ToolArguments["prepare_smart_source"],
   call: AgentCallContext,
 ) {
   const store = tx.store(a.mapId);
+  // Repeating a preparation in the same edit returns the existing handle: no second bake or atlas.
+  const reuse = reusablePrepared(tx, a.mapId, a.source, !!a.force);
+  if (reuse) {
+    let current = true;
+    try { tx.host.smartSources.assertCurrent(reuse); } catch { current = false; }
+    if (current) {
+      tx.owned(a.context, call);
+      const result = change(a.mapId, store);
+      tx.record(result, 0);
+      return preparedData(result, reuse, a.mapId);
+    }
+  }
   if ("tilesetId" in a.source) {
     const ts = store.document.getTileset(a.source.tilesetId);
     check(ts, E.UNKNOWN_ID, "Unknown tileset");
@@ -924,20 +973,10 @@ async function prepare(
     throw error;
   }
   tx.pending!.sources.push(source);
+  preparedKeys.set(source, preparedKey(a.mapId, a.source, !!a.force));
   const result = change(a.mapId, store);
   tx.record(result, source.retainedBytes);
-  return {
-    change: result,
-    sourceId: source.sourceId,
-    mapId: a.mapId,
-    band: source.band,
-    usages: source.usages,
-    detectorVersion: source.detectorVersion,
-    fingerprint: source.fingerprint,
-    forced: source.forced,
-    generatedTilesetIds: source.generatedTilesetIds,
-    layerMapping: source.layerMapping,
-  };
+  return preparedData(result, source, a.mapId);
 }
 function smart(
   tx: Transactions,
@@ -957,7 +996,9 @@ function smart(
     );
   }
   const store = tx.store(a.mapId),
-    source = tx.host.smartSources.get(a.sourceId);
+    source = tx.host.smartSources.get(a.sourceId!),
+    // Agents draw rivers/roads/lakes that continue past the map border unless they opt out.
+    openEdges = a.openEdges !== false;
   check(source, E.UNKNOWN_ID, "Unknown source handle");
   check(
     source.transactionId === tx.pending!.summary.id && source.mapId === a.mapId,
@@ -1005,7 +1046,8 @@ function smart(
                   x: (p.x + x) * band + bx,
                   y: (p.y + y) * band + by,
                 };
-                point(store, q);
+                // Points are validated above; a wide path may extend past the border and is clipped there.
+                if (!store.document.inBounds(q.x, q.y)) continue;
                 members.set(`${q.x},${q.y}`, q);
                 budget(members.size);
               }
@@ -1045,12 +1087,14 @@ function smart(
     orientation: rawFlags(a.orientation ?? 0),
     mapping,
   };
+  const areaRegion = area ? (a as Extract<ToolArguments["smart_brush"], { mode: "area" }>).region : undefined;
+  const planRect = areaRegion && openEdges ? openEdgeRect(store.document, source.stamp, areaRegion) : areaRegion;
   const planNow = (): SmartStampPlan =>
     area
       ? planSmartStampArea(
           store.document,
           source.stamp,
-          (a as Extract<ToolArguments["smart_brush"], { mode: "area" }>).region,
+          planRect!,
           { ...options, revision: store.revision },
         )
       : planSmartStampRoad(
@@ -1062,6 +1106,7 @@ function smart(
             ...options,
             revision: store.revision,
             erase: "erase" in a && !!a.erase,
+            openEdges,
           },
         );
   let plan: SmartStampPlan;
@@ -1115,6 +1160,7 @@ function smart(
       change: summary,
       sourceId: source.sourceId,
       kind: (a as ToolArguments["draw_path"]).kind,
+      band: source.band,
       snappedPoints: snapped,
       widthInTiles: width * source.band,
       neighborRepairs: repairs,
@@ -1122,6 +1168,7 @@ function smart(
   return {
     change: summary,
     sourceId: source.sourceId,
+    band: source.band,
     neighborRepairs: repairs,
     layerMapping: [...result.layerMapping].map(
       ([sourceLayerId, targetLayerId]) => ({ sourceLayerId, targetLayerId }),

@@ -174,7 +174,11 @@ export function planSmartStampArea(doc: MapDocument, stamp: Stamp, rect: CellRec
 }
 
 /** Road options: erase overlays empty membership and repairs surviving neighbours with the same solver. */
-export interface SmartStampRoadOptions extends SmartStampPlanOptions { readonly erase?: boolean }
+export interface SmartStampRoadOptions extends SmartStampPlanOptions {
+  readonly erase?: boolean;
+  /** Off-map neighbours repeat the nearest in-map cell, so a road/river reaching the border stays open. */
+  readonly openEdges?: boolean;
+}
 
 /**
  * Plans Yol on one explicitly selected visible/unlocked tile layer. No layer creation or grid writes.
@@ -185,7 +189,7 @@ export function planSmartStampRoad(doc: MapDocument, stamp: Stamp, layerId: stri
   validate(doc, stamp, orientation, options);
   const { road, profile } = roadProfile(doc, stamp, options), layer = doc.getLayer(layerId);
   if (!isTileLayer(layer)) throw new Error("road requires an existing tile layer");
-  const solveOptions = { orientation, erase: !!options.erase, ...(options.window ? { window: options.window } : {}) };
+  const solveOptions = { orientation, erase: !!options.erase, ...(options.openEdges ? { openEdges: true } : {}), ...(options.window ? { window: options.window } : {}) };
   const writes = layer.locked || !layer.visible ? [] : bandWidth(stamp)>1 ? solveMacroRoad(reader(doc,layerId),road.tilesetId,nineSliceLayout(stamp).bank,bandWidth(stamp),membership,solveOptions) : solveRoadFromReader(reader(doc, layerId), profile, road.tilesetId, membership, solveOptions);
   return finish(doc, options, [{ sourceLayerId: stamp.nineSlice!.tileLayers.find(l => l.tilesetId === road.tilesetId)!.layerId, layerId, name: layer.name, grid: false, writes }]);
 }
@@ -226,6 +230,16 @@ export function applySmartStampPlan(store: MapStore, plan: SmartStampPlan): Smar
     }
     store.commit(); return { patches, createdLayerIds, layerMapping };
   } catch (error) { store.rollback(); throw error; }
+}
+
+/**
+ * Extends each side of an in-map rectangle that touches the map border by one source band, so the clipped
+ * Alan keeps interior phase there and the border band falls off-map (an open edge). Other sides are unchanged.
+ */
+export function openEdgeRect(doc: MapDocument, stamp: Stamp, rect: CellRect): CellRect {
+  const b = bandWidth(stamp), left = rect.x <= 0 ? b : 0, top = rect.y <= 0 ? b : 0;
+  const right = rect.x + rect.width >= doc.map.width ? b : 0, bottom = rect.y + rect.height >= doc.map.height ? b : 0;
+  return { x: rect.x - left, y: rect.y - top, width: rect.width + left + right, height: rect.height + top + bottom };
 }
 
 /** Plans against the current revision and applies one Alan gesture (or joins an existing transaction). */

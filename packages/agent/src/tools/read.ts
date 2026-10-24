@@ -22,6 +22,7 @@ import {
   type Id,
   type ImageBlock,
   type ResolvedTile,
+  type SmartCandidateInfo,
   type EntityInfo,
   type TagRecord,
   type TagTarget,
@@ -144,6 +145,19 @@ interface TilesetSummary {
   tagsKey: string;
   tagCounts: { current: number; stale: number; missing: number };
 }
+/** Detected smart rectangles of source tilesets; empty when the host cannot detect or artwork is missing. */
+async function smartCandidates(tx: Transactions, tilesets: readonly Tileset[], call: AgentCallContext): Promise<SmartCandidateInfo[]> {
+  const detect = tx.host.smartSources.candidates?.bind(tx.host.smartSources);
+  if (!detect) return [];
+  const out: SmartCandidateInfo[] = [];
+  for (const ts of tilesets) {
+    if (ts.generated || ts.edited) continue;
+    call.signal.throwIfAborted();
+    try { out.push(...await waitFor(detect(ts.id, call.signal), call.signal)); }
+    catch (error) { if (call.signal.aborted) throw error; }
+  }
+  return out;
+}
 const tilesetSummaries = new WeakMap<Transactions, Map<string, TilesetSummary>>();
 export async function read<N extends ToolName>(
   tx: Transactions,
@@ -172,6 +186,10 @@ export async function read<N extends ToolName>(
           clients: s.clients,
           transaction: tx.copy(transaction),
           limits: L,
+          ...await (async () => {
+            const smart = await smartCandidates(tx, tx.host.world.tilesets(), call);
+            return smart.length ? { smart } : {};
+          })(),
         },
       };
     }
@@ -273,6 +291,8 @@ export async function read<N extends ToolName>(
           tileCount: catalogTileCount(ts),
           kind: ts.edited ? "edited" : ts.generated ? "generated" : "source",
         };
+        const smart = await smartCandidates(tx, [ts], call);
+        if (smart.length) Object.assign(metadata, { smart });
         // First-pass discovery needs only project metadata, even when artwork
         // is unavailable. Detailed fingerprints remain an explicit full scan.
         if (a.includeDetails === false) { items.push(metadata); continue; }
@@ -449,6 +469,7 @@ export async function read<N extends ToolName>(
           smartUsages: s.nineSlice
             ? ["area", ...(s.nineSlice.road ? ["road"] : [])]
             : [],
+          ...(s.nineSlice ? { smart: { kind: s.nineSlice.road ? "road" as const : "area" as const, band: s.nineSlice.border ?? 1 } } : {}),
           fingerprint,
         });
       }

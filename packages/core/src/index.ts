@@ -479,6 +479,7 @@ export {
   applySmartStampArea,
   applySmartStampRoad,
   orthogonalBridge,
+  openEdgeRect,
 } from "./smartStamp";
 
 export { prepareNineSliceTileset, regenerateNineSliceTileset, type PrepareNineSliceTilesetOptions, type RegenerateNineSliceTilesetOptions } from "./generatedTileset";
@@ -488,6 +489,7 @@ export { cellHash, pickVariant } from "./hash";
 export * from "./smartStamp/topology";
 export * from "./smartStamp/roadProfile";
 export * from "./smartStamp/roadSolver";
+export { findSmartCandidates, type SmartCandidate, type SmartCandidateOptions } from "./smartStamp/candidates";
 export type { RgbaImage } from "./tilesetPixels";
 export { NINE_SLICE_DETECTOR_VERSION, NINE_SLICE_DETECTION_THRESHOLDS, detectNineSliceSelection, type NineSliceSelectionInput, type NineSliceDetection } from "./smartStamp/detect";
 export { mapBorder, BORDER_SIDES, type BorderSide, type BorderGap, type MapBorderOptions, type MapBorder } from "./mapBorder";
