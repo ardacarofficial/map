@@ -3,7 +3,7 @@ import { AGENT_LIMITS as L, AgentError, AgentErrorCode as E, type AgentCallConte
 import { utf8ByteLength } from "../tags";
 import { type Transactions, waitFor } from "../transactions";
 import { budget, check, point } from "../validation";
-import { change, mutate, protect } from "./mutations";
+import { change, mutateRaw, protect } from "./mutations";
 
 const entityInfo = (entity: Entity, layerId: string): EntityInfo => ({
   id: entity.id, typeId: entity.typeId, layerId, pixelX: entity.x, pixelY: entity.y, fields: { ...entity.fields },
@@ -72,7 +72,7 @@ async function applyItem(tx: Transactions, operation: BatchOperation, context: A
   const {expectedRevision:_revision,expectedMemberRevision:_member,...identity}=context;
   const args = { ...operation.args, context: { ...identity,...(context.expectedMemberRevision!==undefined?{expectedMemberRevision:context.expectedMemberRevision}:{expectedRevision:tx.revision}) } };
   if (operation.tool === "edit_entity") return editEntity(tx, args as EditEntityArgs, call);
-  return await mutate(tx, operation.tool, args as never, call) as { change: ChangeSummary; entity?: EntityInfo };
+  return await mutateRaw(tx, operation.tool, args as never, call) as { change: ChangeSummary; entity?: EntityInfo };
 }
 
 export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, call: AgentCallContext): Promise<ToolData["apply_operations"]> {
@@ -129,7 +129,7 @@ export async function applyOperations(tx: Transactions, a: ApplyOperationsArgs, 
       steps.push({ spatial, tool: op.tool, mapId: op.args.mapId, commands, planned: result.change.plannedCells,
         retained: counters.retainedBytes - beforeRetained, createdEntityIds: result.change.createdEntityIds,
         ...(entityId ? { entityId } : {}) });
-      budget(shadow.pending!.summary.counters.plannedWrites - initialPlanned);
+      budget(shadow.pending!.summary.counters.plannedWrites - initialPlanned, L.batchCells);
       budget(projectionBytes + shadow.pending!.summary.counters.retainedBytes, L.retainedBytes);
       operationIndex++;
     }

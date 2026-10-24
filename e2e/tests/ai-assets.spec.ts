@@ -54,7 +54,7 @@ async function begin(client: AgentClient, worldSessionId: string, mapId: string)
 async function cells(environment: Awaited<ReturnType<typeof setup>>) {
   return success(await environment.client.callTool("read_region", {
     context: environment.readContext, mapId: environment.mapId, layerIds: [environment.layerId],
-    region: { x: 0, y: 0, width: 6, height: 6 },
+    region: { x: 0, y: 0, width: 6, height: 6 }, format: "cells",
   })).data.layers;
 }
 

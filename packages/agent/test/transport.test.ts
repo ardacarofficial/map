@@ -13,7 +13,7 @@ describe("cross-transport conformance", () => {
     const h = harness({width:64,height:64});
     const store = h.host.stores.get("map-1")!;
     for (let i=1;i<4;i++) store.dispatch({type:"addLayer",layer:{id:`layer-${i}`,name:`Layer ${i}`}});
-    const result = await h.read("read_region",{mapId:"map-1",layerIds:["ground","layer-1","layer-2","layer-3"],region:{x:0,y:0,width:64,height:64}});
+    const result = await h.read("read_region",{mapId:"map-1",layerIds:["ground","layer-1","layer-2","layer-3"],region:{x:0,y:0,width:64,height:64},format:"cells"});
     const payload = success(result), compact = result.content[0]!;
     if (compact.type!=="text") throw new Error("Expected text");
     const textBytes = Buffer.byteLength(compact.text), prettyBytes = Buffer.byteLength(canonicalJson(payload));

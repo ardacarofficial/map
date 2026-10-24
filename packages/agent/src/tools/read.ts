@@ -22,7 +22,6 @@ import {
   type Id,
   type ImageBlock,
   type ResolvedTile,
-  type EntityInfo,
   type TagRecord,
   type TagTarget,
   type ToolArguments,
@@ -35,6 +34,7 @@ import { hashCanonical, semanticMatches } from "../tags";
 import { type Transactions, waitFor } from "../transactions";
 import { budget, check, fail, rect } from "../validation";
 import { compactFlags, layer, layerInfo, mapInfo } from "./mutations";
+import { entitiesIn, readGrid } from "./grid";
 
 interface Cursor {
   revision: number;
@@ -192,41 +192,19 @@ export async function read<N extends ToolName>(
     case "read_region": {
       const a = args as ToolArguments["read_region"],
         s = await storeFor(tx, a.mapId, call);
-      rect(s, a.region);
-      const area = a.region.width * a.region.height;
-      budget(area, L.readCellsPerLayer);
-      budget(area * a.layerIds.length, L.readCellsTotal);
-      budget(a.layerIds.length, L.readLayers);
+      const grid = readGrid(s, a);
+      if ("format" in grid) return { data: grid };
+      // format:"cells": the original flat legend-index arrays.
+      const { region, targets } = grid;
       const legend: ResolvedTile[] = [],
         indices = new Map<string, number>();
-      const entities: EntityInfo[] = [];
-      const layers = a.layerIds.map((id) => {
-        const target = layer(s, id);
-        if (isEntityLayer(target)) {
-          if (a.includeEntities)
-            for (const e of target.entities)
-              if (
-                e.x >= a.region.x * s.document.map.tileWidth &&
-                e.y >= a.region.y * s.document.map.tileHeight &&
-                e.x <
-                  (a.region.x + a.region.width) * s.document.map.tileWidth &&
-                e.y < (a.region.y + a.region.height) * s.document.map.tileHeight
-              ) {
-                budget(entities.length + 1, L.entitiesPerRead);
-                entities.push({
-                  id: e.id,
-                  layerId: target.id,
-                  typeId: e.typeId,
-                  pixelX: e.x,
-                  pixelY: e.y,
-                  fields: { ...e.fields },
-                });
-              }
-          return { id, kind: "entity" as const };
-        }
+      const entities = a.includeEntities ? entitiesIn(s, targets, region) : [];
+      const layers = targets.map((target) => {
+        const id = target.id;
+        if (isEntityLayer(target)) return { id, kind: "entity" as const };
         const cells: number[] = [];
-        for (let y = a.region.y; y < a.region.y + a.region.height; y++)
-          for (let x = a.region.x; x < a.region.x + a.region.width; x++) {
+        for (let y = region.y; y < region.y + region.height; y++)
+          for (let x = region.x; x < region.x + region.width; x++) {
             const cell = target.getCell(x, y);
             if (!cell || isGridLayer(target)) {
               cells.push(cell);
@@ -250,7 +228,7 @@ export async function read<N extends ToolName>(
           cells,
         };
       });
-      return { data: { region: a.region, legend, layers, entities } };
+      return { data: { region, legend, layers, entities } };
     }
     case "list_entity_types":
       return { data: { items: tx.host.world.entityTypes() } };

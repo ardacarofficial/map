@@ -56,8 +56,9 @@ export function createEditorControls(world: AgentWorldPort, revision: () => numb
     if (id.startsWith("layer.")) return ["edit_layer"];
     if (id.startsWith("entity.")) return ["list_entity_types","place_entity","edit_entity"];
     if (id.startsWith("file.export")) return ["get_export_settings","configure_export","render_preview"];
-    if (["edit.cut","edit.delete"].includes(id)) return ["paint_cells","paint_rect","edit_entity"];
-    if (id === "edit.paste") return ["place_stamp","paint_cells"];
+    if (["edit.cut","edit.delete"].includes(id)) return ["clear_region","read_region","edit_entity"];
+    if (id === "edit.paste") return ["place_stamp","paint_grid"];
+    if (id === "edit.replaceTiles") return ["replace_tiles"];
     if (["edit.flipX","edit.flipY","edit.rotateCW","edit.rotateCCW"].includes(id)) return ["place_stamp","paint_cells"];
     return [];
   }

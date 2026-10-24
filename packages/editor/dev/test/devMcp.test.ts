@@ -35,7 +35,7 @@ test("auth, origin, Host, method, protocol, and initialization checks precede di
   const id = await init();
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "MCP-Protocol-Version": "wrong" })).status).toBe(400);
   const catalogue = await (await post({ jsonrpc: "2.0", id: 2, method: "tools/list" }, id)).json();
-  expect(catalogue.result.tools).toHaveLength(47);
+  expect(catalogue.result.tools).toHaveLength(50);
 });
 
 test("pairing pins a session to exactly one page; disconnect fails pending calls", async () => {

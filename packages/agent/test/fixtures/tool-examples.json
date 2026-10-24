@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "74f96946a63ea0aa12dcefe8ea399c5da6034edc17267c40bb9bf97efc267469",
+  "catalogueSha256": "e52c69c5a24cc42dc226579bf713c5c3403da2d2c63a07ecddd048923e130e74",
   "tools": {
     "get_session": {
       "valid": [
@@ -64,6 +64,25 @@
             "collision"
           ],
           "includeEntities": true
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "format": "cells",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
         }
       ],
       "invalid": [
@@ -95,6 +114,13 @@
             "ground",
             "ground"
           ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "mapId": "map-1",
+          "format": "rle"
         }
       ]
     },
@@ -347,6 +373,30 @@
               "value": null
             }
           ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              3,
+              4
+            ]
+          ],
+          "value": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          }
         }
       ],
       "invalid": [
@@ -399,6 +449,70 @@
               "value": null
             }
           ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "points": [
+            [
+              0,
+              0
+            ]
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "points": [
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "value": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "cells": [
+            {
+              "x": 0,
+              "y": 0,
+              "value": null
+            }
+          ],
+          "points": [
+            [
+              0,
+              0
+            ]
+          ],
+          "value": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          }
         }
       ]
     },
@@ -536,6 +650,24 @@
             "collision": 1
           },
           "maxCells": 4
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "start": {
+            "x": 0,
+            "y": 0
+          },
+          "value": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          }
         }
       ],
       "invalid": [
@@ -561,7 +693,7 @@
           "value": {
             "collision": 1
           },
-          "maxCells": 4097
+          "maxCells": 0
         }
       ]
     },
@@ -1574,6 +1706,34 @@
               }
             }
           ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "operations": [
+            {
+              "tool": "paint_grid",
+              "args": {
+                "mapId": "map-1",
+                "layerId": "ground",
+                "rows": [
+                  "ab",
+                  "ba"
+                ],
+                "legend": {
+                  "a": {
+                    "tilesetId": "sheet",
+                    "tileId": 3
+                  },
+                  "b": null
+                }
+              }
+            }
+          ]
         }
       ],
       "invalid": [
@@ -2122,6 +2282,373 @@
         {
           "transactionId": "edit-1",
           "resumeToken": "short"
+        }
+      ]
+    },
+    "paint_grid": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "origin": {
+            "x": 2,
+            "y": 1
+          },
+          "rows": [
+            "ab.",
+            "b a"
+          ],
+          "legend": {
+            "a": {
+              "tilesetId": "sheet",
+              "tileId": 3
+            },
+            "b": {
+              "tilesetId": "sheet",
+              "tileId": 3,
+              "flags": 5
+            },
+            ".": null
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerName": "Ground",
+          "rows": [
+            "r~"
+          ],
+          "legend": {
+            "r": {
+              "random": [
+                {
+                  "tilesetId": "sheet",
+                  "tileId": 3,
+                  "weight": 2
+                },
+                {
+                  "tilesetId": "sheet",
+                  "tileId": 4
+                }
+              ],
+              "seed": 7
+            },
+            "~": "keep"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "legend": {
+            "g": {
+              "tilesetId": "sheet",
+              "tileId": 3
+            }
+          },
+          "layers": [
+            {
+              "layerId": "ground",
+              "rows": [
+                "gg"
+              ]
+            },
+            {
+              "layerName": "Collision",
+              "origin": {
+                "x": 1,
+                "y": 1
+              },
+              "rows": [
+                "#"
+              ],
+              "legend": {
+                "#": {
+                  "collision": 1
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "rows": [
+            "a"
+          ],
+          "legend": {
+            "a": {
+              "tilesetId": "sheet",
+              "tileId": 3
+            }
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "rows": [
+            "a"
+          ],
+          "legend": {
+            "ab": {
+              "tilesetId": "sheet",
+              "tileId": 3
+            }
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "rows": [
+            "a"
+          ],
+          "legend": {
+            "a": "skip"
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "rows": [
+            "a"
+          ],
+          "legend": {
+            "a": {
+              "tilesetId": "sheet",
+              "tileId": 3
+            }
+          },
+          "layers": [
+            {
+              "layerId": "ground",
+              "rows": [
+                "a"
+              ]
+            }
+          ]
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "rows": [],
+          "legend": {}
+        }
+      ]
+    },
+    "replace_tiles": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "map",
+          "mapId": "map-1",
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          },
+          "to": {
+            "tilesetId": "sheet",
+            "tileId": 9
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "region",
+          "mapId": "map-1",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 4
+          },
+          "layerIds": [
+            "ground"
+          ],
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          },
+          "to": null
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "world",
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          },
+          "to": {
+            "tilesetId": "sheet",
+            "tileId": 9
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "map",
+          "mapId": "map-1",
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "everything",
+          "mapId": "map-1",
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          },
+          "to": null
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "scope": "map",
+          "mapId": "map-1",
+          "from": {
+            "tilesetId": "sheet",
+            "tileId": 3
+          },
+          "to": {
+            "tilesetId": "sheet",
+            "tileId": 3,
+            "flags": 1
+          }
+        }
+      ]
+    },
+    "clear_region": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "region": {
+            "x": 1,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          },
+          "layerIds": [
+            "ground",
+            "entities"
+          ]
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerIds": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "region": {
+            "x": 1,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
         }
       ]
     }

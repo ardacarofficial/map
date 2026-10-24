@@ -27,7 +27,7 @@ async function begin(client: AgentClient) {
   return { context, mapId, layerId, tilesetId: tilesets.data.items[0]!.id };
 }
 async function cells(client: AgentClient, edit: Awaited<ReturnType<typeof begin>>) {
-  return success(await client.callTool("read_region", { context: { worldSessionId: edit.context.worldSessionId }, mapId: edit.mapId, layerIds: [edit.layerId], region: { x: 0, y: 0, width: 8, height: 8 } })).data.layers;
+  return success(await client.callTool("read_region", { context: { worldSessionId: edit.context.worldSessionId }, mapId: edit.mapId, layerIds: [edit.layerId], region: { x: 0, y: 0, width: 8, height: 8 }, format: "cells" })).data.layers;
 }
 async function paint(client: AgentClient, edit: Awaited<ReturnType<typeof begin>>) {
   const changed = success(await client.callTool("paint_rect", { context: edit.context, mapId: edit.mapId, layerId: edit.layerId, region: { x: 2, y: 2, width: 2, height: 2 }, value: { tilesetId: edit.tilesetId, tileId: 0 } }));
@@ -87,7 +87,7 @@ test("pending AI work blocks manual paint, preserves camera pan, and stays visib
   const client = await setup(page);
   try {
     const session = success(await client.getSession());
-    const readManual = async () => success(await client.callTool("read_region", { context: { worldSessionId: session.worldSessionId! }, mapId: session.data.activeMapId!, layerIds: [session.data.activeLayerId!], region: { x: 0, y: 0, width: 8, height: 8 } })).data.layers;
+    const readManual = async () => success(await client.callTool("read_region", { context: { worldSessionId: session.worldSessionId! }, mapId: session.data.activeMapId!, layerIds: [session.data.activeLayerId!], region: { x: 0, y: 0, width: 8, height: 8 }, format: "cells" })).data.layers;
     const beforeManual = await readManual();
     const grid = page.locator("[data-tileset-grid]").first();
     const scale = Number(await grid.getAttribute("data-tileset-scale"));
@@ -212,9 +212,9 @@ test("AI follows UI-created maps and worlds reopened after pairing", async ({ pa
     await expect(page.locator("[data-canvas-host] canvas").first()).toBeVisible();
     client = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
     const reopened = success(await client.getSession());
-    const region = success(await client.callTool("read_region", { context: { worldSessionId: reopened.worldSessionId! }, mapId, layerIds: [layerId], region: { x: 2, y: 2, width: 2, height: 2 } }));
+    const region = success(await client.callTool("read_region", { context: { worldSessionId: reopened.worldSessionId! }, mapId, layerIds: [layerId], region: { x: 2, y: 2, width: 2, height: 2 }, format: "cells" }));
     const layer = region.data.layers[0];
-    if (!layer || layer.kind !== "tile") throw Error("Expected the reopened tile layer");
+    if (!layer || layer.kind !== "tile" || !("cells" in layer)) throw Error("Expected the reopened tile layer");
     expect(layer.cells).toHaveLength(4);
     expect(layer.cells.every(cell => cell > 0)).toBe(true);
   } finally { await client.close(); }

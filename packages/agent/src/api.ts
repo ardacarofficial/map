@@ -226,7 +226,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
   ): void {
     const s = result.structuredContent;
     const data = s.ok ? s.data : undefined;
-    const changed = data && "change" in data ? data.change : undefined;
+    // C3 compact tools report {changed, maps?} instead of a full ChangeSummary.
+    const compact = data && "changed" in data && typeof data.changed === "number"
+      ? { plannedCells: data.changed, changedCells: data.changed,
+          affected: "maps" in data && Array.isArray(data.maps) ? data.maps.map(m => ({ mapId: (m as { mapId: string }).mapId })) : [] }
+      : undefined;
+    const changed = data && "change" in data ? data.change : compact;
     // Only inspect schema-validated successful arguments. Never retain raw requests.
     const args = s.ok ? call.arguments as ToolArguments[ToolName] : undefined;
     const transaction = s.ok && "transactionId" in s && (call.name === "finish_edit" || call.name === "cancel_edit")
