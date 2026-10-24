@@ -1940,7 +1940,71 @@ const LIBRARY_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("configure_world", "Configure World", "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.", objectSchema({context:ref("WriteContext"),settings:{...objectSchema({tileWidth:{type:"integer",minimum:1,maximum:1024},tileHeight:{type:"integer",minimum:1,maximum:1024},newLevel:{...objectSchema({width:{type:"integer",minimum:1,maximum:4096},height:{type:"integer",minimum:1,maximum:4096}},[]),minProperties:1},layerTemplate:{type:"array",maxItems:128,items:objectSchema({name:{type:"string",minLength:1,maxLength:128},kind:{type:"string",enum:["tile","collision","entity"]}})},background:{anyOf:[{type:"null"},{type:"string",pattern:"^#[a-fA-F0-9]{6}$"}]}},[]),minProperties:1}}), false),
 ];
 const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
+/** Reference images (picture → map) and visual options of existing read tools. */
+const { VISION_DEFINITIONS, withVisionOptions } = (() => {
+  const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
+  const object = (properties: Record<string, JsonValue>, required: string[]): Schema => ({ type: "object", additionalProperties: false, properties, required });
+  const fit: Schema = { type: "string", enum: ["stretch", "contain"], default: "stretch", description: "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged." };
+  const sourceRect: Schema = { ...ref("Rect"), description: "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically." };
+  const mapping = { referenceId: ref("Id"), mapId: ref("Id"), region: ref("Rect"), fit, sourceRect };
+  const optionalContext = { context: { ...ref("ReadContext"), description: "Optional; the current world is used when omitted." } };
+  const ids = (max: number): Schema => ({ type: "array", minItems: 1, maxItems: max, uniqueItems: true, items: ref("Id") });
+  function tool(name: string, title: string, description: string, schema: Schema): AgentToolDefinition {
+    return {
+      name: name as AgentToolDefinition["name"], title, description,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" },
+    };
+  }
+  const legendValue: Schema = { anyOf: [
+    ref("Tile"), { type: "null" }, { const: "keep" },
+    { type: "string", minLength: 1, maxLength: 48, description: "AI tag word such as \"su\" or \"water\"." },
+    object({ stampId: ref("Id"), ground: { anyOf: [ref("Tile"), { type: "null" }] } }, ["stampId"]),
+    object({ overlay: ref("Tile"), ground: { anyOf: [ref("Tile"), { type: "null" }] } }, ["overlay"]),
+  ] };
+
+  const VISION_DEFINITIONS: readonly AgentToolDefinition[] = [
+    tool("reference_add", "Add Reference Image",
+      "Load the user's reference picture into the editor so the reference_* tools can use it. path is an absolute local .png/.jpg/.jpeg/.webp file (≤16 MB, read once, decoded in the editor, never copied or written); imageBase64 is the raw file bytes in base64 (≤1 MiB request); selectedReferenceToken comes from get_editor_context. Large pictures are downscaled to fit 2048 px. Pictures the user dropped onto the AI panel are already listed in get_session.references — no need to add them. Returns referenceId.",
+      { ...object({ ...optionalContext, path: { type: "string", minLength: 1, maxLength: 4096 }, imageBase64: { type: "string", minLength: 4, maxLength: 1000000 }, selectedReferenceToken: ref("Id"), name: { type: "string", minLength: 1, maxLength: 128 } }, []),
+        oneOf: [requiredKeys("path"), requiredKeys("imageBase64"), requiredKeys("selectedReferenceToken")] }),
+    tool("reference_view", "View Reference On Map Grid",
+      "Show a reference picture resampled onto the map cell grid (same gutters, coordinates and scale as render_preview), so picture features can be read as map cells. fit:stretch (default) or contain; optional region crops map cells; sourceRect overrides the automatic trim of dark gutters. Writes nothing.",
+      object({ ...optionalContext, ...mapping, grid: { type: "boolean", default: true }, coordinates: { type: "boolean", default: true }, zoom: { type: "integer", minimum: 1, maximum: 8 }, maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["referenceId", "mapId"])),
+    tool("reference_quantize", "Quantize Reference To Tiles",
+      "Turn a reference picture into a ready-to-paint tile grid proposal. Each map cell gets the nearest candidate tile by colour and structure (mode render: screenshots/renders, also scaled or blurred) or by dominant colour (mode sketch: flat-colour drawings; auto picks). Render mode also proposes the overlay layer (transparent tiles over ground) and reports stamp placements it recognises. Returns grid.layers in paint_grid format (rows + legend per layer; space = keep), per-cell confidence summary with low-confidence cells, and a preview PNG of the proposal. For sketches, pass colorLegend {\"#rrggbb\": Tile | tag word | {stampId} | {overlay} | null | \"keep\"}; without it every colour gets its closest tile and data.palette lists the colours found. candidates limits tilesets/tiles/stamps. layers.ground/overlay choose target layers (overlay:null = ground only). Writes nothing: paint the grid with paint_grid, place stamps with place_stamp, then render_compare.",
+      object({ ...optionalContext, ...mapping,
+        mode: { type: "string", enum: ["auto", "render", "sketch"], default: "auto" },
+        candidates: object({ tilesetIds: ids(32), tiles: { type: "array", minItems: 1, maxItems: 1024, items: ref("Tile") }, stamps: { type: "array", maxItems: 128, uniqueItems: true, items: ref("Id") } }, []),
+        layers: object({ ground: ref("Id"), overlay: { anyOf: [ref("Id"), { type: "null" }] } }, []),
+        colorLegend: { type: "object", maxProperties: 32, propertyNames: { type: "string", pattern: "^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$" }, additionalProperties: legendValue },
+        preview: { type: "boolean", default: true },
+      }, ["referenceId", "mapId"])),
+    tool("render_compare", "Compare Map With Reference",
+      "Check the map against the user's picture (referenceId) or against the state before your edit (baseline:\"draftStart\"). mode side (default): picture/before left, current map right, same grid; overlay: current map blended over the picture; diff: dimmed map with mismatching/changed cells outlined. Returns mismatch {cells, ratio, sample} to fix next. Writes nothing.",
+      { ...object({ ...optionalContext, mapId: ref("Id"), referenceId: ref("Id"), baseline: { const: "draftStart" }, mode: { type: "string", enum: ["side", "overlay", "diff"], default: "side" }, region: ref("Rect"), fit, sourceRect, layerIds: ids(32), maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["mapId"]),
+        oneOf: [requiredKeys("referenceId"), requiredKeys("baseline")] }),
+  ];
+
+  /** Visual additions to existing read tools (kept here so the frozen catalogue stays readable). */
+  function withVisionOptions(tool: AgentToolDefinition): AgentToolDefinition {
+    const schema = tool.inputSchema;
+    const properties = schema.properties as Record<string, JsonValue> | undefined;
+    if (!properties) return tool;
+    if (tool.name === "render_preview") return { ...tool,
+      description: "Inspect a real PNG of the current live/tentative map. mapId required; optional region (map cells). Pixels per cell are always whole: zoom 1–8 enlarges close crops, large maps shrink by 1/2, 1/3…; maxSide (content, ≤2048) bounds the size. grid:true draws the cell grid with brighter major lines every 8 cells; coordinates:true adds coordinate gutters and labels at major intersections. highlight:\"draft\" outlines cells your pending edit changed, \"lastCall\" outlines the area of your last write. Entities show as labelled cell boxes. Hidden layers stay hidden; collision only for requested collision layerIds. Metadata gives contentRect, scale, cellSize and pixelOrigin. Writes nothing.",
+      inputSchema: { ...schema, properties: { ...properties, zoom: { type: "integer", minimum: 1, maximum: 8 }, highlight: { type: "string", enum: ["draft", "lastCall"] } } } };
+    if (tool.name === "get_tile_catalog") return { ...tool,
+      description: tool.description + " Compact by default: items are {tileId, tags?, note?}; details:true adds sourceRect, tagStatus, fingerprint (needed for set_tags) and image placements. The tiles image is a near-square grid (≤1568 px) with each tileId printed under its tile; sheet mode prints tile ids in every cell.",
+      inputSchema: { ...schema, properties: { ...properties, details: { type: "boolean", default: false } } } };
+    if (tool.name === "list_stamps") return { ...tool,
+      description: tool.description + " includeSheet:true returns one contact-sheet PNG of the listed page: every stamp drawn at its real cell size with name and width×height; data.image.sheet maps each stampId to its rectangle.",
+      inputSchema: { ...schema, properties: { ...properties, includeSheet: { type: "boolean", default: false } } } };
+    return tool;
+  }
+  return { VISION_DEFINITIONS, withVisionOptions };
+})();
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS, ...VISION_DEFINITIONS].map(withVisionOptions).map(tool => ({
   ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 

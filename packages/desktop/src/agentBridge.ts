@@ -99,5 +99,9 @@ export function createAgentConnection(transport: AgentTransport = nativeTranspor
     regenerateToken: (expectedRevision) => transport.invoke<AgentSettingsSnapshot>("ai_regenerate_token", { expectedRevision }),
     get status() { return status; },
     subscribeStatus(handler) { statuses.add(handler); return () => { statuses.delete(handler); }; },
+    async readLocalImage(path) {
+      const bytes = await transport.invoke<ArrayBuffer | number[]>("ai_read_reference_image", { path });
+      return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
+    },
   };
 }

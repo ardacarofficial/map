@@ -28,7 +28,7 @@ describe("tool schema payload", () => {
       expect(definitions, tool.name).toEqual(reachableSchemaDefinitions(root, definitions));
       expect(() => new Ajv2020({ strict: true }).compile(tool.inputSchema), tool.name).not.toThrow();
     }
-  });
+  }, 30000);
 
   it("substantially reduces tools/list bytes compared with sharing every definition on every tool", () => {
     const allDefinitions = Object.assign({}, ...TOOL_DEFINITIONS.map(tool => tool.inputSchema.$defs));

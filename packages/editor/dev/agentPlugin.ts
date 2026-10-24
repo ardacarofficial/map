@@ -1,5 +1,5 @@
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { extname, isAbsolute, resolve } from "node:path";
 import type { Plugin, WebSocketClient } from "vite";
 import type { BridgeReply } from "@smap/agent";
 import { object, secret, startDevMcp } from "./devMcp.ts";
@@ -79,6 +79,17 @@ export function agentPlugin(): Plugin {
           else if (data.method === "setSettings") {
             const same = object(data.settings) && data.settings.enabled === true && data.settings.port === port;
             reply(client, data.id, data.revision !== revision ? { ok: false, code: "CONFLICT", snapshot: settings(), status: status() } : same ? { ok: true, snapshot: settings(), status: status() } : { ok: false, code: "INVALID_ARGUMENT", snapshot: settings(), status: status() });
+          } else if (data.method === "readReferenceImage") {
+            // Read-only: one agent-named local picture for reference_add; never written or copied.
+            const path = typeof data.path === "string" ? data.path : "";
+            try {
+              if (!path || path.length > 4096 || !isAbsolute(path)) throw new Error("path must be absolute");
+              if (![".png", ".jpg", ".jpeg", ".webp"].includes(extname(path).toLowerCase())) throw new Error("unsupported type");
+              const info = await stat(path);
+              if (!info.isFile()) throw new Error("not found");
+              if (info.size > 16 * 1024 * 1024) throw new Error("file too large");
+              reply(client, data.id, (await readFile(path)).toString("base64"));
+            } catch (error) { reply(client, data.id, undefined, error instanceof Error && "code" in error && error.code === "ENOENT" ? "not found" : error instanceof Error ? error.message : "read failed"); }
           } else if (data.method === "regenerateToken") {
             if (rotating || data.revision !== revision) { reply(client, data.id, undefined, "CONFLICT"); return; }
             rotating = true;

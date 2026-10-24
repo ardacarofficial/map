@@ -1,0 +1,16 @@
+{
+  "title": "Referanslar",
+  "add": "Referans ekle",
+  "remove": "Kaldır",
+  "empty": "Resmi buraya bırakın veya yapıştırın",
+  "drop": "Referans olarak bırak",
+  "added": "{name} referans olarak eklendi",
+  "size": "{width}×{height}",
+  "origin.user": "Siz",
+  "origin.agent": "AI",
+  "error.unsupportedType": "Yalnız PNG, JPEG veya WebP resimler eklenebilir",
+  "error.fileTooLarge": "Resim 16 MB''tan büyük",
+  "error.tooMany": "En fazla 32 referans eklenebilir; önce birini kaldırın",
+  "error.noWorld": "Önce bir dünya açın",
+  "error.failed": "Resim eklenemedi"
+}

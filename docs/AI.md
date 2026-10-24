@@ -51,6 +51,12 @@ setx HARITA_MCP_TOKEN "<TOKEN>"
 
 AI önce `get_session` ile açık dünyayı, katalog görselleriyle gerçek tile’ları öğrenir. `begin_edit` ile işe başlar; çizim canlı görünür. `render_preview` ile bakar, `finish_edit` ile sana sunar. Uygun görsel yoksa söylemesini iste; “nehir” sözcüğü otomatik su görseli seçmez.
 
+## Referans resim
+
+Bir ekran görüntüsü, render veya elle çizilmiş taslak verebilirsin. Resmi **AI etkinliği** paneline (veya çalışırken AI çubuğuna) sürükle, panele yapıştır ya da **Referans ekle** ile seç; PNG, JPEG ve WebP, en çok 16 MB. AI isterse yerel dosya yolunu kendisi de verebilir (`reference_add`). Resim yalnız bellekte tutulur; projeye, diske veya geçmişe yazılmaz ve dünya kapanınca silinir.
+
+AI resmi `reference_view` ile harita ızgarasında görür, `reference_quantize` ile her hücre için en yakın tile’ı önerir (taslakta renk → tile/stamp eşlemesiyle), boyadıktan sonra `render_compare` ile resimle karşılaştırır. Öneri hiçbir şey yazmaz; çizim yine onayına gelir.
+
 ## Onayla, Vazgeç, Durdur
 
 - **Onayla:** İstekteki bütün harita değişikliklerini kabul eder. Bir normal **Geri al** hepsini birlikte geri alır. Yeni harita listede kalır, içeriği geri alınır. Ardından normal kayıt/otomatik kayıt çalışır.

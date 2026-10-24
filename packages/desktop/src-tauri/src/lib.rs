@@ -665,6 +665,7 @@ pub fn run() {
             ai::agent_ready,
             ai::agent_reply,
             ai::agent_publish_status,
+            ai::ai_read_reference_image,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Harita Tasarlayıcı")

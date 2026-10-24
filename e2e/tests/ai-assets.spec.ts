@@ -125,10 +125,10 @@ test("semantic searches find current tags and map captures disappear on human di
   const { client, readContext, tilesetId, mapId, layerId } = environment;
   try {
     const original = await cells(environment);
-    const catalogue = success(await client.callTool("get_tile_catalog", { context: readContext, tilesetId, tileIds: [0], image: "none" }));
+    const catalogue = success(await client.callTool("get_tile_catalog", { context: readContext, tilesetId, tileIds: [0], image: "none", details: true }));
     success(await client.callTool("set_tags", {
       context: { ...readContext, idempotencyKey: randomUUID() },
-      entries: [{ target: { kind: "tile", tilesetId, tileId: 0 }, expectedFingerprint: catalogue.data.items[0]!.fingerprint, tags: ["Water", "river"] }],
+      entries: [{ target: { kind: "tile", tilesetId, tileId: 0 }, expectedFingerprint: catalogue.data.items[0]!.fingerprint!, tags: ["Water", "river"] }],
     }));
     const water = () => client.callTool("get_tags", { context: readContext, kind: "tiles", status: "all", query: "  WATER  " });
     expect(success(await water()).data.items).toEqual(expect.arrayContaining([expect.objectContaining({ tags: ["Water", "river"], status: "current" })]));

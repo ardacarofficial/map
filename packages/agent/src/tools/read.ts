@@ -98,7 +98,7 @@ export interface ReadOutput {
   image?: AgentImageResult;
   png?: ImageBlock;
 }
-async function storeFor(
+export async function storeFor(
   tx: Transactions,
   id: string,
   call: AgentCallContext,
@@ -172,6 +172,7 @@ export async function read<N extends ToolName>(
           clients: s.clients,
           transaction: tx.copy(transaction),
           limits: L,
+          references: tx.host.references?.list() ?? [],
         },
       };
     }
@@ -375,13 +376,17 @@ export async function read<N extends ToolName>(
             { kind: "tile", tilesetId: ts.id, tileId },
             fingerprint,
           );
-        items.push({
+        items.push(a.details ? {
           tileId,
           sourceRect: tileRect(ts, tileId),
           tags: record.tags,
           note: record.note,
           tagStatus: record.status,
           fingerprint,
+        } : {
+          tileId,
+          ...(record.tags.length ? { tags: record.tags } : {}),
+          ...(record.note ? { note: record.note } : {}),
         });
       }
       const image =
@@ -398,7 +403,7 @@ export async function read<N extends ToolName>(
         data: {
           tilesetId: ts.id,
           items,
-          ...(image ? { image: image.image } : {}),
+          ...(image ? { image: a.details ? image.image : (({ placements: _placements, sheet, ...rest }) => ({ ...rest, ...(sheet ? { sheet: { region: sheet.region } } : {}) }))(image.image) } : {}),
           ...(!a.tileIds && offset + ids.length < total
             ? { nextOffset: offset + ids.length }
             : {}),
@@ -458,12 +463,17 @@ export async function read<N extends ToolName>(
           E.UNKNOWN_ID,
           "Unknown stamp",
         );
+      check(!(a.previewStampId && a.includeSheet), E.INVALID_ARGUMENT, "Use previewStampId or includeSheet, not both");
+      if (a.includeSheet) check(tx.host.images.stampSheet, E.EDITOR_UNAVAILABLE, "Stamp contact sheets are unavailable in this host");
+      const sheet = a.includeSheet && items.length
+        ? await waitFor(tx.host.images.stampSheet!(items.map(item => item.id), call), call.signal)
+        : undefined;
       const image = a.previewStampId
         ? await waitFor(
             tx.host.images.stampPreview(a.previewStampId, call),
             call.signal,
           )
-        : undefined;
+        : sheet;
       return {
         data: {
           items,
@@ -476,7 +486,8 @@ export async function read<N extends ToolName>(
                 image: {
                   width: image.width,
                   height: image.height,
-                  stampId: a.previewStampId,
+                  ...(a.previewStampId ? { stampId: a.previewStampId } : {}),
+                  ...(sheet ? { sheet: sheet.sheet } : {}),
                 },
               }
             : {}),

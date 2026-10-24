@@ -11,6 +11,7 @@ import { agentActivity } from "../../agent/activity";
 import { selectAiControls } from "./selectors";
 import { activityDockLayout, revealAiActivity } from "./activityDock";
 import { performAiAction } from "./actions";
+import { DropHighlight, useReferenceIntake } from "./AiReferences";
 
 export function AiBar() {
   const { phase, transaction: active, actionPending: applying } = useAgentUiState();
@@ -26,6 +27,7 @@ export function AiBar() {
   const approvalDescription = approvalBlocked ? "ai-recovery-reason" : applying ? "ai-applying-reason" : undefined;
   const seenActivity = useRef(false);
   const bar = useRef<HTMLDivElement>(null);
+  const intake = useReferenceIntake();
   useEffect(() => {
     if (!seenActivity.current && (entries.length || active)) {
       seenActivity.current = true;
@@ -35,7 +37,8 @@ export function AiBar() {
   }, [entries.length, active]);
   return <>
     <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">{t(`ai.status.${phase}`)}</span>
-    {controls.visible && <div ref={bar} data-ai-bar tabIndex={-1} className="@container flex h-optionsbar shrink-0 items-center gap-2 border-b border-line-subtle bg-panel px-2 text-sm">
+    {controls.visible && <div ref={bar} data-ai-bar tabIndex={-1} {...intake.handlers} className="@container relative flex h-optionsbar shrink-0 items-center gap-2 border-b border-line-subtle bg-panel px-2 text-sm">
+      <DropHighlight over={intake.over} />
       <Icon name="history" size={16} className="shrink-0 text-muted" />
       <div className="min-w-0 flex-1 truncate text-text" title={`${t(`ai.status.${phase}`)} ${active?.owner.clientInfo.name ?? ""} ${active?.label ?? ""}`}>
         <span>{t(`ai.status.${phase}`)}</span>

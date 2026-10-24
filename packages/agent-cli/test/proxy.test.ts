@@ -42,7 +42,7 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   expect((await client.listResources()).resources).toHaveLength(9);
   expect((await client.readResource({ uri: "harita://guide/overview" })).contents[0]).toMatchObject({ text: expect.stringContaining("# Harita") });
   expect((await client.getPrompt({ name: "harita-map-task", arguments: { task: "Design a village", topic: "collaboration" } })).messages[0]?.content).toMatchObject({ type: "text", text: expect.stringContaining("harita://guide/collaboration") });
-  expect((await client.listTools()).tools).toHaveLength(46);
+  expect((await client.listTools()).tools).toHaveLength(50);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -173,7 +173,7 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(46);
+  expect((await client.listTools()).tools).toHaveLength(50);
 });
 
 test("a tool-only upstream does not gain resource or prompt capabilities in the proxy", async () => {

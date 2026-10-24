@@ -23,6 +23,10 @@ export {
 } from "./tags";
 
 export * from "./tools/visual";
+export * from "./vision";
+export { quantizeReference, autoTrim, looksLikeSketch, referencePlacement, parseHexColor, tilePatch, QUANTIZE_PATCH } from "./tools/quantize";
+export type { ProposalCell, QuantizeMode, ReferenceFit, QuantizeCandidate, QuantizeOutput, ColorLegendEntry, StampProbe } from "./tools/quantize";
+export { REFERENCE_VIEW_DEFAULTS } from "./tools/vision";
 
 export * from "./editorControls";
 

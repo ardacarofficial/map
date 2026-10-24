@@ -48,12 +48,46 @@ export class RasterReplay implements Replay2D {
       this.blend(x,y,[shade,shade,shade,255]);
     }
   }
-  text(value: string, x: number, y: number, scale = 2): void {
-    const digits = ["111101101101111","010110010010111","111001111100111","111001111001111","101101111001001","111100111001111","111100111101111","111001001001001","111101111101111","111101111001111"];
+  text(value: string, x: number, y: number, scale = 2, rgba: readonly number[] = [215, 225, 228, 255]): void {
     for (const ch of value) {
-      const glyph = ch === "-" ? "000000111000000" : digits[Number(ch)];
-      if (glyph) for(let row=0;row<5;row++)for(let col=0;col<3;col++)if(glyph[row*3+col]==="1")this.fill({x:Math.floor(x)+col*scale,y:Math.floor(y)+row*scale,width:scale,height:scale},[215,225,228,255]);
+      const glyph = glyphFor(ch);
+      if (glyph) for(let row=0;row<5;row++)for(let col=0;col<3;col++)if(glyph[row*3+col]==="1")this.fill({x:Math.floor(x)+col*scale,y:Math.floor(y)+row*scale,width:scale,height:scale},rgba);
       x += 4*scale;
     }
   }
+  /** Text on a dark box so labels stay readable over artwork. */
+  label(value: string, x: number, y: number, scale = 2): { width: number; height: number } {
+    const width = textWidth(value, scale) + 2 * scale, height = 7 * scale;
+    this.fill({ x, y, width, height }, [11, 18, 23, 200]);
+    this.text(value, x + scale, y + scale, scale);
+    return { width, height };
+  }
+  /** 1 px (or thicker) rectangle outline. */
+  outline(rect: Rect, rgba: readonly number[], thickness = 1): void {
+    this.fill({ x: rect.x, y: rect.y, width: rect.width, height: thickness }, rgba);
+    this.fill({ x: rect.x, y: rect.y + rect.height - thickness, width: rect.width, height: thickness }, rgba);
+    this.fill({ x: rect.x, y: rect.y + thickness, width: thickness, height: rect.height - 2 * thickness }, rgba);
+    this.fill({ x: rect.x + rect.width - thickness, y: rect.y + thickness, width: thickness, height: rect.height - 2 * thickness }, rgba);
+  }
 }
+
+/** 3×5 bitmap glyphs: digits, Latin capitals (Turkish letters fold to ASCII) and a little punctuation. */
+const GLYPHS: Record<string, string> = {
+  "0":"111101101101111","1":"010110010010111","2":"111001111100111","3":"111001111001111","4":"101101111001001",
+  "5":"111100111001111","6":"111100111101111","7":"111001001001001","8":"111101111101111","9":"111101111001111",
+  A:"010101111101101",B:"110101110101110",C:"011100100100011",D:"110101101101110",E:"111100110100111",F:"111100110100100",
+  G:"011100101101011",H:"101101111101101",I:"111010010010111",J:"001001001101010",K:"101101110101101",L:"100100100100111",
+  M:"101111111101101",N:"110101101101101",O:"010101101101010",P:"110101110100100",Q:"010101101111011",R:"110101110101101",
+  S:"011100010001110",T:"111010010010010",U:"101101101101111",V:"101101101101010",W:"101101111111101",X:"101101010101101",
+  Y:"101101010010010",Z:"111001010100111",
+  "-":"000000111000000",".":"000000000000010",",":"000000000010100",":":"000010000010000","/":"001001010100100",
+  "(":"010100100100010",")":"010001001001010","#":"101111101111101","+":"000010111010000","_":"000000000000111",
+  "×":"000101010101000","x":"000101010101000","→":"000010111010000","!":"010010010000010","?":"110001010000010",
+};
+const FOLD: Record<string, string> = { Ç:"C", Ğ:"G", İ:"I", I:"I", Ö:"O", Ş:"S", Ü:"U", ç:"C", ğ:"G", ı:"I", ö:"O", ş:"S", ü:"U" };
+export function glyphFor(ch: string): string | undefined {
+  if (ch === "x" || ch === "×") return GLYPHS[ch];
+  const folded = FOLD[ch] ?? ch.toLocaleUpperCase("en");
+  return GLYPHS[folded] ?? GLYPHS[folded.normalize("NFD")[0] ?? ""];
+}
+export const textWidth = (value: string, scale = 2): number => Math.max(0, [...value].length * 4 * scale - scale);
