@@ -763,7 +763,7 @@ async fn delete_waits_for_renderer_rollback_confirmation() {
 
 #[tokio::test]
 async fn delete_accepts_detached_review_without_rolling_it_back() {
-    for phase in ["stopped", "awaitingApproval"] {
+    for phase in ["orphaned", "stopped", "awaitingApproval"] {
         let mut h = Harness::new().await;
         let session = h.session().await;
         h.transport.ready("epoch".into()).unwrap();

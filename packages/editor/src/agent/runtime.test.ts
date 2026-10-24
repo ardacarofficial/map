@@ -52,7 +52,7 @@ describe("live transport runtime",()=>{
     setPlatform({...browserPlatform,onFileChanged:()=>()=>{}});const fake=setup();
     const runtime=await installAgentRuntime({connection:fake.connection,host:{} as AgentHost,apiFactory:()=>fake.api});
     fake.control({type:"sessionEnded",bridgeEpoch:"old",clientSessionId:"client",reason:"disconnect"});expect(fake.api.sessionEnded).not.toHaveBeenCalled();
-    fake.control({type:"sessionEnded",bridgeEpoch:runtime.bridgeEpoch,clientSessionId:"client",reason:"disconnect"});expect(fake.api.sessionEnded).toHaveBeenCalledWith("client");
+    fake.control({type:"sessionEnded",bridgeEpoch:runtime.bridgeEpoch,clientSessionId:"client",reason:"disconnect"});expect(fake.api.sessionEnded).toHaveBeenCalledWith("client","disconnect");
     await runtime.dispose();expect(fake.api.dispose).toHaveBeenCalledTimes(1);expect(getAgentRuntime()).toBeNull();
   });
   it("closes request admission as soon as disposal starts and shares its completion",async()=>{
@@ -140,7 +140,8 @@ for (const order of ["renderer-first", "transport-first"] as const)
       expect((await (await pending).json()).result.structuredContent.code).toBe("TIMEOUT");
       const recovered = await (await post({jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"get_session",arguments:{}}},session)).json();
       expect(recovered.result.structuredContent).toMatchObject({ok:true});
-      expect(runtime.api.getState().phase).toBe(tool === "render_preview" ? "running" : "stopped");
+      // A timed-out call ends only itself; the draft keeps running (C5).
+      expect(runtime.api.getState().phase).toBe("running");
       expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(painted);
       expect(ended).not.toHaveBeenCalled();
       expect(transport.sessionCount).toBe(1);
@@ -159,7 +160,7 @@ for (const order of ["renderer-first", "transport-first"] as const)
 
 for (const phase of ["running", "stopped", "awaitingApproval"] as const)
   for (const ending of ["delete", "expired", "tokenRegenerated", "disconnect", "disabled", "failed", "portInUse"] as const)
-    it(`${ending} rolls back only running edits and preserves ${phase} review`, async () => {
+    it(`${ending} never rolls back: ${phase} work stays for review (running becomes orphaned)`, async () => {
       setPlatform({...browserPlatform,onFileChanged:()=>()=>{}});
       const fake=setup(),host=createMemoryHost();
       const runtime=await installAgentRuntime({connection:fake.connection,host});
@@ -186,14 +187,12 @@ for (const phase of ["running", "stopped", "awaitingApproval"] as const)
       await vi.waitFor(()=>expect(phase==="running"?prepare:preview).toHaveBeenCalled());
       if(ending==="disabled"||ending==="failed"||ending==="portInUse")fake.status({state:ending,port:48765,clients:[]});
       else fake.control({type:"sessionEnded",bridgeEpoch:runtime.bridgeEpoch,clientSessionId:"client-1",reason:ending});
-      await vi.waitFor(()=>expect(api.getState().phase).toBe(phase==="running"?"ready":phase));
-      if(phase==="running")expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(original);
-      else {
-        await vi.waitFor(()=>expect(api.getState().transaction!.owner.clientSessionId).toBeNull());
-        expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(painted);
-        await api.userAction("approve");
-        expect(host.history.undoDepth).toBe(1);
-        host.history.undo();
-        expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(original);
-      }
+      await vi.waitFor(()=>expect(api.getState().phase).toBe(phase==="running"?"orphaned":phase));
+      await vi.waitFor(()=>expect(api.getState().transaction!.owner.clientSessionId).toBeNull());
+      if(phase==="running")expect(api.getState().transaction!.cause).toBe(ending==="expired"?"sessionExpired":ending==="tokenRegenerated"?"tokenRegenerated":"clientDisconnected");
+      expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(painted);
+      await api.userAction("approve");
+      expect(host.history.undoDepth).toBe(1);
+      host.history.undo();
+      expect(serializeLevel(host.stores.get("map-1")!.document)).toBe(original);
     });

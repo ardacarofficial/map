@@ -5,6 +5,12 @@ import type { AgentToolResult, BridgeControl, BridgeReply, BridgeRequest, Client
 import { guideResponse } from "./guideProtocol.ts";
 
 const catalogue: unknown = JSON.parse(readFileSync(new URL("../../agent/schema/tools.json", import.meta.url), "utf8"));
+// Draft writes and whole-map checks get the long budget too, so a big paint is not cut off at 10 s.
+const LONG_TOOLS = new Set<string>([
+  "begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference",
+  "validate_map", "validate_goals", "read_region",
+  ...((catalogue as { tools?: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools ?? []).filter((tool) => tool.annotations?.readOnlyHint === false).map((tool) => tool.name),
+]);
 const instructions = readFileSync(new URL("../../agent/schema/workflow.txt", import.meta.url), "utf8").trim();
 const VERSIONS = ["2025-11-25", "2025-06-18"];
 const BODY_LIMIT = 1024 * 1024, RESPONSE_LIMIT = 8 * BODY_LIMIT;
@@ -54,7 +60,7 @@ export async function startDevMcp(options: DevMcpOptions) {
     const page = session.page;
     if (!page || pages.get(session.pair!) !== page) return Promise.resolve(failure("EDITOR_UNAVAILABLE", "No paired editor is available"));
     if (pending.size >= 64 || [...pending.values()].filter((call) => call.session === session).length >= 32) return Promise.resolve(failure("LIMIT_EXCEEDED", "Too many pending requests"));
-    const timeout = ["begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference"].includes(name) ? options.imageTimeoutMs ?? 30000 : options.callTimeoutMs ?? 10000;
+    const timeout = LONG_TOOLS.has(name) ? options.imageTimeoutMs ?? 30000 : options.callTimeoutMs ?? 10000;
     const request: BridgeRequest = { type: "tools/call", bridgeEpoch: page.epoch, clientSessionId: session.id, clientInfo: session.info, requestId: secret(), name, arguments: args as BridgeRequest["arguments"], deadline: now() + timeout };
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

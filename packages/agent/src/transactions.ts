@@ -12,6 +12,11 @@ import {
   type AgentState,
   type BeginEditArgs,
   type ChangeSummary,
+  type EditBudget,
+  type JsonObject,
+  type LifecycleCause,
+  type ResumeEditArgs,
+  type TransactionState,
   type EditLease,
   type Id,
   type PendingWorldGroup,
@@ -23,6 +28,33 @@ import {
 import { RegionCollaboration, type CollaborativeJoin } from "./collaboration";
 import { CollaborationJournal, type CollaborativeCall } from "./collaborationJournal";
 import { budget, check, fail } from "./validation";
+import { hashCanonical } from "./tags";
+
+const SEALED: readonly TransactionState[] = ["orphaned", "stopped", "awaitingApproval"];
+/** Constant-time for equal-length strings; tokens are fixed-length hex. */
+function sameToken(a: string, b: string): boolean {
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
+/** What the agent should do next, per lifecycle state/cause (C4/C5). */
+export function lifecycleNextAction(state: TransactionState | null, cause: LifecycleCause | undefined, isYours: boolean): string {
+  if (state === null) return "No edit is pending: call begin_edit to start one.";
+  if (state === "approved") return "The user approved this edit; call begin_edit to make further changes.";
+  if (state === "cancelled") return cause === "humanDiscarded" ? "The user discarded this edit; ask before redoing it, then call begin_edit." : "This edit was rolled back; call begin_edit to start again.";
+  if (state === "preparing" || state === "cancelling") return "The edit is changing state; call get_session in a moment.";
+  if (state === "running") return isYours ? "Continue editing this draft." : "Another client is editing; call resume_edit with your resumeToken if this draft is yours, otherwise wait until the user approves or discards it.";
+  return "The draft is waiting for the user (Onayla/Vazgeç). Call resume_edit with your resumeToken to keep editing it, or tell the user it awaits their review.";
+}
+/** Undo point for one exclusive call: core savepoints plus draft bookkeeping. */
+export interface CallCheckpoint {
+  savepoints: Map<Id, number>;
+  counters: TransactionSummary["counters"];
+  protection: Map<string, { locked: boolean; hidden: boolean }>;
+  affectedMapIds: Id[];
+  created: number;
+  sources: number;
+}
 
 export class CallSignal implements AgentSignal {
   aborted = false;
@@ -104,6 +136,8 @@ export interface PendingEdit {
   sources: PreparedSmartSource[];
   invalidated: boolean;
   timer: Unsubscribe;
+  /** Secret proof of authorship for resume_edit/cancel_edit after the session is gone (C5). */
+  resumeToken: string;
   collaboration?: RegionCollaboration;
   journal?: CollaborationJournal;
 }
@@ -122,7 +156,11 @@ export class Transactions {
   memberCall: { journal: CollaborativeCall; counters: TransactionSummary["counters"]; memberCounters: TransactionSummary["counters"]; reserved: number; finished?: boolean } | undefined;
   planning = false;
   applying = false;
+  /** Store events seen inside one outer run(); the world revision bumps once per run. */
+  private runChanged = false;
   independent = false;
+  /** Most recent transaction begun or resumed by each client, for lifecycle error details. */
+  readonly lastByClient = new Map<Id, Id>();
   interrupt: (() => void) | undefined;
   onExternal: (() => void) | undefined;
   private readonly subscriptions: Unsubscribe[] = [];
@@ -130,6 +168,7 @@ export class Transactions {
     this.revision = host.session().revision;
     this.committedRevision = this.revision;
     this.subscriptions.push(host.subscribeWorldContent(() => {
+      if (this.applying) { this.runChanged = true; return; }
       this.revision = Math.max(this.revision + 1, host.session().revision);
       if (!this.pending) this.committedRevision = this.revision;
       if (this.pending && !this.applying && !this.independent) {
@@ -189,17 +228,104 @@ export class Transactions {
     check(current !== null, E.NO_WORLD, "No world is open");
     check(worldId === current, E.STALE_WORLD, "World was replaced");
   }
-  expected(revision: number): void {
-    check(
-      revision === this.revision,
-      E.REVISION_CONFLICT,
-      "Refresh the world revision",
-      { expectedRevision: revision, actualRevision: this.revision },
-    );
+  /** C2: an omitted revision means "apply in arrival order" (no CAS). */
+  expected(revision: number | undefined): void {
+    if (revision === undefined || revision === this.revision) return;
+    throw new AgentError(E.REVISION_CONFLICT, "The world changed since that revision", {
+      expectedRevision: revision, actualRevision: this.revision, currentRevision: this.revision,
+      nextAction: `Retry with expectedRevision ${this.revision}, or omit expectedRevision inside your own edit.`,
+    }, true);
+  }
+  /** Lifecycle facts an agent needs to recover (C4). */
+  lifecycle(call: Pick<AgentCallContext, "clientSessionId">, summary: TransactionSummary | null = this.pending?.summary ?? null): JsonObject {
+    if (!summary) return { state: null, nextAction: lifecycleNextAction(null, undefined, false) };
+    const isYours = summary.owner.clientSessionId === call.clientSessionId ||
+      !!summary.collaboration?.members.some(member => member.clientSessionId === call.clientSessionId);
+    return {
+      transactionId: summary.id, state: summary.state, ...(summary.cause ? { cause: summary.cause } : {}),
+      ownerClient: summary.owner.clientInfo.name, isYours,
+      awaitingHuman: SEALED.includes(summary.state),
+      nextAction: lifecycleNextAction(summary.state, summary.cause, isYours),
+    };
+  }
+  /** Error for a transaction that is no longer pending (or never was). */
+  private gone(call: Pick<AgentCallContext, "clientSessionId">, transactionId: Id | undefined): never {
+    const terminal = transactionId ? this.terminals.get(transactionId)?.summary : undefined;
+    if (terminal?.state === "cancelled")
+      fail(E.TRANSACTION_CANCELLED, "Transaction was cancelled", this.lifecycle(call, terminal));
+    if (terminal?.state === "approved")
+      fail(E.TRANSACTION_REQUIRED, "Transaction was already approved", this.lifecycle(call, terminal));
+    fail(E.TRANSACTION_REQUIRED, "Begin an edit first", this.lifecycle(call, null));
+  }
+  budgetLeft(): EditBudget {
+    const p = this.pending;
+    if (!p) return { cellsLeft: L.transactionPlannedWrites, msLeft: L.editLifetimeMs };
+    return { cellsLeft: Math.max(0, L.transactionPlannedWrites - p.summary.counters.plannedWrites),
+      msLeft: p.summary.state === "running" ? Math.max(0, p.summary.leaseDeadline - this.host.clock.now()) : 0 };
+  }
+  /** The lease is an inactivity timer: owned activity extends it; expiry seals for review. */
+  private armLease(p: PendingEdit): void {
+    p.timer();
+    p.summary.leaseDeadline = this.host.clock.now() + L.editLifetimeMs;
+    p.timer = this.host.clock.schedule(L.editLifetimeMs, () => {
+      if (this.pending !== p || p.summary.state !== "running") return;
+      if (p.collaboration) {
+        p.collaboration.reviewReason = "The shared draft time limit expired; contributions are retained for human review";
+        this.seal("stopped", "leaseExpired");
+      } else this.orphan("leaseExpired");
+      try { this.host.activity.append({ id: this.host.ids.next("activity"), timestamp: this.host.clock.now(), clientInfo: null, clientSessionId: null, tool: null, requestId: null, transactionId: p.summary.id, mapIds: p.summary.affectedMapIds, status: "stopped", plannedCells: p.summary.counters.plannedWrites, changedCells: p.summary.counters.changedCells, durationMs: 0, summary: p.collaboration?.reviewReason ?? "Edit lease expired; the draft awaits human review" }); } catch { /* Expiry cannot strand the reviewable draft. */ }
+    });
+  }
+  /** Seal a running exclusive draft for human review and detach its session; never rolls back. */
+  orphan(cause: LifecycleCause): void {
+    const p = this.pending;
+    if (!p || p.summary.state !== "running") return;
+    p.summary.owner.clientSessionId = null;
+    this.seal("orphaned", cause);
+  }
+  /** C5: the original author reclaims its draft from any session with the secret token. */
+  resume(args: ResumeEditArgs, call: AgentCallContext): unknown {
+    this.world(args.context.worldSessionId);
+    const p = this.pending;
+    if (!p || p.summary.id !== args.transactionId) this.gone(call, args.transactionId);
+    check(!p.collaboration, E.EXCLUSIVE_OPERATION_REQUIRED, "Collaborative drafts cannot be resumed; use join_edit", { nextAction: "Join the shared draft with join_edit or wait for the human." });
+    check(sameToken(args.resumeToken, p.resumeToken), E.TRANSACTION_NOT_OWNED, "resumeToken does not match this draft",
+      { transactionId: p.summary.id, state: p.summary.state, isYours: false, nextAction: "Use the resumeToken that begin_edit returned for this transaction." });
+    check(!p.invalidated, E.TRANSACTION_SEALED, "The world changed outside this draft; it can only be discarded",
+      { ...this.lifecycle(call), cause: "worldChanged", nextAction: "Ask the user to discard (Vazgeç) the draft, then call begin_edit." });
+    const from = p.summary.state;
+    if (from !== "running" && !SEALED.includes(from))
+      throw new AgentError(E.TRANSACTION_SEALED, "The draft is changing state", { ...this.lifecycle(call), nextAction: "Call get_session in a moment and retry." }, true);
+    p.summary.owner = { clientSessionId: call.clientSessionId, clientInfo: { ...call.clientInfo } };
+    p.epoch = call.bridgeEpoch;
+    p.summary.state = "running";
+    delete p.summary.cause;
+    this.phase = "running";
+    this.lastByClient.set(call.clientSessionId, p.summary.id);
+    this.armLease(p);
+    this.emit();
+    return { transactionId: p.summary.id, state: "running", resumedFrom: from, revision: this.revision,
+      counters: { ...p.summary.counters }, affectedMapIds: [...p.summary.affectedMapIds], leaseDeadline: p.summary.leaseDeadline, budget: this.budgetLeft() };
+  }
+  /** Token-authorised takeover for cancel_edit; returns false when no token was given. */
+  claimWithToken(transactionId: Id, token: string | undefined, call: AgentCallContext): boolean {
+    const p = this.pending;
+    if (token === undefined || !p || p.summary.id !== transactionId || p.collaboration) return false;
+    check(sameToken(token, p.resumeToken), E.TRANSACTION_NOT_OWNED, "resumeToken does not match this draft",
+      { transactionId: p.summary.id, state: p.summary.state, isYours: false, nextAction: "Use the resumeToken that begin_edit returned for this transaction." });
+    p.summary.owner = { clientSessionId: call.clientSessionId, clientInfo: { ...call.clientInfo } };
+    p.epoch = call.bridgeEpoch;
+    return true;
+  }
+  /** The caller's own pending transaction, used when write context omits transactionId (C2). */
+  defaultTransaction(clientSessionId: Id): Id | undefined {
+    const p = this.pending;
+    if (p && (p.summary.owner.clientSessionId === clientSessionId || p.collaboration?.bySession(clientSessionId))) return p.summary.id;
+    return p ? p.summary.id : this.lastByClient.get(clientSessionId);
   }
   async begin(args: BeginEditArgs, call: AgentCallContext): Promise<unknown> {
     this.world(args.context.worldSessionId);
-    check(!this.pending, E.WRITER_BUSY, "Another edit is pending");
+    if (this.pending) fail(E.WRITER_BUSY, "Another edit is pending", this.lifecycle(call));
     this.expected(args.expectedRevision);
     this.host.transactions.assertCanBegin();
     for (const id of args.mapIds)
@@ -207,6 +333,7 @@ export class Transactions {
         this.host.world.maps().some((m) => m.id === id),
         E.UNKNOWN_ID,
         "Unknown map",
+        { mapId: id, validIds: this.host.world.maps().map(m => m.id).slice(0, 128) },
       );
     const admission = this.host.transactions.writeGate.acquireEdit(
       args.context.worldSessionId,
@@ -241,6 +368,7 @@ export class Transactions {
       sources: [],
       invalidated: false,
       timer: () => {},
+      resumeToken: hashCanonical(["resume-token-v1", this.host.ids.next("secret"), this.host.ids.next("secret")]),
     };
     this.pending = p;
     this.phase = "preparing";
@@ -290,6 +418,14 @@ export class Transactions {
             locked: layer.locked,
             hidden: !layer.visible,
           });
+      const unlock: { mapId: Id; layerId: Id }[] = [];
+      for (const layerId of args.unlockLayerIds ?? []) {
+        const found = args.mapIds.filter(mapId => p.participants.get(mapId)!.store.document.getLayer(layerId));
+        check(found.length, E.UNKNOWN_ID, "Unknown layer in unlockLayerIds", {
+          layerId, validIds: [...new Set(args.mapIds.flatMap(mapId => p.participants.get(mapId)!.store.document.layers.map(l => l.id)))].slice(0, 128),
+        });
+        for (const mapId of found) unlock.push({ mapId, layerId });
+      }
       this.expected(args.expectedRevision);
       if(args.collaboration){
         p.collaboration=new RegionCollaboration(this.host.ids.next("member"),call,args.collaboration.claims,id=>this.store(id));
@@ -303,27 +439,24 @@ export class Transactions {
       this.run(() => {
         for (const participant of p.participants.values())
           participant.store.beginTransaction(args.requestLabel);
+        // Unlocking is recorded inside the draft: discard restores the user's locks.
+        for (const { mapId, layerId } of unlock) {
+          const store = p.participants.get(mapId)!.store, layer = store.document.getLayer(layerId)!;
+          if (layer.locked || !layer.visible) store.dispatch({ type: "setLayerProps", layerId, props: { locked: false, visible: true } });
+          p.protection.set(layerProtectionKey(mapId, layerId), { locked: false, hidden: false });
+        }
       });
       summary.state = "running";
       this.phase = "running";
-      p.timer = this.host.clock.schedule(
-        Math.max(0, summary.leaseDeadline - this.host.clock.now()),
-        () => {
-          if (this.pending === p && summary.state === "running") {
-            if(p.collaboration){
-              p.collaboration.reviewReason="The shared draft time limit expired; contributions are retained for human review";
-              this.seal("stopped");
-              try{this.host.activity.append({id:this.host.ids.next("activity"),timestamp:this.host.clock.now(),clientInfo:null,clientSessionId:null,tool:null,requestId:null,transactionId:p.summary.id,mapIds:p.summary.affectedMapIds,status:"stopped",plannedCells:p.summary.counters.plannedWrites,changedCells:p.summary.counters.changedCells,durationMs:0,summary:p.collaboration.reviewReason});}catch{/* Expiry cannot strand the reviewable draft. */}
-            }else this.onExternal?.();
-          }
-        },
-      );
+      this.lastByClient.set(call.clientSessionId, summary.id);
+      this.armLease(p);
       this.emit();
       return {
         transactionId: summary.id,
         ...(p.collaboration?{memberId:p.collaboration.coordinatorId,memberRevision:0,revisionMode:"member"}:{}),
         state: "running",
-        baseRevision: args.expectedRevision,
+        resumeToken: p.resumeToken,
+        baseRevision: this.revision,
         protectedLayers: [...p.participants].flatMap(([mapId, m]) =>
           m.store.document.layers
             .filter((l) => l.locked || !l.visible)
@@ -334,8 +467,10 @@ export class Transactions {
               hidden: !l.visible,
             })),
         ),
+        ...(unlock.length ? { unlockedLayers: unlock } : {}),
         limits: L,
         leaseDeadline: summary.leaseDeadline,
+        budget: this.budgetLeft(),
       };
     } catch (error) {
       this.cancel("failed");
@@ -359,24 +494,26 @@ export class Transactions {
   ): PendingEdit {
     this.world(context.worldSessionId);
     const p = this.pending;
-    if (!p) {
-      const terminal = this.terminals.get(context.transactionId)?.summary;
-      if (terminal?.state === "cancelled")
-        fail(E.TRANSACTION_CANCELLED, "Transaction was cancelled");
-      fail(E.TRANSACTION_REQUIRED, "Begin an edit first");
+    if (!p || p.summary.id !== context.transactionId) {
+      if (context.transactionId && this.terminals.has(context.transactionId)) this.gone(call, context.transactionId);
+      if (!p) this.gone(call, undefined);
+      fail(E.TRANSACTION_NOT_OWNED, "Transaction belongs to another client", this.lifecycle(call));
     }
-    check(p.summary.id === context.transactionId && p.epoch === call.bridgeEpoch,
-      E.TRANSACTION_NOT_OWNED, "Transaction belongs to another client or epoch");
     if(p.collaboration) {
+      check(p.epoch === call.bridgeEpoch, E.TRANSACTION_NOT_OWNED, "Transaction belongs to another editor epoch", this.lifecycle(call));
       const member=p.collaboration.require(call,sealed);
       if(context.expectedMemberRevision!==undefined)p.collaboration.expect(member,context.expectedMemberRevision);
-      else { check(context.expectedRevision!==undefined,E.INVALID_ARGUMENT,"Choose an explicit global or member revision token"); this.expected(context.expectedRevision); }
+      else { check(context.expectedRevision!==undefined,E.INVALID_ARGUMENT,"Choose an explicit global or member revision token",{nextAction:"Collaborative writes need context.expectedRevision or context.expectedMemberRevision."}); this.expected(context.expectedRevision); }
     } else {
-      check(p.summary.owner.clientSessionId===call.clientSessionId,E.TRANSACTION_NOT_OWNED,"Transaction belongs to another client");
-      if(!skipRevision){check(context.expectedRevision!==undefined,E.INVALID_ARGUMENT,"Exclusive edits require expectedRevision");this.expected(context.expectedRevision);}
+      if (p.summary.owner.clientSessionId !== call.clientSessionId || p.epoch !== call.bridgeEpoch)
+        fail(E.TRANSACTION_NOT_OWNED, p.summary.owner.clientSessionId === null ? "This draft lost its connection and awaits review" : "Transaction belongs to another client",
+          { ...this.lifecycle(call), isYours: false, nextAction: lifecycleNextAction(p.summary.state === "running" ? "running" : p.summary.state, p.summary.cause, false) });
+      if(!skipRevision)this.expected(context.expectedRevision);
     }
-    check(sealed || p.summary.state === "running",E.TRANSACTION_SEALED,"Transaction is sealed");
+    if (!sealed && p.summary.state !== "running")
+      fail(E.TRANSACTION_SEALED, "Transaction is sealed", this.lifecycle(call));
     call.signal.throwIfAborted();
+    if (!p.collaboration && p.summary.state === "running") this.armLease(p);
     return p;
   }
   async join(args: CollaborativeJoin,call:AgentCallContext):Promise<unknown>{
@@ -441,7 +578,10 @@ export class Transactions {
   store(mapId: string): MapStore {
     const p = this.pending!;
     const participant = p.participants.get(mapId);
-    check(participant?.target, E.UNKNOWN_ID, "Map is not a transaction target");
+    check(participant?.target, E.UNKNOWN_ID, "Map is not a transaction target", {
+      mapId, validIds: [...p.participants].filter(([, m]) => m.target).map(([id]) => id),
+      nextAction: "Use one of validIds, or finish this edit and begin_edit with this map in mapIds.",
+    });
     return participant.store;
   }
   /** Cached/read-loaded metadata followers participate in the same outer action.
@@ -498,6 +638,7 @@ export class Transactions {
   run<T>(apply: () => T): T {
     if(this.memberCall && !this.planning)this.pending!.journal!.capture(this.memberCall.journal,bytes=>budget(this.pending!.summary.counters.retainedBytes+this.memberCall!.reserved+this.memberCall!.journal.addedBytes+bytes,L.retainedBytes));
     const old = this.applying;
+    if (!old) this.runChanged = false;
     this.applying = true;
     const leases = [...this.pending!.participants.values()].map((m) => m.lease);
     // The core capability forbids async functions; this internal scope only wraps synchronous code.
@@ -512,7 +653,41 @@ export class Transactions {
       return nested(0);
     } finally {
       this.applying = old;
+      // One outer action (a batch, a stamp, a rollback) is one world revision.
+      if (!old && this.runChanged) {
+        this.runChanged = false;
+        this.revision++;
+        if (!this.pending) this.committedRevision = this.revision;
+      }
     }
+  }
+  /** Exclusive calls only: a point the call can be rolled back to without touching earlier calls. */
+  checkpoint(): CallCheckpoint | undefined {
+    const p = this.pending;
+    if (!p || p.collaboration || p.summary.state !== "running") return undefined;
+    const savepoints = new Map<Id, number>();
+    this.run(() => { for (const [mapId, m] of p.participants) if (m.store.inTransaction) savepoints.set(mapId, m.store.savepoint()); });
+    return { savepoints, counters: { ...p.summary.counters }, protection: new Map([...p.protection].map(([k, v]) => [k, { ...v }])),
+      affectedMapIds: [...p.summary.affectedMapIds], created: p.created.length, sources: p.sources.length };
+  }
+  /** Undo only the failed call. Returns false when the call changed state a savepoint cannot restore. */
+  rollbackCall(cp: CallCheckpoint): boolean {
+    const p = this.pending;
+    if (!p || p.collaboration || p.created.length !== cp.created || p.sources.length !== cp.sources) return false;
+    this.run(() => {
+      for (const [mapId, savepoint] of cp.savepoints) {
+        const store = p.participants.get(mapId)?.store;
+        // The document is reverted before observers run; an observer failure cannot undo that.
+        try { if (store?.inTransaction) store.rollbackTo(savepoint); }
+        catch { this.diagnostic("Change observer failed while undoing one call", [mapId]); }
+      }
+    });
+    p.summary.counters = cp.counters;
+    p.protection.clear();
+    for (const [k, v] of cp.protection) p.protection.set(k, v);
+    p.summary.affectedMapIds = cp.affectedMapIds;
+    this.emit();
+    return true;
   }
   charge(planned: number, retained = planned * 32): void {
     const c = this.pending!.summary.counters;
@@ -531,7 +706,7 @@ export class Transactions {
     if(this.memberCall&&!this.planning){const m=this.pending!.collaboration!.members.get(this.memberCall.journal.memberId)!;m.counters.mutationCalls++;m.counters.plannedWrites+=change.plannedCells;m.counters.changedCells+=change.changedCells;m.counters.retainedBytes+=retained;}
     this.emit();
   }
-  seal(state: "stopped" | "awaitingApproval"): void {
+  seal(state: "orphaned" | "stopped" | "awaitingApproval", cause?: LifecycleCause): void {
     if (!this.pending || this.phase === "preparing") {
       this.interrupt?.();
       return;
@@ -539,6 +714,7 @@ export class Transactions {
     if (this.pending.summary.state !== "running") return;
     this.pending.collaboration?.stopAll();
     this.pending.summary.state = state;
+    if (cause) this.pending.summary.cause = cause;
     this.phase = state;
     this.interrupt?.();
     this.emit();
@@ -624,12 +800,14 @@ export class Transactions {
     );
     p.summary.state = "approved";
     p.summary.outcome = "approved";
+    p.summary.cause = "humanApproved";
     if (row) p.summary.historyEntryId = row.id;
     this.complete("approved");
   }
-  cancel(admissionOutcome: "cancelled" | "failed" = "cancelled"): void {
+  cancel(admissionOutcome: "cancelled" | "failed" = "cancelled", cause?: LifecycleCause): void {
     const p = this.pending;
     if (!p) return;
+    if (cause) p.summary.cause = cause;
     this.phase = "cancelling";
     p.summary.state = "cancelling";
     this.emit();

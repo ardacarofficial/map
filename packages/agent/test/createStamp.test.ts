@@ -76,13 +76,18 @@ it("paint and capture approval share a single undo entry, including two captures
   expect(h.host.snapshot()).not.toEqual(before);
 });
 
-it.each(["disconnect", "timeout"])("running stamp creation rolls back on %s", async outcome => {
+it.each(["disconnect", "timeout"])("running stamp creation is kept for human review on %s; discard restores", async outcome => {
   const h = harness(), before = h.host.snapshot();
   await h.begin();
   success(await h.edit("create_stamp", { name: "Tree", source: { tilesetId: "tiles", region: source.region } }));
+  const drafted = h.host.snapshot();
   if (outcome === "disconnect") await h.api.sessionEnded("client-1");
   else h.host.clock.advance(AGENT_LIMITS.editLifetimeMs + 1);
   for (let i = 0; i < 12; i++) await Promise.resolve();
+  expect(h.api.getState().phase).toBe("orphaned");
+  expect(h.api.getState().transaction!.cause).toBe(outcome === "disconnect" ? "clientDisconnected" : "leaseExpired");
+  expect(h.host.snapshot()).toEqual(drafted);
+  await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
 });
 

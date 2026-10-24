@@ -1,4 +1,4 @@
-import { createAgentApi, type AgentApi, type AgentConnection, type AgentHost, type AgentSignal, type BridgeRequest, type TransactionSummary } from "@smap/agent";
+import { createAgentApi, type AgentApi, type AgentConnection, type AgentHost, type AgentSignal, type BridgeRequest, type SessionEndReason, type TransactionSummary } from "@smap/agent";
 import { useEditorStore } from "../state/editorStore";
 import { getLevelWorkspace, getProjectFolder, registerUnsavedGuard } from "../io/session";
 import { getPlatform } from "../platform";
@@ -33,9 +33,9 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     const writers=new Set(transactionClients(api.getState().transaction,false));
     live?.setClients([...clients].map(([clientSessionId,info])=>({...info,state:"connected",isWriter:writers.has(clientSessionId)})));
   };
-  const endSession=(clientSessionId:string)=>{
-    // Let the API inspect the pre-abort phase before request cancellation can seal it.
-    const ended=api.sessionEnded(clientSessionId);
+  const endSession=(clientSessionId:string,reason:SessionEndReason)=>{
+    // Let the API inspect the pre-abort phase first: a running draft is orphaned for review, never rolled back.
+    const ended=api.sessionEnded(clientSessionId,reason);
     clients.delete(clientSessionId);
     for(const [id,entry] of requests)if(entry.request.clientSessionId===clientSessionId){
       entry.controller.abort();clearTimeout(entry.timer);requests.delete(id);
@@ -70,7 +70,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
     else if(control.type==="cancel"){
       const entry=requests.get(control.requestId);if(entry?.request.clientSessionId===control.clientSessionId)entry.controller.abort();
     }else if(control.type==="sessionEnded"){
-      endSession(control.clientSessionId);
+      endSession(control.clientSessionId,control.reason);
     }
   });
   let previousPhase=api.getState().phase;
@@ -92,7 +92,7 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
   const offUnsaved=registerUnsavedGuard({dirty:()=>editGate.blocked,settle:async()=>{await cancelPendingEdit();return true;}});
   const offStatus=connection.subscribeStatus(status=>{
     if(["disabled","failed","portInUse"].includes(status.state)){
-      for(const id of new Set([...clients.keys(),...transactionClients(api.getState().transaction)]))endSession(id);
+      for(const id of new Set([...clients.keys(),...transactionClients(api.getState().transaction)]))endSession(id,"disabled");
     }
   });
   const offFile=getPlatform().onFileChanged(change=>{if(change.path==="ai-tags.json")void live?.tags.externalChange().catch(log);});

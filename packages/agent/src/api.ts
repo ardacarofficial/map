@@ -9,6 +9,10 @@ import {
   type AgentHost,
   type AgentToolResult,
   type ImageBlock,
+  type JsonObject,
+  type JsonValue,
+  type LifecycleCause,
+  type SessionEndReason,
   type ToolArguments,
   type ToolName,
   type ToolSuccess,
@@ -16,7 +20,7 @@ import {
 import { EDITOR_CONTROL_TOOLS, type EditorControlToolName } from "./editorControls";
 import { TOOL_DEFINITIONS, canonicalJson } from "./toolSchemas";
 import { toMcpToolResult } from "./result";
-import { CallSignal, Transactions, waitFor } from "./transactions";
+import { CallSignal, Transactions, waitFor, type CallCheckpoint } from "./transactions";
 import { check, validate } from "./validation";
 import { hashCanonical, normalizeTags, tagKey, utf8ByteLength } from "./tags";
 import { editMap, editStamp, configureWorld } from "./tools/library";
@@ -31,6 +35,26 @@ const writes = new Set(
     (t) => !t.annotations.readOnlyHint && t.name !== "set_tags" && !EDITOR_CONTROL_TOOLS.includes(t.name as EditorControlToolName),
   ).map((t) => t.name),
 );
+const RETRYABLE = new Set<E>([E.REVISION_CONFLICT, E.TIMEOUT, E.WRITER_BUSY, E.EDITOR_UNAVAILABLE]);
+const LIFECYCLE_CODES = new Set<E>([E.TRANSACTION_REQUIRED, E.TRANSACTION_NOT_OWNED, E.TRANSACTION_SEALED, E.TRANSACTION_CANCELLED, E.WRITER_BUSY]);
+/** One actionable sentence per code when the failing site gave none (C4). */
+const NEXT_ACTION: Partial<Record<E, string>> = {
+  [E.NO_WORLD]: "Ask the user to open a world, then call get_session.",
+  [E.STALE_WORLD]: "The user opened another world; call get_session and omit or refresh context.worldSessionId.",
+  [E.LAYER_LOCKED]: "Pass unlockLayerIds to begin_edit, or call edit_layer {action:'update', props:{locked:false}} inside this draft first.",
+  [E.LAYER_HIDDEN]: "Pass unlockLayerIds to begin_edit, or call edit_layer {action:'update', props:{visible:true}} inside this draft first.",
+  [E.IDEMPOTENCY_CONFLICT]: "Use a new idempotencyKey for a different payload; reuse a key only to retry the identical call.",
+  [E.UNKNOWN_ID]: "Use an ID from get_session, get_map_info, list_tilesets or list_stamps.",
+  [E.LIMIT_EXCEEDED]: "Split the work into smaller calls.",
+  [E.EDITOR_UNAVAILABLE]: "The editor is busy or not connected; wait a moment and retry.",
+  [E.INTERNAL_ERROR]: "Call get_session to inspect the draft; tell the user if this repeats.",
+};
+const HEAVY_READS = new Set<string>(["validate_map", "validate_goals", "read_region"]);
+const IMAGE_TOOLS = new Set<string>(["render_preview", "get_tile_catalog", "list_stamps", "prepare_smart_source", "visual_ingest_reference", "visual_match_reference"]);
+/** These stage metadata/maps/sources outside MapStore savepoints, so a failed call cannot be undone alone. */
+const NOT_ROLLBACKABLE = new Set<string>(["create_map", "create_stamp", "edit_stamp", "edit_map", "configure_world", "prepare_smart_source", "begin_edit", "resume_edit", "finish_edit", "cancel_edit"]);
+const endCause = (reason: SessionEndReason | undefined): LifecycleCause =>
+  reason === "expired" ? "sessionExpired" : reason === "tokenRegenerated" ? "tokenRegenerated" : "clientDisconnected";
 interface Cached extends ReplayRecord {
   fingerprint: string;
   result?: AgentToolResult;
@@ -44,7 +68,7 @@ interface Cached extends ReplayRecord {
 export function createAgentApi(host: AgentHost): AgentApi {
   const tx = new Transactions(host),
     cache = new Map<string, Cached>();
-  const endedSessions = new Set<string>();
+  const endedSessions = new Map<string, LifecycleCause>();
   const signals = new Set<CallSignal>();
   const lifetime = new CallSignal();
   let disposed = false, disposal: Promise<void> | undefined;
@@ -77,29 +101,50 @@ export function createAgentApi(host: AgentHost): AgentApi {
     // An explicit reference upload does not depend on map contents.
     if (worldChanged || activeTool !== "visual_ingest_reference") interrupt();
     if (tx.pending) {
-      if(tx.pending.collaboration){tx.pending.collaboration.stopAll("An external source or world changed; human review/discard is required");tx.seal("stopped");return;}
-      tx.seal("stopped");
-      void enqueue(() => tx.cancel());
+      if(tx.pending.collaboration){tx.pending.collaboration.stopAll("An external source or world changed; human review/discard is required");tx.seal("stopped","worldChanged");return;}
+      tx.seal("stopped","worldChanged");
+      void enqueue(() => tx.cancel("cancelled","worldChanged"));
     }
   };
-  function failure(error: unknown, transactionId?: string): AgentToolResult {
+  function failure(error: unknown, transactionId?: string, call?: Pick<AgentCall, "clientSessionId">, extra: JsonObject = {}): AgentToolResult {
     const e =
       error instanceof AgentError
         ? error
         : new AgentError(E.INTERNAL_ERROR, "Agent operation failed");
     const state = tx.state();
+    let details: Record<string, JsonValue> = { ...e.details, ...extra };
+    if (call && LIFECYCLE_CODES.has(e.code) && !("state" in details)) details = { ...tx.lifecycle(call), ...details };
+    const next = NEXT_ACTION[e.code];
+    if (!("nextAction" in details) && next) details.nextAction = next;
     const result: AgentFailure = {
       ok: false,
-      ...tx.memberRevision({clientSessionId:activeClient??""},transactionId),
+      ...tx.memberRevision({clientSessionId:call?.clientSessionId??activeClient??""},transactionId),
       code: e.code,
       message: e.message,
       worldSessionId: state.worldSessionId,
       revision: state.revision,
       ...(transactionId ? { transactionId } : {}),
-      retryable: e.retryable,
-      details: e.details,
+      retryable: e.retryable || RETRYABLE.has(e.code),
+      details,
     };
     return toMcpToolResult(result);
+  }
+  /** C2: fill omitted context fields from the open world and the caller's own draft. */
+  function normalize(name: string, raw: unknown, call: AgentCall): unknown {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    if (name === "join_edit" || EDITOR_CONTROL_TOOLS.includes(name as EditorControlToolName)) return raw;
+    const tool = TOOL_DEFINITIONS.find(t => t.name === name);
+    const properties = tool?.inputSchema.properties as Record<string, unknown> | undefined;
+    if (!tool || !properties || !("context" in properties)) return raw;
+    const defs = (tool.inputSchema.$defs ?? {}) as Record<string, unknown>;
+    const input = raw as Record<string, unknown>;
+    const context: Record<string, unknown> = { ...((input.context as Record<string, unknown> | undefined) ?? {}) };
+    context.worldSessionId ??= host.session().worldSessionId ?? "";
+    if ("WriteContext" in defs) {
+      context.transactionId ??= tx.defaultTransaction(call.clientSessionId) ?? "";
+      context.idempotencyKey ??= "";
+    } else if ("TagWriteContext" in defs) context.idempotencyKey ??= "";
+    return { ...input, context, ...(name === "begin_edit" ? { idempotencyKey: input.idempotencyKey ?? "" } : {}) };
   }
   function keyFor(
     name: ToolName,
@@ -107,8 +152,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
     call: AgentCall,
   ): string | undefined {
     if(name==="join_edit"){const a=args as ToolArguments["join_edit"];return canonicalJson([a.context.worldSessionId,call.clientSessionId,"join",a.transactionId,a.idempotencyKey]);}
+    if (name === "resume_edit") return undefined;
     if (name === "begin_edit") {
       const a = args as ToolArguments["begin_edit"];
+      if (!a.idempotencyKey) return undefined;
       return canonicalJson([
         a.context.worldSessionId,
         call.clientSessionId,
@@ -120,6 +167,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       const a = args as
         | ToolArguments["paint_cells"]
         | ToolArguments["set_tags"];
+      if (!a.context.idempotencyKey) return undefined;
       return canonicalJson([
         a.context.worldSessionId,
         call.clientSessionId,
@@ -227,23 +275,23 @@ export function createAgentApi(host: AgentHost): AgentApi {
     active = signal;
     activeClient = call.clientSessionId;
     activeTool = call.name;
-    let enteredApply = false,globalMutation=false;
+    let enteredApply = false,globalMutation=false,completed=false;
+    let checkpoint: CallCheckpoint | undefined, startRevision = tx.revision;
     try {
       signal.throwIfAborted();
-      check(
-        !endedSessions.has(call.clientSessionId),
-        E.CANCELLED,
-        "Authenticated client session has ended",
-      );
+      const ended = endedSessions.get(call.clientSessionId);
+      if (ended) throw new AgentError(E.CANCELLED, "Authenticated client session has ended",
+        { cause: ended, nextAction: "Reconnect (a new MCP session) and call resume_edit with your transactionId and resumeToken." });
       syncReferenceWorld();
       validate(call.name, call.arguments);
       const name = call.name as ToolName,
-        args = call.arguments as ToolArguments[ToolName];
+        rawArgs = call.arguments,
+        args = normalize(name, rawArgs, call) as ToolArguments[ToolName];
       const context = "context" in args ? args.context : undefined;
       if (context) tx.world(context.worldSessionId);
       prune();
       const key = keyFor(name, args, call),
-        fingerprint = key ? hashCanonical([name, args]) : "";
+        fingerprint = key ? hashCanonical([name, rawArgs]) : "";
       const cached = key ? cache.get(key) : undefined;
       if (cached) {
         check(
@@ -261,8 +309,14 @@ export function createAgentApi(host: AgentHost): AgentApi {
       else if (name === "begin_edit") {
         data = await tx.begin(args as ToolArguments["begin_edit"], callContext);
         transactionId = tx.pending!.summary.id;
+        completed = true;
+      } else if (name === "resume_edit") {
+        data = tx.resume(args as ToolArguments["resume_edit"], callContext);
+        transactionId = tx.pending!.summary.id;
+        completed = true;
       } else if (writes.has(name)) {
         const writeArgs = args as ToolArguments["paint_cells"];
+        if (name === "cancel_edit") tx.claimWithToken(writeArgs.context.transactionId, (args as ToolArguments["cancel_edit"]).resumeToken, callContext);
         const pending = tx.owned(
           writeArgs.context,
           callContext,
@@ -275,6 +329,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         } else if (name === "finish_edit") {
           // No interrupt here: this is the active call that is sealing the writer.
           pending.summary.state = "awaitingApproval";
+          pending.summary.cause = "agentFinished";
           tx.phase = "awaitingApproval";
           tx.emit();
           data = {
@@ -286,10 +341,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
             counters: { ...pending.summary.counters },
             requiresUserApproval: true,
           };
+          completed = true;
         } else if (name === "cancel_edit") {
           const member=tx.memberFor(callContext);
           if(pending.collaboration&&pending.collaboration.hasJoined)tx.cancelMember(callContext.clientSessionId);
-          else tx.cancel();
+          else tx.cancel("cancelled", "agentCancelled");
+          completed = true;
           data = {
             transactionId,
             state: "cancelled",
@@ -299,6 +356,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
           };
         } else {
           const revision = tx.revision;
+          startRevision = revision;
+          checkpoint = pending.collaboration || NOT_ROLLBACKABLE.has(name) ? undefined : tx.checkpoint();
           try {
             tx.beginMemberCall(callContext);
             globalMutation=["prepare_smart_source","edit_layer","create_map","resize_map","create_stamp","edit_map","edit_stamp","configure_world"].includes(name);
@@ -314,6 +373,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
             // Postflight failures must not leave an applied write without a
             // successful response or an idempotency record for its retry.
             enteredApply = true;
+            completed = true;
             tx.finishMemberCall();
           } catch (error) {
             if (tx.revision !== revision || !(error instanceof AgentError)) {
@@ -458,7 +518,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
           image = i.png;
         }
       }
-      signal.throwIfAborted();
+      // A write that completed is kept and replay-cached even if its caller gave up meanwhile.
+      if (!completed) signal.throwIfAborted();
       const state = tx.state();
       const success = {
         ok: true,
@@ -510,16 +571,30 @@ export function createAgentApi(host: AgentHost): AgentApi {
         if(collaborative&&globalMutation&&enteredApply&&!tx.pending!.collaboration!.hasJoined){tx.releaseMemberCall();tx.cancel();}
         else if(collaborative){tx.recoverMemberCall();if(signal.aborted&&scopedMutation&&tx.memberFor(call)?.state==="running")tx.cancelMember(call.clientSessionId);if(error instanceof AgentError&&error.code===E.SOURCE_CHANGED){tx.pending!.invalidated=true;tx.pending!.collaboration!.stopAll("A shared source changed; human discard is required");tx.seal("stopped");}}
       }catch(recoveryError){failureError=recoveryError;}
-      // Expected preflight errors preserve previous exclusive work.
-      if (!collaborative && (
-        (enteredApply ||
-          (writes.has(call.name as ToolName) &&
-            error instanceof AgentError && error.code === E.SOURCE_CHANGED))) &&
-        tx.pending
-      )
-        tx.cancel();
+      // Exclusive drafts: a failed call never discards earlier calls. Only that call is
+      // undone (core savepoints); a source change still invalidates the whole draft.
+      let extra: JsonObject = {};
+      const isWrite = writes.has(call.name as ToolName) && !["begin_edit", "resume_edit", "finish_edit", "cancel_edit"].includes(call.name);
+      if (!collaborative && tx.pending && isWrite) {
+        const partial = enteredApply || tx.revision !== startRevision;
+        try {
+          if (error instanceof AgentError && error.code === E.SOURCE_CHANGED) { tx.cancel("cancelled", "worldChanged"); extra = { applied: false }; }
+          else if (!partial) extra = { applied: false };
+          else if (checkpoint && tx.rollbackCall(checkpoint)) extra = { applied: false };
+          else {
+            extra = { applied: true, nextAction: "This call may have been applied; inspect with read_region/get_session before retrying." };
+            if (!(error instanceof AgentError)) tx.seal("stopped");
+          }
+        } catch (recoveryError) {
+          failureError = recoveryError;
+          if (tx.pending) tx.seal("stopped");
+          extra = { applied: true };
+        }
+        if (extra.applied === false && signal.aborted && tx.phase === "running" && failureError instanceof AgentError && !("nextAction" in failureError.details))
+          extra = { ...extra, nextAction: "Nothing from this call was applied and your draft is still running; retry it (split very large work into smaller calls)." };
+      }
       if (signal.aborted && tx.phase === "preparing") tx.cancel();
-      result = failure(failureError, transactionId);
+      result = failure(failureError, transactionId, call, extra);
     } finally {
       if (active === signal) {
         active = undefined;
@@ -556,23 +631,16 @@ export function createAgentApi(host: AgentHost): AgentApi {
       perClient.set(call.clientSessionId, count + 1);
       const signal = new CallSignal();
       signals.add(signal);
-      signal.onAbort(() => {
-        if (active === signal && !tx.pending?.collaboration && writes.has(call.name as ToolName) &&
-            tx.pending?.summary.owner.clientSessionId === call.clientSessionId)
-          tx.seal("stopped");
-      });
+      // Aborts (timeout, client cancel) end only this call; the draft keeps running.
       const off = call.signal.onAbort(() => signal.abort());
       const timeout =
         call.name === "begin_edit"
           ? L.beginDrainTimeoutMs
-          : call.name === "render_preview" ||
-              call.name === "get_tile_catalog" ||
-              call.name === "list_stamps" ||
-              call.name === "prepare_smart_source" ||
-              call.name === "visual_ingest_reference" ||
-              call.name === "visual_match_reference"
+          : IMAGE_TOOLS.has(call.name)
             ? L.imageSourceTimeoutMs
-            : L.callTimeoutMs;
+            : writes.has(call.name as ToolName) || HEAVY_READS.has(call.name)
+              ? L.mutationTimeoutMs
+              : L.callTimeoutMs;
       const duration = Math.min(timeout, call.deadline - host.clock.now());
       const timer = host.clock.schedule(Math.max(0, duration), () =>
         signal.abort(new AgentError(E.TIMEOUT, "Agent call deadline expired")),
@@ -591,7 +659,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
     },
     userAction: (action) => {
       if (disposed) return Promise.resolve();
-      if (action === "stop" || action === "approve") tx.seal("stopped");
+      if (action === "stop") tx.seal("stopped", "humanStopped");
+      else if (action === "approve") tx.seal("stopped");
       else interrupt();
       return enqueue(async () => {
         if (disposed) return;
@@ -614,7 +683,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         if (action === "stop") {
           if (tx.phase === "preparing") tx.cancel();
         } else if (action === "approve") tx.approve();
-        else tx.cancel();
+        else tx.cancel("cancelled", "humanDiscarded");
         if (transaction) {
           try {
             host.activity.append({
@@ -643,9 +712,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
         }
       });
     },
-    sessionEnded: (clientSessionId) => {
+    sessionEnded: (clientSessionId, reason) => {
       if (disposed) return Promise.resolve();
-      endedSessions.add(clientSessionId);
+      const cause = endCause(reason);
+      endedSessions.set(clientSessionId, cause);
       // Ended sessions are rejected before replay, so their payloads are unreachable.
       for (const [key, entry] of cache)
         if (entry.client === clientSessionId) cache.delete(key);
@@ -659,16 +729,17 @@ export function createAgentApi(host: AgentHost): AgentApi {
       }
       const pending = tx.pending;
       const owned = pending?.summary.owner.clientSessionId === clientSessionId;
-      // Capture before interruption: aborting an active mutation can seal it as stopped.
-      const rollback = owned && (tx.phase === "preparing" || tx.phase === "running");
-      if (owned && !rollback) {
+      // C5: session loss never rolls back applied work. A running draft is orphaned
+      // (sealed for the human, resumable with its token); only unapplied preparation is cancelled.
+      const preparing = owned && tx.phase === "preparing";
+      if (owned && tx.phase === "running") tx.orphan(cause);
+      else if (owned && !preparing) {
         pending.summary.owner.clientSessionId = null;
         tx.emit();
       }
-      if (activeClient === clientSessionId || rollback) interrupt();
-      if (rollback) tx.seal("stopped");
+      if (activeClient === clientSessionId || preparing) interrupt();
       return enqueue(() => {
-        if (rollback && tx.pending === pending) tx.cancel();
+        if (preparing && tx.pending === pending) tx.cancel();
       });
     },
     dispose: () => {

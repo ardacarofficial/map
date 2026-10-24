@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "2684fb13bc1c7be141931b6ef0747a3dea22f8c92b11882d152fa4a3e1d95ca2",
+  "catalogueSha256": "74f96946a63ea0aa12dcefe8ea399c5da6034edc17267c40bb9bf97efc267469",
   "tools": {
     "get_session": {
       "valid": [
@@ -266,7 +266,9 @@
       "invalid": [
         {
           "context": {
-            "worldSessionId": "world-1"
+            "worldSessionId": "world-1",
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
           }
         }
       ]
@@ -287,7 +289,9 @@
         {
           "context": {
             "worldSessionId": "world-1",
-            "idempotencyKey": "tags-0001"
+            "idempotencyKey": "tags-0001",
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
           }
         }
       ]
@@ -1027,7 +1031,9 @@
       "invalid": [
         {
           "context": {
-            "worldSessionId": "world-1"
+            "worldSessionId": "world-1",
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
           },
           "name": "Village",
           "width": 48,
@@ -1417,7 +1423,9 @@
       "invalid": [
         {
           "context": {
-            "worldSessionId": "world-1"
+            "worldSessionId": "world-1",
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
           },
           "source": {
             "tilesetId": "tiles-1",
@@ -1460,7 +1468,12 @@
         }
       ],
       "invalid": [
-        {}
+        {
+          "context": {
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
+          }
+        }
       ]
     },
     "edit_entity": {
@@ -1969,7 +1982,12 @@
         }
       ],
       "invalid": [
-        {}
+        {
+          "context": {
+            "expectedRevision": 1,
+            "expectedMemberRevision": 1
+          }
+        }
       ]
     },
     "configure_world": {
@@ -2080,6 +2098,30 @@
           "idempotencyKey": "join-123",
           "expectedRevision": 1,
           "claims": []
+        }
+      ]
+    },
+    "resume_edit": {
+      "valid": [
+        {
+          "transactionId": "edit-1",
+          "resumeToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1"
+          },
+          "transactionId": "edit-1",
+          "resumeToken": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "invalid": [
+        {
+          "transactionId": "edit-1"
+        },
+        {
+          "transactionId": "edit-1",
+          "resumeToken": "short"
         }
       ]
     }

@@ -19,7 +19,9 @@ export type ResolvedTile = Required<Tile>;
 export type PaintValue = Tile | { collision: 0 | 1 | 2 } | null;
 export interface CellWrite extends Point { value: PaintValue }
 export interface LayerMapping { sourceLayerId: Id; targetLayerId: Id }
+/** Wire contexts are optional (C2); the API fills omitted fields before tools run. */
 export interface ReadContext { worldSessionId: Id }
+/** idempotencyKey "" means the caller supplied none: the call is not replay-cached. */
 export interface WriteContext extends ReadContext { transactionId: Id; idempotencyKey: string; expectedRevision?: Revision; expectedMemberRevision?: Revision }
 /** O2: tags never require a transaction or revision, even when an edit is pending. */
 export interface TagWriteContext extends ReadContext { idempotencyKey: string }
@@ -53,9 +55,10 @@ export interface ReferenceCandidate { tilesetId: Id; tileId: number; region: Rec
 export interface ReferenceMatches { status: "matched" | "ambiguous" | "no_match"; candidates: ReferenceCandidate[]; truncated: boolean; revision: Revision }
 export interface CreateStampArgs { context: WriteContext; source: { mapId: Id; region: Rect; layerIds: Id[] } | { tilesetId: Id; region: Rect }; name: string; category?: string; tags?: string[] }
 export interface ListStampsArgs { context: ReadContext; query?: string; cursor?: string; limit?: number; previewStampId?: Id }
-export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision: Revision; requestLabel: string; mapIds: Id[]; collaboration?: CollaborativeBegin }
+export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision?: Revision; requestLabel: string; mapIds: Id[]; unlockLayerIds?: Id[]; collaboration?: CollaborativeBegin }
 export interface FinishEditArgs { context: WriteContext; summary?: string }
-export interface CancelEditArgs { context: WriteContext; reason?: string }
+export interface CancelEditArgs { context: WriteContext; reason?: string; resumeToken?: string }
+export interface ResumeEditArgs { context: ReadContext; transactionId: Id; resumeToken: string }
 export interface PaintCellsArgs extends LayerWrite { cells: CellWrite[] }
 export interface PaintRectArgs extends LayerWrite { region: Rect; value: PaintValue; outline?: number }
 export interface PaintLineArgs extends LayerWrite { from: Point; to: Point; value: PaintValue; width?: number }
@@ -106,7 +109,7 @@ export interface ToolArguments {
   visual_ingest_reference: IngestReferenceArgs; visual_match_reference: MatchReferenceArgs; create_stamp: CreateStampArgs;
   get_session: GetSessionArgs; get_map_info: GetMapInfoArgs; read_region: ReadRegionArgs;
   list_tilesets: ListTilesetsArgs; get_tile_catalog: GetTileCatalogArgs; list_stamps: ListStampsArgs;
-  begin_edit: BeginEditArgs; finish_edit: FinishEditArgs; cancel_edit: CancelEditArgs;
+  begin_edit: BeginEditArgs; resume_edit: ResumeEditArgs; finish_edit: FinishEditArgs; cancel_edit: CancelEditArgs;
   paint_cells: PaintCellsArgs; paint_rect: PaintRectArgs; paint_line: PaintLineArgs; fill: FillArgs;
   prepare_smart_source: PrepareSmartSourceArgs; smart_brush: SmartBrushArgs; draw_path: DrawPathArgs;
   place_stamp: PlaceStampArgs; edit_layer: EditLayerArgs; list_entity_types: ListEntityTypesArgs;
@@ -117,16 +120,17 @@ export type ToolName = keyof ToolArguments;
 
 export const AGENT_LIMITS = {
   cellsPerCall: 4096, readCellsPerLayer: 4096, readCellsTotal: 16384, readLayers: 8,
-  fillCells: 4096, mutationCalls: 256, transactionPlannedWrites: 262144,
+  fillCells: 4096, mutationCalls: 4096, transactionPlannedWrites: 1048576,
   retainedBytes: 64 * 1024 * 1024, targetMaps: 8, metadataParticipants: 256,
   mapDimension: 4096, mapArea: 1048576, sourceWidth: 32, sourceHeight: 32,
   layersPerMap: 128, layerNameLength: 128, catalogPage: 128, catalogImagePage: 64,
   stampsPage: 32, tagsPage: 128, tagBatch: 128, tagWords: 16, tagWordLength: 48,
   imageSide: 2048, imagePixels: 4194304, pngBytes: 4 * 1024 * 1024, imagesPerCall: 1,
   responseBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024, jsonDepth: 32,
-  callTimeoutMs: 10000, imageSourceTimeoutMs: 30000, beginDrainTimeoutMs: 30000,
+  callTimeoutMs: 10000, imageSourceTimeoutMs: 30000, beginDrainTimeoutMs: 30000, mutationTimeoutMs: 30000,
+  // editLifetimeMs is an inactivity lease: every owned call extends it; expiry seals the draft for review.
   queuePerClient: 32, queueTotal: 64, editLifetimeMs: 30 * 60 * 1000,
-  // O9: review inactivity is advisory; stopped/review work never rolls back automatically.
+  // O9: review inactivity is advisory; orphaned/stopped/review work never rolls back automatically.
   reviewIdleMs: 10 * 60 * 1000, sessionIdleMs: 5 * 60 * 1000, clients: 16,
   activityEntries: 1000, entitiesPerRead: 256, tagsFileBytes: 8 * 1024 * 1024,
   tileTagRecords: 100000, stampTagRecords: 10000, tagsDebounceMs: 500,
@@ -154,13 +158,18 @@ export class AgentError extends Error {
     super(message); this.name = "AgentError";
   }
 }
-/** Enabled lifecycle: ready → preparing → running → stopped/awaitingApproval → ready.
- * Approval from running/stopped/review finalizes to ready; failure during preparation returns ready.
+/** Enabled lifecycle: ready → preparing → running → orphaned/stopped/awaitingApproval → ready.
+ * Approval from running/orphaned/stopped/review finalizes to ready; failure during preparation returns ready.
  * Cancellation from any pending phase passes through cancelling before ready/disabled.
- * Only ready can become disabled directly. Stopped/review never resume writes or auto-finalize.
+ * Only ready can become disabled directly. Sealed phases never auto-finalize; only resume_edit with the
+ * draft's resumeToken reopens orphaned/stopped/review work to running (C5).
+ * orphaned: the owning session ended or the inactivity lease expired; the draft waits for the human.
  */
-export type AgentPhase = "disabled" | "ready" | "preparing" | "running" | "stopped" | "awaitingApproval" | "cancelling";
-export type TransactionState = "preparing" | "running" | "stopped" | "awaitingApproval" | "cancelling" | "approved" | "cancelled";
+export type AgentPhase = "disabled" | "ready" | "preparing" | "running" | "orphaned" | "stopped" | "awaitingApproval" | "cancelling";
+export type TransactionState = "preparing" | "running" | "orphaned" | "stopped" | "awaitingApproval" | "cancelling" | "approved" | "cancelled";
+/** Why a draft is sealed, orphaned or finished; reported in errors and transaction summaries. */
+export type LifecycleCause = "sessionExpired" | "clientDisconnected" | "tokenRegenerated" | "leaseExpired" | "humanDiscarded" | "humanStopped" | "humanApproved" | "agentFinished" | "agentCancelled" | "worldChanged";
+export type SessionEndReason = Extract<BridgeControl, { type: "sessionEnded" }>["reason"];
 export interface ClientInfo { name: string; version: string }
 /** A null session detaches sealed review from the client; its name remains for the user. */
 export interface TransactionOwner { clientSessionId: Id | null; clientInfo: ClientInfo }
@@ -168,7 +177,7 @@ export interface TransactionCounters { mutationCalls: number; plannedWrites: num
 export interface TransactionSummary {
   id: Id; state: TransactionState; label: string; owner: TransactionOwner; startedAt: number;
   leaseDeadline: number; affectedMapIds: Id[]; counters: TransactionCounters; collaboration?: CollaborationSummary;
-  outcome?: "approved" | "cancelled"; historyEntryId?: number;
+  outcome?: "approved" | "cancelled"; historyEntryId?: number; cause?: LifecycleCause;
 }
 export interface AgentState {
   phase: AgentPhase; instanceId: Id; worldSessionId: Id | null; revision: Revision;
@@ -198,6 +207,8 @@ export interface StampInfo { id: Id; name: string; width: number; height: number
 export interface EntityTypeInfo { id: Id; name: string; builtin: boolean; fields: { name: string; type: EntityFieldType; default: EntityFieldValue; enumValues?: string[] }[] }
 export interface PreviewImage { width: number; height: number; scale: number; pixelOrigin: Point; cellSize: { width: number; height: number }; contentRect: Rect; grid: boolean; coordinates: boolean }
 export interface AgentWarning { code: string; detail: string }
+/** Remaining whole-edit budget: planned cell writes and inactivity lease time. */
+export interface EditBudget { cellsLeft: number; msLeft: number }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
 export interface ToolData {
   join_edit: { transactionId: Id; memberId: Id; memberRevision: Revision; state: "running"; claims: RegionClaim[]; revisionMode: "member" };
@@ -219,7 +230,8 @@ export interface ToolData {
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId: Id } };
-  begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; limits: AgentLimits; leaseDeadline: number };
+  begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; resumeToken: string; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; unlockedLayers?: { mapId: Id; layerId: Id }[]; limits: AgentLimits; leaseDeadline: number; budget: EditBudget };
+  resume_edit: { transactionId: Id; state: "running"; resumedFrom: TransactionState; revision: Revision; counters: TransactionCounters; affectedMapIds: Id[]; leaseDeadline: number; budget: EditBudget };
   finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
   cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true; scope?: "member"; memberId?: Id; sharedResourcesRetained?: boolean };
   paint_cells: ChangedData; paint_rect: ChangedData; paint_line: ChangedData; fill: ChangedData & { filledCells: number };
@@ -257,7 +269,8 @@ export type TypedAgentCall<N extends ToolName = ToolName> = N extends ToolName ?
 export interface AgentApi {
   executeTool(call: AgentCall): Promise<AgentToolResult>;
   describeTools(): readonly AgentToolDefinition[];
-  sessionEnded(clientSessionId: Id): Promise<void>;
+  /** Session loss never rolls back a running exclusive draft: it becomes orphaned for human review. */
+  sessionEnded(clientSessionId: Id, reason?: SessionEndReason): Promise<void>;
   userAction(action: "stop" | "approve" | "discard"): Promise<void>;
   /** Close admission, cancel pending work, and release host subscriptions. */
   dispose(): Promise<void>;
@@ -372,7 +385,7 @@ export interface AgentTagsPort {
 export interface ActivityLogEntry { memberId?: Id; requestBytes?: number; textBytes?: number; imageBytes?: number; resultBytes?: number; id: Id; timestamp: number; clientInfo: ClientInfo | null; clientSessionId: Id | null; tool: ToolName | null; requestId: Id | null; transactionId: Id | null; mapIds: Id[]; status: "started" | "succeeded" | "failed" | "cancelled" | "approved" | "stopped"; plannedCells: number; changedCells: number; durationMs: number; code?: AgentErrorCode; summary: string }
 export interface AgentActivityPort { append(entry: ActivityLogEntry): void; entries(): readonly ActivityLogEntry[]; subscribe(listener: () => void): Unsubscribe }
 export interface AgentClock { now(): number; schedule(delayMs: number, callback: () => void): Unsubscribe }
-export interface AgentIds { next(kind: "member" | "instance" | "world" | "transaction" | "source" | "entity" | "map" | "layer" | "activity" | "cursor"): Id }
+export interface AgentIds { next(kind: "member" | "instance" | "world" | "transaction" | "source" | "entity" | "map" | "layer" | "activity" | "cursor" | "secret"): Id }
 export interface AgentTransactionsPort {
   readonly history: PendingWorldHistoryPort;
   readonly writeGate: AgentWriteGate;

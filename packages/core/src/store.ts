@@ -318,6 +318,25 @@ class DirtyTracker {
 class ChangeRecorder {
   readonly #changes: HistoryChange[] = [];
   #cells: PatchBuilder | null = null;
+  /** Changes before this index never merge with later ones (see {@link MapStore.savepoint}). */
+  #barrier = 0;
+
+  /** Flushes pending cells and returns a position later changes cannot merge across. */
+  mark(): number {
+    this.#flush();
+    this.#barrier = this.#changes.length;
+    return this.#barrier;
+  }
+
+  /** Removes and returns every change recorded after `position` (oldest first). */
+  truncate(position: number): HistoryChange[] {
+    this.#flush();
+    const removed = this.#changes.splice(position);
+    this.#barrier = Math.min(this.#barrier, this.#changes.length);
+    return removed;
+  }
+
+  get length(): number { this.#flush(); return this.#changes.length; }
 
   recordCell(layerId: string, x: number, y: number, before: Cell, after: Cell): void {
     this.#cells ??= new PatchBuilder();
@@ -338,7 +357,7 @@ class ChangeRecorder {
       const remaining: PixelRectPatch[] = [];
       for (const patch of change.patches) {
         let merged = false;
-        for (let i = this.#changes.length - 1; i >= 0; i--) {
+        for (let i = this.#changes.length - 1; i >= this.#barrier; i--) {
           const prior = this.#changes[i]!;
           if (prior.kind !== "pixels" && prior.kind !== "tileset" && prior.kind !== "cells") break;
           if (prior.kind !== "pixels") continue;
@@ -358,7 +377,7 @@ class ChangeRecorder {
       return;
     }
     // Consecutive edits of one entity layer (a drag) merge into one change.
-    const last = this.#changes[this.#changes.length - 1];
+    const last = this.#changes.length > this.#barrier ? this.#changes[this.#changes.length - 1] : undefined;
     if (change.kind === "entities" && last?.kind === "entities" && last.layerId === change.layerId) {
       this.#changes.pop();
       if (!sameEntities(last.before, change.after)) {
@@ -841,6 +860,36 @@ export class MapStore {
     this.#depth = 0;
     const result = this.#applyChanges(changes, "before");
     this.#emit({ cause: "rollback", ...this.#eventParts(result), historyChanged: true });
+  }
+
+  /**
+   * Marks the current point of the open transaction. {@link rollbackTo} later
+   * reverts only the undoable changes recorded after it and keeps the
+   * transaction open (an AI call that fails is undone without discarding the
+   * calls before it). Changes never merge across a savepoint.
+   *
+   * @throws Error when no transaction is open.
+   */
+  savepoint(): number {
+    this.#assertLease();
+    if (this.#depth === 0 || !this.#pending) throw new Error("savepoint() requires an open transaction");
+    return this.#pending.mark();
+  }
+
+  /**
+   * Reverts the undoable changes recorded after `savepoint` and keeps the
+   * transaction open. Non-undoable ops stay, exactly like {@link rollback}.
+   *
+   * @throws Error when no transaction is open.
+   */
+  rollbackTo(savepoint: number): void {
+    this.#assertLease();
+    if (this.#depth === 0 || !this.#pending) throw new Error("rollbackTo() requires an open transaction");
+    if (!Number.isSafeInteger(savepoint) || savepoint < 0 || savepoint > this.#pending.length) throw new Error("unknown savepoint");
+    const removed = this.#pending.truncate(savepoint);
+    if (!removed.length) return;
+    const result = this.#applyChanges(removed, "before");
+    this.#emit({ cause: "dispatch", ...this.#eventParts(result), historyChanged: false });
   }
 
   /** Undoes the last step. Returns false (and does nothing) if impossible or a transaction is open. */

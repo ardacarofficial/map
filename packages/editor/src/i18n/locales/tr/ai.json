@@ -34,6 +34,7 @@
   "status.preparing": "AI hazırlanıyor",
   "status.running": "AI çalışıyor",
   "status.stopped": "AI durduruldu",
+  "status.orphaned": "AI bağlantısı kapandı; değişiklikler onay bekliyor",
   "status.awaitingApproval": "AI değişiklikleri onay bekliyor",
   "status.cancelling": "AI değişiklikleri geri alınıyor",
   "status.disconnected": "Bağlantı kesildi",

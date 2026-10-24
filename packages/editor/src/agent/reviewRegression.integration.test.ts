@@ -77,7 +77,7 @@ it("successive late map reads preserve the original clean rollback baseline (#2)
   for (const id of [h.mapId, h.b.id, h.c.id]) { expect(h.ws.entry(id)!.store.document.getTileset(generated.id)).toBeUndefined(); expect(h.ws.isDirty(id)).toBe(false); }
   expect(useEditorStore.getState().dirty).toBe(false); expect(getTilesetImage(generated.id)).toBeUndefined();
 });
-it("cancelling source preparation synchronously seals writes and preserves earlier work for review (#6)", async () => {
+it("cancelling source preparation ends only that call; earlier and later work stay in the running draft (#6)", async () => {
   const h = await setup(); await h.begin();
   await h.ok("paint_cells", { context: h.editContext(), mapId: h.mapId, layerId: h.layerId, cells: [{ x: 0, y: 0, value: { tilesetId: "art", tileId: 0 } }] });
   let resume!: () => void;
@@ -89,13 +89,13 @@ it("cancelling source preparation synchronously seals writes and preserves earli
   await vi.waitFor(() => expect(bakeSmartStamp).toHaveBeenCalled());
   const queued = h.call("paint_cells", { context: h.editContext(), mapId: h.mapId, layerId: h.layerId, cells: [{ x: 1, y: 0, value: { tilesetId: "art", tileId: 1 } }] });
   controller.abort();
-  expect(api!.getState().phase).toBe("stopped");
-  expect((await preparing).structuredContent).toMatchObject({ ok: false, code: "CANCELLED" });
-  expect((await queued).structuredContent).toMatchObject({ ok: false, code: "TRANSACTION_SEALED" });
+  expect(api!.getState().phase).toBe("running");
+  expect((await preparing).structuredContent).toMatchObject({ ok: false, code: "CANCELLED", details: { applied: false } });
+  expect((await queued).structuredContent).toMatchObject({ ok: true });
   resume();
   const atlas = await vi.mocked(bakeSmartStamp).mock.results[0]!.value;
   await vi.waitFor(() => expect(atlas.bitmap.close).toHaveBeenCalledOnce());
-  expect(h.store.document.layers[0]!.getCell(0, 0)).not.toBe(0); expect(h.store.document.layers[0]!.getCell(1, 0)).toBe(0);
+  expect(h.store.document.layers[0]!.getCell(0, 0)).not.toBe(0); expect(h.store.document.layers[0]!.getCell(1, 0)).not.toBe(0);
   await api!.userAction("approve"); expect(h.store.document.layers[0]!.getCell(0, 0)).not.toBe(0);
 });
 it("same-size image replacement during a catalog read returns REVISION_CONFLICT (#8)", async () => {

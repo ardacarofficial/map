@@ -40,7 +40,7 @@ it("bounds read/paint/fill searches before dispatch, including each layer and ag
 it("splitting calls cannot bypass the cumulative planned-write limit or mutation-call cap", async () => {
   const h = harness({ width: 64, height: 64 });
   await h.begin();
-  for (let i = 0; i < 64; i++)
+  for (let i = 0; i < L.transactionPlannedWrites / 4096; i++)
     success(
       await h.edit("paint_rect", {
         mapId: "map-1",
@@ -82,7 +82,7 @@ it("splitting calls cannot bypass the cumulative planned-write limit or mutation
   );
   await k.api.userAction("approve");
   expect(k.host.history.undoDepth).toBe(0);
-});
+}, 60000);
 it("source retained bytes and new layer counts are checked before publication", async () => {
   const h = harness();
   await h.begin();

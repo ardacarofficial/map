@@ -55,16 +55,26 @@ it("Durdur keeps prior writes, blocks future writes, and permits user approval o
   h.host.history.undo();
   expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(before);
 });
-it("owner session end rolls back running work; another session cannot cancel it", async () => {
+it("owner session end orphans running work for review (no rollback); another session cannot cancel it", async () => {
   const h = harness(), before = h.host.snapshot();
   await h.begin();
   success(await h.edit("paint_cells", paint));
+  const painted = h.host.snapshot();
   await h.api.sessionEnded("observer");
   expect(h.api.getState().phase).toBe("running");
-  await h.api.sessionEnded("client-1");
+  await h.api.sessionEnded("client-1", "expired");
+  expect(h.host.snapshot()).toEqual(painted);
+  expect(h.api.getState()).toMatchObject({ phase: "orphaned", transaction: { state: "orphaned", cause: "sessionExpired", owner: { clientSessionId: null } } });
+  expect(h.host.transactions.writeGate.blocked).toBe(true);
+  const other = (name: string, args: unknown) => h.api.executeTool(memoryCall(name, args, { clientSessionId: "new-client" }));
+  const busy = await other("begin_edit", { requestLabel: "Other", mapIds: ["map-1"] });
+  error(busy, "WRITER_BUSY");
+  expect(busy.structuredContent).toMatchObject({ retryable: true, details: { state: "orphaned", isYours: false, awaitingHuman: true } });
+  error(await other("cancel_edit", {}), "TRANSACTION_NOT_OWNED");
+  await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
   expect(h.host.pins.size).toBe(0);
-  expect(h.api.getState().transaction!.outcome).toBe("cancelled");
+  expect(h.api.getState().transaction).toMatchObject({ outcome: "cancelled", cause: "humanDiscarded" });
 });
 for (const phase of ["stopped", "awaitingApproval"] as const)
   for (const action of ["approve", "discard"] as const)
@@ -229,7 +239,7 @@ it("empty edits and cancellations preserve earlier dirty content and the redo ta
   await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
 });
-it("approval survives throwing commit subscribers and dispatch errors rollback the entire action", async () => {
+it("approval survives throwing commit subscribers and a failed dispatch rolls back only that call", async () => {
   const h = harness();
   await h.begin();
   success(await h.edit("paint_cells", paint));
@@ -240,16 +250,22 @@ it("approval survives throwing commit subscribers and dispatch errors rollback t
   expect(h.api.getState().transaction!.outcome).toBe("approved");
   expect(h.host.history.undoDepth).toBe(1);
   const k = harness(),
-    before = k.host.snapshot();
+    before = k.host.snapshot(),
+    level = serializeLevel(k.host.stores.get("map-1")!.document);
   await k.begin();
   k.host.stores.get("map-1")!.subscribe((e) => {
     if (e.cause === "dispatch") throw new Error("observer");
   });
-  error(await k.edit("paint_cells", paint), "INTERNAL_ERROR");
+  const failed = await k.edit("paint_cells", paint);
+  error(failed, "INTERNAL_ERROR");
+  expect(failed.structuredContent).toMatchObject({ details: { applied: false } });
+  expect(serializeLevel(k.host.stores.get("map-1")!.document)).toBe(level);
+  expect(k.api.getState().phase).toBe("running");
+  await k.api.userAction("discard");
   expect(k.host.snapshot()).toEqual(before);
   expect(k.host.transactions.writeGate.blocked).toBe(false);
 });
-it("a mutation whose result exceeds the response budget rolls back instead of leaving an uncached write", async () => {
+it("a mutation whose result exceeds the response budget rolls back only that call instead of leaving an uncached write", async () => {
   const h = harness({ entityTypes: [{
     id: "large-default", name: "Large default", color: "#ffffff",
     fields: [{ name: "text", type: "string", default: "x".repeat(L.responseBytes / 2) }],
@@ -257,12 +273,18 @@ it("a mutation whose result exceeds the response budget rolls back instead of le
   const before = h.host.snapshot();
   await h.begin();
   success(await h.edit("paint_cells", paint));
+  const painted = h.host.snapshot(), counters = { ...h.api.getState().transaction!.counters };
   const args = { context: h.writeContext(), mapId: "map-1", layerId: "entities", typeId: "large-default", at: { x: 0, y: 0 } };
-  error(await h.run("place_entity", args), "LIMIT_EXCEEDED");
-  expect(h.api.getState().phase).toBe("ready");
+  const failed = await h.run("place_entity", args);
+  error(failed, "LIMIT_EXCEEDED");
+  expect(failed.structuredContent).toMatchObject({ details: { applied: false } });
+  expect(h.api.getState().phase).toBe("running");
+  expect(h.host.snapshot()).toEqual(painted);
+  expect(h.api.getState().transaction!.counters).toEqual(counters);
+  error(await h.run("place_entity", { ...args, context: { ...args.context, expectedRevision: h.api.getState().revision } }), "LIMIT_EXCEEDED");
+  await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
   expect(h.host.transactions.writeGate.blocked).toBe(false);
-  error(await h.run("place_entity", args), "TRANSACTION_CANCELLED");
 });
 it("Stop/discard/timeouts during asynchronous preparation never publish late results", async () => {
   for (const action of ["stop", "discard", "timeout", "disconnect"] as const) {
@@ -291,21 +313,40 @@ it("Stop/discard/timeouts during asynchronous preparation never publish late res
     if (action === "timeout") h.host.clock.advance(L.imageSourceTimeoutMs + 1);
     else if (action === "disconnect") await h.api.sessionEnded("client-1");
     else await h.api.userAction(action);
-    error(await task, action === "timeout" ? "TIMEOUT" : "CANCELLED");
+    const failed = await task;
+    error(failed, action === "timeout" ? "TIMEOUT" : "CANCELLED");
     gate.resolve();
     await flush();
-    if (action === "stop" || action === "timeout")
-      await h.api.userAction("discard");
+    // Aborts end only that call: earlier draft work is never rolled back by them.
+    expect(h.api.getState().phase).toBe({ stop: "stopped", timeout: "running", disconnect: "orphaned", discard: "ready" }[action]);
+    if (action === "timeout") expect(failed.structuredContent).toMatchObject({ details: { applied: false } });
+    if (action !== "discard") await h.api.userAction("discard");
     expect(h.host.snapshot()).toEqual(before);
   }
 });
-it("running lifetime expires; review inactivity and stopped lifetime never auto-approve or rollback", async () => {
+it("the running lease extends on activity, then seals for review without rollback; review never auto-finalizes", async () => {
   const h = harness(),
     before = h.host.snapshot();
   await h.begin();
   success(await h.edit("paint_cells", paint));
-  h.host.clock.advance(L.editLifetimeMs);
+  h.host.clock.advance(L.editLifetimeMs - 1000);
   await flush();
+  success(await h.edit("paint_cells", { ...paint, cells: [{ x: 2, y: 2, value: tile }] }));
+  h.host.clock.advance(L.editLifetimeMs - 1000);
+  await flush();
+  expect(h.api.getState().phase).toBe("running");
+  const painted = h.host.snapshot();
+  h.host.clock.advance(1001);
+  await flush();
+  expect(h.api.getState()).toMatchObject({ phase: "orphaned", transaction: { cause: "leaseExpired", owner: { clientSessionId: null } } });
+  expect(h.host.snapshot()).toEqual(painted);
+  const sealed = await h.edit("paint_cells", paint);
+  error(sealed, "TRANSACTION_NOT_OWNED");
+  expect(sealed.structuredContent).toMatchObject({ details: { state: "orphaned", cause: "leaseExpired", awaitingHuman: true } });
+  h.host.clock.advance(L.editLifetimeMs * 2);
+  await flush();
+  expect(h.api.getState().phase).toBe("orphaned");
+  await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
   await h.begin();
   success(await h.edit("paint_cells", paint));
@@ -522,7 +563,7 @@ it("host world-position changes share the approved row and restore on undo", asy
   expect(h.host.world.maps()[0]!.world).toEqual({ x: 100, y: 200 });
 });
 
-it("preparation time counts toward the disclosed running edit lifetime", async () => {
+it("the inactivity lease starts when the draft runs and seals it for review on expiry", async () => {
   const h = harness(),
     gate = h.host.transactions.writeGate,
     acquire = gate.acquireEdit;
@@ -535,10 +576,17 @@ it("preparation time counts toward the disclosed running edit lifetime", async (
       },
     };
   };
-  await h.begin();
-  h.host.clock.advance(L.editLifetimeMs - 10000);
+  const begun = await h.begin();
+  if (!("leaseDeadline" in begun.data)) throw Error("Expected begin data");
+  expect(begun.data.leaseDeadline).toBe(h.host.clock.now() + L.editLifetimeMs);
+  h.host.clock.advance(L.editLifetimeMs - 1);
   await flush();
-  expect(h.api.getState().phase).toBe("ready");
+  expect(h.api.getState().phase).toBe("running");
+  h.host.clock.advance(1);
+  await flush();
+  expect(h.api.getState().phase).toBe("orphaned");
+  expect(gate.blocked).toBe(true);
+  await h.api.userAction("discard");
   expect(gate.blocked).toBe(false);
 });
 

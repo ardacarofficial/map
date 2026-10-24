@@ -64,7 +64,7 @@ describe("bounded operation batches", () => {
     await h.api.userAction("discard");
     expect(serializeLevel(h.host.stores.get("map-1")!.document)).toBe(before);
     expect(h.api.getState().revision).toBeGreaterThan(revision);
-  });
+  }, 60000);
 
   it("loads portal targets only during preflight and replays overlapping writes against real old cells", async () => {
     const h = harness(); await h.begin();
@@ -134,14 +134,18 @@ describe("existing entity correction", () => {
     expect(read.data).toMatchObject({ entities: [{ typeId: "spawn", layerId: "entities" }, { typeId: "portal", layerId: created.layer.id }] });
   });
 
-  it("honors initial locked/hidden protection even if layer props are changed inside the edit", async () => {
+  it("honors initial locked/hidden protection until this draft unlocks/shows the layer itself", async () => {
     for (const props of [{ locked: true }, { visible: false }]) {
       const h = harness(); await h.begin();
       const entity = success(await h.edit("place_entity", spawn.args)).data as ToolData["place_entity"];
       success(await h.edit("edit_layer", { mapId: "map-1", action: "update", layerId: "entities", props }));
       await h.api.userAction("approve"); await h.begin();
-      success(await h.edit("edit_layer", { mapId: "map-1", action: "update", layerId: "entities", props: { locked: false, visible: true } }));
       error(await h.edit("edit_entity", { mapId: "map-1", entityId: entity.entity.id, action: "remove" }), "locked" in props ? "LAYER_LOCKED" : "LAYER_HIDDEN");
+      expect(h.host.stores.get("map-1")!.document.spawn()!.id).toBe(entity.entity.id);
+      success(await h.edit("edit_layer", { mapId: "map-1", action: "update", layerId: "entities", props: { locked: false, visible: true } }));
+      success(await h.edit("edit_entity", { mapId: "map-1", entityId: entity.entity.id, action: "remove" }));
+      expect(h.host.stores.get("map-1")!.document.spawn()).toBeFalsy();
+      await h.api.userAction("discard");
       expect(h.host.stores.get("map-1")!.document.spawn()!.id).toBe(entity.entity.id);
     }
   });

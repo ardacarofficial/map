@@ -19,7 +19,7 @@ const SHARED_DEFS = {
     "maximum": 9007199254740991
   },
   "ReadContext": {
-    "description": "World identity from get_session. Never infer identity from selected tabs.",
+    "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -27,12 +27,10 @@ const SHARED_DEFS = {
         "$ref": "#/$defs/Id"
       }
     },
-    "required": [
-      "worldSessionId"
-    ]
+    "required": []
   },
   "WriteContext": {
-    "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+    "description": "Optional; omit it entirely in an ordinary edit. Omitted fields use the open world and your own active edit, calls apply in arrival order without revision checks and are not replay-cached. Supply idempotencyKey to make a retry safe (same payload/key replays), expectedRevision for strict whole-world CAS. Collaborative drafts need expectedRevision or expectedMemberRevision (never both).",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -52,29 +50,17 @@ const SHARED_DEFS = {
         "$ref": "#/$defs/Revision"
       }
     },
-    "required": [
-      "worldSessionId",
-      "transactionId",
-      "idempotencyKey"
-    ],
-    "oneOf": [
-      {
-        "required": [
-          "expectedRevision"
-        ],
-        "properties": {
-          "expectedRevision": {}
-        }
-      },
-      {
-        "required": [
-          "expectedMemberRevision"
-        ],
-        "properties": {
-          "expectedMemberRevision": {}
-        }
+    "required": [],
+    "not": {
+      "required": [
+        "expectedRevision",
+        "expectedMemberRevision"
+      ],
+      "properties": {
+        "expectedRevision": {},
+        "expectedMemberRevision": {}
       }
-    ]
+    }
   },
   "Point": {
     "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
@@ -304,6 +290,12 @@ const SHARED_DEFS = {
       }
     ]
   },
+  "ResumeToken": {
+    "type": "string",
+    "minLength": 32,
+    "maxLength": 128,
+    "pattern": "^[A-Za-z0-9_-]+$"
+  },
   "TagWords": {
     "type": "array",
     "maxItems": 16,
@@ -325,10 +317,7 @@ const SHARED_DEFS = {
         "$ref": "#/$defs/Key"
       }
     },
-    "required": [
-      "worldSessionId",
-      "idempotencyKey"
-    ]
+    "required": []
   }
 } as const;
 
@@ -356,7 +345,7 @@ const DEFINITIONS = [
   {
     "name": "get_map_info",
     "title": "Get Map Info",
-    "description": "Inspect one map and its layers without changing the user’s selected map. Obtain stable mapId from get_session and layerId/kind/visibility/locks here before painting. context is {worldSessionId}. Dimensions are cells; tileWidth/tileHeight are native pixels.",
+    "description": "Inspect one map and its layers without changing the user’s selected map. Obtain stable mapId from get_session and layerId/kind/visibility/locks here before painting. context is optional. Dimensions are cells; tileWidth/tileHeight are native pixels.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -383,7 +372,7 @@ const DEFINITIONS = [
   {
     "name": "read_region",
     "title": "Read Region",
-    "description": "Read a bounded rectangle from explicit mapId and layerIds. context is {worldSessionId}. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
+    "description": "Read a bounded rectangle from explicit mapId and layerIds. context is optional. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -428,7 +417,7 @@ const DEFINITIONS = [
   {
     "name": "list_tilesets",
     "title": "List Tilesets",
-    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is {worldSessionId}. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
+    "description": "Discover tileset IDs, names, native tile sizes and sheet grid dimensions before choosing art. Use includeDetails:false for initial discovery without hashing source pixels; fingerprint/tagCounts are omitted. Default includeDetails:true computes those details and can be expensive for large cold atlases. context is optional. Page limit 1–128 (default 64); reuse nextCursor unchanged with the same filters/world revision. Then call get_tile_catalog with images to inspect the actual art.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -464,7 +453,7 @@ const DEFINITIONS = [
   {
     "name": "get_tile_catalog",
     "title": "Get Tile Catalog",
-    "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is {worldSessionId}. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
+    "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is optional. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -535,7 +524,7 @@ const DEFINITIONS = [
   {
     "name": "list_stamps",
     "title": "List Stamps",
-    "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is {worldSessionId}. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
+    "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is optional. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -574,7 +563,7 @@ const DEFINITIONS = [
   {
     "name": "begin_edit",
     "title": "Begin Edit",
-    "description": "Begin one tentative action after get_session. context is {worldSessionId}; expectedRevision is the latest response revision, idempotencyKey is a unique 8–128 character key, requestLabel describes the user’s request, mapIds names 1–8 explicit targets. Save drains before running. Use returned transactionId in write contexts. One world writer, ≤256 mutation calls, 262144 planned cell writes, 64 MiB retained bytes. Running lifetime ≤30 minutes. finish_edit requests human review; only the user approves. User painting/save is blocked until approval/discard.",
+    "description": "Begin one tentative draft. requestLabel describes the user’s request, mapIds names 1–8 explicit targets; context, expectedRevision (CAS) and idempotencyKey are optional. Later writes may omit context: they use this draft. unlockLayerIds unlocks/shows those layers inside the draft so you can paint them. Returns resumeToken: keep it secret; after a disconnect, restart or finish_edit call resume_edit({transactionId,resumeToken}) to continue the same draft. One world writer, ≤4096 mutation calls, 1048576 planned cell writes per draft. Inactivity lease 30 minutes, extended by every call; on lease end or disconnect the draft is sealed for human review, never rolled back. finish_edit requests review; only the user approves.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -606,12 +595,18 @@ const DEFINITIONS = [
           "items": {
             "$ref": "#/$defs/Id"
           }
+        },
+        "unlockLayerIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
         }
       },
       "required": [
-        "context",
-        "idempotencyKey",
-        "expectedRevision",
         "requestLabel",
         "mapIds"
       ],
@@ -621,7 +616,7 @@ const DEFINITIONS = [
   {
     "name": "finish_edit",
     "title": "Finish Edit",
-    "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}, using the latest response revision and a fresh key. Optional summary describes changes. Writes are sealed and locks remain. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool.",
+    "description": "Finish the drawing and request human review; returns awaitingApproval immediately. context is optional. Optional summary describes changes. Writes are sealed and locks remain; resume_edit with your resumeToken reopens the draft if you must amend it. Only the user can Onayla (one undo row) or Vazgeç (rollback). Poll get_session(transactionId); never attempt to approve/save via a tool.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -648,7 +643,7 @@ const DEFINITIONS = [
   {
     "name": "cancel_edit",
     "title": "Cancel Edit",
-    "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is {worldSessionId,transactionId,idempotencyKey,expectedRevision}; unlike other writes, cancellation accepts a stale expectedRevision. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally.",
+    "description": "Discard your owned tentative edit and restore its original maps, palettes and project metadata. context is optional; cancellation accepts a stale expectedRevision. After a disconnect pass resumeToken (with context.transactionId) to discard your orphaned or submitted draft. Provisional maps disappear. Independently written semantic tags survive. User may also discard locally.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -664,6 +659,9 @@ const DEFINITIONS = [
         "reason": {
           "type": "string",
           "maxLength": 256
+        },
+        "resumeToken": {
+          "$ref": "#/$defs/ResumeToken"
         }
       },
       "required": [
@@ -675,7 +673,7 @@ const DEFINITIONS = [
   {
     "name": "paint_cells",
     "title": "Paint Cells",
-    "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
+    "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit; context is optional (add idempotencyKey to make retries safe). Changes remain tentative until human approval.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -809,7 +807,7 @@ const DEFINITIONS = [
   {
     "name": "fill",
     "title": "Fill",
-    "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
+    "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit; context is optional.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1050,7 +1048,7 @@ const DEFINITIONS = [
   {
     "name": "place_stamp",
     "title": "Place Stamp",
-    "description": "Place an existing stamp by ID with transformed top-left at at (map cells). rotation 0–3 quarter turns occurs before flipX/flipY. Uses compatible source/destination layers; supply layerMapping [{sourceLayerId,targetLayerId}] when ambiguous, or allowCreateLayers:true for missing layers. emptyCells:\"skip\" (default) preserves destination under holes; \"erase\" clears them. ≤4096 writes across layers; complete transformed bounds must fit. Protected layers reject atomically. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}.",
+    "description": "Place an existing stamp by ID with transformed top-left at at (map cells). rotation 0–3 quarter turns occurs before flipX/flipY. Uses compatible source/destination layers; supply layerMapping [{sourceLayerId,targetLayerId}] when ambiguous, or allowCreateLayers:true for missing layers. emptyCells:\"skip\" (default) preserves destination under holes; \"erase\" clears them. ≤4096 writes across layers; complete transformed bounds must fit. Protected layers reject atomically. Requires begin_edit; context is optional.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1248,7 +1246,7 @@ const DEFINITIONS = [
   {
     "name": "list_entity_types",
     "title": "List Entity Types",
-    "description": "Inspect available built-in spawn/portal and user entity schemas, field names/types/defaults/enums. context is {worldSessionId}. Use an existing typeId with place_entity. Tools cannot invent entity types or fields.",
+    "description": "Inspect available built-in spawn/portal and user entity schemas, field names/types/defaults/enums. context is optional. Use an existing typeId with place_entity. Tools cannot invent entity types or fields.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1395,7 +1393,7 @@ const DEFINITIONS = [
   {
     "name": "resize_map",
     "title": "Resize Map",
-    "description": "Resize an explicit map from its top-left, preserving native tile dimensions. width/height are cells (1–4096, area ≤1048576). Occupied content outside new bounds requires allowCrop:true; initially protected content cannot be silently cropped. Result is tentative/undoable. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}.",
+    "description": "Resize an explicit map from its top-left, preserving native tile dimensions. width/height are cells (1–4096, area ≤1048576). Occupied content outside new bounds requires allowCrop:true; initially protected content cannot be silently cropped. Result is tentative/undoable. Requires begin_edit; context is optional.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1438,7 +1436,7 @@ const DEFINITIONS = [
   {
     "name": "render_preview",
     "title": "Render Preview",
-    "description": "Inspect a real PNG of the current live/tentative map before finish_edit. context is {worldSessionId}; mapId required. Optional region is half-open map cells; otherwise whole map. maxSide (≤2048) fits large maps with nearest-neighbor scaling. grid:true and coordinates:true add cell grid and readable coordinate gutters; response image metadata gives contentRect, scale, pixelOrigin and cellSize for exact mapping. Hidden layers stay hidden. Collision overlay only for expressly requested collision layerIds. Optional entity markers are diagnostics. ≤1 PNG, 4 MiB, 30 seconds; no file export or save. Review both overview and close crop.",
+    "description": "Inspect a real PNG of the current live/tentative map before finish_edit. context is optional; mapId required. Optional region is half-open map cells; otherwise whole map. maxSide (≤2048) fits large maps with nearest-neighbor scaling. grid:true and coordinates:true add cell grid and readable coordinate gutters; response image metadata gives contentRect, scale, pixelOrigin and cellSize for exact mapping. Hidden layers stay hidden. Collision overlay only for expressly requested collision layerIds. Optional entity markers are diagnostics. ≤1 PNG, 4 MiB, 30 seconds; no file export or save. Review both overview and close crop.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1495,7 +1493,7 @@ const DEFINITIONS = [
   {
     "name": "validate_map",
     "title": "Validate Map",
-    "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is {worldSessionId}. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
+    "description": "Read-only structural validation of explicit mapId, optional half-open map-cell region. context is optional. Reports invalid references/bounds/entity fields/portals/generated sources; existing protected content is not an error. No aesthetic, walkability or semantic guarantees. Each page scans at most 4096 records and returns ≤256 issues (default 128). Follow every revision-bound nextCursor with unchanged arguments/world until nextCursor:null; valid:null means incomplete, and only final valid:true proves integrity. Whole-map scan is not subject to paint’s 4096-cell limit. Use before finish_edit.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1534,7 +1532,7 @@ const DEFINITIONS = [
   {
     "name": "get_tags",
     "title": "Get Tags",
-    "description": "Discover semantic labels and tiles/stamps needing annotation. context is {worldSessionId}, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; optional query searches Turkish/English normalized labels and notes with small explicit aliases; status all|current|missing|stale (default current with query, otherwise missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
+    "description": "Discover semantic labels and tiles/stamps needing annotation. context is optional, with no transaction required; allowed during edits. kind tiles|stamps; optional tilesetId; optional query searches Turkish/English normalized labels and notes with small explicit aliases; status all|current|missing|stale (default current with query, otherwise missing), limit ≤128 and opaque cursor. Returns current fingerprints and retained stale/orphan records. Inspect actual art with get_tile_catalog/list_stamps before proposing labels. Tags do not define terrain/collision.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -1588,7 +1586,7 @@ const DEFINITIONS = [
   {
     "name": "set_tags",
     "title": "Set Tags",
-    "description": "Replace independent semantic tags for existing targets; [] clears. context is {worldSessionId,idempotencyKey} ONLY (no transactionId or expectedRevision). entries contain target, expectedFingerprint from get_tags, tags and optional note. ≤128 targets/batch, ≤16 tags of 1–48 chars, note ≤256. Fingerprint mismatch/duplicate targets rejects the batch. Written independently within 500ms, even while map edit pending; neither discard nor undo removes tags. Never changes PNGs/terrain/collision.",
+    "description": "Replace independent semantic tags for existing targets; [] clears. context is optional {worldSessionId?,idempotencyKey?} ONLY (no transactionId or expectedRevision). entries contain target, expectedFingerprint from get_tags, tags and optional note. ≤128 targets/batch, ≤16 tags of 1–48 chars, note ≤256. Fingerprint mismatch/duplicate targets rejects the batch. Written independently within 500ms, even while map edit pending; neither discard nor undo removes tags. Never changes PNGs/terrain/collision.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1939,10 +1937,22 @@ const LIBRARY_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("get_world_settings", "Get World Settings", "Read this world's new-map tile size, dimensions, layer template, canvas background and Unity defaults. Inspect before configure_world. No changes.", objectSchema({context:ref("ReadContext")}), true),
   feature("configure_world", "Configure World", "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.", objectSchema({context:ref("WriteContext"),settings:{...objectSchema({tileWidth:{type:"integer",minimum:1,maximum:1024},tileHeight:{type:"integer",minimum:1,maximum:1024},newLevel:{...objectSchema({width:{type:"integer",minimum:1,maximum:4096},height:{type:"integer",minimum:1,maximum:4096}},[]),minProperties:1},layerTemplate:{type:"array",maxItems:128,items:objectSchema({name:{type:"string",minLength:1,maxLength:128},kind:{type:"string",enum:["tile","collision","entity"]}})},background:{anyOf:[{type:"null"},{type:"string",pattern:"^#[a-fA-F0-9]{6}$"}]}},[]),minProperties:1}}), false),
 ];
+const LIFECYCLE_DEFINITIONS: readonly AgentToolDefinition[] = [
+  feature("resume_edit", "Resume Edit", "Continue your own draft from this connection after a disconnect, client restart, lease expiry, Durdur or finish_edit. Pass transactionId and the resumeToken that begin_edit returned. Works while the draft is running, orphaned, stopped or awaitingApproval: it rebinds ownership to you and reopens writing (the review bar returns to AI çalışıyor). Previous work is kept. Fails once the user approved or discarded the draft; then begin a new edit. Exclusive drafts only.", objectSchema({ context: ref("ReadContext"), transactionId: ref("Id"), resumeToken: ref("ResumeToken") }, ["transactionId", "resumeToken"]), false),
+];
 const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
-  ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
-}));
+/** C2: context is optional on every tool except collaborative join, which keeps its explicit rules. */
+function optionalContext(schema: Schema): Schema {
+  const out: Record<string, JsonValue> = { ...schema };
+  if (Array.isArray(schema.required)) out.required = (schema.required as string[]).filter(key => key !== "context");
+  for (const key of ["oneOf", "anyOf"] as const)
+    if (Array.isArray(schema[key])) out[key] = (schema[key] as Schema[]).map(branch => optionalContext(branch));
+  return out;
+}
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...LIFECYCLE_DEFINITIONS, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => {
+  const inputSchema = (tool.name === "join_edit" ? tool.inputSchema : optionalContext(tool.inputSchema)) as AgentToolDefinition["inputSchema"];
+  return { ...tool, inputSchema: { ...inputSchema, $defs: reachableSchemaDefinitions(inputSchema, SHARED_DEFS) } };
+});
 
 /** Code-unit key order, LF, two spaces and one final newline, independent of host locale. */
 export function canonicalJson(value: unknown, pretty = true): string {
