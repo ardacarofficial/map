@@ -145,7 +145,8 @@ export function onTilesetImage(listener: Listener): () => void {
  */
 export function notifyTilesetImage(tilesetId: string): void {
   if (!images.has(tilesetId)) return;
-  imageRevision++;
+  // The bytes are unchanged: `tilesetImageRevision` (content identity for the
+  // AI runtime) stays, so re-cutting on a map switch never looks like an edit.
   for (const l of listeners) l(tilesetId);
 }
 

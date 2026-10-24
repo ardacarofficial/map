@@ -233,13 +233,21 @@ function announceFormatMigration(document: MapDocument, levelId: string): void {
   toast.info(t("format.migrated"));
 }
 
+/** A missing file named by what it is: map files and tileset images get their own words. */
+export function describeMissingFile(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.startsWith("levels/") && lower.endsWith(".json")) return t("toast.missingLevelFile", { path });
+  if (lower.endsWith(".png")) return t("toast.missingTilesetImage", { path });
+  return t("toast.missingFile", { path });
+}
+
 /** Human-readable (Turkish) message for an IO error. */
 export function describeError(error: unknown): string {
   if (error instanceof EditedAssetError) return t("pixel.invalidAsset", { path: error.paths.join(", ") });
   if(error instanceof SmartBrushError)return formatSmartBrushError(error);
   if (error instanceof FormatError) return t("toast.formatError", { detail: error.message });
   if (error instanceof ProjectOpenError) return t(error.problem === "noLevel" ? "toast.noLevel" : "toast.noProjectFile");
-  if (error instanceof FileNotFoundError) return t("toast.missingTilesetImage", { path: error.path });
+  if (error instanceof FileNotFoundError) return describeMissingFile(error.path);
   if (error instanceof UnsupportedError) return t("toast.fsUnsupported");
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
     return t("toast.permissionDenied");
