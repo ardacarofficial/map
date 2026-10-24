@@ -38,7 +38,7 @@ test("three agents share a live draft; member cancellation preserves peers and o
     const mapId = session.data.activeMapId!, layerId = session.data.activeLayerId!, readContext = { worldSessionId };
     const tilesets = success(await founder.callTool("list_tilesets", { context: readContext })), tilesetId = tilesets.data.items[0]!.id;
     const claim = (region: Rect) => [{ mapId, layerIds: [layerId], region }];
-    const read = async (region: Rect) => success(await founder.callTool("read_region", { context: readContext, mapId, layerIds: [layerId], region })).data;
+    const read = async (region: Rect) => success(await founder.callTool("read_region", { context: readContext, mapId, layerIds: [layerId], region, format: "cells" })).data;
     const preview = async (region: Rect) => {
       const result = await founder.callTool("render_preview", { context: readContext, mapId, region, layerIds: [layerId], maxSide: 512, grid: false, coordinates: false, entities: false });
       success(result);

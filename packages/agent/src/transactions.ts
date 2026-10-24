@@ -514,9 +514,10 @@ export class Transactions {
       this.applying = old;
     }
   }
-  charge(planned: number, retained = planned * 32): void {
+  /** perCall defaults to the sparse-write cap; uniform/grid tools pass their own per-call limit. */
+  charge(planned: number, retained = planned * 32, perCall: number = L.cellsPerCall): void {
     const c = this.pending!.summary.counters;
-    budget(planned);
+    budget(planned, perCall);
     budget(c.mutationCalls + 1, L.mutationCalls);
     budget(c.plannedWrites + planned, L.transactionPlannedWrites);
     budget(c.retainedBytes + retained, L.retainedBytes);

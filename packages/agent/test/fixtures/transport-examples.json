@@ -1,10 +1,12 @@
 {
   "limits": {
     "cellsPerCall": 4096,
-    "readCellsPerLayer": 4096,
-    "readCellsTotal": 16384,
-    "readLayers": 8,
-    "fillCells": 4096,
+    "readCellsPerLayer": 16384,
+    "readCellsTotal": 65536,
+    "readLayers": 16,
+    "gridCells": 16384,
+    "batchCells": 65536,
+    "fillCells": 1048576,
     "mutationCalls": 256,
     "transactionPlannedWrites": 262144,
     "retainedBytes": 67108864,

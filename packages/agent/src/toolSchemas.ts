@@ -383,7 +383,7 @@ const DEFINITIONS = [
   {
     "name": "read_region",
     "title": "Read Region",
-    "description": "Read a bounded rectangle from explicit mapId and layerIds. context is {worldSessionId}. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
+    "description": "Read map cells. region (half-open {x,y,width,height}, zero-based cells, y down) defaults to the whole map; layerIds defaults to every visible tile and collision layer. Default format \"grid\" returns per layer {layerId,name,kind,rows,legend}: one character per cell, legend char → {tilesetId,tileId,flags?} or {collision:n}, \".\" = empty (null). Same shape paint_grid accepts, so you can edit rows and paint them back (origin = region x,y). Entirely empty layers are listed in emptyLayerIds instead. format \"cells\" returns the older flat legend-index arrays. Maximum 16384 cells/layer, 65536 total, 16 layers, 256 entities.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -405,7 +405,7 @@ const DEFINITIONS = [
         "layerIds": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 8,
+          "maxItems": 16,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/Id"
@@ -414,13 +414,19 @@ const DEFINITIONS = [
         "includeEntities": {
           "type": "boolean",
           "default": false
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "grid",
+            "cells"
+          ],
+          "default": "grid"
         }
       },
       "required": [
         "context",
-        "mapId",
-        "region",
-        "layerIds"
+        "mapId"
       ],
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
@@ -675,7 +681,7 @@ const DEFINITIONS = [
   {
     "name": "paint_cells",
     "title": "Paint Cells",
-    "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
+    "description": "Write sparse explicit cells on a tile or collision layer. Either cells:[{x,y,value}] (≤4096/call) or points:[[x,y],...] with one shared value (≤16384/call; cheapest for scattering one tile). For whole areas with varied tiles prefer paint_grid. Zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -701,13 +707,78 @@ const DEFINITIONS = [
           "items": {
             "$ref": "#/$defs/CellWrite"
           }
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16384,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4095
+            }
+          }
+        },
+        "value": {
+          "$ref": "#/$defs/PaintValue"
         }
       },
       "required": [
         "context",
         "mapId",
-        "layerId",
-        "cells"
+        "layerId"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "cells"
+          ],
+          "properties": {
+            "cells": {}
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "points"
+                ],
+                "properties": {
+                  "points": {}
+                }
+              },
+              {
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {}
+                }
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "points",
+            "value"
+          ],
+          "properties": {
+            "points": {},
+            "value": {}
+          },
+          "not": {
+            "required": [
+              "cells"
+            ],
+            "properties": {
+              "cells": {}
+            }
+          }
+        }
       ],
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
@@ -715,7 +786,7 @@ const DEFINITIONS = [
   {
     "name": "paint_rect",
     "title": "Paint Rect",
-    "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), or collision value on a collision layer. ≤4096 planned cells; full region must fit, protected layers reject. Requires begin_edit and write context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; update revision from each response. Split large ground fills into bounded rectangles. Finish with finish_edit for human review.",
+    "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), or collision value on a collision layer. Uniform: any size up to the whole map in one call (only the edit's total cell budget applies); full region must fit, protected layers reject. Requires begin_edit and write context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; update revision from each response. Finish with finish_edit for human review.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -809,7 +880,7 @@ const DEFINITIONS = [
   {
     "name": "fill",
     "title": "Fill",
-    "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
+    "description": "Four-neighbor flood fill from start (map cells) inside region (half-open; defaults to the whole map). Matches the full original value including orientation. Optional maxCells guard rejects before any mutation when exceeded; otherwise only the edit's total cell budget applies. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -840,8 +911,7 @@ const DEFINITIONS = [
         "maxCells": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 4096,
-          "default": 4096
+          "maximum": 1048576
         }
       },
       "required": [
@@ -849,7 +919,6 @@ const DEFINITIONS = [
         "mapId",
         "layerId",
         "start",
-        "region",
         "value"
       ],
       "$schema": "https://json-schema.org/draft/2020-12/schema"
@@ -1863,11 +1932,45 @@ function feature(name: AgentToolDefinition["name"], title: string, description: 
   return { name, title, description, annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, openWorldHint: false },
     inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" } };
 }
-const batchNames = ["paint_cells", "paint_rect", "paint_line", "place_stamp", "place_entity", "edit_entity"] as const;
+const layerIds16: Schema = { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: ref("Id") };
+const tileRef: Schema = objectSchema({ tilesetId: ref("Id"), tileId: { type: "integer", minimum: 0, maximum: 4294967295 } });
+const gridCell: Schema = { oneOf: [
+  { type: "null" },
+  { const: "keep" },
+  ref("Tile"),
+  objectSchema({ collision: { type: "integer", minimum: 0, maximum: 2 } }),
+  objectSchema({
+    random: { type: "array", minItems: 1, maxItems: 64, items: objectSchema({ tilesetId: ref("Id"), tileId: { type: "integer", minimum: 0, maximum: 4294967295 },
+      flags: { type: "integer", minimum: 0, maximum: 7 }, weight: { type: "number", minimum: 0, maximum: 1000000 } }, ["tilesetId", "tileId"]) },
+    seed: { type: "integer", minimum: 0, maximum: 4294967295 },
+  }, ["random"]),
+] };
+const gridLegend: Schema = { type: "object", maxProperties: 4096, propertyNames: { type: "string", minLength: 1, maxLength: 1 }, additionalProperties: gridCell };
+const gridRows: Schema = { type: "array", minItems: 1, maxItems: 4096, items: { type: "string", minLength: 1, maxLength: 4096 } };
+const layerName: Schema = { type: "string", minLength: 1, maxLength: 128 };
+const GRID_DEFINITIONS: readonly AgentToolDefinition[] = [
+  feature("paint_grid", "Paint Grid",
+    "Paint a rectangle of varied tiles compactly: rows are equal-length strings, one character per map cell starting at origin (default {x:0,y:0}, x right/y down); legend maps each character to {tilesetId,tileId,flags?}, null (erase), \"keep\" (leave unchanged), {random:[{tilesetId,tileId,flags?,weight?}],seed?} (deterministic per cell; seed defaults to the map seed) or {collision:0|1|2} on collision layers. A space keeps the cell unless the legend defines it; any other unknown character is rejected. Target one layer with layerId or unique layerName, or several with layers:[{layerId|layerName,origin?,rows,legend?}] (top-level legend/origin are shared defaults; a layer's legend entries override). ≤16384 cells per layer, all applied as one action. read_region's default output uses the same shape. Requires begin_edit and write context.",
+    { ...objectSchema({ context: ref("WriteContext"), mapId: ref("Id"), layerId: ref("Id"), layerName, origin: ref("Point"), rows: gridRows, legend: gridLegend,
+      layers: { type: "array", minItems: 1, maxItems: 16, items: objectSchema({ layerId: ref("Id"), layerName, origin: ref("Point"), rows: gridRows, legend: gridLegend }, ["rows"]) } }, ["context", "mapId"]),
+    oneOf: [
+      { ...requiredKeys("rows"), anyOf: [requiredKeys("layerId"), requiredKeys("layerName")], not: requiredKeys("layers") },
+      { ...requiredKeys("layers"), not: { anyOf: [requiredKeys("rows"), requiredKeys("layerId"), requiredKeys("layerName")] } },
+    ] }, false),
+  feature("replace_tiles", "Replace Tiles",
+    "Replace every use of one tile with another (or erase it with to:null), keeping each cell's flip/rotation bits, like the editor's Tile değiştir. scope: \"region\" (mapId+region), \"layer\" (mapId+layerIds, whole layers), \"map\" (mapId) or \"world\" (every map in this edit). Without layerIds, all visible unlocked tile layers are used and protected ones are reported in warnings. No cell cap; returns the replaced count. Requires begin_edit and write context.",
+    objectSchema({ context: ref("WriteContext"), scope: { type: "string", enum: ["region", "layer", "map", "world"] }, mapId: ref("Id"), layerIds: layerIds16, region: ref("Rect"),
+      from: tileRef, to: { oneOf: [{ type: "null" }, tileRef] } }, ["context", "scope", "from", "to"]), false),
+  feature("clear_region", "Clear Region",
+    "Erase every tile/collision cell inside region (half-open map cells; default the whole map) on layerIds, or by default on all visible unlocked tile and collision layers. List an entity layer explicitly to also remove its entities inside the region. No cell cap. Requires begin_edit and write context.",
+    objectSchema({ context: ref("WriteContext"), mapId: ref("Id"), region: ref("Rect"), layerIds: layerIds16 }, ["context", "mapId"]), false),
+];
+const batchNames = ["paint_cells", "paint_grid", "paint_rect", "paint_line", "place_stamp", "place_entity", "edit_entity"] as const;
 const batchBranches = batchNames.map(name => {
-  const source = name === "edit_entity" ? editEntitySchema : hardenedDefinitions.find(t => t.name === name)!.inputSchema;
+  const source = name === "edit_entity" ? editEntitySchema : [...hardenedDefinitions, ...GRID_DEFINITIONS].find(t => t.name === name)!.inputSchema;
   function withoutContext(schema: Schema): Schema {
-    if (Array.isArray(schema.oneOf)) return { oneOf: schema.oneOf.map(branch => withoutContext(branch as Schema)) };
+    // Branch-only unions (edit_entity) recurse; property schemas keep their keys and drop cross-key oneOf (validated server-side).
+    if (Array.isArray(schema.oneOf) && !schema.properties) return { oneOf: schema.oneOf.map(branch => withoutContext(branch as Schema)) };
     const { context: _context, ...properties } = schema.properties as Record<string, JsonValue>;
     const required = (schema.required as string[]).filter(key => key !== "context");
     if (name === "place_stamp") { properties.allowCreateLayers = { const: false }; required.push("layerMapping"); }
@@ -1885,8 +1988,8 @@ const goalSchema: Schema = { oneOf: [
 const featureDefinitions = [
   feature("get_editor_context", "Get Editor Context", "Read the user's current map/layer/tool, bounded atlas/stamp/map selection, viewport and explicitly shared reference token. Context is observational: confirm intent before choosing a source. contextToken changes when selection or view changes, independently of world revision. No edits or automatic reference upload.", objectSchema({ context: ref("ReadContext") }), true),
   feature("edit_entity", "Edit Entity", "Move, update fields or remove an existing entity by mapId/entityId. move.at is map cells; point field values are native pixels. Preserves entity ID/type and validates merged fields, portal destinations and initial/current layer protection. Requires an edit, current revision and idempotency key.", editEntitySchema, false),
-  feature("apply_operations", "Apply Operations", "Apply 1–32 sequential existing-ID paint_cells/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤4096. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.", objectSchema({ context: ref("WriteContext"), operations: { type: "array", minItems: 1, maxItems: 32, items: { oneOf: batchBranches } } }), false),
-  feature("validate_goals", "Validate Goals", "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.", objectSchema({ context: ref("ReadContext"), mapId: ref("Id"), checks: { type: "array", minItems: 1, maxItems: 16, items: goalSchema } }), true),
+  feature("apply_operations", "Apply Operations", "Apply 1–32 sequential existing-ID paint_cells/paint_grid/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤65536. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.", objectSchema({ context: ref("WriteContext"), operations: { type: "array", minItems: 1, maxItems: 32, items: { oneOf: batchBranches } } }), false),
+  feature("validate_goals", "Validate Goals", "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤65536 aggregate cell-layer scans plus bounded entities; no writes.", objectSchema({ context: ref("ReadContext"), mapId: ref("Id"), checks: { type: "array", minItems: 1, maxItems: 16, items: goalSchema } }), true),
 ];
 const controlObject = (properties: Record<string, JsonValue>, required: string[] = []): Schema => ({ type: "object", additionalProperties: false, properties, required });
 const controlEnumeration = (...values: string[]): Schema => ({ type: "string", enum: values });
@@ -1940,7 +2043,7 @@ const LIBRARY_DEFINITIONS: readonly AgentToolDefinition[] = [
   feature("configure_world", "Configure World", "Patch world defaults for future maps: tile size, new-map dimensions, layer template and canvas background (#rrggbb or null). Existing maps/tiles/pixels keep their dimensions. Requires begin_edit; pending review, discard and approved undo cover settings alongside document edits. No path, auto-export or server/token changes. UI view/preferences use configure_editor/configure_application.", objectSchema({context:ref("WriteContext"),settings:{...objectSchema({tileWidth:{type:"integer",minimum:1,maximum:1024},tileHeight:{type:"integer",minimum:1,maximum:1024},newLevel:{...objectSchema({width:{type:"integer",minimum:1,maximum:4096},height:{type:"integer",minimum:1,maximum:4096}},[]),minProperties:1},layerTemplate:{type:"array",maxItems:128,items:objectSchema({name:{type:"string",minLength:1,maxLength:128},kind:{type:"string",enum:["tile","collision","entity"]}})},background:{anyOf:[{type:"null"},{type:"string",pattern:"^#[a-fA-F0-9]{6}$"}]}},[]),minProperties:1}}), false),
 ];
 const JOIN_DEFINITIONS:readonly AgentToolDefinition[]=[feature("join_edit","Join Collaborative Edit","Join an existing shared draft as your authenticated client, claiming 1–16 immutable rectangles on explicit existing map/layer IDs. Overlap on the same map/layer fails REGION_CONFLICT before mutation; disjoint regions can share one layer. Founder begin_edit may omit claims for prep-only setup, then call join_edit once to assign its own claims before peers join. Peers join only while coordinator is open and has claims. Global metadata is frozen after the first spatial write or first peer join. Returns memberId/memberRevision; subsequent writes may use expectedMemberRevision instead of strict global expectedRevision (exactly one). finish_edit submits only your member; cancel_edit rolls back only your spatial contribution, preserving peers/shared setup. Human approval/discard applies to the combined draft.",objectSchema({context:ref("ReadContext"),transactionId:ref("Id"),idempotencyKey:ref("Key"),expectedRevision:ref("Revision"),claims:claimsSchema}),false)];
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...GRID_DEFINITIONS, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS].map(tool => ({
   ...tool, inputSchema: { ...tool.inputSchema, $defs: reachableSchemaDefinitions(tool.inputSchema, SHARED_DEFS) },
 }));
 

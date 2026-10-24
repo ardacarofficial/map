@@ -88,10 +88,10 @@ describe("explicit map goals", () => {
   });
 
   it("rejects out-of-region endpoints and cumulative work above the normal read budget", async () => {
-    const h = harness({ width: 128, height: 128 });
+    const h = harness({ width: 256, height: 256 });
     error(await h.read("validate_goals", { mapId: "map-1", checks: [{ ...connection, to: { x: 5, y: 1 } }] }), "OUT_OF_BOUNDS");
-    const large: GoalCheck = { ...capture, region: { x: 0, y: 0, width: 64, height: 64 }, layerIds: ["ground"] };
+    const large: GoalCheck = { ...capture, region: { x: 0, y: 0, width: 128, height: 128 }, layerIds: ["ground"] };
     error(await h.read("validate_goals", { mapId: "map-1", checks: Array.from({ length: 5 }, () => large) }), "LIMIT_EXCEEDED");
-    error(await h.read("validate_goals", { mapId: "map-1", checks: [{ ...capture, region: { x: 0, y: 0, width: 128, height: 128 } }] }), "LIMIT_EXCEEDED");
+    error(await h.read("validate_goals", { mapId: "map-1", checks: [{ ...capture, region: { x: 0, y: 0, width: 256, height: 128 } }] }), "LIMIT_EXCEEDED");
   });
 });

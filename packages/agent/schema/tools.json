@@ -80,7 +80,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read a bounded rectangle from explicit mapId and layerIds. context is {worldSessionId}. Coordinates are zero-based map cells, x right/y down; region is half-open {x,y,width,height}. Cells are row-major local legend refs (0 empty), not document palette indices; collision layers use raw 0/1/2. Maximum 4096 cells/layer, 16384 total, 8 layers, 256 entities.",
+      "description": "Read map cells. region (half-open {x,y,width,height}, zero-based cells, y down) defaults to the whole map; layerIds defaults to every visible tile and collision layer. Default format \"grid\" returns per layer {layerId,name,kind,rows,legend}: one character per cell, legend char → {tilesetId,tileId,flags?} or {collision:n}, \".\" = empty (null). Same shape paint_grid accepts, so you can edit rows and paint them back (origin = region x,y). Entirely empty layers are listed in emptyLayerIds instead. format \"cells\" returns the older flat legend-index arrays. Maximum 16384 cells/layer, 65536 total, 16 layers, 256 entities.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -141,6 +141,14 @@
           "context": {
             "$ref": "#/$defs/ReadContext"
           },
+          "format": {
+            "default": "grid",
+            "enum": [
+              "grid",
+              "cells"
+            ],
+            "type": "string"
+          },
           "includeEntities": {
             "default": false,
             "type": "boolean"
@@ -149,7 +157,7 @@
             "items": {
               "$ref": "#/$defs/Id"
             },
-            "maxItems": 8,
+            "maxItems": 16,
             "minItems": 1,
             "type": "array",
             "uniqueItems": true
@@ -163,9 +171,7 @@
         },
         "required": [
           "context",
-          "mapId",
-          "region",
-          "layerIds"
+          "mapId"
         ],
         "type": "object"
       },
@@ -815,7 +821,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Write sparse explicit cells on a tile or collision layer (≤4096 cells/call). Each cell is {x,y,value}; zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
+      "description": "Write sparse explicit cells on a tile or collision layer. Either cells:[{x,y,value}] (≤4096/call) or points:[[x,y],...] with one shared value (≤16384/call; cheapest for scattering one tile). For whole areas with varied tiles prefer paint_grid. Zero-based map cells, x right/y down. value is {tilesetId,tileId,flags?}, null to erase, or {collision:0|1|2} for collision layers only. flags are compact D4 H=1,V=2,D=4. All coordinates must fit; locked/hidden layers reject. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}. Use latest response revision, fresh key per distinct call; repeat identical arguments/key only to retry. Changes remain tentative until human approval.",
       "inputSchema": {
         "$defs": {
           "CellWrite": {
@@ -955,6 +961,54 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "points": {}
+                  },
+                  "required": [
+                    "points"
+                  ]
+                },
+                {
+                  "properties": {
+                    "value": {}
+                  },
+                  "required": [
+                    "value"
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "cells": {}
+            },
+            "required": [
+              "cells"
+            ]
+          },
+          {
+            "not": {
+              "properties": {
+                "cells": {}
+              },
+              "required": [
+                "cells"
+              ]
+            },
+            "properties": {
+              "points": {},
+              "value": {}
+            },
+            "required": [
+              "points",
+              "value"
+            ]
+          }
+        ],
         "properties": {
           "cells": {
             "items": {
@@ -972,13 +1026,30 @@
           },
           "mapId": {
             "$ref": "#/$defs/Id"
+          },
+          "points": {
+            "items": {
+              "items": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "maxItems": 16384,
+            "minItems": 1,
+            "type": "array"
+          },
+          "value": {
+            "$ref": "#/$defs/PaintValue"
           }
         },
         "required": [
           "context",
           "mapId",
-          "layerId",
-          "cells"
+          "layerId"
         ],
         "type": "object"
       },
@@ -991,7 +1062,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), or collision value on a collision layer. ≤4096 planned cells; full region must fit, protected layers reject. Requires begin_edit and write context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; update revision from each response. Split large ground fills into bounded rectangles. Finish with finish_edit for human review.",
+      "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), or collision value on a collision layer. Uniform: any size up to the whole map in one call (only the edit's total cell budget applies); full region must fit, protected layers reject. Requires begin_edit and write context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; update revision from each response. Finish with finish_edit for human review.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -1363,7 +1434,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Four-neighbor flood fill inside an explicit half-open region, starting at start in map cells. Matches the full original value including orientation. maxCells 1–4096; exceeding it rejects before any mutation. Never unrestricted whole-world fill. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
+      "description": "Four-neighbor flood fill from start (map cells) inside region (half-open; defaults to the whole map). Matches the full original value including orientation. Optional maxCells guard rejects before any mutation when exceeded; otherwise only the edit's total cell budget applies. Explicit mapId/layerId and compatible value required. Requires begin_edit and context {worldSessionId,transactionId,idempotencyKey,expectedRevision}; refresh revision after writes.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -1544,8 +1615,7 @@
             "$ref": "#/$defs/Id"
           },
           "maxCells": {
-            "default": 4096,
-            "maximum": 4096,
+            "maximum": 1048576,
             "minimum": 1,
             "type": "integer"
           },
@@ -1564,7 +1634,6 @@
           "mapId",
           "layerId",
           "start",
-          "region",
           "value"
         ],
         "type": "object"
@@ -3694,6 +3763,760 @@
     },
     {
       "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Paint a rectangle of varied tiles compactly: rows are equal-length strings, one character per map cell starting at origin (default {x:0,y:0}, x right/y down); legend maps each character to {tilesetId,tileId,flags?}, null (erase), \"keep\" (leave unchanged), {random:[{tilesetId,tileId,flags?,weight?}],seed?} (deterministic per cell; seed defaults to the map seed) or {collision:0|1|2} on collision layers. A space keeps the cell unless the legend defines it; any other unknown character is rejected. Target one layer with layerId or unique layerName, or several with layers:[{layerId|layerName,origin?,rows,legend?}] (top-level legend/origin are shared defaults; a layer's legend entries override). ≤16384 cells per layer, all applied as one action. read_region's default output uses the same shape. Requires begin_edit and write context.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Point": {
+            "additionalProperties": false,
+            "description": "Zero-based map-cell coordinate, x right and y down unless the tool explicitly states world pixels.",
+            "properties": {
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "Tile": {
+            "additionalProperties": false,
+            "description": "Stable tilesetId/tileId from catalog, with optional compact D4 flags H=1,V=2,D=4; not a palette integer.",
+            "properties": {
+              "flags": {
+                "default": 0,
+                "maximum": 7,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tileId": {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tilesetId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "tilesetId",
+              "tileId"
+            ],
+            "type": "object"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
+            "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "layerId": {}
+                },
+                "required": [
+                  "layerId"
+                ]
+              },
+              {
+                "properties": {
+                  "layerName": {}
+                },
+                "required": [
+                  "layerName"
+                ]
+              }
+            ],
+            "not": {
+              "properties": {
+                "layers": {}
+              },
+              "required": [
+                "layers"
+              ]
+            },
+            "properties": {
+              "rows": {}
+            },
+            "required": [
+              "rows"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "rows": {}
+                  },
+                  "required": [
+                    "rows"
+                  ]
+                },
+                {
+                  "properties": {
+                    "layerId": {}
+                  },
+                  "required": [
+                    "layerId"
+                  ]
+                },
+                {
+                  "properties": {
+                    "layerName": {}
+                  },
+                  "required": [
+                    "layerName"
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "layers": {}
+            },
+            "required": [
+              "layers"
+            ]
+          }
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "layerId": {
+            "$ref": "#/$defs/Id"
+          },
+          "layerName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "layers": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "layerId": {
+                  "$ref": "#/$defs/Id"
+                },
+                "layerName": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "legend": {
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "const": "keep"
+                      },
+                      {
+                        "$ref": "#/$defs/Tile"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "collision": {
+                            "maximum": 2,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "collision"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "random": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "flags": {
+                                  "maximum": 7,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "tileId": {
+                                  "maximum": 4294967295,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "tilesetId": {
+                                  "$ref": "#/$defs/Id"
+                                },
+                                "weight": {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "tilesetId",
+                                "tileId"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 64,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "seed": {
+                            "maximum": 4294967295,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "random"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxProperties": 4096,
+                  "propertyNames": {
+                    "maxLength": 1,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "origin": {
+                  "$ref": "#/$defs/Point"
+                },
+                "rows": {
+                  "items": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 4096,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "rows"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "legend": {
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "const": "keep"
+                },
+                {
+                  "$ref": "#/$defs/Tile"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "collision": {
+                      "maximum": 2,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "collision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "random": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "flags": {
+                            "maximum": 7,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "tileId": {
+                            "maximum": 4294967295,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "tilesetId": {
+                            "$ref": "#/$defs/Id"
+                          },
+                          "weight": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "tilesetId",
+                          "tileId"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 64,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "seed": {
+                      "maximum": 4294967295,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "random"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxProperties": 4096,
+            "propertyNames": {
+              "maxLength": 1,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "origin": {
+            "$ref": "#/$defs/Point"
+          },
+          "rows": {
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 4096,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "context",
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "paint_grid",
+      "title": "Paint Grid"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Replace every use of one tile with another (or erase it with to:null), keeping each cell's flip/rotation bits, like the editor's Tile değiştir. scope: \"region\" (mapId+region), \"layer\" (mapId+layerIds, whole layers), \"map\" (mapId) or \"world\" (every map in this edit). Without layerIds, all visible unlocked tile layers are used and protected ones are reported in warnings. No cell cap; returns the replaced count. Requires begin_edit and write context.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
+            "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "from": {
+            "additionalProperties": false,
+            "properties": {
+              "tileId": {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tilesetId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "tilesetId",
+              "tileId"
+            ],
+            "type": "object"
+          },
+          "layerIds": {
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "region": {
+            "$ref": "#/$defs/Rect"
+          },
+          "scope": {
+            "enum": [
+              "region",
+              "layer",
+              "map",
+              "world"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "tileId": {
+                    "maximum": 4294967295,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "tilesetId": {
+                    "$ref": "#/$defs/Id"
+                  }
+                },
+                "required": [
+                  "tilesetId",
+                  "tileId"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "context",
+          "scope",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "name": "replace_tiles",
+      "title": "Replace Tiles"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Erase every tile/collision cell inside region (half-open map cells; default the whole map) on layerIds, or by default on all visible unlocked tile and collision layers. List an entity layer explicitly to also remove its entities inside the region. No cell cap. Requires begin_edit and write context.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "Key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "WriteContext": {
+            "additionalProperties": false,
+            "description": "Supply exactly one concurrency token: expectedRevision for strict whole-world CAS, or expectedMemberRevision for your collaborative member sequence. Every distinct write uses a fresh idempotencyKey; retry identical payload/key only.",
+            "oneOf": [
+              {
+                "properties": {
+                  "expectedRevision": {}
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              },
+              {
+                "properties": {
+                  "expectedMemberRevision": {}
+                },
+                "required": [
+                  "expectedMemberRevision"
+                ]
+              }
+            ],
+            "properties": {
+              "expectedMemberRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "expectedRevision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "idempotencyKey": {
+                "$ref": "#/$defs/Key"
+              },
+              "transactionId": {
+                "$ref": "#/$defs/Id"
+              },
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "worldSessionId",
+              "transactionId",
+              "idempotencyKey"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/WriteContext"
+          },
+          "layerIds": {
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "region": {
+            "$ref": "#/$defs/Rect"
+          }
+        },
+        "required": [
+          "context",
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "clear_region",
+      "title": "Clear Region"
+    },
+    {
+      "annotations": {
         "destructiveHint": false,
         "openWorldHint": false,
         "readOnlyHint": true
@@ -3969,7 +4792,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Apply 1–32 sequential existing-ID paint_cells/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤4096. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.",
+      "description": "Apply 1–32 sequential existing-ID paint_cells/paint_grid/paint_rect/paint_line/place_stamp/place_entity/edit_entity operations with one outer WriteContext, revision and idempotency key. Each item is {tool,args} without context. Stamps require explicit existing layerMapping and cannot create layers. Complete sequential preflight rejects the whole batch before mutation; children consume mutation/memory budgets and aggregate planned cells must be ≤65536. No lifecycle, creation, fill, source preparation or tags. Replay creates no duplicates; approval joins one world undo group.",
       "inputSchema": {
         "$defs": {
           "CellWrite": {
@@ -4248,17 +5071,281 @@
                         },
                         "mapId": {
                           "$ref": "#/$defs/Id"
+                        },
+                        "points": {
+                          "items": {
+                            "items": {
+                              "maximum": 4095,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "maxItems": 2,
+                            "minItems": 2,
+                            "type": "array"
+                          },
+                          "maxItems": 16384,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "value": {
+                          "$ref": "#/$defs/PaintValue"
                         }
                       },
                       "required": [
                         "mapId",
-                        "layerId",
-                        "cells"
+                        "layerId"
                       ],
                       "type": "object"
                     },
                     "tool": {
                       "const": "paint_cells"
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "args"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "layerId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "layerName": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "layers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "layerId": {
+                                "$ref": "#/$defs/Id"
+                              },
+                              "layerName": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "legend": {
+                                "additionalProperties": {
+                                  "oneOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "const": "keep"
+                                    },
+                                    {
+                                      "$ref": "#/$defs/Tile"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "collision": {
+                                          "maximum": 2,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "collision"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "random": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "flags": {
+                                                "maximum": 7,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "tileId": {
+                                                "maximum": 4294967295,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "tilesetId": {
+                                                "$ref": "#/$defs/Id"
+                                              },
+                                              "weight": {
+                                                "maximum": 1000000,
+                                                "minimum": 0,
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "tilesetId",
+                                              "tileId"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "maxItems": 64,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "seed": {
+                                          "maximum": 4294967295,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "random"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "maxProperties": 4096,
+                                "propertyNames": {
+                                  "maxLength": 1,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              },
+                              "origin": {
+                                "$ref": "#/$defs/Point"
+                              },
+                              "rows": {
+                                "items": {
+                                  "maxLength": 4096,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 4096,
+                                "minItems": 1,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "rows"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 16,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "legend": {
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "const": "keep"
+                              },
+                              {
+                                "$ref": "#/$defs/Tile"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "collision": {
+                                    "maximum": 2,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "collision"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "random": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "flags": {
+                                          "maximum": 7,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "tileId": {
+                                          "maximum": 4294967295,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "tilesetId": {
+                                          "$ref": "#/$defs/Id"
+                                        },
+                                        "weight": {
+                                          "maximum": 1000000,
+                                          "minimum": 0,
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "tilesetId",
+                                        "tileId"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "maxItems": 64,
+                                    "minItems": 1,
+                                    "type": "array"
+                                  },
+                                  "seed": {
+                                    "maximum": 4294967295,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "random"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "maxProperties": 4096,
+                          "propertyNames": {
+                            "maxLength": 1,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "mapId": {
+                          "$ref": "#/$defs/Id"
+                        },
+                        "origin": {
+                          "$ref": "#/$defs/Point"
+                        },
+                        "rows": {
+                          "items": {
+                            "maxLength": 4096,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "maxItems": 4096,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "mapId"
+                      ],
+                      "type": "object"
+                    },
+                    "tool": {
+                      "const": "paint_grid"
                     }
                   },
                   "required": [
@@ -4584,7 +5671,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤16384 aggregate cell-layer scans plus bounded entities; no writes.",
+      "description": "Check explicit map goals in bounded regions, separately from validate_map structural checks. reachability uses FOUR orthogonal neighbors and caller-selected collisionLayerIds in map stack order: uppermost nonzero value wins, blockedValues identifies blocked decisions and emptyIsBlocked defines cells with no decision. Never infers terrain or visual walkability. region_unchanged resolves tile identities/orientations, collision, entities and visual layer visibility/opacity; omit expectedDigest to capture a baseline (passed/valid:null), then supply it after edits. Digests bind map/layers/region and survive unrelated palette appends. entity_count uses explicit entity layers, optional existing typeId and inclusive min/max. ≤16 checks, ≤65536 aggregate cell-layer scans plus bounded entities; no writes.",
       "inputSchema": {
         "$defs": {
           "Id": {

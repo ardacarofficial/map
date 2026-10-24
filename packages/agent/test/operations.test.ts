@@ -51,9 +51,10 @@ describe("bounded operation batches", () => {
   });
 
   it("checks aggregate cell/mutation budgets and existing stamp layer mapping before changing anything", async () => {
-    const h = harness({ width: 128, height: 64, stamps: [stamp] }); await h.begin();
+    const h = harness({ width: 256, height: 256, stamps: [stamp] }); await h.begin();
     const before = serializeLevel(h.host.stores.get("map-1")!.document), revision = h.api.getState().revision;
-    const rect = { tool: "paint_rect", args: { mapId: "map-1", layerId: "ground", region: { x: 0, y: 0, width: 64, height: 64 }, value: tile } };
+    // Uniform children may be large, but one batch is capped at batchCells aggregate planned cells.
+    const rect = { tool: "paint_rect", args: { mapId: "map-1", layerId: "ground", region: { x: 0, y: 0, width: 256, height: 256 }, value: tile } };
     error(await h.edit("apply_operations", { operations: [rect, paint(65, 0)] }), "LIMIT_EXCEEDED");
     error(await h.edit("apply_operations", { operations: [{ tool: "place_stamp", args: { mapId: "map-1", stampId: "house", at: { x: 0, y: 0 } } }] }), "INVALID_ARGUMENT");
     for (let i = 0; i < AGENT_LIMITS.mutationCalls - 1; i++) success(await h.edit("paint_cells", paint(0, 0).args));

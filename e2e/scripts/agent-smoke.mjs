@@ -73,7 +73,7 @@ try {
   });
   const stamps = await call('list_stamps', { context: { worldSessionId } });
   const stampId = stamps.data.items.find(s => s.name === 'Smoke house').id;
-  const original = await call('read_region', { context: { worldSessionId }, mapId, layerIds: [layerId], region: { x: 0, y: 0, width: 24, height: 16 } });
+  const original = await call('read_region', { context: { worldSessionId }, mapId, layerIds: [layerId], region: { x: 0, y: 0, width: 24, height: 16 }, format: 'cells' });
   await call('begin_edit', { context: { worldSessionId }, expectedRevision: revision, idempotencyKey: randomUUID(), requestLabel: 'Paint, stamps and connected road', mapIds: [mapId] }).then(r => { transactionId = r.data.transactionId; });
   await edit('paint_rect', { mapId, layerId, region: { x: 0, y: 0, width: 24, height: 16 }, value: { tilesetId, tileId: 0 } });
   await edit('place_stamp', { mapId, stampId, at: { x: 4, y: 4 } });
@@ -90,7 +90,7 @@ try {
   await page.locator('[data-ai-bar]').getByRole('button', { name: 'Onayla', exact: true }).click();
   await expect(page.locator('[data-ai-bar]')).toBeHidden();
   await page.locator('[data-canvas-host]').focus(); await page.keyboard.press('Control+z');
-  const undone = await call('read_region', { context: { worldSessionId }, mapId, layerIds: [layerId], region: { x: 0, y: 0, width: 24, height: 16 } });
+  const undone = await call('read_region', { context: { worldSessionId }, mapId, layerIds: [layerId], region: { x: 0, y: 0, width: 24, height: 16 }, format: 'cells' });
   expect(undone.data.layers).toEqual(original.data.layers);
   expect(hash(await readFile(artPath))).toBe(hash(art));
   console.log(`Smoke passed; images at ${output}`);

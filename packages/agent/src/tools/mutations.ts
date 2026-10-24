@@ -47,6 +47,7 @@ import {
   type ToolName,
 } from "../contracts";
 import { utf8ByteLength } from "../tags";
+import { clearRegion, compact, paintGrid, replaceTiles, wholeMap } from "./grid";
 import { linePoints, rectanglePoints } from "../geometry";
 import { layerProtectionKey, type Transactions, waitFor } from "../transactions";
 import {
@@ -212,54 +213,74 @@ export function change(
     createdEntityIds: entities,
   };
 }
+export interface LayerWrites { layerId: string; writes: { x: number; y: number; value: PaintValue }[] }
+/** Validate, charge and apply cell writes on one or more layers of one map as one store action. */
+export function applyLayers(
+  tx: Transactions,
+  mapId: string,
+  items: readonly LayerWrites[],
+  perLayer: number = L.cellsPerCall,
+  extra?: () => void,
+  extraRetained = 0,
+) {
+  const store = tx.store(mapId);
+  check(new Set(items.map((i) => i.layerId)).size === items.length, E.INVALID_ARGUMENT, "Each layer may appear once per call");
+  const targets = items.map((item) => {
+    const target = layer(store, item.layerId);
+    protect(tx, mapId, target);
+    uniquePoints(item.writes);
+    budget(item.writes.length, perLayer);
+    // Uniform tools share one value object; validate each distinct value once.
+    const seen = new Set<PaintValue>(), kind = layerKind(target);
+    for (const w of item.writes) {
+      point(store, w);
+      if (!seen.has(w.value)) { seen.add(w.value); tileValue(store, w.value, kind); }
+    }
+    return target;
+  });
+  for (const item of items) tx.authorizeCells(mapId, item.layerId, item.writes);
+  const refs = items.flatMap((i) => i.writes.flatMap((w) => w.value && "tilesetId" in w.value ? [w.value] : []));
+  const planned = items.reduce((n, i) => n + i.writes.length, 0);
+  const retained = planned * 32 + paletteRetained(store, refs) + extraRetained;
+  tx.charge(planned, retained, perLayer * Math.max(1, items.length));
+  const patches = tx.run(() => {
+    store.dispatch({ type: "addPaletteEntries", entries: refs });
+    extra?.();
+    return items.flatMap((item, i) => {
+      const target = targets[i]!;
+      if (!item.writes.length) return [];
+      return [isGridLayer(target)
+        ? store.dispatch({ type: "paintGrid", layerId: item.layerId, cells: item.writes.map((w) => ({ x: w.x, y: w.y, value: cellValue(store, w.value) })) })
+        : store.dispatch({ type: "paintCells", layerId: item.layerId, cells: item.writes.map((w) => ({ x: w.x, y: w.y, cell: cellValue(store, w.value) })) })];
+    });
+  });
+  const result = change(mapId, store, planned, patches);
+  tx.record(result, retained);
+  return { change: result };
+}
 function applyPaint(
   tx: Transactions,
   mapId: string,
   layerId: string,
   writes: { x: number; y: number; value: PaintValue }[],
+  perCall: number = L.cellsPerCall,
 ) {
-  const store = tx.store(mapId),
-    target = layer(store, layerId);
-  protect(tx, mapId, target);
-  uniquePoints(writes);
-  budget(writes.length);
-  for (const w of writes) {
-    point(store, w);
-    tileValue(store, w.value, layerKind(target));
-  }
-  tx.authorizeCells(mapId,layerId,writes);
-  const refs = writes.flatMap((w) =>
-    w.value && "tilesetId" in w.value ? [w.value] : [],
-  );
-  const retained = writes.length * 32 + paletteRetained(store, refs);
-  tx.charge(writes.length, retained);
-  const patch = tx.run(() => {
-    store.dispatch({ type: "addPaletteEntries", entries: refs });
-    return isGridLayer(target)
-      ? store.dispatch({
-          type: "paintGrid",
-          layerId,
-          cells: writes.map((w) => ({
-            x: w.x,
-            y: w.y,
-            value: cellValue(store, w.value),
-          })),
-        })
-      : store.dispatch({
-          type: "paintCells",
-          layerId,
-          cells: writes.map((w) => ({
-            x: w.x,
-            y: w.y,
-            cell: cellValue(store, w.value),
-          })),
-        });
-  });
-  const result = change(mapId, store, writes.length, [patch]);
-  tx.record(result, retained);
-  return { change: result };
+  return applyLayers(tx, mapId, [{ layerId, writes }], perCall);
 }
+/** Grid-era tools answer with the compact C3 data; batch children keep the internal change. */
+const COMPACT = new Set<ToolName>(["paint_grid", "replace_tiles", "clear_region"]);
 export async function mutate<N extends ToolName>(
+  tx: Transactions,
+  name: N,
+  args: ToolArguments[N],
+  call: AgentCallContext,
+): Promise<unknown> {
+  const result = await mutateRaw(tx, name, args, call);
+  if (!COMPACT.has(name)) return result;
+  const { change: summary, ...rest } = result as { change: ChangeSummary } & Record<string, unknown>;
+  return "changed" in rest ? rest : compact(summary);
+}
+export async function mutateRaw<N extends ToolName>(
   tx: Transactions,
   name: N,
   args: ToolArguments[N],
@@ -269,8 +290,23 @@ export async function mutate<N extends ToolName>(
   switch (name) {
     case "paint_cells": {
       const a = args as ToolArguments["paint_cells"];
-      return applyPaint(tx, a.mapId, a.layerId, a.cells);
+      check(
+        (a.cells !== undefined) !== (a.points !== undefined) && (a.points === undefined) === (a.value === undefined),
+        E.INVALID_ARGUMENT,
+        "Supply either cells[] or points[] with one value",
+      );
+      if (a.points) {
+        const value = a.value!;
+        return applyPaint(tx, a.mapId, a.layerId, a.points.map(([x, y]) => ({ x, y, value })), L.gridCells);
+      }
+      return applyPaint(tx, a.mapId, a.layerId, a.cells!);
     }
+    case "paint_grid":
+      return paintGrid(tx, args as ToolArguments["paint_grid"]);
+    case "replace_tiles":
+      return replaceTiles(tx, args as ToolArguments["replace_tiles"]);
+    case "clear_region":
+      return clearRegion(tx, args as ToolArguments["clear_region"]);
     case "paint_rect": {
       const a = args as ToolArguments["paint_rect"];
       rect(tx.store(a.mapId), a.region);
@@ -282,6 +318,7 @@ export async function mutate<N extends ToolName>(
           ...p,
           value: a.value,
         })),
+        L.mapArea,
       );
     }
     case "paint_line": {
@@ -299,12 +336,13 @@ export async function mutate<N extends ToolName>(
       );
     }
     case "fill": {
-      const a = args as ToolArguments["fill"],
-        store = tx.store(a.mapId),
+      const f = args as ToolArguments["fill"],
+        store = tx.store(f.mapId),
+        a = { ...f, region: f.region ?? wholeMap(store) },
         target = layer(store, a.layerId);
       protect(tx, a.mapId, target);
       rect(store, a.region);
-      budget(a.region.width * a.region.height);
+      budget(a.region.width * a.region.height, L.mapArea);
       point(store, a.start);
       check(
         a.start.x >= a.region.x &&
@@ -353,6 +391,7 @@ export async function mutate<N extends ToolName>(
         a.mapId,
         a.layerId,
         points.map((p) => ({ ...p, value: a.value })),
+        L.mapArea,
       );
       return { ...result, filledCells: points.length };
     }

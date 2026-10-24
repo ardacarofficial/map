@@ -43,7 +43,13 @@ export interface EditorContext {
   reference: { selectionToken: string; width: number; height: number } | null;
 }
 export interface GetMapInfoArgs { context: ReadContext; mapId: Id }
-export interface ReadRegionArgs extends GetMapInfoArgs { region: Rect; layerIds: Id[]; includeEntities?: boolean }
+/** Omitted region reads the whole map; omitted layerIds reads every visible tile and collision layer. */
+export interface ReadRegionArgs extends GetMapInfoArgs { region?: Rect; layerIds?: Id[]; includeEntities?: boolean; format?: "grid" | "cells" }
+/** C1 grid cell: tile, erase (null), leave unchanged ("keep"), deterministic hash(seed,x,y) choice, or a collision value. */
+export type GridRandomTile = Tile & { weight?: number };
+export type GridCell = Tile | null | "keep" | { collision: 0 | 1 | 2 } | { random: GridRandomTile[]; seed?: number };
+export type GridLegend = Record<string, GridCell>;
+export interface GridLayerInput { layerId?: Id; layerName?: string; origin?: Point; rows: string[]; legend?: GridLegend }
 export interface ListTilesetsArgs { context: ReadContext; cursor?: string; limit?: number; includeDetails?: boolean }
 export interface GetTileCatalogArgs { context: ReadContext; tilesetId: Id; tileIds?: number[]; offset?: number; limit?: number; image?: "none" | "tiles" | "sheet"; sheetRegion?: Rect; scale?: 1 | 2 | 4 }
 export type IngestReferenceArgs = { context: ReadContext } & ({ pngBase64: string; selectedReferenceToken?: never } | { selectedReferenceToken: string; pngBase64?: never });
@@ -56,10 +62,20 @@ export interface ListStampsArgs { context: ReadContext; query?: string; cursor?:
 export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision: Revision; requestLabel: string; mapIds: Id[]; collaboration?: CollaborativeBegin }
 export interface FinishEditArgs { context: WriteContext; summary?: string }
 export interface CancelEditArgs { context: WriteContext; reason?: string }
-export interface PaintCellsArgs extends LayerWrite { cells: CellWrite[] }
+export type PaintCellsArgs = LayerWrite & (
+  { cells: CellWrite[]; points?: never; value?: never } |
+  { points: [number, number][]; value: PaintValue; cells?: never }
+);
+export type PaintGridArgs = MapWrite & { origin?: Point; legend?: GridLegend } & (
+  { layerId?: Id; layerName?: string; rows: string[]; layers?: never } |
+  { layers: GridLayerInput[]; layerId?: never; layerName?: never; rows?: never }
+);
+export interface TileRef { tilesetId: Id; tileId: number }
+export interface ReplaceTilesArgs { context: WriteContext; scope: "region" | "layer" | "map" | "world"; mapId?: Id; layerIds?: Id[]; region?: Rect; from: TileRef; to: TileRef | null }
+export interface ClearRegionArgs extends MapWrite { region?: Rect; layerIds?: Id[] }
 export interface PaintRectArgs extends LayerWrite { region: Rect; value: PaintValue; outline?: number }
 export interface PaintLineArgs extends LayerWrite { from: Point; to: Point; value: PaintValue; width?: number }
-export interface FillArgs extends LayerWrite { start: Point; region: Rect; value: PaintValue; maxCells?: number }
+export interface FillArgs extends LayerWrite { start: Point; region?: Rect; value: PaintValue; maxCells?: number }
 export interface PrepareSmartSourceArgs extends MapWrite { source: SmartSource; force?: boolean }
 export type SmartBrushArgs = LayerWrite & { sourceId: Id; orientation?: Orientation } & (
   { mode: "area"; region: Rect; cells?: never; erase?: false } |
@@ -77,7 +93,7 @@ export interface PlaceEntityArgs extends LayerWrite { typeId: Id; at: Point; fie
 export type EditEntityArgs = MapWrite & { entityId: Id } & (
   { action: "move"; at: Point } | { action: "update"; fields: Record<string, EntityFieldValue> } | { action: "remove" }
 );
-export type BatchToolName = "paint_cells" | "paint_rect" | "paint_line" | "place_stamp" | "place_entity" | "edit_entity";
+export type BatchToolName = "paint_cells" | "paint_grid" | "paint_rect" | "paint_line" | "place_stamp" | "place_entity" | "edit_entity";
 type WithoutContext<T> = T extends unknown ? Omit<T, "context"> : never;
 export type BatchOperation = { [N in BatchToolName]: { tool: N; args: WithoutContext<ToolArguments[N]> } }[BatchToolName];
 export interface ApplyOperationsArgs { context: WriteContext; operations: BatchOperation[] }
@@ -108,6 +124,7 @@ export interface ToolArguments {
   list_tilesets: ListTilesetsArgs; get_tile_catalog: GetTileCatalogArgs; list_stamps: ListStampsArgs;
   begin_edit: BeginEditArgs; finish_edit: FinishEditArgs; cancel_edit: CancelEditArgs;
   paint_cells: PaintCellsArgs; paint_rect: PaintRectArgs; paint_line: PaintLineArgs; fill: FillArgs;
+  paint_grid: PaintGridArgs; replace_tiles: ReplaceTilesArgs; clear_region: ClearRegionArgs;
   prepare_smart_source: PrepareSmartSourceArgs; smart_brush: SmartBrushArgs; draw_path: DrawPathArgs;
   place_stamp: PlaceStampArgs; edit_layer: EditLayerArgs; list_entity_types: ListEntityTypesArgs;
   place_entity: PlaceEntityArgs; create_map: CreateMapArgs; resize_map: ResizeMapArgs;
@@ -116,8 +133,9 @@ export interface ToolArguments {
 export type ToolName = keyof ToolArguments;
 
 export const AGENT_LIMITS = {
-  cellsPerCall: 4096, readCellsPerLayer: 4096, readCellsTotal: 16384, readLayers: 8,
-  fillCells: 4096, mutationCalls: 256, transactionPlannedWrites: 262144,
+  cellsPerCall: 4096, readCellsPerLayer: 16384, readCellsTotal: 65536, readLayers: 16,
+  gridCells: 16384, batchCells: 65536,
+  fillCells: 1048576, mutationCalls: 256, transactionPlannedWrites: 262144,
   retainedBytes: 64 * 1024 * 1024, targetMaps: 8, metadataParticipants: 256,
   mapDimension: 4096, mapArea: 1048576, sourceWidth: 32, sourceHeight: 32,
   layersPerMap: 128, layerNameLength: 128, catalogPage: 128, catalogImagePage: 64,
@@ -186,6 +204,11 @@ export interface ChangeSummary {
   createdLayerIds: Id[]; createdEntityIds: Id[];
 }
 export interface ChangedData { change: ChangeSummary }
+/** C3 compact write result for grid-era tools; empty/false members are omitted. */
+export interface CompactChange { changed: number; bounds?: Rect; created?: { layerIds?: Id[]; entityIds?: Id[] }; warnings?: string[] }
+export interface GridLayerOutput { layerId: Id; name: string; kind: "tile" | "collision"; rows: string[]; legend: GridLegend }
+export interface ReadRegionGrid { format: "grid"; region: Rect; origin: Point; layers: GridLayerOutput[]; emptyLayerIds?: Id[]; entities?: EntityInfo[] }
+export interface ReadRegionCells { region: Rect; legend: ResolvedTile[]; layers: ({ id: Id; kind: "tile" | "collision"; cells: number[] } | { id: Id; kind: "entity" })[]; entities: EntityInfo[] }
 export interface EntityInfo { id: Id; typeId: Id; layerId: Id; pixelX: number; pixelY: number; fields: Record<string, EntityFieldValue> }
 export interface TagRecord { target: TagTarget; tags: string[]; note: string; status: TagStatus; storedFingerprint?: string; currentFingerprint: string | null }
 export interface UpdatedTag { target: TagTarget; fingerprint: string; tags: string[]; note: string; status: "current" }
@@ -215,7 +238,7 @@ export interface ToolData {
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
   get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
-  read_region: { region: Rect; legend: ResolvedTile[]; layers: ({ id: Id; kind: "tile" | "collision"; cells: number[] } | { id: Id; kind: "entity" })[]; entities: EntityInfo[] };
+  read_region: ReadRegionGrid | ReadRegionCells;
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId: Id } };
@@ -223,6 +246,8 @@ export interface ToolData {
   finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
   cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true; scope?: "member"; memberId?: Id; sharedResourcesRetained?: boolean };
   paint_cells: ChangedData; paint_rect: ChangedData; paint_line: ChangedData; fill: ChangedData & { filledCells: number };
+  paint_grid: CompactChange; clear_region: CompactChange & { removedEntities?: number };
+  replace_tiles: CompactChange & { maps?: { mapId: Id; changed: number }[]; skippedLayerIds?: Id[] };
   prepare_smart_source: ChangedData & { sourceId: Id; mapId: Id; band: number; usages: SmartUsage[]; detectorVersion: number; fingerprint: string; forced: boolean; generatedTilesetIds: Id[]; layerMapping: LayerMapping[] };
   smart_brush: ChangedData & { sourceId: Id; neighborRepairs: number; layerMapping: LayerMapping[] };
   draw_path: ChangedData & { sourceId: Id; kind: "path" | "river"; snappedPoints: Point[]; widthInTiles: number; neighborRepairs: number };

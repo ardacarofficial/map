@@ -62,6 +62,7 @@ it("read_region decodes every compact orientation and collision values without p
       region: { x: 0, y: 0, width: 8, height: 1 },
       layerIds: ["ground", "collision", "entities"],
       includeEntities: true,
+      format: "cells",
     }),
   );
   expect(r.data).toMatchObject({

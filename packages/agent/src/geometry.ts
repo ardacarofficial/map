@@ -1,10 +1,10 @@
 import { lineCells } from "@smap/core";
-import type { Point, Rect } from "./contracts";
+import { AGENT_LIMITS, type Point, type Rect } from "./contracts";
 import { budget } from "./validation";
 
 export function rectanglePoints(r: Rect, outline = 0): Point[] {
-  // Charge the inspected rectangle as well as its output.
-  budget(r.width * r.height);
+  // Uniform rectangles may cover the whole map; the edit's total cell budget still applies.
+  budget(r.width * r.height, AGENT_LIMITS.mapArea);
   const out: Point[] = [];
   for (let y = r.y; y < r.y + r.height; y++)
     for (let x = r.x; x < r.x + r.width; x++) {
