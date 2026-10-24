@@ -70,7 +70,8 @@ impl Options {
     fn tool_timeout(&self, name: &str, arguments: &Value) -> Duration {
         let renders_image = match name {
             "render_preview" | "prepare_smart_source" | "begin_edit"
-            | "visual_ingest_reference" | "visual_match_reference" => true,
+            | "visual_ingest_reference" | "visual_match_reference"
+            | "reference_add" | "reference_view" | "reference_quantize" | "render_compare" => true,
             // Draft writes and whole-map checks share the long budget (agent mutationTimeoutMs).
             "paint_cells" | "paint_rect" | "paint_line" | "fill" | "smart_brush" | "draw_path"
             | "place_stamp" | "place_entity" | "edit_entity" | "edit_layer" | "create_map"
@@ -80,7 +81,7 @@ impl Options {
             | "read_region" => true,
             // The agent defaults an omitted image mode to "tiles".
             "get_tile_catalog" => arguments["image"].as_str() != Some("none"),
-            "list_stamps" => arguments["previewStampId"].is_string(),
+            "list_stamps" => arguments["previewStampId"].is_string() || arguments["includeSheet"] == true,
             _ => false,
         };
         if renders_image {
@@ -978,6 +979,10 @@ mod deadline_tests {
             "apply_operations",
             "resume_edit",
             "validate_map",
+            "reference_add",
+            "reference_view",
+            "reference_quantize",
+            "render_compare",
         ] {
             assert_eq!(options.tool_timeout(name, &json!({})), options.image_timeout, "{name}");
         }
@@ -985,6 +990,7 @@ mod deadline_tests {
             assert_eq!(options.tool_timeout("get_tile_catalog", &arguments), options.image_timeout);
         }
         assert_eq!(options.tool_timeout("list_stamps", &json!({"previewStampId":"house"})), options.image_timeout);
+        assert_eq!(options.tool_timeout("list_stamps", &json!({"includeSheet":true})), options.image_timeout);
     }
 
     #[test]

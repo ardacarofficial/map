@@ -16,6 +16,8 @@ import { createEditorControls } from "./editorControls";
 import { captureEditorContext } from "./editorContext";
 import { createImagePort } from "./images";
 import { createVisualReferencePort } from "./visualReferences";
+import { createReferencePort } from "./referenceLibrary";
+import { captureDraftStart, clearDraftBaseline } from "./draftBaseline";
 import { createSmartSourcePort } from "./smartSources";
 import { createTagsPort, type TagsIoPort } from "./tagsIo";
 
@@ -91,6 +93,7 @@ export function createEditorHost(): EditorAgentHost {
     setClients(value){clients=value;},
     loadMap:world.loadMap,subscribeWorldContent:subscribeContent,world,metadata,images,
     visualReferences:createVisualReferencePort(world,contentRevision),
+    references:createReferencePort(world,contentRevision),
     smartSources:createSmartSourcePort(world,metadata,()=>{const ws=getLevelWorkspace();return ws?.cachedIds().map(id=>ws.entry(id)!.store)??[];}),
     tags:createTagsPort({world,images,folder:()=>getProjectFolder()?.fs??null,worldId:getAgentWorldSessionId}),
     activity:agentActivity,
@@ -115,6 +118,7 @@ export function createEditorHost(): EditorAgentHost {
           baselineCaptured=true;baselineContent=ws.contentRevision;baselineLibrary=snapshot.libraryRevision;
           ws.setPendingProjectData(createDocument({...ws.active.store.document.map,tilesets:snapshot.project.tilesets,entityTypes:snapshot.project.entityTypes,randomSets:snapshot.project.randomSets,collections:snapshot.project.collections}));
         }
+        for(const id of mapIds){const entry=ws.entry(id);if(entry)captureDraftStart(id,entry.store);}
         return{worldSessionId:getAgentWorldSessionId()!,editorDirty:useEditorStore.getState().dirty,metadata:snapshot,maps:ws.cachedIds().filter(id=>mapIds.includes(id)).map(mapId=>({mapId,...ws.entry(mapId)!}))};
       },
       restoreBaseline(baseline){
@@ -122,7 +126,7 @@ export function createEditorHost(): EditorAgentHost {
         metadata.restore(baseline.metadata);workspace().restorePersistence(baseline.maps,baseline.metadata.pendingRemovals);
         useEditorStore.getState().setDirty(baseline.editorDirty);publishLevelState();
       },
-      finalized(outcome){baselineCaptured=false;workspace().setPendingProjectData(null);publishLevelState();if(outcome==="approved" && (workspace().contentRevision!==baselineContent || useProjectLibrary.getState().revision!==baselineLibrary))useEditorStore.getState().setDirty(true);},
+      finalized(outcome){baselineCaptured=false;clearDraftBaseline();workspace().setPendingProjectData(null);publishLevelState();if(outcome==="approved" && (workspace().contentRevision!==baselineContent || useProjectLibrary.getState().revision!==baselineLibrary))useEditorStore.getState().setDirty(true);},
     },
   };
   return host;

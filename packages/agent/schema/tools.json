@@ -230,7 +230,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is optional. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs.",
+      "description": "Sheet mode is a continuous atlas crop with compact sheet grid/source metadata and no per-tile placements. sheetRegion determines the row-major metadata page; offset/nextOffset are relative to that region. Sheet mode cannot combine tileIds. Inspect real tile art and stable numeric tile IDs before choosing tiles. context is optional. image:\"tiles\" returns a labelled contact sheet (≤64 tiles); image:\"sheet\" returns a labelled sheetRegion in tileset grid cells; image:\"none\" returns metadata only (≤128). Choose either tileIds or offset/limit. scale is 1,2,4. One ID gives a cropped tile. sourceRect is native source pixels; labels occupy separate gutters. PNG ≤2048 px/side and 4 MiB. Select a smaller page/region when too large. Tile meanings are not inferred from IDs. Compact by default: items are {tileId, tags?, note?}; details:true adds sourceRect, tagStatus, fingerprint (needed for set_tags) and image placements. The tiles image is a near-square grid (≤1568 px) with each tileId printed under its tile; sheet mode prints tile ids in every cell.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -353,6 +353,10 @@
           "context": {
             "$ref": "#/$defs/ReadContext"
           },
+          "details": {
+            "default": false,
+            "type": "boolean"
+          },
           "image": {
             "default": "tiles",
             "enum": [
@@ -415,7 +419,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is optional. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art.",
+      "description": "Discover reusable multilayer stamps, source-layer IDs, native size, smart usages and semantic tags. context is optional. Search normalized names, categories, library tags and current semantic labels with query; paginate ≤32 records (default 16); previewStampId adds one real PNG. Use place_stamp for flat objects, or prepare_smart_source only for suitable smart art. includeSheet:true returns one contact-sheet PNG of the listed page: every stamp drawn at its real cell size with name and width×height; data.image.sheet maps each stampId to its rectangle.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -443,6 +447,10 @@
           },
           "cursor": {
             "$ref": "#/$defs/Id"
+          },
+          "includeSheet": {
+            "default": false,
+            "type": "boolean"
           },
           "limit": {
             "default": 16,
@@ -2981,7 +2989,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Inspect a real PNG of the current live/tentative map before finish_edit. context is optional; mapId required. Optional region is half-open map cells; otherwise whole map. maxSide (≤2048) fits large maps with nearest-neighbor scaling. grid:true and coordinates:true add cell grid and readable coordinate gutters; response image metadata gives contentRect, scale, pixelOrigin and cellSize for exact mapping. Hidden layers stay hidden. Collision overlay only for expressly requested collision layerIds. Optional entity markers are diagnostics. ≤1 PNG, 4 MiB, 30 seconds; no file export or save. Review both overview and close crop.",
+      "description": "Inspect a real PNG of the current live/tentative map. mapId required; optional region (map cells). Pixels per cell are always whole: zoom 1–8 enlarges close crops, large maps shrink by 1/2, 1/3…; maxSide (content, ≤2048) bounds the size. grid:true draws the cell grid with brighter major lines every 8 cells; coordinates:true adds coordinate gutters and labels at major intersections. highlight:\"draft\" outlines cells your pending edit changed, \"lastCall\" outlines the area of your last write. Entities show as labelled cell boxes. Hidden layers stay hidden; collision only for requested collision layerIds. Metadata gives contentRect, scale, cellSize and pixelOrigin. Writes nothing.",
       "inputSchema": {
         "$defs": {
           "Id": {
@@ -3052,6 +3060,13 @@
             "default": false,
             "type": "boolean"
           },
+          "highlight": {
+            "enum": [
+              "draft",
+              "lastCall"
+            ],
+            "type": "string"
+          },
           "layerIds": {
             "items": {
               "$ref": "#/$defs/Id"
@@ -3072,6 +3087,11 @@
           },
           "region": {
             "$ref": "#/$defs/Rect"
+          },
+          "zoom": {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer"
           }
         },
         "required": [
@@ -7407,6 +7427,608 @@
       },
       "name": "join_edit",
       "title": "Join Collaborative Edit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Load the user's reference picture into the editor so the reference_* tools can use it. path is an absolute local .png/.jpg/.jpeg/.webp file (≤16 MB, read once, decoded in the editor, never copied or written); imageBase64 is the raw file bytes in base64 (≤1 MiB request); selectedReferenceToken comes from get_editor_context. Large pictures are downscaled to fit 2048 px. Pictures the user dropped onto the AI panel are already listed in get_session.references — no need to add them. Returns referenceId.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "path": {}
+            },
+            "required": [
+              "path"
+            ]
+          },
+          {
+            "properties": {
+              "imageBase64": {}
+            },
+            "required": [
+              "imageBase64"
+            ]
+          },
+          {
+            "properties": {
+              "selectedReferenceToken": {}
+            },
+            "required": [
+              "selectedReferenceToken"
+            ]
+          }
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext",
+            "description": "Optional; the current world is used when omitted."
+          },
+          "imageBase64": {
+            "maxLength": 1000000,
+            "minLength": 4,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "selectedReferenceToken": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "reference_add",
+      "title": "Add Reference Image"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Show a reference picture resampled onto the map cell grid (same gutters, coordinates and scale as render_preview), so picture features can be read as map cells. fit:stretch (default) or contain; optional region crops map cells; sourceRect overrides the automatic trim of dark gutters. Writes nothing.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "$ref": "#/$defs/ReadContext",
+            "description": "Optional; the current world is used when omitted."
+          },
+          "coordinates": {
+            "default": true,
+            "type": "boolean"
+          },
+          "fit": {
+            "default": "stretch",
+            "description": "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged.",
+            "enum": [
+              "stretch",
+              "contain"
+            ],
+            "type": "string"
+          },
+          "grid": {
+            "default": true,
+            "type": "boolean"
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "maxSide": {
+            "default": 1536,
+            "maximum": 2048,
+            "minimum": 256,
+            "type": "integer"
+          },
+          "referenceId": {
+            "$ref": "#/$defs/Id"
+          },
+          "region": {
+            "$ref": "#/$defs/Rect"
+          },
+          "sourceRect": {
+            "$ref": "#/$defs/Rect",
+            "description": "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically."
+          },
+          "zoom": {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "referenceId",
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "reference_view",
+      "title": "View Reference On Map Grid"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Turn a reference picture into a ready-to-paint tile grid proposal. Each map cell gets the nearest candidate tile by colour and structure (mode render: screenshots/renders, also scaled or blurred) or by dominant colour (mode sketch: flat-colour drawings; auto picks). Render mode also proposes the overlay layer (transparent tiles over ground) and reports stamp placements it recognises. Returns grid.layers in paint_grid format (rows + legend per layer; space = keep), per-cell confidence summary with low-confidence cells, and a preview PNG of the proposal. For sketches, pass colorLegend {\"#rrggbb\": Tile | tag word | {stampId} | {overlay} | null | \"keep\"}; without it every colour gets its closest tile and data.palette lists the colours found. candidates limits tilesets/tiles/stamps. layers.ground/overlay choose target layers (overlay:null = ground only). Writes nothing: paint the grid with paint_grid, place stamps with place_stamp, then render_compare.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "Tile": {
+            "additionalProperties": false,
+            "description": "Stable tilesetId/tileId from catalog, with optional compact D4 flags H=1,V=2,D=4; not a palette integer.",
+            "properties": {
+              "flags": {
+                "default": 0,
+                "maximum": 7,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tileId": {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tilesetId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [
+              "tilesetId",
+              "tileId"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "additionalProperties": false,
+            "properties": {
+              "stamps": {
+                "items": {
+                  "$ref": "#/$defs/Id"
+                },
+                "maxItems": 128,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "tiles": {
+                "items": {
+                  "$ref": "#/$defs/Tile"
+                },
+                "maxItems": 1024,
+                "minItems": 1,
+                "type": "array"
+              },
+              "tilesetIds": {
+                "items": {
+                  "$ref": "#/$defs/Id"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "colorLegend": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Tile"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "const": "keep"
+                },
+                {
+                  "description": "AI tag word such as \"su\" or \"water\".",
+                  "maxLength": 48,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ground": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Tile"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stampId": {
+                      "$ref": "#/$defs/Id"
+                    }
+                  },
+                  "required": [
+                    "stampId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ground": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Tile"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "overlay": {
+                      "$ref": "#/$defs/Tile"
+                    }
+                  },
+                  "required": [
+                    "overlay"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext",
+            "description": "Optional; the current world is used when omitted."
+          },
+          "fit": {
+            "default": "stretch",
+            "description": "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged.",
+            "enum": [
+              "stretch",
+              "contain"
+            ],
+            "type": "string"
+          },
+          "layers": {
+            "additionalProperties": false,
+            "properties": {
+              "ground": {
+                "$ref": "#/$defs/Id"
+              },
+              "overlay": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "render",
+              "sketch"
+            ],
+            "type": "string"
+          },
+          "preview": {
+            "default": true,
+            "type": "boolean"
+          },
+          "referenceId": {
+            "$ref": "#/$defs/Id"
+          },
+          "region": {
+            "$ref": "#/$defs/Rect"
+          },
+          "sourceRect": {
+            "$ref": "#/$defs/Rect",
+            "description": "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically."
+          }
+        },
+        "required": [
+          "referenceId",
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "reference_quantize",
+      "title": "Quantize Reference To Tiles"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Check the map against the user's picture (referenceId) or against the state before your edit (baseline:\"draftStart\"). mode side (default): picture/before left, current map right, same grid; overlay: current map blended over the picture; diff: dimmed map with mismatching/changed cells outlined. Returns mismatch {cells, ratio, sample} to fix next. Writes nothing.",
+      "inputSchema": {
+        "$defs": {
+          "Id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ReadContext": {
+            "additionalProperties": false,
+            "description": "Optional. Omit to use the open world; pass worldSessionId from get_session only to reject a replaced world.",
+            "properties": {
+              "worldSessionId": {
+                "$ref": "#/$defs/Id"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "Rect": {
+            "additionalProperties": false,
+            "description": "Half-open rectangle: x <= cellX < x+width, y <= cellY < y+height; map cells unless explicitly a tileset sheet region.",
+            "properties": {
+              "height": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 4095,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "referenceId": {}
+            },
+            "required": [
+              "referenceId"
+            ]
+          },
+          {
+            "properties": {
+              "baseline": {}
+            },
+            "required": [
+              "baseline"
+            ]
+          }
+        ],
+        "properties": {
+          "baseline": {
+            "const": "draftStart"
+          },
+          "context": {
+            "$ref": "#/$defs/ReadContext",
+            "description": "Optional; the current world is used when omitted."
+          },
+          "fit": {
+            "default": "stretch",
+            "description": "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged.",
+            "enum": [
+              "stretch",
+              "contain"
+            ],
+            "type": "string"
+          },
+          "layerIds": {
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mapId": {
+            "$ref": "#/$defs/Id"
+          },
+          "maxSide": {
+            "default": 1536,
+            "maximum": 2048,
+            "minimum": 256,
+            "type": "integer"
+          },
+          "mode": {
+            "default": "side",
+            "enum": [
+              "side",
+              "overlay",
+              "diff"
+            ],
+            "type": "string"
+          },
+          "referenceId": {
+            "$ref": "#/$defs/Id"
+          },
+          "region": {
+            "$ref": "#/$defs/Rect"
+          },
+          "sourceRect": {
+            "$ref": "#/$defs/Rect",
+            "description": "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically."
+          }
+        },
+        "required": [
+          "mapId"
+        ],
+        "type": "object"
+      },
+      "name": "render_compare",
+      "title": "Compare Map With Reference"
     }
   ]
 }

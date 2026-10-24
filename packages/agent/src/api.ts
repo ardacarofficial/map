@@ -29,6 +29,12 @@ import { read } from "./tools/read";
 import { applyOperations, editEntity } from "./tools/operations";
 import { validateGoals } from "./tools/goals";
 import { pruneReplayCache, type ReplayRecord } from "./replayCache";
+import { vision } from "./tools/vision";
+import { VISION_TOOL_NAMES, type VisionToolName } from "./vision";
+
+const visionTools = new Set<string>(VISION_TOOL_NAMES);
+/** Reference intake reads a picture, not the map: map edits never interrupt it. */
+const mapIndependent = new Set<string>(["visual_ingest_reference", "reference_add"]);
 
 const writes = new Set(
   TOOL_DEFINITIONS.filter(
@@ -99,7 +105,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
     const worldChanged = host.session().worldSessionId !== referenceWorld;
     syncReferenceWorld();
     // An explicit reference upload does not depend on map contents.
-    if (worldChanged || activeTool !== "visual_ingest_reference") interrupt();
+    if (worldChanged || !mapIndependent.has(activeTool ?? "")) interrupt();
     if (tx.pending) {
       if(tx.pending.collaboration){tx.pending.collaboration.stopAll("An external source or world changed; human review/discard is required");tx.seal("stopped","worldChanged");return;}
       tx.seal("stopped","worldChanged");
@@ -380,6 +386,15 @@ export function createAgentApi(host: AgentHost): AgentApi {
             enteredApply = true;
             completed = true;
             tx.finishMemberCall();
+            // render_preview highlight:"lastCall": full change summaries, or compact C3 results ({changed, bounds?}) on args.mapId.
+            try {
+              type Affected = { mapId: string; bounds?: { x: number; y: number; width: number; height: number } }[];
+              const out = data as { change?: { affected: Affected }; changed?: number; bounds?: Affected[number]["bounds"] } | undefined;
+              const mapId = (args as { mapId?: unknown }).mapId;
+              const affected: Affected | undefined = out?.change ? out.change.affected
+                : typeof out?.changed === "number" && typeof mapId === "string" ? [{ mapId, ...(out.bounds ? { bounds: out.bounds } : {}) }] : undefined;
+              if (affected) host.references?.noteChange?.(affected);
+            } catch { /* diagnostics only */ }
           } catch (error) {
             if (tx.revision !== revision || !(error instanceof AgentError)) {
               enteredApply = true;
@@ -495,6 +510,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
           output = { data: await waitFor<unknown>(name === "visual_ingest_reference"
             ? port.ingestReference(args as ToolArguments["visual_ingest_reference"], callContext)
             : port.matchReference(args as ToolArguments["visual_match_reference"], callContext), signal), image: undefined };
+        } else if (visionTools.has(name)) {
+          output = await vision(tx, name as VisionToolName, args as ToolArguments[VisionToolName], callContext);
         } else output = await read(tx, name, args, callContext);
         signal.throwIfAborted();
         check(
@@ -503,7 +520,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
           "World was replaced",
         );
         check(
-          name === "visual_ingest_reference" || tx.revision === revision,
+          mapIndependent.has(name) || tx.revision === revision,
           E.REVISION_CONFLICT,
           "World changed while reading",
         );
@@ -643,7 +660,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       const timeout =
         call.name === "begin_edit"
           ? L.beginDrainTimeoutMs
-          : IMAGE_TOOLS.has(call.name)
+          : IMAGE_TOOLS.has(call.name) || visionTools.has(call.name)
             ? L.imageSourceTimeoutMs
             : writes.has(call.name as ToolName) || HEAVY_READS.has(call.name)
               ? L.mutationTimeoutMs

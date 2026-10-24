@@ -1,12 +1,14 @@
 import { encode } from "fast-png";
 import { AGENT_LIMITS, AgentError, AgentErrorCode, type AgentCallContext, type AgentImagePort, type AgentSignal, type AgentWorldPort, type CatalogImage } from "@smap/agent";
-import { cellFlags, cellPaletteIndex, createDocument, makeCell, MapStore, rasterContentHash, tileRect, type RgbaImage, type Tileset } from "@smap/core";
+import { BUILTIN_ENTITY_TYPES, cellFlags, cellPaletteIndex, createDocument, makeCell, MapStore, rasterContentHash, tileRect, type RgbaImage, type Stamp, type Tileset } from "@smap/core";
 import { decodeWorkingSourcePng } from "../io/sourcePng";
 import { getTilesetImage, retainTilesetImage, tilesetImageBytes, type TilesetImage } from "../state/tilesetImages";
 import { pngHash } from "../state/pngHash";
 import { regionCompositeSteps } from "../export/pngComposite";
 import { RasterReplay } from "./raster";
-import { renderPreviewPixelsAsync } from "./preview";
+import { renderPreviewPixelsAsync, type PreviewHighlight } from "./preview";
+import { changedCells, draftStartDocument, lastCallRects } from "./draftBaseline";
+import { textWidth } from "./raster";
 import { imageWork } from "./imageWork";
 
 const decoded = new Map<TilesetImage, RgbaImage>();
@@ -111,8 +113,71 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
     for(const id of new Set(ids))try{const pixels=await imagePixels(id,call.signal);retained+=pixels.data.byteLength;if(retained>AGENT_LIMITS.retainedBytes)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Image source budget exceeded");result.set(id,pixels);}catch(error){call.signal.throwIfAborted();if(!(error instanceof AgentError)||error.code===AgentErrorCode.LIMIT_EXCEEDED)throw error;}
     return result;
   }
+  async function stampPixels(stamp:Stamp,call:AgentCallContext){
+    // Preview documents never need undo. Allocate used references together so
+    // edited atlases cannot copy growing palette snapshots for every cell.
+    const checkpoint=imageWork(call),used=new Set<number>();let scanned=0;
+    for(const layer of stamp.layers)if(!layer.grid)for(const cell of layer.cells){
+      if((scanned++&1023)===0){const pause=checkpoint();if(pause)await pause;}
+      const index=cellPaletteIndex(cell);
+      if(stamp.palette[index-1])used.add(index);
+    }
+    const indices=[...used],mapped=new Map<number,number>();
+    const sourceIds=new Set(indices.map(index=>stamp.palette[index-1]!.tilesetId));
+    const first=world.tilesets().find(t=>sourceIds.has(t.id));
+    const store=new MapStore(createDocument({width:stamp.width,height:stamp.height,tileWidth:first?.tileWidth??16,tileHeight:first?.tileHeight??16,tilesets:world.tilesets()}),{historyLimit:0});
+    if(indices.length){const allocated=store.dispatch({type:"addPaletteEntries",entries:indices.map(index=>stamp.palette[index-1]!)});indices.forEach((index,i)=>mapped.set(index,allocated[i]!));}
+    for(const layer of stamp.layers){
+      if(layer.grid)continue;
+      const id=store.dispatch({type:"addLayer",layer:{name:layer.name}});
+      let cells:{x:number;y:number;cell:number}[]=[];
+      for(let i=0;i<layer.cells.length;i++){
+        if((i&1023)===0){const pause=checkpoint();if(pause)await pause;}
+        const cell=layer.cells[i]!,index=mapped.get(cellPaletteIndex(cell));
+        if(!index)continue;
+        cells.push({x:i%stamp.width,y:Math.floor(i/stamp.width),cell:makeCell(index,cellFlags(cell))});
+        if(cells.length===AGENT_LIMITS.cellsPerCall){store.dispatch({type:"paintCells",layerId:id,cells});cells=[];}
+      }
+      if(cells.length)store.dispatch({type:"paintCells",layerId:id,cells});
+    }
+    const images=await sources([...sourceIds],call);
+    const result=await renderPreviewPixelsAsync(store.document,{x:0,y:0,width:stamp.width,height:stamp.height},{},id=>images.get(id),call);call.signal.throwIfAborted();
+    return result;
+  }
+  /** All stamps of one page at a shared whole scale, labelled with name and size. */
+  async function stampSheet(stampIds:readonly string[],call:AgentCallContext){
+    const stamps=stampIds.map(id=>{const stamp=world.stamps().find(s=>s.id===id);if(!stamp)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown stamp",{stampId:id});return stamp;});
+    const pictures:{stamp:Stamp;pixels:RgbaImage;label:string}[]=[];
+    for(const stamp of stamps)pictures.push({stamp,pixels:await stampPixels(stamp,call),label:`${stamp.name} ${stamp.width}x${stamp.height}`});
+    const side=1568,gap=8,labelHeight=18;
+    const widest=Math.max(...pictures.map(p=>p.pixels.width)),tallest=Math.max(...pictures.map(p=>p.pixels.height));
+    let scale=Math.max(1,Math.min(4,Math.floor(Math.min((side-2*gap)/widest,512/tallest))));
+    const layout=(s:number)=>{
+      const rects:{x:number;y:number;width:number;height:number}[]=[];let x=gap,y=gap,row=0,width=0;
+      for(const p of pictures){
+        const w=Math.max(p.pixels.width*s,Math.min(side-2*gap,textWidth(p.label))),h=p.pixels.height*s+labelHeight;
+        if(x>gap&&x+w>side-gap){x=gap;y+=row+gap;row=0;}
+        rects.push({x,y,width:w,height:h});x+=w+gap;row=Math.max(row,h);width=Math.max(width,x);
+      }
+      return{rects,width:Math.max(width,gap*2),height:y+row+gap};
+    };
+    let placed=layout(scale);
+    while(scale>1&&placed.height>side){scale--;placed=layout(scale);}
+    if(placed.width>AGENT_LIMITS.imageSide||placed.height>AGENT_LIMITS.imageSide||placed.width*placed.height>AGENT_LIMITS.imagePixels)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Stamp sheet too large; request a smaller page (limit)");
+    const canvas=new RasterReplay(placed.width,placed.height);canvas.fill({x:0,y:0,width:placed.width,height:placed.height},[27,33,42,255]);
+    const sheet:{stampId:string;label:string;rect:{x:number;y:number;width:number;height:number}}[]=[];
+    pictures.forEach((p,i)=>{
+      const r=placed.rects[i]!,art={x:r.x,y:r.y,width:p.pixels.width*scale,height:p.pixels.height*scale};
+      canvas.checker(art);
+      canvas.drawImage(p.pixels as unknown as CanvasImageSource,0,0,p.pixels.width,p.pixels.height,art.x,art.y,art.width,art.height);
+      canvas.text(p.label,r.x,r.y+art.height+4);
+      sheet.push({stampId:p.stamp.id,label:p.label,rect:art});
+    });
+    call.signal.throwIfAborted();
+    return{png:encodeAgentPng(canvas),width:placed.width,height:placed.height,revision:revision(),warnings:[],sheet};
+  }
   return {
-    tileFingerprint, stampFingerprint,
+    tileFingerprint, stampFingerprint, stampSheet,
     catalogSourceKey(id) {
       const image = getTilesetImage(id);
       if (!image) return null;
@@ -142,6 +207,13 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
         const yStep=Math.max(1,Math.ceil(16/((tileset.tileHeight+tileset.spacing)*scale)));
         for(let x=0;x<region.width;x+=xStep)canvas.text(String(region.x+x),left+x*(tileset.tileWidth+tileset.spacing)*scale,3);
         for(let y=0;y<region.height;y+=yStep)canvas.text(String(region.y+y),2,top+y*(tileset.tileHeight+tileset.spacing)*scale);
+        // Tile ids in every cell: the agent reads ids directly instead of computing row*columns+col.
+        const cellW=(tileset.tileWidth+tileset.spacing)*scale,cellH=(tileset.tileHeight+tileset.spacing)*scale,count=tileset.edited?.nextTileId??tileset.columns*tileset.rows;
+        const idScale=cellW>=40&&cellH>=24?2:1;
+        if(cellW>=textWidth(String(count-1),idScale)+2*idScale&&cellH>=7*idScale)for(let y=0;y<region.height;y++)for(let x=0;x<region.width;x++){
+          const id=(region.y+y)*tileset.columns+region.x+x;if(id>=count)continue;
+          canvas.label(String(id),contentRect.x+Math.floor(x*cellW),contentRect.y+Math.floor(y*cellH),idScale);
+        }
         call.signal.throwIfAborted();
         const image:CatalogImage={width,height,mode:"sheet",scale,placements:[],sheet:{region,sourceRect,contentRect,grid:{columns:tileset.columns,rows:tileset.rows,tileWidth:tileset.tileWidth,tileHeight:tileset.tileHeight,margin:tileset.margin,spacing:tileset.spacing}}};
         return {png:encodeAgentPng(canvas),width,height,revision:rev,warnings:[],image};
@@ -152,7 +224,9 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
       ids.forEach(id=>assertTile(tileset,id));
       const scale=requestedScale,gutter=18,gap=4,tw=tileset.tileWidth*scale,th=tileset.tileHeight*scale;
       const cellWidth=Math.max(tw,8*String(count-1).length);
-      const cols=Math.max(1,Math.min(ids.length,Math.floor((AGENT_LIMITS.imageSide-gap)/(cellWidth+gap))));
+      // Near-square grid within 1568 px (the side clients show without downscaling).
+      const side=1568,fitCols=Math.max(1,Math.floor((side-gap)/(cellWidth+gap)));
+      const cols=Math.max(1,Math.min(ids.length,fitCols,Math.ceil(Math.sqrt(ids.length*(th+gutter+gap)/(cellWidth+gap)))));
       const rows=Math.ceil(ids.length/cols);
       const width=cols*(cellWidth+gap)+gap,height=rows*(th+gutter+gap)+gap;
       if(width>AGENT_LIMITS.imageSide||height>AGENT_LIMITS.imageSide||width*height>AGENT_LIMITS.imagePixels)throw new AgentError(AgentErrorCode.LIMIT_EXCEEDED,"Catalog image too large; select a smaller page");
@@ -167,7 +241,7 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
         canvas.text(String(tileId),labelRect.x,labelRect.y+3);placements.push({tileId,rect,labelRect});
       }
       call.signal.throwIfAborted();
-      const image:CatalogImage={width,height,mode:"tiles",scale,placements};
+      const image:CatalogImage={width,height,mode:"tiles",scale,columns:cols,placements};
       return {png:encodeAgentPng(canvas),width,height,revision:rev,warnings:[],image};
     },
     async renderPreview(args,call) {
@@ -179,40 +253,23 @@ export function createImagePort(world: AgentWorldPort, revision: () => number): 
         if(op?.kind==="draw")ids.add(op.tilesetId);
       }
       const images=await sources([...ids],call);
-      const result=await renderPreviewPixelsAsync(doc,region,args,id=>images.get(id),call);call.signal.throwIfAborted();
+      const warnings:{code:string;detail:string}[]=[];
+      let highlight:PreviewHighlight|undefined;
+      if(args.highlight==="lastCall"){highlight={rects:lastCallRects(args.mapId)};if(!highlight.rects!.length)warnings.push({code:"NO_LAST_CALL",detail:"No write of yours touched this map yet"});}
+      else if(args.highlight==="draft"){
+        const before=draftStartDocument(args.mapId,doc);
+        if(!before)warnings.push({code:"NO_DRAFT",detail:"No pending edit includes this map"});
+        else highlight={cells:changedCells(before,doc,region)};
+      }
+      const entityNames=new Map<string,string>([...BUILTIN_ENTITY_TYPES,...doc.entityTypes].map(type=>[type.id,type.name]));
+      const {highlight:_requested,...previewArgs}=args;
+      const result=await renderPreviewPixelsAsync(doc,region,{...previewArgs,...(highlight?{highlight}:{}),entityNames},id=>images.get(id),call);call.signal.throwIfAborted();
       if(store.revision!==mapRevision)throw new AgentError(AgentErrorCode.REVISION_CONFLICT,"Map changed during preview");
-      return {png:encodeAgentPng(result),width:result.width,height:result.height,revision:rev,mapRevision,region,image:result.image,warnings:result.missing.map(id=>({code:"MISSING_IMAGE",detail:id}))};
+      return {png:encodeAgentPng(result),width:result.width,height:result.height,revision:rev,mapRevision,region,image:result.image,warnings:[...warnings,...result.missing.map(id=>({code:"MISSING_IMAGE",detail:id}))]};
     },
     async stampPreview(stampId,call) {
       const stamp=world.stamps().find(s=>s.id===stampId);if(!stamp)throw new AgentError(AgentErrorCode.UNKNOWN_ID,"Unknown stamp");
-      // Preview documents never need undo. Allocate used references together so
-      // edited atlases cannot copy growing palette snapshots for every cell.
-      const checkpoint=imageWork(call),used=new Set<number>();let scanned=0;
-      for(const layer of stamp.layers)if(!layer.grid)for(const cell of layer.cells){
-        if((scanned++&1023)===0){const pause=checkpoint();if(pause)await pause;}
-        const index=cellPaletteIndex(cell);
-        if(stamp.palette[index-1])used.add(index);
-      }
-      const indices=[...used],mapped=new Map<number,number>();
-      const sourceIds=new Set(indices.map(index=>stamp.palette[index-1]!.tilesetId));
-      const first=world.tilesets().find(t=>sourceIds.has(t.id));
-      const store=new MapStore(createDocument({width:stamp.width,height:stamp.height,tileWidth:first?.tileWidth??16,tileHeight:first?.tileHeight??16,tilesets:world.tilesets()}),{historyLimit:0});
-      if(indices.length){const allocated=store.dispatch({type:"addPaletteEntries",entries:indices.map(index=>stamp.palette[index-1]!)});indices.forEach((index,i)=>mapped.set(index,allocated[i]!));}
-      for(const layer of stamp.layers){
-        if(layer.grid)continue;
-        const id=store.dispatch({type:"addLayer",layer:{name:layer.name}});
-        let cells:{x:number;y:number;cell:number}[]=[];
-        for(let i=0;i<layer.cells.length;i++){
-          if((i&1023)===0){const pause=checkpoint();if(pause)await pause;}
-          const cell=layer.cells[i]!,index=mapped.get(cellPaletteIndex(cell));
-          if(!index)continue;
-          cells.push({x:i%stamp.width,y:Math.floor(i/stamp.width),cell:makeCell(index,cellFlags(cell))});
-          if(cells.length===AGENT_LIMITS.cellsPerCall){store.dispatch({type:"paintCells",layerId:id,cells});cells=[];}
-        }
-        if(cells.length)store.dispatch({type:"paintCells",layerId:id,cells});
-      }
-      const images=await sources([...sourceIds],call);
-      const result=await renderPreviewPixelsAsync(store.document,{x:0,y:0,width:stamp.width,height:stamp.height},{},id=>images.get(id),call);call.signal.throwIfAborted();
+      const result=await stampPixels(stamp,call);
       return{png:encodeAgentPng(result),width:result.width,height:result.height,revision:revision(),warnings:[]};
     },
   };

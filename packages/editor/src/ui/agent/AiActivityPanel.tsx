@@ -12,6 +12,7 @@ import { agentErrorMessage } from "./errorMessages";
 import { useAgentUiState } from "../../agent/agentUiState";
 import { getLevelWorkspace } from "../../io/session";
 import { CollaborationSummary } from "./CollaborationSummary";
+import { AiReferences, DropHighlight, useReferenceIntake } from "./AiReferences";
 
 export function AiActivityPanel() {
   const entries = useSyncExternalStore(agentActivity.subscribe, agentActivity.entries);
@@ -21,8 +22,10 @@ export function AiActivityPanel() {
   const mapName = (id: string) => levels.find(level => level.id === id)?.name ?? id;
   const [cleared, setCleared] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
+  const intake = useReferenceIntake();
   const rows = useMemo(() => entries.filter(row => !cleared.has(row.id) && `${row.tool ?? ""} ${row.clientInfo?.name ?? ""} ${row.mapIds.join(" ")} ${row.mapIds.map(id => levels.find(level => level.id === id)?.name ?? id).join(" ")}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(-500), [entries, cleared, query, levels]);
-  return <div className="flex min-h-0 flex-1 flex-col" data-ai-activity>
+  return <div className="relative flex min-h-0 flex-1 flex-col" data-ai-activity {...intake.handlers}>
+    <DropHighlight over={intake.over} />
     <div className="flex h-control-md shrink-0 items-center gap-2 border-b border-line-subtle px-2">
       <TextField size="sm" leadingIcon="search" aria-label={t("ai.activity.search")} placeholder={t("ai.activity.search")} value={query} onChange={event => setQuery(event.target.value)} className="flex-1" />
       <Button size="sm" variant="ghost" disabled={!rows.length} onClick={() => {
@@ -31,6 +34,7 @@ export function AiActivityPanel() {
       <Button size="sm" variant="ghost" disabled={!entries.some(row => !cleared.has(row.id))} onClick={() => setCleared(new Set(entries.map(row => row.id)))}>{t("ai.activity.clear")}</Button>
     </div>
     <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={t("ai.activity.title")} tabIndex={0}>
+      <AiReferences />
       {collaboration && <CollaborationSummary members={collaboration.members} fault={!!collaboration.fault} mapName={mapName} layerName={(mapId, layerId) => getLevelWorkspace()?.entry(mapId)?.store.document.getLayer(layerId)?.name ?? layerId} />}
       {!rows.length ? <p className="px-3 py-2 text-sm text-muted">{t("ai.activity.empty")}</p> : <table className="w-full text-left text-sm whitespace-nowrap">
         <thead className="text-muted"><tr>{(["time", "tool", "client", "map", "result", "duration"] as const).map(key => <th className="h-control-sm px-2 font-medium" scope="col" key={key}>{t(`ai.activity.${key}`)}</th>)}<th className="px-2 font-medium" scope="col">{t("ai.activity.changes")}</th></tr></thead>

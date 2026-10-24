@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "651c75bffecc8acc7a942d14a3dd096aad83e828459a584c1f8a3daa8a5410d0",
+  "catalogueSha256": "878c429153000f89eed90d650e9b5f296450b98cbb81c89a966527c273c75865",
   "tools": {
     "get_session": {
       "valid": [
@@ -2767,6 +2767,143 @@
             "width": 3,
             "height": 2
           }
+        }
+      ]
+    },
+    "reference_add": {
+      "valid": [
+        {
+          "path": "/home/u/ref.png"
+        },
+        {
+          "context": {
+            "worldSessionId": "w"
+          },
+          "imageBase64": "iVBO",
+          "name": "Köy"
+        },
+        {
+          "selectedReferenceToken": "tok"
+        }
+      ],
+      "invalid": [
+        {},
+        {
+          "path": "/a.png",
+          "imageBase64": "iVBO"
+        },
+        {
+          "path": ""
+        }
+      ]
+    },
+    "reference_view": {
+      "valid": [
+        {
+          "referenceId": "ref-1",
+          "mapId": "m"
+        },
+        {
+          "context": {
+            "worldSessionId": "w"
+          },
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "fit": "contain",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 4
+          },
+          "zoom": 2,
+          "grid": false
+        }
+      ],
+      "invalid": [
+        {
+          "referenceId": "ref-1"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "fit": "cover"
+        }
+      ]
+    },
+    "reference_quantize": {
+      "valid": [
+        {
+          "referenceId": "ref-1",
+          "mapId": "m"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "mode": "sketch",
+          "colorLegend": {
+            "#2a6fdb": "su",
+            "#c82828": {
+              "stampId": "ev"
+            },
+            "#6ebe5a": {
+              "tilesetId": "t",
+              "tileId": 0
+            },
+            "#000": null
+          },
+          "layers": {
+            "overlay": null
+          },
+          "candidates": {
+            "tilesetIds": [
+              "t"
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "mapId": "m"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "colorLegend": {
+            "blue": "su"
+          }
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "mode": "photo"
+        }
+      ]
+    },
+    "render_compare": {
+      "valid": [
+        {
+          "mapId": "m",
+          "referenceId": "ref-1"
+        },
+        {
+          "mapId": "m",
+          "baseline": "draftStart",
+          "mode": "diff"
+        }
+      ],
+      "invalid": [
+        {
+          "mapId": "m"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "r",
+          "baseline": "draftStart"
+        },
+        {
+          "mapId": "m",
+          "baseline": "now"
         }
       ]
     }

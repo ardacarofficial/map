@@ -4,6 +4,7 @@ import type { EntityFieldType, EntityFieldValue, MapStore, Project, ProjectData,
 import type { AgentEditorControlsPort, ConfigureExportArgs, EditorExportPreferences, ConfigureApplicationArgs, ConfigureEditorArgs, ConfigureLayoutArgs, EditorControlContext, EditorControlState, EditorControlToolName, ListEditorCommandsArgs, RunEditorCommandArgs } from "./editorControls";
 
 import type {CollaborativeBegin,CollaborativeJoin,CollaborationSummary,RegionClaim} from "./collaboration";
+import type { AgentReferencePort, ReferenceSummary, VisionToolArguments, VisionToolData, VisionToolName } from "./vision";
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -53,14 +54,14 @@ export type GridCell = Tile | null | "keep" | { collision: 0 | 1 | 2 } | { rando
 export type GridLegend = Record<string, GridCell>;
 export interface GridLayerInput { layerId?: Id; layerName?: string; origin?: Point; rows: string[]; legend?: GridLegend }
 export interface ListTilesetsArgs { context: ReadContext; cursor?: string; limit?: number; includeDetails?: boolean }
-export interface GetTileCatalogArgs { context: ReadContext; tilesetId: Id; tileIds?: number[]; offset?: number; limit?: number; image?: "none" | "tiles" | "sheet"; sheetRegion?: Rect; scale?: 1 | 2 | 4 }
+export interface GetTileCatalogArgs { context: ReadContext; tilesetId: Id; tileIds?: number[]; offset?: number; limit?: number; image?: "none" | "tiles" | "sheet"; sheetRegion?: Rect; scale?: 1 | 2 | 4; details?: boolean }
 export type IngestReferenceArgs = { context: ReadContext } & ({ pngBase64: string; selectedReferenceToken?: never } | { selectedReferenceToken: string; pngBase64?: never });
 export interface MatchReferenceArgs { context: ReadContext; referenceId: Id; tilesetIds?: Id[]; topK?: number; maxScale?: number }
 export interface ReferenceInfo { referenceId: Id; width: number; height: number }
 export interface ReferenceCandidate { tilesetId: Id; tileId: number; region: Rect; flags: Orientation; scale: number; match: "exact_rgba" }
 export interface ReferenceMatches { status: "matched" | "ambiguous" | "no_match"; candidates: ReferenceCandidate[]; truncated: boolean; revision: Revision }
 export interface CreateStampArgs { context: WriteContext; source: { mapId: Id; region: Rect; layerIds: Id[] } | { tilesetId: Id; region: Rect }; name: string; category?: string; tags?: string[] }
-export interface ListStampsArgs { context: ReadContext; query?: string; cursor?: string; limit?: number; previewStampId?: Id }
+export interface ListStampsArgs { context: ReadContext; query?: string; cursor?: string; limit?: number; previewStampId?: Id; includeSheet?: boolean }
 export interface BeginEditArgs { context: ReadContext; idempotencyKey: string; expectedRevision?: Revision; requestLabel: string; mapIds: Id[]; unlockLayerIds?: Id[]; collaboration?: CollaborativeBegin }
 export interface FinishEditArgs { context: WriteContext; summary?: string }
 export interface CancelEditArgs { context: WriteContext; reason?: string; resumeToken?: string }
@@ -110,7 +111,7 @@ export interface ValidateGoalsArgs extends GetMapInfoArgs { checks: GoalCheck[] 
 export interface GoalResult { kind: GoalCheck["kind"]; passed: boolean | null; detail: string; digest?: string; count?: number; visitedCells?: number }
 export interface CreateMapArgs { context: WriteContext; name: string; width: number; height: number; tileWidth: number; tileHeight: number; world?: Point }
 export interface ResizeMapArgs extends MapWrite { width: number; height: number; allowCrop?: boolean }
-export interface RenderPreviewArgs extends GetMapInfoArgs { region?: Rect; layerIds?: Id[]; maxSide?: number; grid?: boolean; coordinates?: boolean; entities?: boolean }
+export interface RenderPreviewArgs extends GetMapInfoArgs { region?: Rect; layerIds?: Id[]; maxSide?: number; grid?: boolean; coordinates?: boolean; entities?: boolean; zoom?: number; highlight?: "draft" | "lastCall" }
 export interface ValidateMapArgs extends GetMapInfoArgs { region?: Rect; limit?: number; cursor?: string }
 export interface GetTagsArgs { context: ReadContext; query?: string; kind?: "tiles" | "stamps"; tilesetId?: Id; status?: "all" | "current" | "missing" | "stale"; cursor?: string; limit?: number }
 export interface SetTagsArgs { context: TagWriteContext; entries: TagWrite[] }
@@ -118,7 +119,7 @@ export interface EditMapArgs { context: WriteContext; mapId: Id; name?: string; 
 export type EditStampArgs = { context: WriteContext; stampId: Id } & ({ action: "remove" } | { action: "duplicate"; name: string } | { action: "update"; props: {name?: string; category?: string; tags?: string[]; favorite?: boolean} });
 export interface ConfigureWorldArgs { context: WriteContext; settings: {tileWidth?: number;tileHeight?: number;newLevel?:{width?:number;height?:number};layerTemplate?:{name:string;kind:LayerKind}[];background?:string|null} }
 
-export interface ToolArguments {
+export interface ToolArguments extends VisionToolArguments {
   join_edit: CollaborativeJoin;
   get_export_settings: EditorControlContext; configure_export: ConfigureExportArgs;
   edit_map: EditMapArgs; edit_stamp: EditStampArgs; configure_world: ConfigureWorldArgs; get_world_settings: { context: ReadContext };
@@ -225,12 +226,13 @@ export interface EntityInfo { id: Id; typeId: Id; layerId: Id; pixelX: number; p
 export interface TagRecord { target: TagTarget; tags: string[]; note: string; status: TagStatus; storedFingerprint?: string; currentFingerprint: string | null }
 export interface UpdatedTag { target: TagTarget; fingerprint: string; tags: string[]; note: string; status: "current" }
 export interface ImagePlacement { tileId: number; rect: Rect; labelRect: Rect }
-export interface CatalogImage { width: number; height: number; mode: "tiles" | "sheet"; scale: number; placements: ImagePlacement[]; sheet?: { region: Rect; sourceRect: Rect; grid: { columns: number; rows: number; tileWidth: number; tileHeight: number; margin: number; spacing: number }; contentRect: Rect } }
+export interface CatalogImage { width: number; height: number; mode: "tiles" | "sheet"; scale: number; columns?: number; placements?: ImagePlacement[]; sheet?: { region: Rect; sourceRect: Rect; grid: { columns: number; rows: number; tileWidth: number; tileHeight: number; margin: number; spacing: number }; contentRect: Rect } }
 export interface TagCounts { current: number; stale: number; missing: number }
 /** Detected smart source rectangle in tileset grid cells; pass {tilesetId, region: rect} as a smart source. */
 export interface SmartCandidateInfo { tilesetId: Id; rect: Rect; kind: SmartUsage; band: number }
 export interface TilesetInfo { id: Id; name: string; tileWidth: number; tileHeight: number; columns: number; rows: number; margin: number; spacing: number; tileCount: number; kind: "source" | "generated" | "edited"; fingerprint?: string; tagCounts?: TagCounts; smart?: SmartCandidateInfo[] }
-export interface TileCatalogItem { tileId: number; sourceRect: Rect; tags: string[]; note: string; tagStatus: TagStatus; fingerprint: string }
+/** Compact by default: tileId plus non-empty tags/note; details:true adds the rest. */
+export interface TileCatalogItem { tileId: number; sourceRect?: Rect; tags?: string[]; note?: string; tagStatus?: TagStatus; fingerprint?: string }
 export interface StampInfo { id: Id; name: string; width: number; height: number; layers: { sourceLayerId: Id; name: string; kind: LayerKind }[]; category: string; tags: string[]; semanticTags: string[]; smartUsages: SmartUsage[]; smart?: { kind: SmartUsage; band: number }; fingerprint: string }
 export interface EntityTypeInfo { id: Id; name: string; builtin: boolean; fields: { name: string; type: EntityFieldType; default: EntityFieldValue; enumValues?: string[] }[] }
 export interface PreviewImage { width: number; height: number; scale: number; pixelOrigin: Point; cellSize: { width: number; height: number }; contentRect: Rect; grid: boolean; coordinates: boolean }
@@ -238,7 +240,7 @@ export interface AgentWarning { code: string; detail: string }
 /** Remaining whole-edit budget: planned cell writes and inactivity lease time. */
 export interface EditBudget { cellsLeft: number; msLeft: number }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
-export interface ToolData {
+export interface ToolData extends VisionToolData {
   join_edit: { transactionId: Id; memberId: Id; memberRevision: Revision; state: "running"; claims: RegionClaim[]; revisionMode: "member" };
   get_export_settings: EditorExportPreferences; configure_export: EditorExportPreferences;
   edit_map: ChangedData & { map: MapSummary }; edit_stamp: ChangedData & { stamp: {id: Id;name:string;width:number;height:number;category:string;tags:string[];favorite:boolean}|null;stampId:Id;action:EditStampArgs["action"] };
@@ -252,12 +254,14 @@ export interface ToolData {
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
-  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits; smart?: SmartCandidateInfo[] };
+  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits; smart?: SmartCandidateInfo[];
+    /** Reference images the user dropped/pasted or the agent added (reference_add). */
+    references: ReferenceSummary[] };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
   read_region: ReadRegionGrid | ReadRegionCells;
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
-  list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId: Id } };
+  list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId?: Id; sheet?: { stampId: Id; label: string; rect: Rect }[] } };
   begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; resumeToken: string; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; unlockedLayers?: { mapId: Id; layerId: Id }[]; limits: AgentLimits; leaseDeadline: number; budget: EditBudget };
   resume_edit: { transactionId: Id; state: "running"; resumedFrom: TransactionState; revision: Revision; counters: TransactionCounters; affectedMapIds: Id[]; leaseDeadline: number; budget: EditBudget };
   finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
@@ -279,7 +283,7 @@ export interface ToolData {
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
-export type MutationToolName = Exclude<ToolName, EditorControlToolName | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags">;
+export type MutationToolName = Exclude<ToolName, EditorControlToolName | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags" | VisionToolName>;
 export interface AgentEnvelope<T> { memberId?: Id; memberRevision?: Revision; ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
 export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
 export interface AgentFailure { memberId?:Id;memberRevision?:Revision;ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
@@ -385,6 +389,8 @@ export interface AgentImagePort {
   catalogSourceKey?(tilesetId: Id): string | null;
   tileCatalog(args: GetTileCatalogArgs, call: AgentCallContext): Promise<AgentImageResult & { image: CatalogImage }>;
   stampPreview(stampId: Id, call: AgentCallContext): Promise<AgentImageResult>;
+  /** One labelled contact sheet of several stamps (list_stamps includeSheet). */
+  stampSheet?(stampIds: readonly Id[], call: AgentCallContext): Promise<AgentImageResult & { sheet: { stampId: Id; label: string; rect: Rect }[] }>;
   renderPreview(args: RenderPreviewArgs, call: AgentCallContext): Promise<AgentImageResult & { image: PreviewImage; region: Rect; mapRevision: Revision }>;
   tileFingerprint(tilesetId: Id, tileId: number, signal: AgentSignal): Promise<string>;
   stampFingerprint(stampId: Id, signal: AgentSignal): Promise<string>;
@@ -433,6 +439,7 @@ export interface AgentHost {
   subscribeWorldContent(listener: () => void): Unsubscribe;
   world: AgentWorldPort; transactions: AgentTransactionsPort; metadata: AgentMetadataPort;
   visualReferences?: AgentVisualReferencePort;
+  references?: AgentReferencePort;
   editorContext?: () => EditorContext;
   editorControls?: AgentEditorControlsPort;
   images: AgentImagePort; smartSources: AgentSmartSourcePort; tags: AgentTagsPort;
@@ -474,4 +481,6 @@ export interface AgentConnection {
   regenerateToken(expectedRevision: number): Promise<AgentSettingsSnapshot>;
   readonly status: AgentConnectionStatus;
   subscribeStatus(listener: (status: AgentConnectionStatus) => void): Unsubscribe;
+  /** Reads an agent-supplied local reference image (reference_add path). Absent when the host cannot. */
+  readLocalImage?(path: string): Promise<Uint8Array>;
 }

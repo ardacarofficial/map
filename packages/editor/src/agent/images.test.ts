@@ -16,7 +16,7 @@ describe("agent catalog images and fingerprints",()=>{
   it("uses real source rectangles with margin/spacing and reserves numeric-label gutters",async()=>{
     image(encodeRgbaPng(7,4,pixels()));const port=createImagePort(world,()=>1);
     const result=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",tileIds:[1,0],image:"tiles",scale:2},call);
-    const decoded=decodeWorkingSourcePng(result.png);const first=result.image.placements[0]!;
+    const decoded=decodeWorkingSourcePng(result.png);const first=result.image.placements![0]!;
     expect([...decoded.data.slice((first.rect.y*decoded.width+first.rect.x)*4,(first.rect.y*decoded.width+first.rect.x)*4+4)]).toEqual([0,255,0,255]);
     expect(first.labelRect.y).toBeGreaterThanOrEqual(first.rect.y+first.rect.height);expect(first.tileId).toBe(1);
   });
@@ -33,7 +33,7 @@ describe("agent catalog images and fingerprints",()=>{
 it("catalog IDs have a readable ten-pixel glyph height outside the sprite", async () => {
   image(encodeRgbaPng(7,4,pixels()));
   const result = await createImagePort(world,()=>1).tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",tileIds:[1],image:"tiles",scale:2},call);
-  const png=decodeWorkingSourcePng(result.png),label=result.image.placements[0]!.labelRect;
+  const png=decodeWorkingSourcePng(result.png),label=result.image.placements![0]!.labelRect;
   const inkRows=new Set<number>();
   for(let y=label.y;y<label.y+label.height;y++)for(let x=label.x;x<label.x+label.width;x++){
     const i=(y*png.width+x)*4;if(png.data[i]===215&&png.data[i+1]===225)inkRows.add(y);
@@ -44,7 +44,7 @@ it("catalog IDs have a readable ten-pixel glyph height outside the sprite", asyn
 it("renders a continuous sheet with source margin/spacing and compact coordinate metadata", async () => {
   const original=encodeRgbaPng(7,4,pixels());image(original);const port=createImagePort(world,()=>1);
   const result=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",image:"sheet",scale:2},call);
-  expect(result.image.placements).toEqual([]);
+  expect(result.image.placements!).toEqual([]);
   expect(result.image.sheet).toMatchObject({sourceRect:{x:1,y:1,width:5,height:2},region:{x:0,y:0,width:2,height:1},grid:{margin:1,spacing:1,columns:2}});
   const png=decodeWorkingSourcePng(result.png),rect=result.image.sheet!.contentRect;
   const pixel=(x:number)=>[...png.data.slice(((rect.y)*png.width+rect.x+x)*4,((rect.y)*png.width+rect.x+x)*4+4)];
@@ -148,4 +148,29 @@ it("counts shared decoded pixels once when retaining multiple atlases",async()=>
   await imagePixels("other",call.signal);
   await imagePixels("art",call.signal);
   expect(decode).toHaveBeenCalledTimes(2);
+});
+
+describe("catalog layout and stamp contact sheets",()=>{
+  const call:AgentCallContext={clientSessionId:"test",clientInfo:{name:"Test",version:"1"},bridgeEpoch:"test",get deadline(){return Date.now()+60000;},signal:{aborted:false,throwIfAborted(){},onAbort:()=>()=>{}}};
+  it("lays tile pages out near-square within 1568 px and prints ids in sheet cells",async()=>{
+    const many={...ts,tileWidth:4,tileHeight:4,columns:8,rows:4,margin:0,spacing:0};
+    setTilesetImage({tilesetId:"art",bytes:encodeRgbaPng(32,16,new Uint8Array(32*16*4).fill(200)),bitmap:{width:32,height:16,close:vi.fn()} as unknown as ImageBitmap});
+    const port=createImagePort({tilesets:()=>[many],stamps:()=>[]} as unknown as AgentWorldPort,()=>1);
+    const page=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",limit:64,image:"tiles",scale:4},call);
+    expect(page.width/page.height).toBeGreaterThan(0.5);expect(page.width/page.height).toBeLessThan(2);expect(page.width).toBeLessThanOrEqual(1568);
+    const sheet=await port.tileCatalog({context:{worldSessionId:"world"},tilesetId:"art",image:"sheet",scale:4},call);
+    const decoded=decodeWorkingSourcePng(sheet.png),c=sheet.image.sheet!.contentRect;
+    // The id label box darkens the top-left of the first cell.
+    expect(decoded.data[(c.y*decoded.width+c.x)*4]).toBeLessThan(100);
+  });
+  it("draws every stamp of a page with its name and size",async()=>{
+    image(encodeRgbaPng(7,4,pixels()));
+    const house={id:"ev",name:"Ev",width:2,height:1,palette:[{tilesetId:"art",tileId:0},{tilesetId:"art",tileId:1}],layers:[{layerId:"l",name:"Üst",cells:Uint32Array.of(1,2)}]};
+    const tree={...house,id:"agac",name:"Ağaç",width:1,height:1,layers:[{layerId:"l",name:"Üst",cells:Uint32Array.of(1)}]};
+    const port=createImagePort({tilesets:()=>[ts],stamps:()=>[house,tree]} as unknown as AgentWorldPort,()=>1);
+    const result=await port.stampSheet!(["ev","agac"],call);
+    expect(result.sheet.map(s=>s.label)).toEqual(["Ev 2x1","Ağaç 1x1"]);
+    expect(result.sheet[0]!.rect.width).toBe(2*result.sheet[1]!.rect.width);
+    expect(result.width).toBeLessThanOrEqual(1568);
+  });
 });

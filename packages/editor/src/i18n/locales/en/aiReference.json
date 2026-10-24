@@ -1,0 +1,16 @@
+{
+  "title": "References",
+  "add": "Add reference",
+  "remove": "Remove",
+  "empty": "Drop or paste a picture here",
+  "drop": "Drop as reference",
+  "added": "{name} added as a reference",
+  "size": "{width}×{height}",
+  "origin.user": "You",
+  "origin.agent": "AI",
+  "error.unsupportedType": "Only PNG, JPEG or WebP pictures can be added",
+  "error.fileTooLarge": "The picture is larger than 16 MB",
+  "error.tooMany": "At most 32 references can be added; remove one first",
+  "error.noWorld": "Open a world first",
+  "error.failed": "The picture could not be added"
+}

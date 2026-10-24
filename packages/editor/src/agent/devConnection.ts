@@ -87,5 +87,9 @@ async function openConnection(): Promise<AgentConnection | undefined> {
     regenerateToken: (expectedRevision) => rpc<AgentSettingsSnapshot>("regenerateToken", { revision: expectedRevision }),
     get status() { return status; },
     subscribeStatus(listener) { subscribers.add(listener); return () => { subscribers.delete(listener); }; },
+    async readLocalImage(path) {
+      const base64 = await rpc<string>("readReferenceImage", { path });
+      return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    },
   };
 }
