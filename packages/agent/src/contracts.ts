@@ -80,11 +80,13 @@ export interface PaintRectArgs extends LayerWrite { region: Rect; value: PaintVa
 export interface PaintLineArgs extends LayerWrite { from: Point; to: Point; value: PaintValue; width?: number }
 export interface FillArgs extends LayerWrite { start: Point; region?: Rect; value: PaintValue; maxCells?: number }
 export interface PrepareSmartSourceArgs extends MapWrite { source: SmartSource; force?: boolean }
-export type SmartBrushArgs = LayerWrite & { sourceId: Id; orientation?: Orientation } & (
+/** A prepared sourceId, or an inline source prepared (and reused) inside the same edit. Exactly one is required. */
+export type SmartSourceRef = { sourceId: Id; source?: never } | { source: SmartSource; sourceId?: never };
+export type SmartBrushArgs = LayerWrite & SmartSourceRef & { orientation?: Orientation; openEdges?: boolean } & (
   { mode: "area"; region: Rect; cells?: never; erase?: false } |
   { mode: "road"; cells: Point[]; region?: never; erase?: boolean }
 );
-export interface DrawPathArgs extends LayerWrite { sourceId: Id; kind: "path" | "river"; points: Point[]; width?: number; orientation?: Orientation }
+export type DrawPathArgs = LayerWrite & SmartSourceRef & { kind: "path" | "river"; points: Point[]; width?: number; orientation?: Orientation; openEdges?: boolean };
 export interface PlaceStampArgs extends MapWrite { stampId: Id; at: Point; rotation?: 0 | 1 | 2 | 3; flipX?: boolean; flipY?: boolean; layerMapping?: LayerMapping[]; allowCreateLayers?: boolean; emptyCells?: "skip" | "erase" }
 export type EditLayerArgs = MapWrite & (
   { action: "create"; name: string; kind: LayerKind; index?: number } |
@@ -225,9 +227,11 @@ export interface UpdatedTag { target: TagTarget; fingerprint: string; tags: stri
 export interface ImagePlacement { tileId: number; rect: Rect; labelRect: Rect }
 export interface CatalogImage { width: number; height: number; mode: "tiles" | "sheet"; scale: number; placements: ImagePlacement[]; sheet?: { region: Rect; sourceRect: Rect; grid: { columns: number; rows: number; tileWidth: number; tileHeight: number; margin: number; spacing: number }; contentRect: Rect } }
 export interface TagCounts { current: number; stale: number; missing: number }
-export interface TilesetInfo { id: Id; name: string; tileWidth: number; tileHeight: number; columns: number; rows: number; margin: number; spacing: number; tileCount: number; kind: "source" | "generated" | "edited"; fingerprint?: string; tagCounts?: TagCounts }
+/** Detected smart source rectangle in tileset grid cells; pass {tilesetId, region: rect} as a smart source. */
+export interface SmartCandidateInfo { tilesetId: Id; rect: Rect; kind: SmartUsage; band: number }
+export interface TilesetInfo { id: Id; name: string; tileWidth: number; tileHeight: number; columns: number; rows: number; margin: number; spacing: number; tileCount: number; kind: "source" | "generated" | "edited"; fingerprint?: string; tagCounts?: TagCounts; smart?: SmartCandidateInfo[] }
 export interface TileCatalogItem { tileId: number; sourceRect: Rect; tags: string[]; note: string; tagStatus: TagStatus; fingerprint: string }
-export interface StampInfo { id: Id; name: string; width: number; height: number; layers: { sourceLayerId: Id; name: string; kind: LayerKind }[]; category: string; tags: string[]; semanticTags: string[]; smartUsages: SmartUsage[]; fingerprint: string }
+export interface StampInfo { id: Id; name: string; width: number; height: number; layers: { sourceLayerId: Id; name: string; kind: LayerKind }[]; category: string; tags: string[]; semanticTags: string[]; smartUsages: SmartUsage[]; smart?: { kind: SmartUsage; band: number }; fingerprint: string }
 export interface EntityTypeInfo { id: Id; name: string; builtin: boolean; fields: { name: string; type: EntityFieldType; default: EntityFieldValue; enumValues?: string[] }[] }
 export interface PreviewImage { width: number; height: number; scale: number; pixelOrigin: Point; cellSize: { width: number; height: number }; contentRect: Rect; grid: boolean; coordinates: boolean }
 export interface AgentWarning { code: string; detail: string }
@@ -248,7 +252,7 @@ export interface ToolData {
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
-  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits };
+  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits; smart?: SmartCandidateInfo[] };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
   read_region: ReadRegionGrid | ReadRegionCells;
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
@@ -262,8 +266,8 @@ export interface ToolData {
   paint_grid: CompactChange; clear_region: CompactChange & { removedEntities?: number };
   replace_tiles: CompactChange & { maps?: { mapId: Id; changed: number }[]; skippedLayerIds?: Id[] };
   prepare_smart_source: ChangedData & { sourceId: Id; mapId: Id; band: number; usages: SmartUsage[]; detectorVersion: number; fingerprint: string; forced: boolean; generatedTilesetIds: Id[]; layerMapping: LayerMapping[] };
-  smart_brush: ChangedData & { sourceId: Id; neighborRepairs: number; layerMapping: LayerMapping[] };
-  draw_path: ChangedData & { sourceId: Id; kind: "path" | "river"; snappedPoints: Point[]; widthInTiles: number; neighborRepairs: number };
+  smart_brush: ChangedData & { sourceId: Id; band: number; neighborRepairs: number; layerMapping: LayerMapping[] };
+  draw_path: ChangedData & { sourceId: Id; kind: "path" | "river"; band: number; snappedPoints: Point[]; widthInTiles: number; neighborRepairs: number };
   place_stamp: ChangedData & { stampId: Id; layerMapping: LayerMapping[]; transformedSize: { width: number; height: number } };
   edit_layer: ChangedData & { layer: LayerInfo };
   list_entity_types: { items: EntityTypeInfo[] };
@@ -395,6 +399,8 @@ export interface AgentSmartSourcePort {
   assertCurrent(source: PreparedSmartSource): void;
   publish(source: PreparedSmartSource): void;
   releaseTransaction(transactionId: Id, outcome: "approved" | "cancelled"): void;
+  /** Cached detector-v6 smart rectangles of one source tileset; [] when the artwork is unavailable. */
+  candidates?(tilesetId: Id, signal: AgentSignal): Promise<readonly SmartCandidateInfo[]>;
 }
 export interface TileTagEntry { tilesetId: Id; tileId: number; fingerprint: string; tags: string[]; note: string }
 export interface StampTagEntry { stampId: Id; fingerprint: string; tags: string[]; note: string }

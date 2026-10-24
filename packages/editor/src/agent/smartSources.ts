@@ -1,10 +1,13 @@
-import { AgentError, AgentErrorCode, type AgentMetadataPort, type AgentSmartSourcePort, type AgentWorldPort, type PreparedSmartSource, type LayerMapping } from "@smap/agent";
-import { detectNineSliceSelection, isEntityLayer, isGridLayer, makeCell, NINE_SLICE_DETECTOR_VERSION, nineSliceProblem, type Stamp, type MapStore } from "@smap/core";
+import { AgentError, AgentErrorCode, type AgentMetadataPort, type AgentSmartSourcePort, type AgentWorldPort, type PreparedSmartSource, type LayerMapping, type SmartCandidateInfo } from "@smap/agent";
+import { detectNineSliceSelection, findSmartCandidates, isEntityLayer, isGridLayer, makeCell, NINE_SLICE_DETECTOR_VERSION, nineSliceProblem, type Stamp, type MapStore } from "@smap/core";
 import { prepareSmartStamp, discardSmartStamp, type PreparedSmartStamp } from "../commands/smartStampCommands";
 import { useProjectLibrary } from "../io/projectLibrary";
 import { getTilesetImage, removeTilesetImage, setTilesetImage, sourceVersionMatches, tilesetWorldVersion } from "../state/tilesetImages";
 import { pngHash } from "../state/pngHash";
 import { imagePixels } from "./images";
+
+/** Candidate scans are keyed by the decoded image object and sheet grid, so edits to either rescan once. */
+const candidateCache=new WeakMap<object,{grid:string;result:Promise<readonly SmartCandidateInfo[]>}>();
 
 /** This preparation never selects a brush, stamp, layer, map tab or source rectangle. */
 export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMetadataPort, followers: () => readonly MapStore[] = () => []): AgentSmartSourcePort {
@@ -16,6 +19,20 @@ export function createSmartSourcePort(world: AgentWorldPort, metadata: AgentMeta
   };
   return {
     get:id=>records.get(id)?.source,assertCurrent,
+    candidates(tilesetId,signal){
+      const tileset=world.tilesets().find(t=>t.id===tilesetId),image=getTilesetImage(tilesetId);
+      if(!tileset||!image||tileset.generated||tileset.edited)return Promise.resolve([]);
+      const grid=JSON.stringify([tileset.columns,tileset.rows,tileset.tileWidth,tileset.tileHeight,tileset.margin,tileset.spacing]);
+      const cached=candidateCache.get(image);
+      if(cached?.grid===grid)return cached.result;
+      // The scan is shared by every caller; a cancelled caller only stops waiting.
+      const result=imagePixels(tilesetId,{aborted:false,throwIfAborted(){},onAbort:()=>()=>{}}).then(pixels=>
+        findSmartCandidates({tileset,pixels,emptyIds:new Set()}).map(c=>({tilesetId,rect:{...c.rect},kind:c.kind,band:c.band})));
+      result.catch(()=>{if(candidateCache.get(image)?.result===result)candidateCache.delete(image);});
+      candidateCache.set(image,{grid,result});
+      signal.throwIfAborted();
+      return result;
+    },
     async prepare(args,call,reserve){
       const store=await world.loadMap(args.mapId);call.signal.throwIfAborted();
       let stamp:Stamp;

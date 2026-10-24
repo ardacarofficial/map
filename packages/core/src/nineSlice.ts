@@ -171,6 +171,45 @@ function rawRect(r: NineSlicePixelRect, width: number, height: number, flags: nu
   return { x, y, width: w, height: h };
 }
 
+/** Quadrant bits: both cardinal neighbours present and the diagonal absent (NW, NE, SE, SW). */
+const INNER_QUADRANT_BITS = [[1, 64, 128], [1, 4, 2], [16, 4, 8], [16, 64, 32]] as const;
+/** True when quadrant q of a reduced blob mask is a concave (inner) join. */
+export function isInnerJoinQuadrant(mask: number, q: number): boolean {
+  const [a, b, diagonal] = INNER_QUADRANT_BITS[q]!;
+  return !!(mask & a) && !!(mask & b) && !(mask & diagonal);
+}
+/** Source indices [vertical edge strip, horizontal edge strip] adjoining inner quadrant q. */
+export function innerJoinSources(source: BandedSource, q: number): readonly [number, number] {
+  const { width: n, height: m } = source;
+  return ([[n, 1], [2 * n - 1, 1], [2 * n - 1, (m - 1) * n + 1], [n, (m - 1) * n + 1]] as const)[q]!;
+}
+/** A mitered inner-join piece: copy the same rectangle from the chosen adjoining edge strip. */
+export interface InnerMiterSpan extends NineSlicePixelRect { readonly strip: "vertical" | "horizontal" }
+/**
+ * Splits quadrant q of a width × height patch along its corner diagonal. Pixels nearer the side shared with the
+ * left/right neighbour copy the horizontal edge strip that neighbour shows; the rest copy the vertical strip shown by
+ * the top/bottom neighbour. Both borders therefore continue into the cell and meet in a mitered concave corner.
+ * Pure integer geometry: no pixels are inspected or resampled, and equal rows are merged.
+ */
+export function innerMiterSpans(q: number, rect: NineSlicePixelRect, width: number, height: number): InnerMiterSpan[] {
+  const right = q === 1 || q === 2, bottom = q >= 2, out: InnerMiterSpan[] = [];
+  const x0 = rect.x, x1 = rect.x + rect.width;
+  for (let y = rect.y; y < rect.y + rect.height; y++) {
+    const dy = bottom ? height - 1 - y : y, num = (2 * dy + 1) * width - height, den = 2 * height;
+    // Number of side distances dx with (2dx+1)/width < (2dy+1)/height; ties go to the vertical strip.
+    const k = num <= 0 ? 0 : Math.floor((num + den - 1) / den);
+    const h0 = right ? Math.max(x0, width - k) : x0, h1 = right ? x1 : Math.min(x1, k);
+    const pieces: [number, number, InnerMiterSpan["strip"]][] = right ? [[x0, Math.min(x1, h0), "vertical"], [h0, h1, "horizontal"]] : [[h0, h1, "horizontal"], [Math.max(x0, h1), x1, "vertical"]];
+    for (const [a, b, strip] of pieces) {
+      if (b <= a) continue;
+      const prev = out.find(p => p.strip === strip && p.x === a && p.width === b - a && p.y + p.height === y);
+      if (prev) (prev as { height: number }).height++;
+      else out.push({ x: a, y, width: b - a, height: 1, strip });
+    }
+  }
+  return out;
+}
+
 /** Per-quadrant source index for a blob mask; missing authored inner joins use the centre's corresponding quadrant. */
 export function nineSliceMaskSources(source: BandedSource, mask: number): readonly number[] {
   nineSliceLayout(source);
@@ -186,17 +225,28 @@ export function nineSliceMaskSources(source: BandedSource, mask: number): readon
  * generated tileset id and these slot ids, so already placed cells keep their palette references.
  * Diagonal source flags require square pixel tiles, matching editor rotation constraints.
  */
-export function nineSliceBlits(source: TileClip & BandedSource, layerId: string, tileWidth: number, tileHeight: number, innerCorner?: NineSliceInnerCorner): NineSliceBlit[] {
+export function nineSliceBlits(source: TileClip & BandedSource, layerId: string, tileWidth: number, tileHeight: number, innerCorner?: NineSliceInnerCorner, innerJoin?: "miter"): NineSliceBlit[] {
   const problem = nineSliceProblem(source);
   if (problem) throw new Error(problem);
   if (!Number.isInteger(tileWidth) || !Number.isInteger(tileHeight) || tileWidth < 1 || tileHeight < 1) throw new RangeError("tile dimensions must be positive integers");
   const layer = source.layers.find(l => l.layerId === layerId);
   if (!layer || layer.grid) throw new Error("bake requires a source tile layer");
-  if (bandWidth(source) > 1) { if (innerCorner) throw new Error("banded inner corners use the source centre patch"); return bandBlits(source, layerId, tileWidth, tileHeight); }
+  if (bandWidth(source) > 1) { if (innerCorner) throw new Error("banded inner corners use the source centre patch"); return bandBlits(source, layerId, tileWidth, tileHeight, innerJoin === "miter"); }
   const { width: n, height: m } = source, layout = nineSliceLayout(source), out: NineSliceBlit[] = [];
   const emit = (slot: number, indices: readonly number[], mask?: number) => {
     for (let q = 0; q < 4; q++) {
-      const useInner = innerCorner && mask !== undefined && [[1, 64, 128], [1, 4, 2], [16, 4, 8], [16, 64, 32]][q]!.every((b, i) => i === 2 ? !(mask & b) : !!(mask & b));
+      const inner = mask !== undefined && isInnerJoinQuadrant(mask, q), useInner = innerCorner && inner;
+      if (!useInner && inner && innerJoin === "miter") {
+        const [vertical, horizontal] = innerJoinSources(source, q);
+        for (const span of innerMiterSpans(q, quadrantRect(q, tileWidth, tileHeight), tileWidth, tileHeight)) {
+          const cell = layer.cells[span.strip === "vertical" ? vertical : horizontal]!;
+          if (cell === 0) continue;
+          const flags = cellFlags(cell), destinationRect = { x: span.x, y: span.y, width: span.width, height: span.height };
+          if (flags & FLIP_D && tileWidth !== tileHeight) throw new Error("diagonal source orientation requires square tiles");
+          out.push({ tile: source.palette[cellPaletteIndex(cell) - 1]!, flags, sourceRect: rawRect(destinationRect, tileWidth, tileHeight, flags), slot, destinationRect });
+        }
+        continue;
+      }
       const cell = layer.cells[indices[q]!]!;
       if (!useInner && cell === 0) continue;
       const tile = useInner ? innerCorner.tile : source.palette[cellPaletteIndex(cell) - 1]!;

@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "33c289227b898cf75f0081316b60988f5bbb4ffd6be8ee24ff8c083ae2442377",
+  "catalogueSha256": "651c75bffecc8acc7a942d14a3dd096aad83e828459a584c1f8a3daa8a5410d0",
   "tools": {
     "get_session": {
       "valid": [
@@ -811,6 +811,33 @@
             "height": 2
           },
           "erase": false
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "source": {
+            "tilesetId": "terrain",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 3,
+              "height": 3
+            }
+          },
+          "mode": "area",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 3
+          },
+          "openEdges": false
         }
       ],
       "invalid": [
@@ -844,6 +871,50 @@
           "sourceId": "source-1",
           "mode": "road",
           "cells": []
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "sourceId": "source-1",
+          "source": {
+            "tilesetId": "terrain",
+            "region": {
+              "x": 0,
+              "y": 0,
+              "width": 3,
+              "height": 3
+            }
+          },
+          "mode": "area",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "mode": "area",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
         }
       ]
     },
@@ -871,6 +942,32 @@
             }
           ],
           "width": 16
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "source": {
+            "stampId": "river"
+          },
+          "kind": "river",
+          "points": [
+            {
+              "x": 0,
+              "y": 5
+            },
+            {
+              "x": 9,
+              "y": 5
+            }
+          ],
+          "width": 3,
+          "openEdges": true
         }
       ],
       "invalid": [
@@ -915,6 +1012,27 @@
             }
           ],
           "width": 16
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "mapId": "map-1",
+          "layerId": "ground",
+          "kind": "river",
+          "points": [
+            {
+              "x": 0,
+              "y": 5
+            },
+            {
+              "x": 9,
+              "y": 5
+            }
+          ]
         }
       ]
     },

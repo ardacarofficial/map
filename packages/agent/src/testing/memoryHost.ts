@@ -6,6 +6,7 @@ import {
   buildRoadProfile,
   createDocument,
   detectNineSliceSelection,
+  findSmartCandidates,
   encodeRgbaPng,
   isValidTileId,
   nineSliceProblem,
@@ -626,6 +627,20 @@ export function createMemoryHost(options: MemoryHostOptions = {}): MemoryHost {
       },
     },
     smartSources: {
+      // Whole-sheet scan over the same per-tile pixels prepare uses (bounded by tests' small sheets).
+      candidates: async (tilesetId, signal) => {
+        signal.throwIfAborted();
+        const ts = project.tilesets.find((t) => t.id === tilesetId);
+        if (!ts || ts.generated || ts.edited || ts.columns * ts.rows > 4096) return [];
+        const width = ts.columns * ts.tileWidth, height = ts.rows * ts.tileHeight, data = new Uint8Array(width * height * 4);
+        for (let id = 0; id < ts.columns * ts.rows; id++) {
+          const rgba = pixelFor(ts.id, id).rgba, col = id % ts.columns, row = Math.floor(id / ts.columns);
+          for (let y = 0; y < ts.tileHeight; y++)
+            data.set(rgba.subarray(y * ts.tileWidth * 4, (y + 1) * ts.tileWidth * 4), ((row * ts.tileHeight + y) * width + col * ts.tileWidth) * 4);
+        }
+        return findSmartCandidates({ tileset: { ...ts, margin: 0, spacing: 0 }, pixels: { width, height, data }, emptyIds: new Set() })
+          .map((c) => ({ tilesetId, rect: { ...c.rect }, kind: c.kind, band: c.band }));
+      },
       prepare: async (a, call, reserve) => {
         call.signal.throwIfAborted();
         const store = await getStore(a.mapId);

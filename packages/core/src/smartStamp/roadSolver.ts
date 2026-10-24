@@ -53,6 +53,8 @@ export interface RoadSolveOptions {
   readonly window?: CellRect;
   /** Optional virtual membership beyond map bounds (e.g. an unclipped area). Overrides boundary only there. */
   readonly outside?: (x: number, y: number) => number;
+  /** Treat the map border as open: an off-map neighbour repeats the nearest in-map cell, so shapes run off the edge uncapped. */
+  readonly openEdges?: boolean;
 }
 
 /**
@@ -101,7 +103,7 @@ export function solveRoadFromReader(reader: RoadTileReader, profile: RoadProfile
     let raw = 0;
     offsets.forEach(([dx, dy], bit) => {
       const nx = x + dx, ny = y + dy;
-      if (inside(nx, ny) ? member(nx, ny) === m : options.outside ? options.outside(nx, ny) === m : false) raw |= 1 << bit;
+      if (inside(nx, ny) ? member(nx, ny) === m : options.outside ? options.outside(nx, ny) === m : options.openEdges ? member(Math.min(W - 1, Math.max(0, nx)), Math.min(H - 1, Math.max(0, ny))) === m : false) raw |= 1 << bit;
     });
     const mask = reduceBlobMask(raw);
     if (info.kind === "blob" && info.mask === mask) continue;

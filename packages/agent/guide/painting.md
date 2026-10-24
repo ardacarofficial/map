@@ -12,9 +12,15 @@ Use `create_stamp` for a useful reusable object, not every incidental tile arran
 
 ## Connected edges and paths
 
-For suitable edge/center artwork, call `prepare_smart_source` with an existing stamp or `{tilesetId,region}`. Inspect the returned `usages`, band `b` and layer mapping. Source IDs belong to that transaction and map. `force:true` bypasses detection; it does not establish that an object has meaningful connected edges.
+`get_session.smart` and `list_tilesets` list detected edge/centre art as `{tilesetId,rect,kind,band}`; `list_stamps` marks smart stamps with `smart:{kind,band}`. Pass `source:{tilesetId,region:rect}` (or `{stampId}`) straight to `draw_path` or `smart_brush`: it is prepared once per edit and reused. `prepare_smart_source` is only needed when you want the `sourceId`, band or layer mapping first. `force:true` bypasses detection; it does not establish that an object has meaningful connected edges.
 
-`smart_brush` area mode takes `region`; road mode takes distinct `cells` at macro-cell top-lefts aligned to band `b`. `draw_path` takes map-cell `points`, snaps by the source band and uses width in macro cells. Its `kind:"river"` records intent; you still choose water art and place bridges separately. Connection repairs can extend beyond the requested cells, which matters at protected or collaboratively owned boundaries. Preview the actual result before expanding a pattern across the map.
+| Shape | Tool |
+|---|---|
+| River, road, path, wall line, any bends | `draw_path` with a `kind:"road"` source, one point per bend, `width` in band cells (3 suits a river) |
+| Lake, pond, plaza, field with a border | `smart_brush` `mode:"area"`; overlap several rectangles of the same source for irregular shapes |
+| Free-form mask on the band grid | `smart_brush` `mode:"road"` with the exact cells |
+
+Overlapping or touching shapes of the same source merge into one outline with matching inner corners; later strokes repair earlier ones. Shapes that reach the map border stay open and continue off-map (`openEdges`, default true); pass `openEdges:false` for a closed border at the map edge. `draw_path` joins consecutive points with straight orthogonal runs, so a diagonal pair becomes a staircase: give explicit corner points instead. Width beyond the border is clipped. `kind:"river"` records intent; place bridges separately with stamps. Connection repairs can extend beyond the requested cells, which matters at protected or collaboratively owned boundaries. Preview the actual result before expanding a pattern across the map.
 
 ## Manual collision and gameplay
 

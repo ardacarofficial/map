@@ -19,6 +19,8 @@ export interface PrepareNineSliceTilesetOptions {
   readonly columns?: number;
   /** Omitted during regeneration retains the saved choice; null explicitly restores square inner joins. */
   readonly innerCorner?: NineSliceInnerCorner | null;
+  /** Omitted during regeneration retains the saved join; null explicitly restores legacy square inner joins. */
+  readonly innerJoin?: "miter" | null;
 }
 
 /**
@@ -48,7 +50,8 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
     if (options.columns !== undefined && options.columns !== existing.columns) throw new Error("regeneration must retain columns so tile ids never move");
   }
   const innerCorner = options.innerCorner === undefined ? existing?.generated?.innerCorner : options.innerCorner ?? undefined;
-  const layout = nineSliceLayout(stamp), blits = nineSliceBlits(stamp, layerId, options.tileWidth, options.tileHeight, innerCorner);
+  const innerJoin = options.innerJoin === undefined ? existing?.generated?.innerJoin : options.innerJoin ?? undefined;
+  const layout = nineSliceLayout(stamp), blits = nineSliceBlits(stamp, layerId, options.tileWidth, options.tileHeight, innerCorner, innerJoin);
   const sourceIds = new Set<string>();
   for (const b of blits) {
     const source = options.tilesets.find(t => t.id === b.tile.tilesetId);
@@ -67,7 +70,7 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
     ...(existing ?? {}), id: options.id, name: `${stamp.name} (yol)`, imagePath: options.imagePath,
     tileWidth: options.tileWidth, tileHeight: options.tileHeight, columns,
     rows: Math.max(existing?.rows ?? 0, Math.ceil(layout.slots / columns)), margin: existing?.margin ?? 0, spacing: existing?.spacing ?? 0,
-    generated: { kind: "nineSlice", stampId: stamp.id, layerId, sourceWidth: stamp.width, sourceHeight: stamp.height, layoutVersion, ...(border > 1 ? { border } : {}), ...(innerCorner ? { innerCorner } : {}), sources },
+    generated: { kind: "nineSlice", stampId: stamp.id, layerId, sourceWidth: stamp.width, sourceHeight: stamp.height, layoutVersion, ...(border > 1 ? { border } : {}), ...(innerCorner ? { innerCorner } : {}), ...(innerJoin ? { innerJoin } : {}), sources },
   };
   const problem = tilesetProblem(next);
   if (problem) throw new Error(problem);
@@ -76,7 +79,7 @@ export function prepareNineSliceTileset(stamp: Stamp, layerId: string, options: 
 
 
 /** Current PNG hashes and complete project asset registry for regeneration; identity and packing come from the existing generated asset. */
-export type RegenerateNineSliceTilesetOptions = Pick<PrepareNineSliceTilesetOptions, "tilesets" | "imageHashes" | "innerCorner">;
+export type RegenerateNineSliceTilesetOptions = Pick<PrepareNineSliceTilesetOptions, "tilesets" | "imageHashes" | "innerCorner" | "innerJoin">;
 
 /**
  * Explicit source-PNG regeneration. The caller cannot request a new id/path/grid: these are taken from the

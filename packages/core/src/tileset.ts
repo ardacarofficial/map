@@ -35,6 +35,9 @@ export interface GeneratedTilesetMetadata {
   readonly border?: number;
   /** Authored inner art must survive reopen, so PNG regeneration can repeat the same quarter recipe. */
   readonly innerCorner?: NineSliceInnerCorner;
+  /** "miter" joins missing inner corners from the two adjoining edge strips. Absent keeps the legacy
+   * centre-quadrant recipe, so older atlases regenerate with identical pixels. */
+  readonly innerJoin?: "miter";
   /** Unique source ids, sorted by code-unit order; includes an optional authored inner-corner PNG. */
   readonly sources: readonly GeneratedTilesetSource[];
 }
@@ -53,6 +56,7 @@ export function generatedTilesetMetadataProblem(value: unknown): string | null {
     if (!entry || typeof entry !== "object" || typeof entry.tilesetId !== "string" || !entry.tilesetId || typeof entry.imageHash !== "string" || !entry.imageHash || ids.has(entry.tilesetId)) return "generated sources require unique tileset ids and nonempty image hashes";
     ids.add(entry.tilesetId);
   }
+  if (g["innerJoin"] !== undefined && g["innerJoin"] !== "miter") return "generated innerJoin must be miter when present";
   if (g["innerCorner"] !== undefined) {
     const inner = g["innerCorner"] as Partial<NineSliceInnerCorner> | null;
     if (!inner || typeof inner !== "object" || !inner.tile || typeof inner.tile.tilesetId !== "string" || !ids.has(inner.tile.tilesetId) || !Number.isInteger(inner.tile.tileId) || inner.tile.tileId < 0) return "generated innerCorner requires a source tile reference";
@@ -66,7 +70,7 @@ export function generatedTilesetMetadataProblem(value: unknown): string | null {
 export function normalizeGeneratedTilesetMetadata(value: GeneratedTilesetMetadata): GeneratedTilesetMetadata {
   const problem = generatedTilesetMetadataProblem(value);
   if (problem) throw new Error(problem);
-  return Object.freeze({ kind: "nineSlice", stampId: value.stampId, layerId: value.layerId, sourceWidth: value.sourceWidth, sourceHeight: value.sourceHeight, layoutVersion: value.layoutVersion, ...(value.layoutVersion === 2 ? { border: value.border! } : {}), ...(value.innerCorner ? { innerCorner: Object.freeze({ tile: Object.freeze({ tilesetId: value.innerCorner.tile.tilesetId, tileId: value.innerCorner.tile.tileId }), ...(value.innerCorner.flags ? { flags: value.innerCorner.flags } : {}) }) } : {}), sources: Object.freeze([...value.sources].sort((a, b) => a.tilesetId < b.tilesetId ? -1 : a.tilesetId > b.tilesetId ? 1 : 0).map(s => Object.freeze({ tilesetId: s.tilesetId, imageHash: s.imageHash }))) });
+  return Object.freeze({ kind: "nineSlice", stampId: value.stampId, layerId: value.layerId, sourceWidth: value.sourceWidth, sourceHeight: value.sourceHeight, layoutVersion: value.layoutVersion, ...(value.layoutVersion === 2 ? { border: value.border! } : {}), ...(value.innerCorner ? { innerCorner: Object.freeze({ tile: Object.freeze({ tilesetId: value.innerCorner.tile.tilesetId, tileId: value.innerCorner.tile.tileId }), ...(value.innerCorner.flags ? { flags: value.innerCorner.flags } : {}) }) } : {}), ...(value.innerJoin ? { innerJoin: value.innerJoin } : {}), sources: Object.freeze([...value.sources].sort((a, b) => a.tilesetId < b.tilesetId ? -1 : a.tilesetId > b.tilesetId ? 1 : 0).map(s => Object.freeze({ tilesetId: s.tilesetId, imageHash: s.imageHash }))) });
 }
 
 /** False for user assets; true when a generated asset has a changed or missing input PNG hash. Does not mutate freshness. */

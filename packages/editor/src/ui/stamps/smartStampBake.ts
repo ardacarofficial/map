@@ -6,11 +6,11 @@ export { pngHash } from "../../state/pngHash";
 import { profileAwait, profileSpan, type BrushProfile } from "../../state/smartBrushProfile";
 
 export interface PixelImage { readonly width: number; readonly height: number; readonly data: Uint8Array | Uint8ClampedArray; readonly originX?: number; readonly originY?: number }
-export function rasterizeSmartStamp(stamp: Stamp, layerId: string, target: Tileset, sources: ReadonlyMap<string, { tileset: Tileset; pixels: PixelImage }>, inner?: NineSliceInnerCorner): PixelImage {
+export function rasterizeSmartStamp(stamp: Stamp, layerId: string, target: Tileset, sources: ReadonlyMap<string, { tileset: Tileset; pixels: PixelImage }>, inner?: NineSliceInnerCorner, innerJoin: "miter" | undefined = target.generated?.innerJoin): PixelImage {
   const width = target.columns * target.tileWidth, height = target.rows * target.tileHeight;
   const data = new Uint8ClampedArray(width * height * 4);
   const words = new Uint32Array(data.buffer);
-  for (const b of nineSliceBlits(stamp, layerId, target.tileWidth, target.tileHeight, inner)) {
+  for (const b of nineSliceBlits(stamp, layerId, target.tileWidth, target.tileHeight, inner, innerJoin)) {
     const source = sources.get(b.tile.tilesetId);
     if (!source) throw new Error(`Missing source image: ${b.tile.tilesetId}`);
     const { tileset: t, pixels: p } = source;
@@ -45,7 +45,7 @@ export function rasterizeSmartStamp(stamp: Stamp, layerId: string, target: Tiles
 export function bakeSmartStamp(stamp: Stamp, layerId: string, target: Tileset, tilesets: readonly Tileset[], profile?: BrushProfile): TilesetImage | Promise<TilesetImage> {
   const sources = new Map<string, { tileset: Tileset; pixels: PixelImage }>();
   const bounds = new Map<string, { x: number; y: number; right: number; bottom: number }>();
-  for (const b of nineSliceBlits(stamp, layerId, target.tileWidth, target.tileHeight, target.generated?.innerCorner)) {
+  for (const b of nineSliceBlits(stamp, layerId, target.tileWidth, target.tileHeight, target.generated?.innerCorner, target.generated?.innerJoin)) {
     const tileset = tilesets.find(t => t.id === b.tile.tilesetId);
     if (!tileset) throw new Error(`Missing source image: ${b.tile.tilesetId}`);
     const x = tileset.margin + b.tile.tileId % tileset.columns * (tileset.tileWidth + tileset.spacing);
