@@ -5,6 +5,7 @@ import type { AgentEditorControlsPort, ConfigureExportArgs, EditorExportPreferen
 
 import type {CollaborativeBegin,CollaborativeJoin,CollaborationSummary,RegionClaim} from "./collaboration";
 import type { AgentReferencePort, ReferenceSummary, VisionToolArguments, VisionToolData, VisionToolName } from "./vision";
+import type { AgentObjectsPort, ObjectToolArguments, ObjectToolData, ObjectToolName } from "./objects";
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -121,7 +122,7 @@ export interface EditMapArgs { context: WriteContext; mapId: Id; name?: string; 
 export type EditStampArgs = { context: WriteContext; stampId: Id } & ({ action: "remove" } | { action: "duplicate"; name: string } | { action: "update"; props: {name?: string; category?: string; tags?: string[]; favorite?: boolean} });
 export interface ConfigureWorldArgs { context: WriteContext; settings: {tileWidth?: number;tileHeight?: number;newLevel?:{width?:number;height?:number};layerTemplate?:{name:string;kind:LayerKind}[];background?:string|null} }
 
-export interface ToolArguments extends VisionToolArguments {
+export interface ToolArguments extends VisionToolArguments, ObjectToolArguments {
   join_edit: CollaborativeJoin;
   get_export_settings: EditorControlContext; configure_export: ConfigureExportArgs;
   edit_map: EditMapArgs; edit_stamp: EditStampArgs; configure_world: ConfigureWorldArgs; get_world_settings: { context: ReadContext };
@@ -252,7 +253,7 @@ export interface AgentWarning { code: string; detail: string }
 /** Remaining whole-edit budget: planned cell writes and inactivity lease time. */
 export interface EditBudget { cellsLeft: number; msLeft: number }
 export interface ValidationIssue { severity: "error" | "warning"; code: string; mapId: Id; layerId?: Id; x?: number; y?: number; entityId?: Id; detail: string }
-export interface ToolData extends VisionToolData {
+export interface ToolData extends VisionToolData, ObjectToolData {
   join_edit: { transactionId: Id; memberId: Id; memberRevision: Revision; state: "running"; claims: RegionClaim[]; revisionMode: "member" };
   get_export_settings: EditorExportPreferences; configure_export: EditorExportPreferences;
   edit_map: ChangedData & { map: MapSummary }; edit_stamp: ChangedData & { stamp: {id: Id;name:string;width:number;height:number;category:string;tags:string[];favorite:boolean}|null;stampId:Id;action:EditStampArgs["action"] };
@@ -296,7 +297,7 @@ export interface ToolData extends VisionToolData {
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
-export type MutationToolName = Exclude<ToolName, EditorControlToolName | "editor_ui" | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags" | VisionToolName>;
+export type MutationToolName = Exclude<ToolName, EditorControlToolName | "editor_ui" | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags" | VisionToolName | ObjectToolName>;
 /** C3 compact answer of every map mutation (lifecycle tools keep AgentEnvelope). */
 export interface WriteEnvelope {
   ok: true; revision: Revision; changed: number; bounds?: Rect;
@@ -463,6 +464,7 @@ export interface AgentHost {
   world: AgentWorldPort; transactions: AgentTransactionsPort; metadata: AgentMetadataPort;
   visualReferences?: AgentVisualReferencePort;
   references?: AgentReferencePort;
+  objects?: AgentObjectsPort;
   editorContext?: () => EditorContext;
   editorControls?: AgentEditorControlsPort;
   images: AgentImagePort; smartSources: AgentSmartSourcePort; tags: AgentTagsPort;

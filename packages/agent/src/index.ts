@@ -24,6 +24,7 @@ export {
 
 export * from "./tools/visual";
 export * from "./vision";
+export * from "./objects";
 export { quantizeReference, autoTrim, looksLikeSketch, referencePlacement, parseHexColor, tilePatch, QUANTIZE_PATCH } from "./tools/quantize";
 export type { ProposalCell, QuantizeMode, ReferenceFit, QuantizeCandidate, QuantizeOutput, ColorLegendEntry, StampProbe } from "./tools/quantize";
 export { REFERENCE_VIEW_DEFAULTS } from "./tools/vision";

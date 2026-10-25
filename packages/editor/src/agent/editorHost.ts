@@ -17,6 +17,7 @@ import { captureEditorContext } from "./editorContext";
 import { createImagePort } from "./images";
 import { createVisualReferencePort } from "./visualReferences";
 import { createReferencePort } from "./referenceLibrary";
+import { createObjectsPort } from "./objectsPort";
 import { captureDraftStart, clearDraftBaseline } from "./draftBaseline";
 import { createSmartSourcePort } from "./smartSources";
 import { createTagsPort, type TagsIoPort } from "./tagsIo";
@@ -94,6 +95,7 @@ export function createEditorHost(): EditorAgentHost {
     loadMap:world.loadMap,subscribeWorldContent:subscribeContent,world,metadata,images,
     visualReferences:createVisualReferencePort(world,contentRevision),
     references:createReferencePort(world,contentRevision),
+    objects:createObjectsPort(world,contentRevision),
     smartSources:createSmartSourcePort(world,metadata,()=>{const ws=getLevelWorkspace();return ws?.cachedIds().map(id=>ws.entry(id)!.store)??[];}),
     tags:createTagsPort({world,images,folder:()=>getProjectFolder()?.fs??null,worldId:getAgentWorldSessionId}),
     activity:agentActivity,

@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "1f2e51b1aa8dd0b60e3546065cff8b415f2121c740705d16a654523cf17278fc",
+  "catalogueSha256": "ae631b0bf0706803872f384b67f1d73df18c07fcc765a400f46e4effd3f0ba3e",
   "tools": {
     "get_session": {
       "valid": [
@@ -2930,6 +2930,106 @@
         },
         {
           "args": {}
+        }
+      ]
+    },
+    "reference_detect_objects": {
+      "valid": [
+        {
+          "mapId": "m",
+          "referenceId": "ref-1"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "stampIds": [
+            "crate",
+            "barrel"
+          ],
+          "minScore": 0.9,
+          "alignment": "none",
+          "preview": false
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": {
+            "cellPx": 64,
+            "scale": 4,
+            "offsetX": -13.5,
+            "offsetY": 7,
+            "cols": 48,
+            "rows": 32,
+            "confidence": 0.8,
+            "method": "auto"
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "mapId": "m"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "minScore": 1.5
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "stampIds": []
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": {
+            "cellPx": 0,
+            "scale": 4,
+            "offsetX": 0,
+            "offsetY": 0,
+            "cols": 4,
+            "rows": 4,
+            "confidence": 1,
+            "method": "manual"
+          }
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": "exact"
+        }
+      ]
+    },
+    "suggest_stamps": {
+      "valid": [
+        {
+          "tilesetId": "tiles"
+        },
+        {
+          "tilesetId": "tiles",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 4
+          },
+          "minTiles": 1
+        }
+      ],
+      "invalid": [
+        {},
+        {
+          "tilesetId": "tiles",
+          "minTiles": 0
+        },
+        {
+          "tilesetId": "tiles",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 4
+          }
         }
       ]
     }

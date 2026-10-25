@@ -17,11 +17,11 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
     const listed = await agent.listTools();
     const tools = listed.tools;
     // Compact catalogue: UI/settings/export controls are one editor_ui tool; the whole list stays under 40 KB.
-    expect(tools).toHaveLength(47);
+    expect(tools).toHaveLength(49);
     expect(Buffer.byteLength(JSON.stringify(listed), "utf8")).toBeLessThan(40 * 1024);
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
       "get_session", "editor_ui", "get_world_settings", "paint_grid", "draw_path", "place_stamp",
-      "configure_world", "edit_map", "edit_stamp", "join_edit", "reference_quantize",
+      "configure_world", "edit_map", "edit_stamp", "join_edit", "reference_quantize", "reference_detect_objects", "suggest_stamps",
     ]));
     expect(tools.map(tool => tool.name)).not.toContain("configure_editor");
     expect(agent.client.getInstructions()).toContain("Which tool for what");
