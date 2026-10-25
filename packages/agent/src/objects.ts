@@ -25,7 +25,7 @@ export type ReferenceAlignmentArg = ReferenceAlignmentChoice;
 
 export interface DetectObjectsArgs { context?: ReadContext; referenceId: Id; mapId: Id; stampIds?: Id[]; minScore?: number; alignment?: ReferenceAlignmentArg; flips?: boolean; preview?: boolean }
 /** Mirrored matches grouped as ready place_stamp arguments. */
-export interface FlippedPlacement { stampId: Id; flipX?: true; flipY?: true; front?: true; positions: [number, number][]; /** stacked: pass to place_stamp (the tile layer above the stamp's usual one). */ layerMapping?: { sourceLayerId: Id; targetLayerId: Id }[] }
+export interface FlippedPlacement { stampId: Id; flipX?: true; flipY?: true; positions: [number, number][]; /** stacked: pass to place_stamp (the tile layer above the stamp's usual one). */ layerMapping?: { sourceLayerId: Id; targetLayerId: Id }[] }
 export interface DetectObjectsRequest extends DetectObjectsArgs { stampIds: Id[] }
 export interface ObjectMatch {
   stampId: Id;

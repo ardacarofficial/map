@@ -41,23 +41,37 @@ export function heatColor(err: number): [number, number, number, number] {
   }
   return [226, 84, 84, 255];
 }
-const GAIN_MIN = 0.6, GAIN_MAX = 1.7;
-/** Mean ΔE76 of `tile` against the picture patch after fitting the picture's light: one gain per channel
- * (0.6–1.7, least squares), so glows and shading do not count as errors. Channels that need different gains
- * (a recolour, not light) and strong gains are penalised. refLab = toLab(ref). */
+const GAIN_MIN = 0.6, GAIN_MAX = 1.7, OFFSET_MIN = -64, OFFSET_MAX = 96;
+/** Mean ΔE76 of `tile` against the picture patch after fitting the picture's light per channel
+ * (picture ≈ gain·tile + offset, least squares), so glows and shading do not count as errors. Channels needing
+ * different gains (a recolour, not light), strong gains and large offsets are penalised. Only picture pixels
+ * (alpha ≥ 128) count. refLab = toLab(ref). */
 export function litDeltaE(tile: ArrayLike<number>, ref: ArrayLike<number>, pixels: number, refLab: Float32Array): number {
-  const tt = [0, 0, 0], tr = [0, 0, 0];
+  const sw = [0, 0, 0], st = [0, 0, 0], sr = [0, 0, 0], stt = [0, 0, 0], str = [0, 0, 0];
   for (let i = 0; i < pixels; i++) {
-    const w = (ref[i * 4 + 3]! / 255) * (tile[i * 4 + 3]! / 255);
-    for (let c = 0; c < 3; c++) { const t = tile[i * 4 + c]!; tt[c]! += w * t * t; tr[c]! += w * t * ref[i * 4 + c]!; }
+    if (ref[i * 4 + 3]! < 128) continue;
+    const w = tile[i * 4 + 3]! / 255;
+    for (let c = 0; c < 3; c++) { const t = tile[i * 4 + c]!, r = ref[i * 4 + c]!; sw[c]! += w; st[c]! += w * t; sr[c]! += w * r; stt[c]! += w * t * t; str[c]! += w * t * r; }
   }
-  const gain = tt.map((v, c) => v > 0 ? Math.min(GAIN_MAX, Math.max(GAIN_MIN, tr[c]! / v)) : 1);
-  const logs = gain.map(Math.log), mean = (logs[0]! + logs[1]! + logs[2]!) / 3;
+  if (!sw[0]) return 0;
+  const gain = [1, 1, 1], offset = [0, 0, 0];
+  for (let c = 0; c < 3; c++) {
+    const mt = st[c]! / sw[c]!, mr = sr[c]! / sw[c]!, vt = stt[c]! / sw[c]! - mt * mt;
+    gain[c] = vt > 25 ? Math.min(GAIN_MAX, Math.max(GAIN_MIN, (str[c]! / sw[c]! - mt * mr) / vt)) : 1;
+    offset[c] = Math.min(OFFSET_MAX, Math.max(OFFSET_MIN, mr - gain[c]! * mt));
+  }
   const lit = new Uint8Array(pixels * 4);
   for (let i = 0; i < pixels; i++) {
-    for (let c = 0; c < 3; c++) lit[i * 4 + c] = Math.min(255, Math.round(tile[i * 4 + c]! * gain[c]!));
+    for (let c = 0; c < 3; c++) lit[i * 4 + c] = Math.max(0, Math.min(255, Math.round(tile[i * 4 + c]! * gain[c]! + offset[c]!)));
     lit[i * 4 + 3] = tile[i * 4 + 3]!;
   }
+  const litLab = toLab(lit, pixels);
+  let sum = 0, n = 0;
+  for (let i = 0; i < pixels; i++) {
+    if (ref[i * 4 + 3]! < 128) continue;
+    sum += Math.hypot(litLab[i * 3]! - refLab[i * 3]!, litLab[i * 3 + 1]! - refLab[i * 3 + 1]!, litLab[i * 3 + 2]! - refLab[i * 3 + 2]!); n++;
+  }
+  const logs = gain.map(Math.log), mean = (logs[0]! + logs[1]! + logs[2]!) / 3;
   const spread = Math.max(...logs.map(l => Math.abs(l - mean)));
-  return meanDeltaE(toLab(lit, pixels), refLab) + 20 * spread + 4 * Math.abs(mean);
+  return (n ? sum / n : 0) + 20 * spread + 4 * Math.abs(mean) + 0.04 * (Math.abs(offset[0]!) + Math.abs(offset[1]!) + Math.abs(offset[2]!)) / 3;
 }

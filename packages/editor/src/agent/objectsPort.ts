@@ -86,14 +86,15 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
         return { stampId, x: m.x, y: m.y, score: m.score, pixelResidual: { dx: m.dx, dy: m.dy }, ...(flip === "1" ? { flipX: true as const } : flip === "2" ? { flipY: true as const } : {}), ...(m.front ? { front: true as const } : {}) };
       });
       // Plain matches by stamp; mirrored and in-front (stacked) ones as ready place_stamp groups.
-      const positionsByStamp: Record<string, [number, number][]> = {}, groups = new Map<string, FlippedPlacement>();
+      const positionsByStamp: Record<string, [number, number][]> = {}, groups = new Map<string, { front: boolean; call: FlippedPlacement }>();
       for (const m of matches) {
         if (!m.flipX && !m.flipY && !m.front) { (positionsByStamp[m.stampId] ??= []).push([m.x, m.y]); continue; }
         const key = `${m.stampId}${FLIP_SEP}${m.flipX ? 1 : m.flipY ? 2 : 0}${m.front ? "f" : ""}`;
-        if (!groups.has(key)) groups.set(key, { stampId: m.stampId, ...(m.flipX ? { flipX: true } : m.flipY ? { flipY: true } : {}), ...(m.front ? { front: true } : {}), positions: [] });
-        groups.get(key)!.positions.push([m.x, m.y]);
+        if (!groups.has(key)) groups.set(key, { front: !!m.front, call: { stampId: m.stampId, ...(m.flipX ? { flipX: true } : m.flipY ? { flipY: true } : {}), positions: [] } });
+        groups.get(key)!.call.positions.push([m.x, m.y]);
       }
-      const flipped = [...groups.values()].filter(g => !g.front), stacked = [...groups.values()].filter(g => g.front);
+      // Both lists are ready place_stamp arguments (pass each entry unchanged).
+      const flipped = [...groups.values()].filter(g => !g.front).map(g => g.call), stacked = [...groups.values()].filter(g => g.front).map(g => g.call);
       // Stacked objects go one tile layer above where the stamp would land, so the object behind keeps its cells.
       const doc = store.document, tileLayers = doc.layers.filter(l => isTileLayer(l) && !isGridLayer(l));
       for (const g of stacked) {
