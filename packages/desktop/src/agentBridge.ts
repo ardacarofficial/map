@@ -103,5 +103,9 @@ export function createAgentConnection(transport: AgentTransport = nativeTranspor
       const bytes = await transport.invoke<ArrayBuffer | number[]>("ai_read_reference_image", { path });
       return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
     },
+    async readLocalTiledFile(path) {
+      const bytes = await transport.invoke<ArrayBuffer | number[]>("ai_read_tiled_file", { path });
+      return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
+    },
   };
 }

@@ -138,6 +138,12 @@ export interface Platform {
    */
   openFile?(filter: SaveFileFilter): Promise<{ name: string; bytes: Uint8Array } | null>;
   saveFile?(fileName: string, bytes: Uint8Array, filter: SaveFileFilter): Promise<boolean>;
+  /**
+   * Picks a Tiled map (desktop: native dialog). `read` reads the map and the
+   * tilesets / PNGs it references by path, read-only. Absent → the browser
+   * picks the map together with its files.
+   */
+  pickTiledMap?(filter: SaveFileFilter): Promise<{ path: string; read(path: string): Promise<Uint8Array> } | null>;
 }
 
 /** The sub-folder for a new project already contains a different project. */

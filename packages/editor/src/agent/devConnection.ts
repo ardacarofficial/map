@@ -91,5 +91,9 @@ async function openConnection(): Promise<AgentConnection | undefined> {
       const base64 = await rpc<string>("readReferenceImage", { path });
       return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
     },
+    async readLocalTiledFile(path) {
+      const base64 = await rpc<string>("readTiledFile", { path });
+      return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    },
   };
 }

@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod recent;
 pub mod scope;
 pub mod settings;
+pub mod tiled;
 pub mod watch;
 
 pub use host::{find_open_arg, percent_decode, ErrorKind, Host, HostError, HostResult, OpenedProject};

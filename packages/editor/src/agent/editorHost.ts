@@ -19,6 +19,7 @@ import { createVisualReferencePort } from "./visualReferences";
 import { createReferencePort } from "./referenceLibrary";
 import { captureDraftStart, clearDraftBaseline } from "./draftBaseline";
 import { createSmartSourcePort } from "./smartSources";
+import { createTiledPort } from "./tiledImport";
 import { createTagsPort, type TagsIoPort } from "./tagsIo";
 
 export interface EditorAgentHost extends AgentHost { tags: TagsIoPort; setClients(clients: SessionClient[]): void }
@@ -95,6 +96,7 @@ export function createEditorHost(): EditorAgentHost {
     visualReferences:createVisualReferencePort(world,contentRevision),
     references:createReferencePort(world,contentRevision),
     smartSources:createSmartSourcePort(world,metadata,()=>{const ws=getLevelWorkspace();return ws?.cachedIds().map(id=>ws.entry(id)!.store)??[];}),
+    tiled:createTiledPort(world),
     tags:createTagsPort({world,images,folder:()=>getProjectFolder()?.fs??null,worldId:getAgentWorldSessionId}),
     activity:agentActivity,
     clock:{now:Date.now,schedule(delay,cb){const timer=setTimeout(cb,delay);return()=>clearTimeout(timer);}},

@@ -7,12 +7,12 @@ import { PUBLISHED_TOOLS, generateToolsJson } from "../src/publishedCatalogue";
 import { TOOL_CATALOGUE_HASH } from "../src/catalogue.generated";
 import examples from "./fixtures/tool-examples.json";
 
-const names = ["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "begin_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_rect", "paint_line", "fill", "prepare_smart_source", "smart_brush", "draw_path", "place_stamp", "edit_layer", "list_entity_types", "place_entity", "create_map", "resize_map", "render_preview", "validate_map", "get_tags", "set_tags", "visual_ingest_reference", "visual_match_reference", "create_stamp", "resume_edit", "paint_grid", "replace_tiles", "clear_region", "get_editor_context", "edit_entity", "apply_operations", "validate_goals", "get_export_settings", "configure_export", "get_editor_state", "configure_editor", "configure_layout", "configure_application", "list_editor_commands", "editor_ui", "run_editor_command", "edit_map", "edit_stamp", "get_world_settings", "configure_world", "join_edit", "reference_add", "reference_view", "reference_quantize", "render_compare"];
+const names = ["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "begin_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_rect", "paint_line", "fill", "prepare_smart_source", "smart_brush", "draw_path", "place_stamp", "edit_layer", "list_entity_types", "place_entity", "create_map", "resize_map", "render_preview", "validate_map", "get_tags", "set_tags", "visual_ingest_reference", "visual_match_reference", "create_stamp", "resume_edit", "paint_grid", "replace_tiles", "clear_region", "get_editor_context", "edit_entity", "apply_operations", "validate_goals", "get_export_settings", "configure_export", "get_editor_state", "configure_editor", "configure_layout", "configure_application", "list_editor_commands", "editor_ui", "run_editor_command", "edit_map", "edit_stamp", "get_world_settings", "configure_world", "import_tiled", "join_edit", "reference_add", "reference_view", "reference_quantize", "render_compare"];
 
 describe("frozen MCP catalogue", () => {
   it("marks only writes that persist outside the human-reviewed draft as destructive", () => {
     const annotations = Object.fromEntries(TOOL_DEFINITIONS.map(tool => [tool.name, tool.annotations]));
-    for (const name of ["begin_edit", "resume_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_grid", "replace_tiles", "clear_region", "smart_brush", "draw_path", "place_stamp", "create_map", "apply_operations", "edit_stamp", "configure_world", "join_edit"]) {
+    for (const name of ["begin_edit", "resume_edit", "finish_edit", "cancel_edit", "paint_cells", "paint_grid", "replace_tiles", "clear_region", "smart_brush", "draw_path", "place_stamp", "create_map", "import_tiled", "apply_operations", "edit_stamp", "configure_world", "join_edit"]) {
       expect(annotations[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false });
     }
     for (const name of ["set_tags", "configure_export", "configure_layout", "configure_application"]) expect(annotations[name]?.destructiveHint, name).toBe(true);
@@ -22,7 +22,7 @@ describe("frozen MCP catalogue", () => {
   });
   it("publishes exactly the agreed tools in order", () => {
     expect(TOOL_DEFINITIONS.map(tool => tool.name)).toEqual(names);
-    expect(new Set(names).size).toBe(55);
+    expect(new Set(names).size).toBe(56);
   });
   it("commits deterministic, self-contained draft 2020-12 schemas", () => {
     const actual = generateToolsJson();

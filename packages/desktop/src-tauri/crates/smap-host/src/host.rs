@@ -265,6 +265,17 @@ impl Host {
         Ok(p.to_string_lossy().into_owned())
     }
 
+    /// Kullanıcının seçtiği Tiled haritasının başvurduğu dosya (`.tsx`, PNG…).
+    /// Harita yolu kapsamda olmalı (diyalogdan seçilmiş); okunan dosya yalnız
+    /// Tiled/PNG uzantılı, mutlak ve ≤ 32 MB olur. Hiçbir şey yazılmaz.
+    pub fn read_tiled_related(&self, map_path: &str, path: &str) -> HostResult<Vec<u8>> {
+        self.resolve(map_path)?;
+        crate::tiled::read_tiled_file(Path::new(path)).map_err(|e| {
+            let kind = if e == "not found" { ErrorKind::NotFound } else { ErrorKind::Io };
+            HostError::new(kind, path, e)
+        })
+    }
+
     /// Diyalogdan seçilen klasör (yeni proje, dışa aktarma hedefi).
     pub fn allow_user_dir(&self, path: &Path) -> HostResult<String> {
         let p = self.scope.lock().unwrap().allow_dir(path).map_err(|e| HostError::scope(&path.to_string_lossy(), e))?;
@@ -439,6 +450,23 @@ mod tests {
         fs::create_dir_all(root.join("levels")).unwrap();
         fs::write(root.join("project.smap"), b"{}\n").unwrap();
         root
+    }
+
+    #[test]
+    fn tiled_related_files_need_a_chosen_map() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (h, _rx) = host(tmp.path());
+        let map = tmp.path().join("pack/maps/village.tmx");
+        fs::create_dir_all(map.parent().unwrap()).unwrap();
+        fs::write(&map, b"<map/>").unwrap();
+        let tsx = tmp.path().join("pack/tiles.tsx");
+        fs::write(&tsx, b"<tileset/>").unwrap();
+        assert_eq!(h.read_tiled_related(&s(&map), &s(&tsx)).unwrap_err().kind, ErrorKind::OutOfScope);
+        let chosen = h.allow_user_file(&map).unwrap();
+        assert_eq!(h.read_tiled_related(&chosen, &s(&tsx)).unwrap(), b"<tileset/>");
+        fs::write(tmp.path().join("pack/notes.txt"), b"x").unwrap();
+        assert_eq!(h.read_tiled_related(&chosen, &s(&tmp.path().join("pack/notes.txt"))).unwrap_err().kind, ErrorKind::Io);
+        assert_eq!(h.read_tiled_related(&chosen, &s(&tmp.path().join("pack/gone.png"))).unwrap_err().kind, ErrorKind::NotFound);
     }
 
     #[test]

@@ -78,6 +78,20 @@ pub async fn ai_read_reference_image(
     read_reference_image(std::path::Path::new(&path)).map(tauri::ipc::Response::new)
 }
 
+/// Read-only intake of an agent-named Tiled map and the files it references
+/// (`import_tiled`): absolute `.tmx`/`.tmj`/`.json`/`.tsx`/`.tsj`/`.png`
+/// regular files up to 32 MB each. The editor parses the map and copies the
+/// PNGs into the project as new tilesets; the originals are never written.
+#[tauri::command]
+pub async fn ai_read_tiled_file(
+    window: WebviewWindow,
+    services: Ai<'_>,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    caller_service(&window, &services)?;
+    smap_host::tiled::read_tiled_file(std::path::Path::new(&path)).map(tauri::ipc::Response::new)
+}
+
 pub(crate) fn read_reference_image(path: &std::path::Path) -> Result<Vec<u8>, String> {
     if !path.is_absolute() {
         return Err("path must be absolute".into());

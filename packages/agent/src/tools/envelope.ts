@@ -12,7 +12,7 @@ const ids = (value: unknown): Id[] | undefined => Array.isArray(value) && value.
 /** Ids the agent needs next; everything else stays internal (activity log, previews). */
 function createdIds(name: ToolName, raw: Raw): Record<string, unknown> {
   switch (name) {
-    case "create_map": {
+    case "create_map": case "import_tiled": {
       const map = raw.map as { id: Id } | undefined, layers = raw.layers as LayerInfo[] | undefined;
       return { ...(map ? { mapId: map.id } : {}), ...(layers?.length ? { layers: layers.map(l => ({ id: l.id, name: l.name, kind: l.kind })) } : {}) };
     }
@@ -33,6 +33,7 @@ function extras(name: ToolName, raw: Raw): Record<string, unknown> {
       const cropped = raw.cropped as { cells: number; entities: number } | undefined;
       return cropped && (cropped.cells || cropped.entities) ? { cropped } : {};
     }
+    case "import_tiled": return { tilesets: raw.tilesets, unsupported: raw.unsupported };
     case "replace_tiles": return Array.isArray(raw.maps) && raw.maps.length > 1 ? { maps: raw.maps } : {};
     default: return {};
   }

@@ -15,6 +15,7 @@ import { ReplaceTilesDialog } from "./dialogs/ReplaceTilesDialog";
 import { NewProjectDialog } from "./dialogs/NewProjectDialog";
 import { ProjectSettingsDialog } from "./projectSettings/ProjectSettingsDialog";
 import { UnsavedDialog } from "./dialogs/UnsavedDialog";
+import { TiledImportDialog } from "./dialogs/TiledImportDialog";
 import { MapSettingsDialog } from "./mapSettings/MapSettingsDialog";
 import { BackupsDialog } from "./dialogs/BackupsDialog";
 import { DiskChangedDialog } from "./dialogs/DiskChangedDialog";
@@ -86,6 +87,7 @@ export function App() {
       <ReplaceTilesDialog />
       <ProjectSettingsDialog />
       <UnsavedDialog />
+      <TiledImportDialog />
       <MapSettingsDialog />
       <BackupsDialog />
       <DiskChangedDialog />

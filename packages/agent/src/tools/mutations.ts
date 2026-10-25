@@ -29,6 +29,7 @@ import {
   stampMetaProblem,
   type LayerPatch,
   type MapStore,
+  type NewLayer,
   type SmartStampPlan,
   type Stamp,
   type TileClip,
@@ -271,6 +272,87 @@ function applyPaint(
   perCall: number = L.cellsPerCall,
 ) {
   return applyLayers(tx, mapId, [{ layerId, writes }], perCall);
+}
+/** create_map (and import_tiled): a provisional map joins the edit with world tilesets and
+ * `layers` (default: the world's layer template), all inside the draft. */
+export async function createAgentMap(
+  tx: Transactions,
+  a: ToolArguments["create_map"],
+  call: AgentCallContext,
+  layers?: readonly NewLayer[],
+) {
+  dimensions(a.width, a.height);
+  budget(tx.pending!.summary.affectedMapIds.length + 1, L.targetMaps);
+  tx.charge(0);
+  const prepared = await waitFor(
+    tx.host.world.prepareAgentMap(a, call.signal),
+    call.signal,
+  );
+  tx.owned(a.context, call);
+  check(
+    !prepared.store.inTransaction &&
+      !tx.pending!.participants.has(prepared.map.id),
+    E.INTERNAL_ERROR,
+    "Prepared map must be new and transaction-free",
+  );
+  const lease = tx.host.transactions.acquireLease(
+    prepared.map.id,
+    prepared.store,
+    tx.pending!,
+  );
+  const participant = {
+    store: prepared.store,
+    lease,
+    target: true,
+    pin: () => {},
+  };
+  tx.pending!.participants.set(prepared.map.id, participant);
+  tx.pending!.created.push(prepared.map.id);
+  tx.pending!.summary.affectedMapIds.push(prepared.map.id);
+  tx.run(() => {
+    tx.host.world.stageAgentMap(prepared);
+    participant.pin = tx.host.world.pinMap(prepared.map.id);
+    prepared.store.beginTransaction(tx.pending!.summary.label);
+    // A new map starts from approved metadata, then joins staged atlas changes reversibly.
+    for (const tileset of tx.host.world.tilesets())
+      if (!prepared.store.document.getTileset(tileset.id))
+        prepared.store.dispatch({ type: "addTileset", tileset, undoable: true });
+    if (layers) {
+      for (const layer of layers) prepared.store.dispatch({ type: "addLayer", layer });
+      return;
+    }
+    const templates = tx.host.world.settings().layerTemplate;
+    for (const template of templates.length
+      ? templates
+      : [{ name: "Ground", kind: "tile" as const }])
+      prepared.store.dispatch({
+        type: "addLayer",
+        layer: {
+          name: template.name,
+          ...(template.kind === "collision"
+            ? ({ type: "grid", role: "collision" } as const)
+            : { type: template.kind }),
+        },
+      });
+  });
+  const result = change(
+    prepared.map.id,
+    prepared.store,
+    0,
+    [],
+    prepared.store.document.layers.map((l) => l.id),
+  );
+  tx.record(result);
+  return {
+    store: prepared.store,
+    data: {
+      change: result,
+      map: prepared.map,
+      layers: prepared.store.document.layers.map((l) =>
+        layerInfo(prepared.store, l),
+      ),
+    },
+  };
 }
 /** Internal results keep their change summary; api.ts turns them into the C3 envelope. */
 export async function mutate<N extends ToolName>(
@@ -600,74 +682,8 @@ export async function mutateRaw<N extends ToolName>(
         cropped: { cells, entities },
       };
     }
-    case "create_map": {
-      const a = args as ToolArguments["create_map"];
-      dimensions(a.width, a.height);
-      budget(tx.pending!.summary.affectedMapIds.length + 1, L.targetMaps);
-      tx.charge(0);
-      const prepared = await waitFor(
-        tx.host.world.prepareAgentMap(a, call.signal),
-        call.signal,
-      );
-      tx.owned(a.context, call);
-      check(
-        !prepared.store.inTransaction &&
-          !tx.pending!.participants.has(prepared.map.id),
-        E.INTERNAL_ERROR,
-        "Prepared map must be new and transaction-free",
-      );
-      const lease = tx.host.transactions.acquireLease(
-        prepared.map.id,
-        prepared.store,
-        tx.pending!,
-      );
-      const participant = {
-        store: prepared.store,
-        lease,
-        target: true,
-        pin: () => {},
-      };
-      tx.pending!.participants.set(prepared.map.id, participant);
-      tx.pending!.created.push(prepared.map.id);
-      tx.pending!.summary.affectedMapIds.push(prepared.map.id);
-      tx.run(() => {
-        tx.host.world.stageAgentMap(prepared);
-        participant.pin = tx.host.world.pinMap(prepared.map.id);
-        prepared.store.beginTransaction(tx.pending!.summary.label);
-        // A new map starts from approved metadata, then joins staged atlas changes reversibly.
-        for (const tileset of tx.host.world.tilesets())
-          if (!prepared.store.document.getTileset(tileset.id))
-            prepared.store.dispatch({ type: "addTileset", tileset, undoable: true });
-        const templates = tx.host.world.settings().layerTemplate;
-        for (const template of templates.length
-          ? templates
-          : [{ name: "Ground", kind: "tile" as const }])
-          prepared.store.dispatch({
-            type: "addLayer",
-            layer: {
-              name: template.name,
-              ...(template.kind === "collision"
-                ? ({ type: "grid", role: "collision" } as const)
-                : { type: template.kind }),
-            },
-          });
-      });
-      const result = change(
-        prepared.map.id,
-        prepared.store,
-        0,
-        [],
-        prepared.store.document.layers.map((l) => l.id),
-      );
-      tx.record(result);
-      return {
-        change: result,
-        map: prepared.map,
-        layers: prepared.store.document.layers.map((l) =>
-          layerInfo(prepared.store, l),
-        ),
-      };
-    }
+    case "create_map":
+      return (await createAgentMap(tx, args as ToolArguments["create_map"], call)).data;
     case "place_stamp": {
       const a = args as ToolArguments["place_stamp"];
       if (!a.positions) {

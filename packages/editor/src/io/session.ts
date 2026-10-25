@@ -536,7 +536,7 @@ export interface PlannedTileset {
 }
 
 /** Keep orphan PNGs from being mistaken for a newly imported source on save. */
-async function sourceIdsOnDisk(fs: ProjectFileSystem | null): Promise<ReadonlySet<string>> {
+export async function sourceIdsOnDisk(fs: ProjectFileSystem | null): Promise<ReadonlySet<string>> {
   const files = fs ? await fs.list("tilesets") : [];
   return new Set(files.filter(name => name.toLowerCase().endsWith(".png")).map(name => name.slice(0, -4).toLowerCase()));
 }

@@ -161,6 +161,14 @@ async fn read_file(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: S
     host.read_file(&path).map(Response::new)
 }
 
+/// A file referenced by a Tiled map the user picked (Dosya → İçe aktar →
+/// Tiled haritası…): `.tsx`/`.tsj` tilesets and PNG sheets. Read-only.
+#[tauri::command]
+async fn tiled_read_related(window: WebviewWindow, hosts: State<'_, WindowHosts>, map_path: String, path: String) -> Result<Response, HostError> {
+    let world = hosts.get(window.label())?;
+    world.host.read_tiled_related(&map_path, &path).map(Response::new)
+}
+
 #[tauri::command]
 async fn read_text(window: WebviewWindow, hosts: State<'_, WindowHosts>, path: String) -> Result<String, HostError> {
     let world = hosts.get(window.label())?;
@@ -666,6 +674,8 @@ pub fn run() {
             ai::agent_reply,
             ai::agent_publish_status,
             ai::ai_read_reference_image,
+            ai::ai_read_tiled_file,
+            tiled_read_related,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Harita Tasarlayıcı")

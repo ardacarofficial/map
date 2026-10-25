@@ -33,6 +33,7 @@ import { applyOperations, editEntity } from "./tools/operations";
 import { validateGoals } from "./tools/goals";
 import { pruneReplayCache, type ReplayRecord } from "./replayCache";
 import { vision } from "./tools/vision";
+import { importTiled } from "./tools/tiled";
 import { VISION_TOOL_NAMES, type VisionToolName } from "./vision";
 
 const visionTools = new Set<string>(VISION_TOOL_NAMES);
@@ -64,7 +65,7 @@ const NEXT_ACTION: Partial<Record<E, string>> = {
 const HEAVY_READS = new Set<string>(["validate_map", "validate_goals", "read_region"]);
 const IMAGE_TOOLS = new Set<string>(["render_preview", "get_tile_catalog", "list_stamps", "prepare_smart_source", "visual_ingest_reference", "visual_match_reference"]);
 /** These stage metadata/maps/sources outside MapStore savepoints, so a failed call cannot be undone alone. */
-const NOT_ROLLBACKABLE = new Set<string>(["create_map", "create_stamp", "edit_stamp", "edit_map", "configure_world", "prepare_smart_source", "begin_edit", "resume_edit", "finish_edit", "cancel_edit"]);
+const NOT_ROLLBACKABLE = new Set<string>(["create_map", "import_tiled", "create_stamp", "edit_stamp", "edit_map", "configure_world", "prepare_smart_source", "begin_edit", "resume_edit", "finish_edit", "cancel_edit"]);
 const endCause = (reason: SessionEndReason | undefined): LifecycleCause =>
   reason === "expired" ? "sessionExpired" : reason === "tokenRegenerated" ? "tokenRegenerated" : "clientDisconnected";
 interface Cached extends ReplayRecord {
@@ -493,9 +494,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
           checkpoint = pending.collaboration || NOT_ROLLBACKABLE.has(name) ? undefined : tx.checkpoint();
           try {
             tx.beginMemberCall(callContext);
-            globalMutation=["prepare_smart_source","edit_layer","create_map","resize_map","create_stamp","edit_map","edit_stamp","configure_world"].includes(name);
+            globalMutation=["prepare_smart_source","edit_layer","create_map","import_tiled","resize_map","create_stamp","edit_map","edit_stamp","configure_world"].includes(name);
             if(globalMutation)tx.assertGlobal(callContext);
             data = name === "edit_map" ? editMap(tx, args as ToolArguments["edit_map"])
+              : name === "import_tiled" ? await importTiled(tx, args as ToolArguments["import_tiled"], callContext)
               : name === "edit_stamp" ? editStamp(tx, args as ToolArguments["edit_stamp"])
               : name === "configure_world" ? configureWorld(tx, args as ToolArguments["configure_world"])
               : name === "apply_operations"

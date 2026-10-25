@@ -29,7 +29,7 @@ export const MENUS: readonly MenuDef[] = [
   {
     id: "file",
     label: "menu.file",
-    entries: ["file.new", "file.open", "-", "file.save", "file.saveAs", "file.openBackup", "-", "project.rename", "project.settings", "tileset.add", "file.export", "-", "file.close"],
+    entries: ["file.new", "file.open", "-", "file.save", "file.saveAs", "file.openBackup", "-", "project.rename", "project.settings", "tileset.add", { id: "import", label: "menu.import", entries: ["file.importTiled"] }, "file.export", "-", "file.close"],
     submenu: { id: "recentProjects", after: "file.open" },
   },
   {
