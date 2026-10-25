@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="8" height="6" tilewidth="16" tileheight="16" infinite="0" nextlayerid="6" nextobjectid="2">
+ <tileset firstgid="1" source="tilesets/dungeon.tsx"/>
+ <tileset firstgid="25" name="Props &amp; Things" tilewidth="16" tileheight="16" tilecount="8" columns="4">
+  <image source="props-16.png" width="64" height="32"/>
+  <tile id="0">
+   <animation>
+    <frame tileid="0" duration="200"/>
+    <frame tileid="1" duration="200"/>
+   </animation>
+  </tile>
+ </tileset>
+ <layer id="1" name="Ground" width="8" height="6">
+  <data encoding="csv">
+1,2,3,4,5,6,1,2,
+2,3,4,5,6,1,2,3,
+3,4,5,6,1,2,3,4,
+4,5,6,1,2,3,4,5,
+5,6,1,2,3,4,5,6,
+6,1,2,3,4,5,6,1
+</data>
+ </layer>
+ <layer id="2" name="Decor" width="8" height="6" opacity="0.5">
+  <data encoding="base64" compression="zlib">
+   eJxjYCAMJBkYGKQYGBqkGRgcZBgYFGQZGB4Q0sPMwNBAhNF4wXNmwmoAm5ADtQ==
+  </data>
+ </layer>
+ <group id="3" name="Upper">
+  <layer id="4" name="Roof" width="8" height="6" visible="0">
+   <data encoding="base64">
+    HgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAABA
+   </data>
+  </layer>
+ </group>
+ <objectgroup id="5" name="Spawns">
+  <object id="1" name="player" x="16" y="16"/>
+ </objectgroup>
+</map>

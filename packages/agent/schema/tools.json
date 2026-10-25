@@ -2684,6 +2684,47 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
+      "description": "Import a Tiled map (absolute .tmx/.tmj path) as a new map inside your edit: tile layers with flips, tileset PNGs copied into the world. Lists what was not imported (object layers, animations…).",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "resumeToken": {
+            "type": "string"
+          },
+          "world": {
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "import_tiled"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
       "description": "Join a shared (collaborative) draft claiming map/layer rectangles; then write with context.expectedMemberRevision.",
       "inputSchema": {
         "properties": {

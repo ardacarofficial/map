@@ -1,5 +1,5 @@
 /** Frozen B0 contract. No DOM, Node, editor or transport implementation dependencies. */
-import type { EntityFieldType, EntityFieldValue, MapStore, Project, ProjectData, ProjectSettings, Stamp, Tileset, WorldHistoryEntry } from "@smap/core";
+import type { EntityFieldType, EntityFieldValue, MapStore, Project, ProjectData, ProjectSettings, Stamp, TiledUnsupported, Tileset, WorldHistoryEntry } from "@smap/core";
 
 import type { AgentEditorControlsPort, ConfigureExportArgs, EditorExportPreferences, ConfigureApplicationArgs, ConfigureEditorArgs, ConfigureLayoutArgs, EditorControlContext, EditorControlState, EditorControlToolName, ListEditorCommandsArgs, RunEditorCommandArgs } from "./editorControls";
 
@@ -113,6 +113,8 @@ export type GoalCheck =
 export interface ValidateGoalsArgs extends GetMapInfoArgs { checks: GoalCheck[] }
 export interface GoalResult { kind: GoalCheck["kind"]; passed: boolean | null; detail: string; digest?: string; count?: number; visitedCells?: number }
 export interface CreateMapArgs { context: WriteContext; name: string; width: number; height: number; tileWidth: number; tileHeight: number; world?: Point }
+/** import_tiled: an absolute local .tmx/.tmj path; name defaults to the file name. */
+export interface ImportTiledArgs { context: WriteContext; path: string; name?: string; world?: Point }
 export interface ResizeMapArgs extends MapWrite { width: number; height: number; allowCrop?: boolean }
 export interface RenderPreviewArgs extends GetMapInfoArgs { region?: Rect; layerIds?: Id[]; maxSide?: number; grid?: boolean; coordinates?: boolean; entities?: boolean; zoom?: number; highlight?: "draft" | "lastCall" }
 export interface ValidateMapArgs extends GetMapInfoArgs { region?: Rect; limit?: number; cursor?: string }
@@ -137,7 +139,7 @@ export interface ToolArguments extends VisionToolArguments, ObjectToolArguments 
   paint_grid: PaintGridArgs; replace_tiles: ReplaceTilesArgs; clear_region: ClearRegionArgs;
   prepare_smart_source: PrepareSmartSourceArgs; smart_brush: SmartBrushArgs; draw_path: DrawPathArgs;
   place_stamp: PlaceStampArgs; edit_layer: EditLayerArgs; list_entity_types: ListEntityTypesArgs;
-  place_entity: PlaceEntityArgs; create_map: CreateMapArgs; resize_map: ResizeMapArgs;
+  place_entity: PlaceEntityArgs; create_map: CreateMapArgs; import_tiled: ImportTiledArgs; resize_map: ResizeMapArgs;
   render_preview: RenderPreviewArgs; validate_map: ValidateMapArgs; get_tags: GetTagsArgs; set_tags: SetTagsArgs;
 }
 export type ToolName = keyof ToolArguments;
@@ -291,6 +293,7 @@ export interface ToolData extends VisionToolData, ObjectToolData {
   list_entity_types: { items: EntityTypeInfo[] };
   place_entity: ChangedData & { entity: EntityInfo };
   create_map: ChangedData & { map: CreatedMapInfo; layers: LayerInfo[] };
+  import_tiled: ChangedData & { map: CreatedMapInfo; layers: LayerInfo[]; tilesets: TiledImportedTileset[]; unsupported: TiledUnsupported[] };
   resize_map: ChangedData & { map: MapInfo; cropped: { cells: number; entities: number } };
   render_preview: { mapId: Id; region: Rect; mapRevision: Revision; image: PreviewImage; warnings: AgentWarning[] };
   validate_map: { valid: boolean; issueCount: number; byCode?: Record<string, number>; issues: ValidationIssue[]; moreIssues?: number; scannedCells: number; hints?: string[] };
@@ -388,6 +391,24 @@ export interface AgentMetadataPort {
   publish(): void;
 }
 export interface PreparedAgentMap { map: CreatedMapInfo; store: MapStore }
+/** A tileset an import_tiled call uses: copied into the world (new) or an identical one already there (reused). */
+export interface TiledImportedTileset { tilesetId: Id; name: string; reused: boolean }
+/** One imported tile layer, cells already resolved to world tilesets (flags are raw cell flag bits). */
+export interface TiledImportLayer { name: string; visible: boolean; locked: boolean; opacity: number; cells: { x: number; y: number; tilesetId: Id; tileId: number; flags: number }[] }
+/** A read, parsed and decoded Tiled map; its new tilesets' images are staged until publish. */
+export interface PreparedTiledImport {
+  importId: Id; transactionId: Id; name: string; width: number; height: number; tileWidth: number; tileHeight: number;
+  /** New tilesets to add (ids reserved); reused ones are already in the world. */
+  tilesets: Tileset[]; summary: TiledImportedTileset[]; layers: TiledImportLayer[]; unsupported: TiledUnsupported[]; retainedBytes: number;
+}
+export interface AgentTiledPort {
+  prepare(args: { path: string; transactionId: Id }, call: AgentCallContext): Promise<PreparedTiledImport>;
+  /** Registers the staged images; map additions themselves remain store operations. */
+  publish(prepared: PreparedTiledImport): void;
+  /** Release a preparation rejected before publication. */
+  discard(prepared: PreparedTiledImport): void;
+  releaseTransaction(transactionId: Id, outcome: "approved" | "cancelled"): void;
+}
 export interface AgentWorldPort {
   maps(): readonly MapSummary[];
   tilesets(): readonly Tileset[];
@@ -468,6 +489,8 @@ export interface AgentHost {
   editorContext?: () => EditorContext;
   editorControls?: AgentEditorControlsPort;
   images: AgentImagePort; smartSources: AgentSmartSourcePort; tags: AgentTagsPort;
+  /** import_tiled; absent when the host cannot read local files. */
+  tiled?: AgentTiledPort;
   activity: AgentActivityPort; clock: AgentClock; ids: AgentIds;
 }
 
@@ -508,4 +531,6 @@ export interface AgentConnection {
   subscribeStatus(listener: (status: AgentConnectionStatus) => void): Unsubscribe;
   /** Reads an agent-supplied local reference image (reference_add path). Absent when the host cannot. */
   readLocalImage?(path: string): Promise<Uint8Array>;
+  /** Reads an agent-named Tiled map / tileset / PNG (import_tiled path, ≤ 32 MB). Absent when the host cannot. */
+  readLocalTiledFile?(path: string): Promise<Uint8Array>;
 }

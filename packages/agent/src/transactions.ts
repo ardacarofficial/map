@@ -23,6 +23,7 @@ import {
   type Point,
   type PendingWorldGroup,
   type PreparedSmartSource,
+  type PreparedTiledImport,
   type TransactionSummary,
   type Unsubscribe,
   type WriteContext,
@@ -140,6 +141,8 @@ export interface PendingEdit {
   created: Id[];
   protection: Map<string, { locked: boolean; hidden: boolean }>;
   sources: PreparedSmartSource[];
+  /** import_tiled preparations published in this edit (their tilesets join later-enlisted maps). */
+  imports: PreparedTiledImport[];
   invalidated: boolean;
   timer: Unsubscribe;
   /** Secret proof of authorship for resume_edit/cancel_edit after the session is gone (C5). */
@@ -399,6 +402,7 @@ export class Transactions {
       created: [],
       protection: new Map(),
       sources: [],
+      imports: [],
       invalidated: false,
       timer: () => {},
       resumeToken: hashCanonical(["resume-token-v1", this.host.ids.next("secret"), this.host.ids.next("secret")]),
@@ -650,10 +654,9 @@ export class Transactions {
       });
     this.run(() => {
       store.beginTransaction(p.summary.label);
-      for (const source of p.sources)
-        for (const tileset of source.tilesets)
-          if (!store.document.getTileset(tileset.id))
-            store.dispatch({ type: "addTileset", tileset, undoable: true });
+      for (const tileset of [...p.sources.flatMap(s => s.tilesets), ...p.imports.flatMap(i => i.tilesets)])
+        if (!store.document.getTileset(tileset.id))
+          store.dispatch({ type: "addTileset", tileset, undoable: true });
     });
   }
   async enlistCached(call: Pick<AgentCallContext, "signal">): Promise<void> {
@@ -879,6 +882,7 @@ export class Transactions {
     p.timer();
     try {
       this.run(() => this.host.smartSources.releaseTransaction(p.summary.id, outcome));
+      if (p.imports.length) this.run(() => this.host.tiled?.releaseTransaction(p.summary.id, outcome));
     } catch {
       // Source publication already succeeded or rolled back. Asset-retirement
       // observers must not strand ownership after that completed history action.

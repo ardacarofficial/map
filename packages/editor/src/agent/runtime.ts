@@ -6,6 +6,7 @@ import { bindAgentUiState } from "./agentUiState";
 import { createEditorHost } from "./editorHost";
 import { cancelPendingEdit, editGate, registerPendingCancellation, registerAgentWorldFlush } from "./editGate";
 import { setLocalImageReader } from "./referenceLibrary";
+import { setLocalTiledReader } from "./tiledImport";
 
 export interface AgentRuntime { host:AgentHost; api:AgentApi; connection:AgentConnection; bridgeEpoch:string; dispose():Promise<void> }
 let installed:AgentRuntime|null=null;
@@ -117,13 +118,14 @@ export async function installAgentRuntime(options:{connection:AgentConnection;ho
       }finally{
         host.visualReferences?.clear();
         requests.clear();offFlush();offRequest();offControl();offState();offUi();offCancellation();offUnsaved();offStatus();offFile();offWorld();live?.tags.dispose();
-        if(installed===runtime){installed=null;setLocalImageReader(null);}
+        if(installed===runtime){installed=null;setLocalImageReader(null);setLocalTiledReader(null);}
       }
     })();
     return disposal;
   }};
   installed=runtime;
   setLocalImageReader(connection.readLocalImage?path=>connection.readLocalImage!(path):null);
+  setLocalTiledReader(connection.readLocalTiledFile?path=>connection.readLocalTiledFile!(path):null);
   offUi=bindAgentUiState(api,connection);
   try{await connection.ready(bridgeEpoch);await publish();}catch(error){await runtime.dispose();throw error;}
   return runtime;

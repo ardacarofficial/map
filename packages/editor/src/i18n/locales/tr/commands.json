@@ -71,5 +71,6 @@
   "tileset.settings": "Tileset ayarları…",
   "tileset.replaceImage": "Tileset görselini değiştir…",
   "tileset.remove": "Tileset''i kaldır…",
-  "tileset.goto": "Tileset ara…"
+  "tileset.goto": "Tileset ara…",
+  "file.importTiled": "Tiled haritası…"
 }

@@ -53,6 +53,8 @@ export interface NewLevelOptions {
   layerName: string;
   /** Round 4: the project's layer template (bottom to top); replaces the single `layerName` layer when non-empty. */
   layers?: readonly NewLayer[];
+  /** Initial content (e.g. an imported Tiled map), written before the history is cleared. */
+  content?: (store: MapStore) => void;
 }
 
 /** A level written by {@link LevelWorkspace.save}. */
@@ -376,6 +378,7 @@ export class LevelWorkspace {
     const store = this.active.store.createSibling(document);
     const layers = options.layers && options.layers.length > 0 ? options.layers : [{ name: options.layerName }];
     for (const layer of layers) store.dispatch({ type: "addLayer", layer });
+    options.content?.(store);
     store.clearHistory();
     return this.#insert(options.name, store, this.#levels.length, diskFiles);
   }

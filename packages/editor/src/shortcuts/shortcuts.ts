@@ -107,6 +107,7 @@ export type CommandId =
   | "file.export"
   | "file.close"
   | "file.openBackup"
+  | "file.importTiled"
   | "tileset.add"
   | "tileset.settings"
   | "tileset.replaceImage"
@@ -205,6 +206,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   /** Commands without a default key (reachable from the command palette). */
   { command: "file.close", keys: [] },
   { command: "file.openBackup", keys: [] },
+  { command: "file.importTiled", keys: [] },
   { command: "tileset.add", keys: [] },
   { command: "tileset.settings", keys: [] },
   { command: "tileset.replaceImage", keys: [] },

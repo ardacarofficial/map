@@ -56,6 +56,7 @@ import { getLevelWorkspace } from "../io/session";
 import { isWorldView, setCanvasView } from "./worldActions";
 import { focusRegion } from "../ui/layout/focusRegions";
 import { openMapSettings } from "../ui/mapSettings/mapSettingsStore";
+import { importTiledFromPicker } from "./tiledImportActions";
 
 const hasProject = () => useEditorStore.getState().project !== null;
 const editor = () => useEditorStore.getState();
@@ -185,6 +186,13 @@ const COMMANDS: Command[] = [
     },
   },
 
+  {
+    id: "file.importTiled",
+    title: "commands.file.importTiled",
+    category: "file",
+    enabled: hasProject,
+    run: () => void importTiledFromPicker(),
+  },
   {
     id: "file.openBackup",
     title: "commands.file.openBackup",

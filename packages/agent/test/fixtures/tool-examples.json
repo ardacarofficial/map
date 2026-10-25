@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "6ce9e7585ef781aaf6994e5bb4cb145c0ba2a97cc55f2dd0e940c9dc9c20dee0",
+  "catalogueSha256": "3251bf3d6fa4abba9f2cecbbf5d3172bb047b1541c3506fb63a2df358df49846",
   "tools": {
     "get_session": {
       "valid": [
@@ -3126,6 +3126,62 @@
             "width": 0,
             "height": 4
           }
+        }
+      ]
+    },
+    "import_tiled": {
+      "valid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "path": "C:\\Packs\\Village\\sample.tmx"
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "path": "/home/arda/packs/town.tmj",
+          "name": "Town",
+          "world": {
+            "x": 0,
+            "y": -512
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          }
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "path": ""
+        },
+        {
+          "context": {
+            "worldSessionId": "world-1",
+            "transactionId": "edit-1",
+            "idempotencyKey": "mutation-0001",
+            "expectedRevision": 4
+          },
+          "path": "/a.tmx",
+          "name": ""
         }
       ]
     }

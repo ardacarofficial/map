@@ -84,6 +84,12 @@ export function pickFilesDialog(options: { title?: string; filter?: DialogFilter
   });
 }
 
+/** Kullanıcının seçtiği Tiled haritasının başvurduğu dosyayı okur (`.tsx`, PNG…); yalnız okuma. */
+export async function readTiledRelated(mapPath: string, path: string): Promise<Uint8Array> {
+  const bytes = await command<ArrayBuffer | number[]>("tiled_read_related", { mapPath, path }, path);
+  return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
+}
+
 /** Kaydetme yeri seçtirir (zip/PNG/TMJ dışa aktarma). */
 export function saveFileDialog(options: { title?: string; defaultName?: string; filter?: DialogFilter } = {}): Promise<string | null> {
   return command("dialog_save_file", {

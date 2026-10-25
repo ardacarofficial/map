@@ -523,3 +523,9 @@ export { tileUsageBatches, type TileUsage } from "./tileUsage";
 export { ColorPaletteStore, type ColorPaletteOp } from './pixel/palettes';
 
 export { pixelEditSnapshot } from './pixel/snapshot';
+
+export {
+  parseTiledMap, parseTiledTileset, tiledCellLayers, resolveTiledPath, tiledBaseName, TiledImportError, TILED_FLIP_HEX, TILED_MAP_EXTENSIONS, TILED_TILESET_EXTENSIONS,
+  type TiledMapDef, type TiledTilesetDef, type TiledTilesetEntry, type TiledLayerDef, type TiledUnsupported, type TiledUnsupportedKind, type TiledImportErrorCode, type TiledCell, type TiledCellLayer,
+} from "./import/tiled";
+export { parseXml, XmlParseError, type XmlElement } from "./import/xml";

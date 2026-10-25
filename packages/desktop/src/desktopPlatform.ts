@@ -218,6 +218,12 @@ export function createDesktopPlatform(): Platform {
       return { name: path.split(/[\\/]/).at(-1) ?? path, bytes: await readFileAbsolute(path) };
     },
 
+    async pickTiledMap(filter) {
+      const [path] = await bridge.pickFilesDialog({ filter });
+      if (!path) return null;
+      return { path, read: (target: string) => (target === path ? readFileAbsolute(path) : bridge.readTiledRelated(path, target)) };
+    },
+
     async saveFile(fileName, bytes, filter) {
       const path = await bridge.saveFileDialog({ defaultName: fileName, filter });
       if (!path) return false;

@@ -71,5 +71,6 @@
   "tileset.settings": "Tileset settings…",
   "tileset.replaceImage": "Replace tileset image…",
   "tileset.remove": "Remove tileset…",
-  "tileset.goto": "Find tileset…"
+  "tileset.goto": "Find tileset…",
+  "file.importTiled": "Tiled map…"
 }

@@ -312,13 +312,16 @@ Gerçek Claude Code/Codex denemelerinde bulunan sorunlar için. Editör yine har
 - **Akıllı kaynak:** üretilen atlaslarda iç köşe kenar şeritlerinden birleşir (`innerJoin: "miter"`, eski atlaslar aynı kalır); harita kenarına değen yol/nehir açık kalır; ajan akıllı kaynakları `get_session.smart` ile görür
 - **Rehber:** sunucu talimatları ve `map_from_image` / `map_from_text` istemleri; `validate_map` düz zemin ve boş harita uyarısı verir. Belge formatı 6 kalır
 
+### v2.2 — Referansa sadakat (Ekim 2026, Arda onayladı)
+
+- **Basit Tiled içe aktarma** ("Sonra"dan taşındı): Dosya → İçe aktar → Tiled haritası… ve MCP `import_tiled {path}` dikdörtgen TMX/TMJ haritayı geçerli dünyada yeni harita yapar. Yalnız tile katmanları (çevirme bitleri, köşegen dahil; gruptaki tile katmanları düz alınır), harici `.tsx`/`.tsj` ve gömülü tileset'lerin PNG'leri dünyaya yeni tileset olarak kopyalanır (aynı PNG ve ızgara zaten varsa o kullanılır; kullanıcı dosyasına yazılmaz). CSV, Base64, zlib/gzip okunur; nesne/resim katmanı, grup yapısı, animasyon, tile çarpışma şekli, Wang seti, izometrik/altıgen, zstd ve PNG olmayan resimler alınmaz ve tek listede gösterilir. Elle içe aktarma "Yeni harita" gibidir (geri alma adımı yok, harita silinerek geri alınır); ajan içinde taslağa girer, Onayla/Vazgeç uygular. Dosya başına ≤ 32 MB, yalnız okuma
+
 ### Sonra
 
 - Katı işareti ve arazi fırçası: gerekirse yeniden düşünülür
 - "Bu stamp'ten gelenleri yenile" düğmesi (elle değiştirilmiş olanları atlar veya sorar)
 - Tileset düzeni bozulunca "eski → yeni" eşleştirme ekranı
 - `.aseprite` dosyasını doğrudan okuma (format açık; Aseprite'ı komut satırından çağırmak yok)
-- Basit Tiled içe aktarma: yalnızca tile katmanları, alınamayanlar tek listede
 
 ## Bilinen tuzaklar
 

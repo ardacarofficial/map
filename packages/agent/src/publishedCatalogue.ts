@@ -49,6 +49,7 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   place_entity: "Place an entity of typeId at a cell on an entity layer. Point fields are pixels.",
   edit_entity: "Move (at), update fields or remove an entity.",
   create_map: "Create a new map inside your edit (width/height in cells, tile size in pixels); returns its id and layer ids.",
+  import_tiled: "Import a Tiled map (absolute .tmx/.tmj path) as a new map inside your edit: tile layers with flips, tileset PNGs copied into the world. Lists what was not imported (object layers, animations…).",
   resize_map: "Resize a map from its top-left; allowCrop:true to drop content outside.",
   render_preview: "PNG of the live map (your draft included). grid/coordinates for labelled cells, region+zoom (1–8) for close-ups, highlight:'draft' outlines your changes.",
   validate_map: "Structural check of the whole map in one call: summary by code plus the first issues.",

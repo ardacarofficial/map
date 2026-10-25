@@ -10,5 +10,6 @@
   "overlays": "Canvas overlays",
   "panels": "Panels",
   "docks": "Dock visibility",
-  "layout": "Layout"
+  "layout": "Layout",
+  "import": "Import"
 }
