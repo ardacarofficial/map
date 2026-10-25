@@ -44,6 +44,8 @@ const writes = new Set(
     (t) => !t.annotations.readOnlyHint && t.name !== "set_tags" && t.name !== "editor_ui" && !EDITOR_CONTROL_TOOLS.includes(t.name as EditorControlToolName),
   ).map((t) => t.name),
 );
+/** Lifecycle entry points with their own token handling (resume_edit, cancel_edit) or none (begin/join). */
+const NO_AUTO_RESUME = new Set<string>(["begin_edit", "resume_edit", "join_edit"]);
 const RETRYABLE = new Set<E>([E.REVISION_CONFLICT, E.TIMEOUT, E.WRITER_BUSY, E.EDITOR_UNAVAILABLE]);
 const LIFECYCLE_CODES = new Set<E>([E.TRANSACTION_REQUIRED, E.TRANSACTION_NOT_OWNED, E.TRANSACTION_SEALED, E.TRANSACTION_CANCELLED, E.WRITER_BUSY]);
 /** One actionable sentence per code when the failing site gave none (C4). */
@@ -205,6 +207,11 @@ export function createAgentApi(host: AgentHost): AgentApi {
     // A layer write without any draft: the lifecycle error ("begin_edit first"), not a schema error about layerName.
     if (!tx.pending && writes.has(name as ToolName) && typeof input.layerName === "string" && props.layerId && !props.layerName)
       tx.requirePending(call, (input.context as { transactionId?: string } | undefined)?.transactionId);
+    // Roads, rivers and smart areas belong on the ground: default to the bottom tile layer.
+    if (store && (name === "draw_path" || name === "smart_brush") && input.layerId === undefined && input.layerName === undefined) {
+      const ground = store.document.layers.find(l => l.type === "tile");
+      if (ground) input.layerId = ground.id;
+    }
     if (store && props.layerId && !props.layerName && typeof input.layerName === "string" && input.layerId === undefined) {
       input.layerId = resolveLayer(store, { layerName: input.layerName }, "layerName").id;
       delete input.layerName;
@@ -393,6 +400,19 @@ export function createAgentApi(host: AgentHost): AgentApi {
         if (ui.context !== undefined && args.context === undefined) args.context = ui.context;
         call = { ...call, name: EDITOR_UI_ACTIONS[ui.action], arguments: args };
       }
+      // resumeToken on any write (top level or in context): reclaim the caller's own draft first (same as resume_edit).
+      let resumeToken: string | undefined;
+      if (writes.has(call.name as ToolName) && !NO_AUTO_RESUME.has(call.name) && call.arguments !== null && typeof call.arguments === "object" && !Array.isArray(call.arguments)) {
+        const input = { ...(call.arguments as Record<string, unknown>) };
+        const ctx = input.context !== null && typeof input.context === "object" && !Array.isArray(input.context) ? { ...(input.context as Record<string, unknown>) } : undefined;
+        const token = input.resumeToken ?? ctx?.resumeToken;
+        if (typeof token === "string" && (call.name !== "cancel_edit" || input.resumeToken === undefined)) {
+          if (ctx) { delete ctx.resumeToken; input.context = ctx; }
+          if (call.name === "cancel_edit") input.resumeToken = token;
+          else { delete input.resumeToken; resumeToken = token; }
+          call = { ...call, arguments: input };
+        }
+      }
       call = { ...call, arguments: aliases(call.name, call.arguments, call) };
       validate(call.name, call.arguments);
       const name = call.name as ToolName,
@@ -427,6 +447,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
         completed = true;
       } else if (writes.has(name)) {
         const writeArgs = args as ToolArguments["paint_cells"];
+        if (resumeToken !== undefined && tx.pending && tx.needsResume(callContext))
+          tx.resume({ context: { worldSessionId: writeArgs.context.worldSessionId }, transactionId: tx.pending.summary.id, resumeToken }, callContext);
         if (name === "cancel_edit") tx.claimWithToken(writeArgs.context.transactionId, (args as ToolArguments["cancel_edit"]).resumeToken, callContext);
         const pending = tx.owned(
           writeArgs.context,

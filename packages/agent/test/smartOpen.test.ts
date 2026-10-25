@@ -40,7 +40,8 @@ it("reuses one preparation per source and accepts an inline source on smart tool
   const second = success(await h.edit("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } })).created as { sourceId: string };
   expect(second.sourceId).toBe(first.sourceId);
   expect(h.host.stores.get("map-1")!.document.tilesets.length).toBe(tilesets);
-  const path = success(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }));
+  // No layer given: roads/rivers go on the bottom tile layer.
+  const path = success(await h.edit("draw_path", { mapId: "map-1", source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }));
   expect(path.changed).toBeGreaterThan(0);
   error(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }), "INVALID_ARGUMENT");
   error(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", sourceId: first.sourceId, source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }), "INVALID_ARGUMENT");

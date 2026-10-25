@@ -171,3 +171,34 @@ it("schema errors report only the best-matching oneOf branch as path: problem", 
   expect(value.structuredContent.ok ? "" : value.structuredContent.message).toBe("/cells/0/value: missing required property 'tileId'");
   await h.api.userAction("discard");
 });
+
+it("reconnect: get_session shows the pending draft and a resumeToken on the first write resumes it", async () => {
+  const h = harness();
+  const a = as(h, "agent-a"), b = as(h, "agent-b"), intruder = as(h, "intruder");
+  const begun = success(await a("begin_edit", { requestLabel: "Village", mapIds: ["map-1"] })).data as ToolData["begin_edit"];
+  expect((success(await a("get_session")).data as ToolData["get_session"]).pendingEdit).toMatchObject({ transactionId: begun.transactionId, state: "running", isYours: true });
+  success(await a("paint_cells", cell(1)));
+  await h.api.sessionEnded("agent-a", "disconnect");
+  const session = success(await b("get_session")).data as ToolData["get_session"];
+  expect(session.pendingEdit).toMatchObject({ transactionId: begun.transactionId, state: "orphaned", isYours: false, canResume: true,
+    nextAction: expect.stringContaining(`resume_edit {transactionId:"${begun.transactionId}"`) });
+  // Without the token the error names the exact recovery call.
+  const refused = await b("paint_cells", cell(2));
+  error(refused, "TRANSACTION_NOT_OWNED");
+  expect(refused.structuredContent).toMatchObject({ details: { nextAction: expect.stringContaining(`transactionId:"${begun.transactionId}"`) } });
+  error(await b("begin_edit", { requestLabel: "Again", mapIds: ["map-1"] }), "WRITER_BUSY");
+  // Wrong token: refused, nothing changes hands.
+  error(await intruder("paint_cells", { ...cell(2), resumeToken: "f".repeat(64) }), "TRANSACTION_NOT_OWNED");
+  expect(h.api.getState().phase).toBe("orphaned");
+  // Top-level token: auto-resume then paint, in one call.
+  success(await b("paint_cells", { ...cell(2), resumeToken: begun.resumeToken }));
+  expect(h.api.getState()).toMatchObject({ phase: "running", transaction: { owner: { clientSessionId: "agent-b" }, counters: { mutationCalls: 2 } } });
+  // Token in context also works and is ignored while the caller already owns the draft.
+  success(await b("paint_cells", { ...cell(3), context: { resumeToken: begun.resumeToken } }));
+  success(await b("finish_edit", {}));
+  // Amending a submitted draft: the token reopens it.
+  success(await b("paint_cells", { ...cell(4), resumeToken: begun.resumeToken }));
+  expect(h.api.getState().phase).toBe("running");
+  await h.api.userAction("discard");
+  expect((success(await b("get_session")).data as ToolData["get_session"]).pendingEdit).toBeUndefined();
+});

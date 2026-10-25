@@ -161,6 +161,8 @@ export const AGENT_LIMITS = {
   proxyPingMs: 30000, defaultDesktopPort: 48765, defaultDevPort: 48766,
 } as const;
 export type AgentLimits = typeof AGENT_LIMITS;
+/** get_session: the pending exclusive draft; isYours:false → resume_edit (or pass resumeToken on the next write). */
+export interface PendingEditInfo { transactionId: Id; state: TransactionState; ownerClient: string; isYours: boolean; canResume: boolean; nextAction?: string }
 /** The few limits an agent plans with (get_session, begin_edit); the full table is resource harita://guide/limits. */
 export const ESSENTIAL_LIMITS = {
   cellsPerCall: AGENT_LIMITS.cellsPerCall, gridCellsPerLayer: AGENT_LIMITS.gridCells, batchCells: AGENT_LIMITS.batchCells,
@@ -265,7 +267,7 @@ export interface ToolData extends VisionToolData {
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
-  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: EssentialLimits; smart?: SmartCandidateInfo[];
+  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; pendingEdit?: PendingEditInfo; limits: EssentialLimits; smart?: SmartCandidateInfo[];
     /** Reference images the user dropped/pasted or the agent added (reference_add). */
     references: ReferenceSummary[] };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };

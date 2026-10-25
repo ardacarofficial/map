@@ -12,6 +12,7 @@ import {
   tileRect,
   type MapStore,
   type MapInfo as CoreMapInfo,
+  type Stamp,
   type Tileset,
 } from "@smap/core";
 import {
@@ -186,6 +187,7 @@ export async function read<N extends ToolName>(
           activeLayerId: s.activeLayerId,
           clients: s.clients.map((client) => client.id === undefined ? client : { ...client, isSelf: call.clientSessionId.startsWith(client.id) }),
           transaction: tx.copy(transaction),
+          ...(() => { const pendingEdit = tx.pendingEdit(call); return pendingEdit ? { pendingEdit } : {}; })(),
           limits: ESSENTIAL_LIMITS,
           references: tx.host.references?.list() ?? [],
           ...await (async () => {
@@ -716,7 +718,7 @@ async function validateMap(
     if (inspection) await inspection;
     scannedCells++;
   }
-  const hints = a.region ? [] : designHints(store);
+  const hints = a.region ? [] : [...designHints(store), ...pathUnderStampHints(store, tx.host.world.stamps())];
   return {
     valid: issueCount === 0,
     issueCount,
@@ -770,4 +772,63 @@ function designHints(store: MapStore): string[] {
       hints.push(`SPARSE: objects cover ${Math.round(100 * detail / area)}% of the map; hand-made maps use ~10–20%: tree clumps and edge forests, bushes/flowers/rocks near paths and houses (paint_cells points), fenced gardens.`);
   }
   return hints;
+}
+
+/** Deterministic hint: smart road/path/river tiles (generated atlases) under a placed stamp's body.
+ * Placements are found by exact cell match of each stamp's tile layers; the bottom row (door row) is ignored,
+ * and an overlap covering half the body or more is a deliberate crossing (a bridge over water). */
+export function pathUnderStampHints(store: MapStore, stamps: readonly Stamp[]): string[] {
+  const doc = store.document, { width, height } = doc.map, area = width * height;
+  if (!stamps.length || area > 1 << 20) return [];
+  const layers = doc.layers.filter(l => !isEntityLayer(l) && !isGridLayer(l) && l.visible);
+  const key = (tilesetId: string, tileId: number, flags: number) => `${tilesetId}:${tileId}:${flags}`;
+  const mapKey = (cell: number) => { const ref = doc.palette.get(cellPaletteIndex(cell)); return ref ? key(ref.tilesetId, ref.tileId, cellFlags(cell)) : ""; };
+  const road = new Uint8Array(area);
+  let roads = 0;
+  for (const l of layers)
+    for (const chunk of l.chunks())
+      for (let i = 0; i < chunk.data.length; i++) {
+        const cell = chunk.data[i]!, x = chunk.cx * 32 + (i % 32), y = chunk.cy * 32 + Math.floor(i / 32);
+        if (!cell || x >= width || y >= height || road[y * width + x]) continue;
+        const ref = doc.palette.get(cellPaletteIndex(cell));
+        if (ref && doc.getTileset(ref.tilesetId)?.generated) { road[y * width + x] = 1; roads++; }
+      }
+  if (!roads) return [];
+  const found: string[] = [];
+  let count = 0;
+  for (const stamp of stamps) {
+    if (stamp.height < 2 || stamp.nineSlice) continue;
+    const clips = stamp.layers.filter(c => !c.grid).map(c => Array.from(c.cells, cell => cell ? (() => {
+      const ref = stamp.palette[cellPaletteIndex(cell) - 1];
+      return ref ? key(ref.tilesetId, ref.tileId, cellFlags(cell)) : "";
+    })() : ""));
+    const top = [...clips].reverse().find(c => c.some(Boolean));
+    if (!top) continue;
+    const own = top.map((_, j) => clips.some(c => !!c[j] && !!doc.getTileset(c[j]!.slice(0, c[j]!.lastIndexOf(":", c[j]!.lastIndexOf(":") - 1)))?.generated));
+    const anchor = top.findIndex(Boolean), ax = anchor % stamp.width, ay = Math.floor(anchor / stamp.width);
+    for (const l of layers)
+      for (const chunk of l.chunks())
+        for (let i = 0; i < chunk.data.length; i++) {
+          const cell = chunk.data[i]!;
+          if (!cell || mapKey(cell) !== top[anchor]) continue;
+          const ox = chunk.cx * 32 + (i % 32) - ax, oy = chunk.cy * 32 + Math.floor(i / 32) - ay;
+          if (ox < 0 || oy < 0 || ox + stamp.width > width || oy + stamp.height > height) continue;
+          let match = true;
+          for (let j = 0; j < top.length && match; j++)
+            if (top[j] && mapKey(l.getCell(ox + (j % stamp.width), oy + Math.floor(j / stamp.width))) !== top[j]) match = false;
+          if (!match) continue;
+          let body = 0, under = 0, first: { x: number; y: number } | undefined;
+          for (let j = 0; j < stamp.width * (stamp.height - 1); j++) {
+            if (!clips.some(c => c[j])) continue;
+            const x = ox + (j % stamp.width), y = oy + Math.floor(j / stamp.width);
+            body++;
+            if (road[y * width + x] && !own[j]) { under++; first ??= { x, y }; }
+          }
+          if (under && under * 2 < body) {
+            count++;
+            if (found.length < 3) found.push(`'${stamp.name}' at ${ox},${oy} (cell ${first!.x},${first!.y})`);
+          }
+        }
+  }
+  return count ? [`PATH_UNDER_STAMP: ${count} stamp(s) have a road/path under their body: ${found.join("; ")}. End a door path on the cell just below the door, keep 1 free cell around houses; clear those path cells (paint_grid/clear_region) or move the stamp.`] : [];
 }

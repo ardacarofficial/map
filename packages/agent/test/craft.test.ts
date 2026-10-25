@@ -138,3 +138,46 @@ describe("context-free writes on oneOf tools", () => {
     success(await h.run("edit_entity", { mapId: "map-1", action: "move", entityId: placed.entityIds[0], at: { x: 2, y: 2 } }));
   });
 });
+
+describe("validate_map PATH_UNDER_STAMP", () => {
+  it("flags a path under a house body, not under its door row and not a bridge over its crossing", async () => {
+    const generated = { kind: "nineSlice" as const, stampId: "path", layerId: "s", sourceWidth: 3, sourceHeight: 3, layoutVersion: 1 as const, sources: [] };
+    const tilesets = [
+      { id: "tiles", name: "Tiles", tileWidth: 32, tileHeight: 32, columns: 8, rows: 8, margin: 0, spacing: 0, imagePath: "tiles.png" },
+      { id: "road", name: "Road (yol)", tileWidth: 32, tileHeight: 32, columns: 4, rows: 4, margin: 0, spacing: 0, imagePath: "road.png", generated },
+    ];
+    const house: Stamp = { id: "house", name: "House", width: 2, height: 3,
+      palette: Array.from({ length: 6 }, (_, i) => ({ tilesetId: "tiles", tileId: 10 + i })),
+      layers: [{ layerId: "u", name: "Upper", cells: Uint32Array.of(1, 2, 3, 4, 5, 6) }] };
+    const bridge: Stamp = { id: "bridge", name: "Bridge", width: 2, height: 2,
+      palette: [{ tilesetId: "tiles", tileId: 20 }], layers: [{ layerId: "u", name: "Upper", cells: Uint32Array.of(1, 1, 1, 1) }] };
+    const store = new MapStore(createDocument({ width: 16, height: 16, tilesets }));
+    store.dispatch({ type: "addLayer", layer: { id: "ground", name: "Ground" } });
+    store.dispatch({ type: "addLayer", layer: { id: "upper", name: "Upper" } });
+    store.clearHistory();
+    const h = harness({ maps: [{ id: "map-1", store }], stamps: [house, bridge], tilesets });
+    await h.begin();
+    const placeHouse = (x: number, y: number) => h.edit("place_stamp", { mapId: "map-1", stampId: "house", at: { x, y }, layerMapping: [{ sourceLayerId: "u", targetLayerId: "upper" }] });
+    const road = { tilesetId: "road", tileId: 1 };
+    success(await placeHouse(1, 1));
+    success(await placeHouse(8, 1));
+    success(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", points: [[1, 3], [1, 4], [8, 2], [8, 3]], value: road }));
+    success(await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region: { x: 4, y: 10, width: 2, height: 2 }, value: road }));
+    success(await h.edit("place_stamp", { mapId: "map-1", stampId: "bridge", at: { x: 4, y: 10 }, layerMapping: [{ sourceLayerId: "u", targetLayerId: "upper" }] }));
+    const result = success(await h.read("validate_map", { mapId: "map-1" })).data as { valid: boolean; hints?: string[] };
+    const hint = result.hints?.find(s => s.startsWith("PATH_UNDER_STAMP"));
+    expect(hint).toContain("1 stamp(s)");
+    expect(hint).toContain("'House' at 8,1 (cell 8,2)");
+    expect(hint).not.toContain("Bridge");
+  });
+});
+
+describe("forgiving layers", () => {
+  it("a layer id passed as layerName resolves to that layer", async () => {
+    const h = harness({ width: 8, height: 8 });
+    await h.begin();
+    const created = success(await h.edit("edit_layer", { mapId: "map-1", action: "create", name: "Upper", kind: "tile" })).created as { layerIds: string[] };
+    expect(success(await h.edit("paint_rect", { mapId: "map-1", layerName: created.layerIds[0], region: { x: 0, y: 0, width: 2, height: 2 }, value: t(0) })).changed).toBe(4);
+    expect(h.host.stores.get("map-1")!.document.getLayer(created.layerIds[0]!)!.getCell(1, 1)).not.toBe(0);
+  });
+});

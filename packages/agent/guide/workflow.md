@@ -18,7 +18,7 @@ Preview and validate while the edit is running, then call `finish_edit` when you
 
 A failed or timed-out call undoes only itself (`details.applied:false`); the draft keeps running, so fix and retry that call. Errors carry `details.nextAction`, and lifecycle errors also name `state`, `cause` and `isYours`.
 
-Disconnects, session expiry and the 30-minute inactivity lease never roll back an exclusive draft: it becomes `orphaned` and waits for the human. After reconnecting (or after `finish_edit` or a human Durdur) call `resume_edit({transactionId, resumeToken})` to rebind the draft to your new session and keep editing; `cancel_edit` with `resumeToken` discards it. Smart-source IDs belong to their transaction and map.
+Disconnects, session expiry and the 30-minute inactivity lease never roll back an exclusive draft: it becomes `orphaned` and waits for the human. After reconnecting (or after `finish_edit` or a human Durdur) call `resume_edit({transactionId, resumeToken})` to rebind the draft to your new session and keep editing, or pass `resumeToken` on your next write (any draft write accepts it and resumes first). `get_session.pendingEdit` shows a waiting draft with the exact `transactionId`; `cancel_edit` with `resumeToken` discards it. Smart-source IDs belong to their transaction and map.
 
 Only the user approves the draft. Approval makes the accepted common result one world undo action; discard rolls back the unapproved draft. In collaborative drafts a running member's disconnect still rolls back that member's contribution; see [collaboration](harita://guide/collaboration).
 

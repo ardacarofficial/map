@@ -155,6 +155,7 @@ function compact(schema: JsonValue): JsonValue {
   return out;
 }
 
+const NO_RESUME_TOKEN = new Set(["begin_edit", "resume_edit", "join_edit", "set_tags", "editor_ui"]);
 const LAYER_TOOLS_WITH_NAME = new Set(["paint_cells", "paint_rect", "paint_line", "fill", "smart_brush", "draw_path", "place_entity", "edit_layer"]);
 function publish(tool: AgentToolDefinition): AgentToolDefinition {
   const strict = tool.inputSchema as Schema;
@@ -162,6 +163,8 @@ function publish(tool: AgentToolDefinition): AgentToolDefinition {
   const schema = compact(resolve(strict, defs)) as Schema;
   const properties = { ...((schema.properties as Schema | undefined) ?? {}) };
   let required = ((schema.required ?? []) as string[]).slice();
+  // Any draft write may carry resumeToken: after a reconnect it resumes the caller's draft first (instructions).
+  if ("context" in properties && !tool.annotations.readOnlyHint && !NO_RESUME_TOKEN.has(tool.name)) properties.resumeToken = { type: "string" };
   // Context is optional everywhere except join_edit; its fields are explained in the instructions.
   if (!required.includes("context")) delete properties.context;
   else properties.context = { type: "object" };

@@ -3,7 +3,8 @@ Harita is a live tile-map editor. You draw with these tools; the human reviews y
 Workflow
 1. get_session: maps, active map/layer, references (pictures), smart sources (smart: use these for roads, rivers, ponds), limits.
 2. Look first: get_tile_catalog {tilesetId} (tile ids on a PNG), list_stamps {includeSheet:true} (looks and sizes).
-3. begin_edit {mapIds, requestLabel}. Keep transactionId and resumeToken (resume_edit after a reconnect or to amend after finish_edit; nothing is rolled back on disconnect).
+3. begin_edit {mapIds, requestLabel}. Keep transactionId and resumeToken (nothing is rolled back on disconnect).
+   After reconnect: resume_edit with your resumeToken (or pass resumeToken on the next write). get_session.pendingEdit shows a waiting draft; never begin_edit over it.
 4. Paint with few, large calls (below).
 5. render_preview {grid:true, coordinates:true}; zoom (region+zoom) into joins: bridge ends, door paths, river bends. With a picture: render_compare. Fix and repeat.
 6. validate_map (read its hints), finish_edit {summary}; tell the user it waits for Onayla.
@@ -14,7 +15,7 @@ Which tool for what
 - Ground: paint_rect over the map with value {random:[...]}; mixed areas: paint_grid (rows + legend, legend entries may be {random:[...]}). Never per-cell JSON lists.
 - One tile over a rectangle / line / flood area: paint_rect / paint_line / fill.
 - Scatter one tile (flowers, rocks, bushes): paint_cells {layerName, points:[[x,y],...], value}.
-- Roads, paths, rivers: draw_path {source, points (the bends), width}; source = an entry of get_session.smart as {tilesetId, region:rect}.
+- Roads, paths, rivers: draw_path {source, points (the bends), width} on the bottom tile layer by default; source = an entry of get_session.smart as {tilesetId, region:rect}.
 - Ponds, lakes, fields with borders: smart_brush {mode:"area", region, source}; overlapping areas merge into one shape.
 - Houses, bridges, trees, fences: place_stamp {stampId, at} or positions:[[x,y],...].
 - Change existing work: read_region (rows) then paint_grid; replace_tiles; clear_region.
@@ -23,9 +24,11 @@ Which tool for what
 Craft (aim for a hand-made level, not a diagram)
 - Ground is never one flat tile: main tile weight ~8 plus 1–2 similar variants weight 1–2 from the catalog.
 - Paint in order: ground, water, roads, then stamps and details on the upper layer.
-- Roads with a smart source, 2 wide for main roads; give every door a 1-wide draw_path to the nearest road.
+- Roads with a smart source, 2 wide for main roads; give every door a 1-wide draw_path to the nearest road that ends on the cell just below the door (under the stamp's bottom row). A path never enters or passes under a stamp.
 - Road over water: one draw_path straight across (never stop it at the banks or patch gaps with plain tiles), then place the bridge stamp over the crossing, covering the whole water width.
-- Group things: houses along roads with 1–2 cells between, trees in clumps and along map edges, fences as closed outlines around a field, garden or pen.
+- Keep 1 free cell around every house (only its door path touches it); houses along roads with 1–2 cells between.
+- Trees in clumps of 3–8 (touching or 1 cell apart) and a dense forest band along 1–2 map edges; open meadow between clumps. Never spread single trees evenly.
+- Fences as closed outlines around a field, garden or pen.
 - Leave no big empty patches: bushes, flowers and rocks near paths and houses (objects ~10–20% of the map).
 
 Conventions

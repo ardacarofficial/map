@@ -67,7 +67,9 @@ export function resolveLayer(store: MapStore, ref: { layerId?: Id | undefined; l
   }
   check(ref.layerName !== undefined, E.INVALID_ARGUMENT, `${path}: supply layerId or layerName`, { validIds: validLayers(store) });
   const name = ref.layerName.trim().toLocaleLowerCase("en");
-  const matches = store.document.layers.filter(l => l.name.trim().toLocaleLowerCase("en") === name);
+  const named = store.document.layers.filter(l => l.name.trim().toLocaleLowerCase("en") === name);
+  // A layer id passed as layerName still means that layer.
+  const matches = named.length ? named : store.document.layers.filter(l => l.id === ref.layerName);
   check(matches.length === 1, matches.length ? E.INVALID_ARGUMENT : E.UNKNOWN_ID,
     matches.length ? `${path}: layer name ${JSON.stringify(ref.layerName)} is ambiguous; use layerId` : `${path}: unknown layer name ${JSON.stringify(ref.layerName)}`,
     { validIds: validLayers(store) });

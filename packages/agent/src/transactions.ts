@@ -40,13 +40,17 @@ function sameToken(a: string, b: string): boolean {
   return diff === 0;
 }
 /** What the agent should do next, per lifecycle state/cause (C4/C5). */
-export function lifecycleNextAction(state: TransactionState | null, cause: LifecycleCause | undefined, isYours: boolean): string {
+/** The exact recovery call for a draft another session holds (C4). */
+const resumeCall = (transactionId: Id | undefined) => transactionId
+  ? `call resume_edit {transactionId:"${transactionId}", resumeToken:<your resumeToken>} (or repeat this write with resumeToken)`
+  : "call resume_edit with your transactionId and resumeToken";
+export function lifecycleNextAction(state: TransactionState | null, cause: LifecycleCause | undefined, isYours: boolean, transactionId?: Id): string {
   if (state === null) return "No edit is pending: call begin_edit to start one.";
   if (state === "approved") return "The user approved this edit; call begin_edit to make further changes.";
   if (state === "cancelled") return cause === "humanDiscarded" ? "The user discarded this edit: all its changes were undone and the map is as it was before begin_edit. Ask before redoing it, then call begin_edit." : "This edit was rolled back (the map is as before begin_edit); call begin_edit to start again.";
   if (state === "preparing" || state === "cancelling") return "The edit is changing state; call get_session in a moment.";
-  if (state === "running") return isYours ? "Continue editing this draft." : "Another client is editing; call resume_edit with your resumeToken if this draft is yours, otherwise wait until the user approves or discards it.";
-  return "The draft is waiting for the user (Onayla/Vazgeç). Call resume_edit with your resumeToken to keep editing it, or tell the user it awaits their review.";
+  if (state === "running") return isYours ? "Continue editing this draft." : `If this draft is yours, ${resumeCall(transactionId)}; otherwise wait until the user approves or discards it.`;
+  return `The draft is waiting for the user (Onayla/Vazgeç). To keep editing it, ${resumeCall(transactionId)}; otherwise tell the user it awaits their review.`;
 }
 /** Undo point for one exclusive call: core savepoints plus draft bookkeeping. */
 export interface CallCheckpoint {
@@ -256,7 +260,7 @@ export class Transactions {
       transactionId: summary.id, state: summary.state, ...(summary.cause ? { cause: summary.cause } : {}),
       ownerClient: summary.owner.clientInfo.name, isYours,
       awaitingHuman: SEALED.includes(summary.state),
-      nextAction: lifecycleNextAction(summary.state, summary.cause, isYours),
+      nextAction: lifecycleNextAction(summary.state, summary.cause, isYours, summary.id),
     };
   }
   /** Without a pending draft: the same lifecycle error a write would get (keeps terminal cause). */
@@ -337,6 +341,20 @@ export class Transactions {
     const p = this.pending;
     if (p && (p.summary.owner.clientSessionId === clientSessionId || p.collaboration?.bySession(clientSessionId))) return p.summary.id;
     return p ? p.summary.id : this.lastByClient.get(clientSessionId);
+  }
+  /** get_session hint: a pending exclusive draft and whether the caller must resume it first. */
+  pendingEdit(call: Pick<AgentCallContext, "clientSessionId" | "bridgeEpoch">): JsonObject | undefined {
+    const p = this.pending;
+    if (!p || p.collaboration || p.summary.state === "preparing" || p.summary.state === "cancelling") return undefined;
+    const isYours = p.summary.owner.clientSessionId === call.clientSessionId && p.epoch === call.bridgeEpoch;
+    return { transactionId: p.summary.id, state: p.summary.state, ownerClient: p.summary.owner.clientInfo.name, isYours,
+      canResume: !p.invalidated && (p.summary.state === "running" || SEALED.includes(p.summary.state)),
+      ...(this.needsResume(call) ? { nextAction: lifecycleNextAction(p.summary.state, p.summary.cause, isYours, p.summary.id) } : {}) };
+  }
+  /** True when an exclusive draft is pending but this session does not hold it (resume first). */
+  needsResume(call: Pick<AgentCallContext, "clientSessionId" | "bridgeEpoch">): boolean {
+    const p = this.pending;
+    return !!p && !p.collaboration && (p.summary.owner.clientSessionId !== call.clientSessionId || p.epoch !== call.bridgeEpoch || p.summary.state !== "running");
   }
   async begin(args: BeginEditArgs, call: AgentCallContext): Promise<unknown> {
     this.world(args.context.worldSessionId);
@@ -522,7 +540,7 @@ export class Transactions {
     } else {
       if (p.summary.owner.clientSessionId !== call.clientSessionId || p.epoch !== call.bridgeEpoch)
         fail(E.TRANSACTION_NOT_OWNED, p.summary.owner.clientSessionId === null ? "This draft lost its connection and awaits review" : "Transaction belongs to another client",
-          { ...this.lifecycle(call), isYours: false, nextAction: lifecycleNextAction(p.summary.state === "running" ? "running" : p.summary.state, p.summary.cause, false) });
+          { ...this.lifecycle(call), isYours: false, nextAction: lifecycleNextAction(p.summary.state, p.summary.cause, false, p.summary.id) });
       if(!skipRevision)this.expected(context.expectedRevision);
     }
     if (!sealed && p.summary.state !== "running")
