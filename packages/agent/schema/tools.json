@@ -3024,11 +3024,63 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; returns mismatching cells.",
+      "description": "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; region crops the same cells of picture and map; returns mismatching cells. cells:true adds an error heatmap, stats and worst cells with alternatives for you to paint.",
       "inputSchema": {
         "properties": {
+          "alignment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "cellPx": {
+                    "type": "number"
+                  },
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "method": {
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ],
+                    "type": "string"
+                  },
+                  "offsetX": {
+                    "type": "number"
+                  },
+                  "offsetY": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  },
+                  "scale": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "cellPx",
+                  "offsetX",
+                  "offsetY"
+                ],
+                "type": "object"
+              }
+            ]
+          },
           "baseline": {
             "const": "draftStart"
+          },
+          "cells": {
+            "type": "boolean"
           },
           "fit": {
             "enum": [

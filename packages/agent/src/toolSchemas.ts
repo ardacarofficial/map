@@ -2092,6 +2092,11 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
   const fit: Schema = { type: "string", enum: ["stretch", "contain"], default: "stretch", description: "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged." };
   const sourceRect: Schema = { ...ref("Rect"), description: "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically." };
   const mapping = { referenceId: ref("Id"), mapId: ref("Id"), region: ref("Rect"), fit, sourceRect };
+  const alignment: Schema = { anyOf: [{ type: "string", enum: ["auto", "none"] }, object({
+    cellPx: { type: "number", exclusiveMinimum: 0, maximum: 4096 }, scale: { type: "number", exclusiveMinimum: 0, maximum: 256 },
+    offsetX: { type: "number", minimum: -65536, maximum: 65536 }, offsetY: { type: "number", minimum: -65536, maximum: 65536 },
+    cols: { type: "integer", minimum: 0 }, rows: { type: "integer", minimum: 0 }, confidence: { type: "number", minimum: 0, maximum: 1 }, method: { type: "string", enum: ["auto", "manual"] },
+  }, ["cellPx", "offsetX", "offsetY"])], description: "Map grid on the picture (reference_align). Default auto: the stored alignment, else none (fit/sourceRect)." };
   const optionalContext = { context: { ...ref("ReadContext"), description: "Optional; the current world is used when omitted." } };
   const ids = (max: number): Schema => ({ type: "array", minItems: 1, maxItems: max, uniqueItems: true, items: ref("Id") });
   function tool(name: string, title: string, description: string, schema: Schema): AgentToolDefinition {
@@ -2127,8 +2132,8 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
         preview: { type: "boolean", default: true },
       }, ["referenceId", "mapId"])),
     tool("render_compare", "Compare Map With Reference",
-      "Check the map against the user's picture (referenceId) or against the state before your edit (baseline:\"draftStart\"). mode side (default): picture/before left, current map right, same grid; overlay: current map blended over the picture; diff: dimmed map with mismatching/changed cells outlined. Returns mismatch {cells, ratio, sample} to fix next. Writes nothing.",
-      { ...object({ ...optionalContext, mapId: ref("Id"), referenceId: ref("Id"), baseline: { const: "draftStart" }, mode: { type: "string", enum: ["side", "overlay", "diff"], default: "side" }, region: ref("Rect"), fit, sourceRect, layerIds: ids(32), maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["mapId"]),
+      "Check the map against the user's picture (referenceId) or against the state before your edit (baseline:\"draftStart\"). mode side (default): picture/before left, current map right, same grid; overlay: current map blended over the picture; diff: dimmed map with mismatching/changed cells outlined. The picture lies on the whole map (fit/sourceRect, or alignment); region crops the same cells of both. Returns mismatch {cells, ratio, sample}. cells:true (picture only) adds a per-cell error heatmap panel, stats {meanErr, pctBelow.deltaE5} and worst cells with current tiles and better-scoring alternatives for you to paint. Writes nothing.",
+      { ...object({ ...optionalContext, mapId: ref("Id"), referenceId: ref("Id"), baseline: { const: "draftStart" }, mode: { type: "string", enum: ["side", "overlay", "diff"], default: "side" }, region: ref("Rect"), fit, sourceRect, alignment, cells: { type: "boolean", default: false }, layerIds: ids(32), maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["mapId"]),
         oneOf: [requiredKeys("referenceId"), requiredKeys("baseline")] }),
   ];
 

@@ -30,7 +30,18 @@ export interface ReferenceQuantizeArgs extends ReferenceMapping {
   colorLegend?: Record<string, ColorLegendValue>;
   preview?: boolean;
 }
-export interface RenderCompareArgs { context?: ReadContext; mapId: Id; referenceId?: Id; baseline?: "draftStart"; mode?: "side" | "overlay" | "diff"; region?: Rect; fit?: ReferenceFit; sourceRect?: Rect; maxSide?: number; layerIds?: Id[] }
+/** K1: where the map grid lies on a reference picture. */
+export interface ReferenceAlignment {
+  /** Reference pixels per map cell. */ cellPx: number;
+  /** Reference px per source tile px. */ scale: number;
+  /** Reference-pixel position of map cell (0,0) top-left; may be negative. */ offsetX: number; offsetY: number;
+  /** Cells covered. */ cols: number; rows: number;
+  confidence: number; method: "auto" | "manual";
+}
+export type ReferenceAlignmentChoice = "auto" | "none" | ReferenceAlignment;
+export interface RenderCompareArgs { context?: ReadContext; mapId: Id; referenceId?: Id; baseline?: "draftStart"; mode?: "side" | "overlay" | "diff"; region?: Rect; fit?: ReferenceFit; sourceRect?: Rect; alignment?: ReferenceAlignmentChoice; cells?: boolean; maxSide?: number; layerIds?: Id[] }
+/** One badly matching cell (render_compare cells:true); alternatives are only suggestions for the agent. */
+export interface CompareWorstCell { x: number; y: number; err: number; current: { layerId: Id; tile: Tile }[]; alternatives: { tile: Tile; overlay?: Tile; err: number }[] }
 
 export interface QuantizeLayerProposal { layerId: Id; layerName: string; origin: Point; rows: string[]; legend: Record<string, ProposalCell | LegendRandom>; counts: Record<string, number> }
 export interface ReferenceQuantizeData {
@@ -49,7 +60,16 @@ export interface ReferenceQuantizeData {
   mapRevision: Revision;
 }
 export interface ReferenceViewData { mapId: Id; referenceId: Id; region: Rect; fit: ReferenceFit; sourceRect: Rect; cellPixels: { width: number; height: number }; image: PreviewImage }
-export interface RenderCompareData { mapId: Id; region: Rect; mode: "side" | "overlay" | "diff"; against: "reference" | "draftStart"; image: PreviewImage; mismatch: { cells: number; ratio: number; sample: Point[] }; mapRevision: Revision }
+export interface RenderCompareData {
+  mapId: Id; region: Rect; mode: "side" | "overlay" | "diff"; against: "reference" | "draftStart"; image: PreviewImage; mismatch: { cells: number; ratio: number; sample: Point[] }; mapRevision: Revision;
+  /** Picture placement used (reference only): explicit alignment or "none" (fit/sourceRect over the whole map; region crops). */
+  alignment?: ReferenceAlignment | "none"; cellPixels?: { width: number; height: number };
+  /** cells:true — per-cell perceptual error (mean Lab ΔE over the cell's pixels). */
+  stats?: { cells: number; meanErr: number; pctBelow: { deltaE5: number } };
+  worst?: CompareWorstCell[];
+  /** cells:true — heatmap panel inside the returned image (green ΔE<5 … red ≥20; worst cells numbered). */
+  heatmap?: { rect: Rect };
+}
 
 export interface VisionToolArguments {
   reference_add: ReferenceAddArgs; reference_view: ReferenceViewArgs;

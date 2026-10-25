@@ -68,7 +68,7 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   reference_add: "First step whenever the user gives a map picture (never trace it by eye). Load it: path (absolute .png/.jpg/.webp), imageBase64, or selectedReferenceToken. Pictures the user dropped are already in get_session.references.",
   reference_view: "Show a reference picture resampled onto the map grid with coordinates, to read features as cells.",
   reference_quantize: "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
-  render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; returns mismatching cells.",
+  render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; region crops the same cells of picture and map; returns mismatching cells. cells:true adds an error heatmap, stats and worst cells with alternatives for you to paint.",
   editor_ui: "Editor UI, not the map (no begin_edit): action state | configure {activeMapId, activeLayerId, tool, camera:{zoom,center,frame}, gridVisible, …} | layout {action reset|zone|show|hide|move, panel, zone} | application {locale, shortcuts} | commands {query} | run_command {commandId} | export_settings | configure_export {preferences}. args holds the action's arguments.",
 };
 

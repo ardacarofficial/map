@@ -148,6 +148,7 @@ export async function vision(tx: Transactions, name: VisionToolName, args: ToolA
       check((a.referenceId === undefined) !== (a.baseline === undefined), E.INVALID_ARGUMENT, "Give exactly one of referenceId or baseline", { nextAction: "Use referenceId to compare with the user's picture, or baseline:\"draftStart\" to see what your edit changed." });
       if (a.referenceId) known(tx, a.referenceId);
       if (a.baseline) check(tx.pending, E.INVALID_ARGUMENT, "baseline:\"draftStart\" needs a pending edit", { nextAction: "Call begin_edit first, or compare against a referenceId." });
+      check(!a.cells || a.referenceId !== undefined, E.INVALID_ARGUMENT, "cells:true compares against a picture", { nextAction: "Pass referenceId, or drop cells for a draftStart comparison." });
       const store = await storeFor(tx, a.mapId, call);
       if (a.region) rect(store, a.region);
       if (a.layerIds) for (const id of a.layerIds) layer(store, id);

@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "1f2e51b1aa8dd0b60e3546065cff8b415f2121c740705d16a654523cf17278fc",
+  "catalogueSha256": "154d2360719df9b860f5b355b39533605e3c663168a201cf96bdc22c288bb4cf",
   "tools": {
     "get_session": {
       "valid": [
@@ -2895,11 +2895,28 @@
           "mapId": "m",
           "baseline": "draftStart",
           "mode": "diff"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "cells": true,
+          "region": { "x": 0, "y": 0, "width": 8, "height": 8 },
+          "alignment": { "cellPx": 64, "scale": 4, "offsetX": -13, "offsetY": 7, "cols": 12, "rows": 8, "confidence": 0.9, "method": "auto" }
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": "none"
         }
       ],
       "invalid": [
         {
           "mapId": "m"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "r",
+          "alignment": { "cellPx": 0, "offsetX": 0, "offsetY": 0 }
         },
         {
           "mapId": "m",

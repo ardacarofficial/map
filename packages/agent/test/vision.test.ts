@@ -131,6 +131,8 @@ describe("reference tools", () => {
     });
     error(await h.run("reference_quantize", { referenceId: "ref-1", mapId: "map-1", layers: { ground: "collision" } }), "INVALID_ARGUMENT");
     error(await h.run("render_compare", { mapId: "map-1", baseline: "draftStart" }), "INVALID_ARGUMENT");
+    error(await h.run("render_compare", { mapId: "map-1", baseline: "draftStart", cells: true }), "INVALID_ARGUMENT");
+    error(await h.run("render_compare", { mapId: "map-1", referenceId: "ref-1", alignment: { cellPx: 0, offsetX: 0, offsetY: 0 } }), "INVALID_ARGUMENT");
     error(await h.run("reference_add", { path: "/tmp/notes.txt" }), "INVALID_ARGUMENT");
   });
 });
