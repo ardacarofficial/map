@@ -68,7 +68,7 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
         // Mirrored placements (place_stamp flipX/flipY) unless the art is symmetric that way.
         if (args.flips !== false) for (const flip of [1, 2] as const) {
           const mirrored = mirror(image, flip);
-          if (!sameArt(mirrored, image)) templates.push({ id: `${stamp.id}${FLIP_SEP}${flip}`, cellsW: stamp.width, cellsH: stamp.height, image: mirrored });
+          if (!sameArt(mirrored, image)) templates.push({ id: `${stamp.id}${FLIP_SEP}${flip}`, family: stamp.id, cellsW: stamp.width, cellsH: stamp.height, image: mirrored });
         }
         const pause = checkpoint(); if (pause) await pause;
       }

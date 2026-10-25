@@ -12,7 +12,7 @@
  * one in front. */
 import type { RgbaImage } from "@smap/core";
 
-export interface DetectTemplate { id: string; cellsW: number; cellsH: number; image: RgbaImage }
+export interface DetectTemplate { id: string; cellsW: number; cellsH: number; image: RgbaImage; /** Variants of one object (mirrors) share a family: one match per place. */ family?: string }
 export interface DetectInput {
   /** Map-pixel picture (cols*tileWidth × rows*tileHeight). */
   work: RgbaImage;
@@ -43,6 +43,8 @@ const FREE_CHROMA = 16, CHROMA_PENALTY = 2;
 const chromaPenalty = (r: number, g: number, b: number, mean: number) => CHROMA_PENALTY * Math.max(0, Math.max(Math.abs(r - mean), Math.abs(g - mean), Math.abs(b - mean)) - FREE_CHROMA) / 255;
 /** The worst share of pixels is ignored (clipped highlights, a stray overlap). */
 const TRIM = 0.1;
+/** Mean colour difference (RGB) between flat art and its holes for the art to count as present. */
+const FLAT_CONTRAST = 14;
 /** Share of a template's scored pixels that must be visible (not owned, inside the picture). */
 const MIN_VISIBLE = 0.5;
 const COARSE_PER_TEMPLATE = 4096, COARSE_POINTS = 192, GATE_POINTS = 24, PROBE_POINTS = 64, REFINE_POINTS = 256, COARSE_SLACK = 0.35, COARSE_STRUCTURE = 0.5, GATE_SLACK = 0.25, ROUNDS = 4;
@@ -52,7 +54,7 @@ const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi :
 /** Scored template pixels for one plane: index offsets (row stride of that plane), colours and luminance. */
 interface Points { o: Int32Array; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; w: number; h: number; textured: boolean }
 interface Plane { width: number; height: number; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; valid: Uint8Array }
-interface Prepared { id: string; cellsW: number; cellsH: number; width: number; height: number; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
+interface Prepared { id: string; family: string; cellsW: number; cellsH: number; width: number; height: number; holes: Points | null; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
 
 function textured(image: RgbaImage, xs: readonly number[], ys: readonly number[]): boolean {
   let s = 0, ss = 0;
@@ -254,6 +256,25 @@ function gateScore(work: Plane, pts: Points, px: number, py: number, blocked: In
   return result;
 }
 
+/** Alpha inverted (transparent pixels become the scored ones). */
+function invertAlpha(image: RgbaImage): RgbaImage {
+  const data = new Uint8Array(image.data);
+  for (let i = 3; i < data.length; i += 4) data[i] = 255 - data[i]!;
+  return { width: image.width, height: image.height, data };
+}
+/** Flat-coloured art (a net, a rope) only counts when the picture under it differs from the picture in its holes:
+ * otherwise plain ground of a similar colour would pass for it. */
+function standsOut(work: Plane, p: Prepared, px: number, py: number): boolean {
+  if (!p.holes) return true;
+  const mean = (pts: Points) => {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < pts.o.length; i++) { const k = (py * work.width + px) + pts.o[i]!; if (!work.valid[k]) continue; r += work.r[k]!; g += work.g[k]!; b += work.b[k]!; n++; }
+    return n ? [r / n, g / n, b / n] : null;
+  };
+  const art = mean(p.refine), behind = mean(p.holes);
+  return !art || !behind || Math.hypot(art[0]! - behind[0]!, art[1]! - behind[1]!, art[2]! - behind[2]!) >= FLAT_CONTRAST;
+}
+
 interface Candidate { t: number; px: number; py: number; score: number; visible: number; dirty: boolean; dead: boolean }
 
 export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
@@ -276,7 +297,9 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
     if (coarse.o.length < 6) coarse = points(small, 96, coarseWork.width, COARSE_POINTS);
     if (coarse.o.length < 6) coarse = null;
     const refine = points(t.image, threshold, work.width, REFINE_POINTS), probe = points(t.image, threshold, work.width, PROBE_POINTS), gate = points(t.image, threshold, work.width, GATE_POINTS);
-    prepared.push({ id: t.id, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
+    // Transparent pixels inside the box: flat-coloured art must stand out from what shows through them.
+    const holes = all.textured ? null : points(invertAlpha(t.image), 192, work.width, 256);
+    prepared.push({ id: t.id, family: t.family ?? t.id, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, holes: holes && holes.o.length >= 8 ? holes : null, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
   }
   const owner = new Int32Array(work.width * work.height).fill(-1);
   const coarseOwner = new Int32Array(coarseWork.width * coarseWork.height).fill(-1);
@@ -343,7 +366,7 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
         }
         if (bs < minScore - 0.1) continue;
         const exact = score(work, p.all, bx, by, owner);
-        if (exact.score >= minScore) found.push({ t, px: bx, py: by, score: exact.score, visible: exact.visible, dirty: false, dead: false });
+        if (exact.score >= minScore && standsOut(work, p, bx, by)) found.push({ t, px: bx, py: by, score: exact.score, visible: exact.visible, dirty: false, dead: false });
       }
     }
     return found;
@@ -351,6 +374,10 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
   const overlaps = (a: Candidate, b: Candidate) => {
     const pa = prepared[a.t]!, pb = prepared[b.t]!;
     return a.px < b.px + pb.width && b.px < a.px + pa.width && a.py < b.py + pb.height && b.py < a.py + pa.height;
+  };
+  const overlapArea = (a: Candidate, b: Candidate) => {
+    const pa = prepared[a.t]!, pb = prepared[b.t]!;
+    return Math.max(0, Math.min(a.px + pa.width, b.px + pb.width) - Math.max(a.px, b.px)) * Math.max(0, Math.min(a.py + pa.height, b.py + pb.height) - Math.max(a.py, b.py));
   };
   /** The accepted object owns the visible picture pixels it explains. */
   function own(c: Candidate, index: number): void {
@@ -394,6 +421,9 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
       accepted.push(best);
       changed.push({ x: best.px, y: best.py, w: prepared[best.t]!.width, h: prepared[best.t]!.height });
       added++;
+      // Another variant (mirror) of the same object over most of this one is the same find.
+      const family = prepared[best.t]!.family, area = prepared[best.t]!.width * prepared[best.t]!.height;
+      for (const c of candidates) if (!c.dead && prepared[c.t]!.family === family && overlapArea(c, best) * 2 > Math.min(area, prepared[c.t]!.width * prepared[c.t]!.height)) c.dead = true;
       for (const c of candidates) if (!c.dead && overlaps(c, best)) c.dirty = true;
     }
     if (!added) break;
