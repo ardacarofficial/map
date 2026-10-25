@@ -77,9 +77,11 @@ export type PaintGridArgs = MapWrite & { origin?: Point; legend?: GridLegend } &
 export interface TileRef { tilesetId: Id; tileId: number }
 export interface ReplaceTilesArgs { context: WriteContext; scope: "region" | "layer" | "map" | "world"; mapId?: Id; layerIds?: Id[]; region?: Rect; from: TileRef; to: TileRef | null }
 export interface ClearRegionArgs extends MapWrite { region?: Rect; layerIds?: Id[] }
-export interface PaintRectArgs extends LayerWrite { region: Rect; value: PaintValue; outline?: number }
+/** paint_rect/fill: {random:[...]} varies tiles per cell by hash(seed,x,y). */
+export type AreaPaintValue = PaintValue | { random: GridRandomTile[]; seed?: number };
+export interface PaintRectArgs extends LayerWrite { region: Rect; value: AreaPaintValue; outline?: number }
 export interface PaintLineArgs extends LayerWrite { from: Point; to: Point; value: PaintValue; width?: number }
-export interface FillArgs extends LayerWrite { start: Point; region?: Rect; value: PaintValue; maxCells?: number }
+export interface FillArgs extends LayerWrite { start: Point; region?: Rect; value: AreaPaintValue; maxCells?: number }
 export interface PrepareSmartSourceArgs extends MapWrite { source: SmartSource; force?: boolean }
 /** A prepared sourceId, or an inline source prepared (and reused) inside the same edit. Exactly one is required. */
 export type SmartSourceRef = { sourceId: Id; source?: never } | { source: SmartSource; sourceId?: never };
@@ -288,7 +290,7 @@ export interface ToolData extends VisionToolData {
   create_map: ChangedData & { map: CreatedMapInfo; layers: LayerInfo[] };
   resize_map: ChangedData & { map: MapInfo; cropped: { cells: number; entities: number } };
   render_preview: { mapId: Id; region: Rect; mapRevision: Revision; image: PreviewImage; warnings: AgentWarning[] };
-  validate_map: { valid: boolean; issueCount: number; byCode?: Record<string, number>; issues: ValidationIssue[]; moreIssues?: number; scannedCells: number };
+  validate_map: { valid: boolean; issueCount: number; byCode?: Record<string, number>; issues: ValidationIssue[]; moreIssues?: number; scannedCells: number; hints?: string[] };
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }

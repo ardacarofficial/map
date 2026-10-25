@@ -49,7 +49,7 @@ import {
   type ToolName,
 } from "../contracts";
 import { utf8ByteLength } from "../tags";
-import { clearRegion, paintGrid, replaceTiles, wholeMap } from "./grid";
+import { clearRegion, paintGrid, replaceTiles, valueAt, wholeMap } from "./grid";
 import { canonicalJson } from "../toolSchemas";
 import { linePoints, rectanglePoints } from "../geometry";
 import { layerProtectionKey, type Transactions, waitFor } from "../transactions";
@@ -309,15 +309,16 @@ export async function mutateRaw<N extends ToolName>(
     case "clear_region":
       return clearRegion(tx, args as ToolArguments["clear_region"]);
     case "paint_rect": {
-      const a = args as ToolArguments["paint_rect"];
-      rect(tx.store(a.mapId), a.region);
+      const a = args as ToolArguments["paint_rect"], store = tx.store(a.mapId);
+      rect(store, a.region);
+      const at = valueAt(store, layer(store, a.layerId), a.value, "value");
       return applyPaint(
         tx,
         a.mapId,
         a.layerId,
         rectanglePoints(a.region, a.outline).map((p) => ({
           ...p,
-          value: a.value,
+          value: at(p.x, p.y),
         })),
         L.mapArea,
       );
@@ -353,9 +354,12 @@ export async function mutateRaw<N extends ToolName>(
         E.OUT_OF_BOUNDS,
         "Fill seed outside search region",
       );
-      tileValue(store, a.value, layerKind(target));
+      const at = valueAt(store, target, a.value, "value");
+      if (a.value === null || !("random" in a.value)) tileValue(store, a.value, layerKind(target));
       const replacement =
-        a.value === null
+        a.value !== null && "random" in a.value
+          ? 0xffffffff
+          : a.value === null
           ? 0
           : "collision" in a.value
             ? a.value.collision
@@ -368,7 +372,7 @@ export async function mutateRaw<N extends ToolName>(
               );
       // A missing palette reference cannot equal any occupied target, including empty cell 0.
       const existing =
-        a.value && !("collision" in a.value)
+        a.value && !("collision" in a.value) && !("random" in a.value)
           ? store.document.palette.indexOf(
               a.value.tilesetId,
               a.value.tileId,
@@ -391,7 +395,7 @@ export async function mutateRaw<N extends ToolName>(
         tx,
         a.mapId,
         a.layerId,
-        points.map((p) => ({ ...p, value: a.value })),
+        points.map((p) => ({ ...p, value: at(p.x, p.y) })),
         L.mapArea,
       );
       return { ...result, filledCells: points.length };

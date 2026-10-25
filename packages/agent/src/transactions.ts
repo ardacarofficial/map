@@ -20,6 +20,7 @@ import {
   type TransactionState,
   type EditLease,
   type Id,
+  type Point,
   type PendingWorldGroup,
   type PreparedSmartSource,
   type TransactionSummary,
@@ -42,7 +43,7 @@ function sameToken(a: string, b: string): boolean {
 export function lifecycleNextAction(state: TransactionState | null, cause: LifecycleCause | undefined, isYours: boolean): string {
   if (state === null) return "No edit is pending: call begin_edit to start one.";
   if (state === "approved") return "The user approved this edit; call begin_edit to make further changes.";
-  if (state === "cancelled") return cause === "humanDiscarded" ? "The user discarded this edit; ask before redoing it, then call begin_edit." : "This edit was rolled back; call begin_edit to start again.";
+  if (state === "cancelled") return cause === "humanDiscarded" ? "The user discarded this edit: all its changes were undone and the map is as it was before begin_edit. Ask before redoing it, then call begin_edit." : "This edit was rolled back (the map is as before begin_edit); call begin_edit to start again.";
   if (state === "preparing" || state === "cancelling") return "The edit is changing state; call get_session in a moment.";
   if (state === "running") return isYours ? "Continue editing this draft." : "Another client is editing; call resume_edit with your resumeToken if this draft is yours, otherwise wait until the user approves or discards it.";
   return "The draft is waiting for the user (Onayla/Vazgeç). Call resume_edit with your resumeToken to keep editing it, or tell the user it awaits their review.";
@@ -162,6 +163,15 @@ export class Transactions {
   independent = false;
   /** Most recent transaction begun or resumed by each client, for lifecycle error details. */
   readonly lastByClient = new Map<Id, Id>();
+  /** reference_quantize grids by proposalId, so paint_grid {proposalId} paints them without the agent retyping rows. */
+  readonly proposals = new Map<Id, { mapId: Id; layers: { layerId: Id; origin: Point; rows: string[]; legend: Record<string, unknown> }[] }>();
+  private proposalCounter = 0;
+  keepProposal(mapId: Id, layers: { layerId: Id; origin: Point; rows: string[]; legend: Record<string, unknown> }[]): Id {
+    const id = `grid-${++this.proposalCounter}`;
+    this.proposals.set(id, { mapId, layers: layers.map(({ layerId, origin, rows, legend }) => ({ layerId, origin, rows, legend })) });
+    for (const old of this.proposals.keys()) if (this.proposals.size > 16) this.proposals.delete(old);
+    return id;
+  }
   interrupt: (() => void) | undefined;
   onExternal: (() => void) | undefined;
   private readonly subscriptions: Unsubscribe[] = [];
@@ -248,6 +258,10 @@ export class Transactions {
       awaitingHuman: SEALED.includes(summary.state),
       nextAction: lifecycleNextAction(summary.state, summary.cause, isYours),
     };
+  }
+  /** Without a pending draft: the same lifecycle error a write would get (keeps terminal cause). */
+  requirePending(call: Pick<AgentCallContext, "clientSessionId">, transactionId: Id | undefined): void {
+    if (!this.pending) this.gone(call, transactionId ?? this.lastByClient.get(call.clientSessionId));
   }
   /** Error for a transaction that is no longer pending (or never was). */
   private gone(call: Pick<AgentCallContext, "clientSessionId">, transactionId: Id | undefined): never {

@@ -22,6 +22,7 @@ import {
   type GridCell,
   type GridLayerOutput,
   type GridLegend,
+  type GridRandomTile,
   type Id,
   type PaintValue,
   type Point,
@@ -202,6 +203,14 @@ function resolveLegend(store: MapStore, legend: GridLegend, used: ReadonlySet<st
     }
   }
   return out;
+}
+
+/** paint_rect/fill value: one value, or {random:[...]} picked per cell by hash(seed,x,y) like a legend entry. */
+export function valueAt(store: MapStore, target: TileLayer, value: PaintValue | { random: GridRandomTile[]; seed?: number }, path: string): (x: number, y: number) => PaintValue {
+  if (value === null || !("random" in value)) return () => value;
+  const entry = resolveLegend(store, { r: value }, new Set(["r"]), layerKind(target), path).get("r");
+  if (!entry || entry.keep || !("random" in entry)) return fail(E.INVALID_ARGUMENT, `${path}: invalid random value`);
+  return (x, y) => entry.random[pickRandomTile(entry.candidates, entry.seed, x, y).tileId]!;
 }
 
 /** Validate and expand one C1 grid into explicit writes (keep cells are omitted). */

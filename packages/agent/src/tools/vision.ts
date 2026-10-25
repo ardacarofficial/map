@@ -1,7 +1,7 @@
 /** Agent side of the reference tools: validation, layer/legend/stamp resolution, host dispatch. */
 import { cellFlags, cellPaletteIndex, isGridLayer, isEntityLayer, isValidTileId } from "@smap/core";
 import { AgentErrorCode as E, type AgentCallContext, type Id, type Tile, type ToolArguments } from "../contracts";
-import type { AgentReferencePort, ColorLegendValue, ReferenceQuantizeRequest, ResolvedLegendEntry, ResolvedStampProbe, VisionToolName } from "../vision";
+import type { AgentReferencePort, LegendRandom, ReferenceQuantizeRequest, ResolvedLegendEntry, ResolvedStampProbe, VisionToolName } from "../vision";
 import { REFERENCE_LIMITS } from "../vision";
 import { type Transactions, waitFor } from "../transactions";
 import { check, rect } from "../validation";
@@ -30,6 +30,7 @@ function tile(tx: Transactions, value: Tile, where: string): Required<Tile> {
   return { tilesetId: value.tilesetId, tileId: value.tileId, flags: value.flags ?? 0 };
 }
 const cell = (t: Required<Tile>): ProposalCell => t.flags ? { tilesetId: t.tilesetId, tileId: t.tileId, flags: t.flags } : { tilesetId: t.tilesetId, tileId: t.tileId };
+const randomKey = (t: Tile) => `${t.tilesetId}\u0000${t.tileId}\u0000${t.flags ?? 0}`;
 const isTile = (v: unknown): v is Tile => typeof v === "object" && v !== null && "tilesetId" in v && "tileId" in v;
 
 /** A tag word resolves to the tile carrying it most specifically (fewest tags), then lowest id. */
@@ -40,7 +41,9 @@ function tagTile(tx: Transactions, word: string): Required<Tile> | undefined {
   hits.sort((a, b) => a.tags.length - b.tags.length || (a.tilesetId < b.tilesetId ? -1 : a.tilesetId > b.tilesetId ? 1 : a.tileId - b.tileId));
   return hits[0] ? { tilesetId: hits[0].tilesetId, tileId: hits[0].tileId, flags: 0 } : undefined;
 }
-function legendEntry(tx: Transactions, hex: string, value: ColorLegendValue): ResolvedLegendEntry {
+/** Legend value after {random} stand-ins were substituted. */
+type PlainLegendValue = Tile | null | "keep" | string | { stampId: Id; ground?: Tile | null } | { overlay: Tile; ground?: Tile | null };
+function legendEntry(tx: Transactions, hex: string, value: PlainLegendValue): ResolvedLegendEntry {
   const rgb = parseHexColor(hex);
   check(rgb, E.INVALID_ARGUMENT, "colorLegend keys must be #rgb or #rrggbb colours", { key: hex });
   const label = typeof value === "string" ? value : value === null ? "erase" : isTile(value) ? `${value.tilesetId}:${value.tileId}` : "stampId" in value ? value.stampId : `overlay ${value.overlay.tilesetId}:${value.overlay.tileId}`;
@@ -112,14 +115,33 @@ export async function vision(tx: Transactions, name: VisionToolName, args: ToolA
       const tilesets = tx.host.world.tilesets();
       if (a.candidates?.tilesetIds) for (const id of a.candidates.tilesetIds) check(tilesets.some(t => t.id === id), E.UNKNOWN_ID, "Unknown tileset in candidates", { tilesetId: id, validIds: tilesets.map(t => t.id) });
       if (a.candidates?.tiles) for (const t of a.candidates.tiles) tile(tx, t, "candidates.tiles");
-      const legend = Object.entries(a.colorLegend ?? {}).map(([hex, value]) => legendEntry(tx, hex, value));
+      // {random} legend values: the host matches with the heaviest tile; the proposal legend gets the random entry back.
+      const randoms = new Map<string, LegendRandom>();
+      const stand = (r: LegendRandom, hex: string): Tile => {
+        check(r.random.length > 0 && r.random.every(isTile), E.INVALID_ARGUMENT, `colorLegend ${hex}: random needs tiles`);
+        for (const t of r.random) tile(tx, t, `colorLegend ${hex}`);
+        const main = r.random.reduce((best, t) => (t.weight ?? 1) > (best.weight ?? 1) ? t : best);
+        const placeholder = { tilesetId: main.tilesetId, tileId: main.tileId, flags: main.flags ?? 0 };
+        randoms.set(randomKey(placeholder), r);
+        return placeholder;
+      };
+      const isRandom = (v: unknown): v is LegendRandom => typeof v === "object" && v !== null && "random" in v && Array.isArray((v as LegendRandom).random);
+      const legend = Object.entries(a.colorLegend ?? {}).map(([hex, value]) => legendEntry(tx, hex,
+        (isRandom(value) ? stand(value, hex)
+          : value && typeof value === "object" && "ground" in value && isRandom(value.ground) ? { ...value, ground: stand(value.ground, hex) }
+            : value) as PlainLegendValue));
       check(legend.length <= REFERENCE_LIMITS.legendColors, E.LIMIT_EXCEEDED, "At most 32 colorLegend entries");
       if (a.candidates?.stamps) for (const id of a.candidates.stamps) check(tx.host.world.stamps().some(s => s.id === id), E.UNKNOWN_ID, "Unknown stamp in candidates", { stampId: id });
       const stampIds = new Set([...(a.candidates?.stamps ?? tx.host.world.stamps().map(s => s.id)), ...legend.flatMap(l => l.stampId ? [l.stampId] : [])]);
       const probes = [...stampIds].flatMap(id => { const p = probe(tx, id); return p ? [p] : []; });
       const request: ReferenceQuantizeRequest = { ...a, region, legend, probes, groundLayer: { id: ground.id, name: ground.name }, overlayLayer: overlay ? { id: overlay.id, name: overlay.name } : null };
       const out = await waitFor(references.quantize(request, call), call.signal);
-      return { data: out.data, ...(out.image ? { image: out.image } : {}) };
+      if (randoms.size) for (const l of out.data.grid.layers) for (const [symbol, value] of Object.entries(l.legend))
+        if (isTile(value) && !("random" in value)) { const r = randoms.get(randomKey(value)); if (r) l.legend[symbol] = r; }
+      if (out.data.mode === "sketch" && !legend.length)
+        out.data.warnings = [...(out.data.warnings ?? []), "Sketch without colorLegend: each colour got its nearest flat tile. Call again with colorLegend mapping every palette hex to a tile, {random:[...]} for ground, or {stampId} for houses/trees/bridges."];
+      const proposalId = tx.keepProposal(out.data.mapId, out.data.grid.layers);
+      return { data: { proposalId, ...out.data }, ...(out.image ? { image: out.image } : {}) };
     }
     case "render_compare": {
       const a = args as ToolArguments["render_compare"];

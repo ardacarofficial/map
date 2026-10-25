@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDevMcp } from "../../editor/dev/devMcp";
 import { readFileSync } from "node:fs";
+const BUNDLED_TOOLS = (JSON.parse(readFileSync(new URL("../../agent/schema/tools.json", import.meta.url), "utf8")) as { tools: unknown[] }).tools.length;
 
 const cwd = fileURLToPath(new URL("../../../", import.meta.url));
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -39,10 +40,10 @@ test("stdio mirrors the HTTP catalogue and preserves structured results and imag
   await client.connect(transport);
   expect(client.getInstructions()).toBe(readFileSync(new URL("../../agent/schema/workflow.txt",import.meta.url),"utf8").trim());
   expect(client.getServerCapabilities()).toMatchObject({ resources: { subscribe: false }, prompts: { listChanged: false } });
-  expect((await client.listResources()).resources).toHaveLength(9);
+  expect((await client.listResources()).resources).toHaveLength(10);
   expect((await client.readResource({ uri: "harita://guide/overview" })).contents[0]).toMatchObject({ text: expect.stringContaining("# Harita") });
   expect((await client.getPrompt({ name: "harita-map-task", arguments: { task: "Design a village", topic: "collaboration" } })).messages[0]?.content).toMatchObject({ type: "text", text: expect.stringContaining("harita://guide/collaboration") });
-  expect((await client.listTools()).tools).toHaveLength(54);
+  expect((await client.listTools()).tools).toHaveLength(BUNDLED_TOOLS);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ structuredContent: { ok: true }, content: [{ type: "text", text: '{"ok":true}' }, { type: "image", data: "AAECA/8=" }] });
   await client.close();
   await expect.poll(() => host.sessionCount).toBe(0);
@@ -149,7 +150,7 @@ test("starts before the editor, serves the bundled catalogue, then connects lazi
   cleanup.push(() => client.close());
   await client.connect(transport);
   expect(client.getInstructions()).toContain("not reachable yet");
-  expect((await client.listTools()).tools).toHaveLength(54);
+  expect((await client.listTools()).tools).toHaveLength(BUNDLED_TOOLS);
   expect(await client.callTool({ name: "get_session", arguments: {} })).toMatchObject({ isError: true, structuredContent: { code: "EDITOR_UNAVAILABLE" } });
   expect(stderr).toContain("Settings > AI");
   const host = await startDevMcp({ port, token: "test-token" });
@@ -222,7 +223,7 @@ test.each(["env", "file"])("credentials can come from a custom %s source", async
   const client = new Client({ name: "credential-test", version: "1" });
   cleanup.push(() => client.close());
   await client.connect(transport);
-  expect((await client.listTools()).tools).toHaveLength(54);
+  expect((await client.listTools()).tools).toHaveLength(BUNDLED_TOOLS);
 });
 
 test("a tool-only upstream does not gain resource or prompt capabilities in the proxy", async () => {

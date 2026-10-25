@@ -55,6 +55,7 @@ const NEXT_ACTION: Partial<Record<E, string>> = {
   [E.IDEMPOTENCY_CONFLICT]: "Use a new idempotencyKey for a different payload; reuse a key only to retry the identical call.",
   [E.UNKNOWN_ID]: "Use an ID from get_session, get_map_info, list_tilesets or list_stamps.",
   [E.LIMIT_EXCEEDED]: "Split the work into smaller calls.",
+  [E.LAYER_KIND]: "Use a layer of the needed kind from get_map_info; entities need an entity layer (edit_layer {action:'create', name, kind:'entity'}).",
   [E.EDITOR_UNAVAILABLE]: "The editor is busy or not connected; wait a moment and retry.",
   [E.INTERNAL_ERROR]: "Call get_session to inspect the draft; tell the user if this repeats.",
 };
@@ -147,13 +148,42 @@ export function createAgentApi(host: AgentHost): AgentApi {
     if (!tool || name === "join_edit") return raw;
     const schema = tool.inputSchema as Record<string, unknown>;
     const branches = [schema, ...((schema.oneOf ?? schema.anyOf ?? []) as Record<string, unknown>[])];
-    const props: Record<string, Record<string, unknown>> = Object.assign({}, ...branches.map(b => (b.properties ?? {}) as Record<string, Record<string, unknown>>));
+    // Branch-only "required" stubs ({}) never hide the real property schema.
+    const props: Record<string, Record<string, unknown>> = {};
+    for (const b of branches) for (const [key, value] of Object.entries((b.properties ?? {}) as Record<string, Record<string, unknown>>))
+      if (!props[key] || !Object.keys(props[key]!).length) props[key] = value;
     const required = new Set(branches.flatMap(b => (b.required ?? []) as string[]));
     const input: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     if ("tile" in input && !props.tile && props.value && input.value === undefined) { input.value = input.tile; delete input.tile; }
+    if ("rect" in input && !props.rect && props.region && input.region === undefined) { input.region = input.rect; delete input.rect; }
+    // Tools that take layerIds also accept one layerId / layerName (names resolve below).
+    if (props.layerIds && !props.layerId && input.layerIds === undefined)
+      for (const key of ["layerId", "layerName"]) if (typeof input[key] === "string") { input.layerIds = [input[key]]; delete input[key]; break; }
+    if (input.value === "null" && props.value) input.value = null;
     for (const [key, value] of Object.entries(input))
       if (typeof value === "string" && /^\s*[[{]/.test(value) && props[key] && props[key]!.type !== "string")
         try { input[key] = JSON.parse(value); } catch { /* strict validation explains it */ }
+    // [x,y] pairs where the schema wants {x,y}: at/start/from/to/origin and point lists (draw_path points, smart_brush cells).
+    const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(n => typeof n === "number") ? { x: v[0], y: v[1] } : v;
+    const isPoint = (s: unknown) => (s as { $ref?: string } | undefined)?.$ref === "#/$defs/Point";
+    for (const [key, value] of Object.entries(input)) {
+      const prop = props[key];
+      if (isPoint(prop)) input[key] = pair(value);
+      else if (Array.isArray(value) && isPoint(prop?.items)) input[key] = value.map(pair);
+    }
+    if (name === "draw_path") { input.kind ??= "path"; if (input.kind === "road") input.kind = "path"; }
+    if (name === "paint_grid" && typeof input.proposalId === "string") {
+      const proposal = tx.proposals.get(input.proposalId);
+      if (!proposal) throw new AgentError(E.UNKNOWN_ID, `proposalId ${input.proposalId} is unknown or expired`, {
+        validIds: [...tx.proposals.keys()], nextAction: "Call reference_quantize again and pass its proposalId." });
+      input.mapId ??= proposal.mapId;
+      if (input.rows === undefined && input.layers === undefined) input.layers = proposal.layers;
+      delete input.proposalId;
+    }
+    // Quantizer layers copied verbatim carry counts/layerName: keep only what paint_grid reads.
+    if (name === "paint_grid" && Array.isArray(input.layers))
+      input.layers = input.layers.map(l => l !== null && typeof l === "object" && ("counts" in l || ("layerId" in l && "layerName" in l))
+        ? Object.fromEntries(Object.entries(l).filter(([k]) => k !== "counts" && !(k === "layerName" && "layerId" in l))) : l);
     if (name === "paint_cells" && Array.isArray(input.cells) && input.value !== undefined && input.points === undefined
       && input.cells.every(c => Array.isArray(c) || (c !== null && typeof c === "object" && !("value" in c)))) {
       input.points = input.cells.map(c => Array.isArray(c) ? c : [(c as { x: unknown }).x, (c as { y: unknown }).y]);
@@ -172,6 +202,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
         });
     }
     const store = typeof input.mapId === "string" ? tx.pending?.participants.get(input.mapId)?.store : undefined;
+    // A layer write without any draft: the lifecycle error ("begin_edit first"), not a schema error about layerName.
+    if (!tx.pending && writes.has(name as ToolName) && typeof input.layerName === "string" && props.layerId && !props.layerName)
+      tx.requirePending(call, (input.context as { transactionId?: string } | undefined)?.transactionId);
     if (store && props.layerId && !props.layerName && typeof input.layerName === "string" && input.layerId === undefined) {
       input.layerId = resolveLayer(store, { layerName: input.layerName }, "layerName").id;
       delete input.layerName;
@@ -188,8 +221,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
     if (name === "join_edit" || EDITOR_CONTROL_TOOLS.includes(name as EditorControlToolName)) return raw;
     const tool = TOOL_DEFINITIONS.find(t => t.name === name);
-    const properties = tool?.inputSchema.properties as Record<string, unknown> | undefined;
-    if (!tool || !properties || !("context" in properties)) return raw;
+    // Tools like edit_layer/edit_entity declare context only inside their oneOf branches.
+    const schema = tool?.inputSchema as Record<string, unknown> | undefined;
+    const branches = schema ? [schema, ...((schema.oneOf ?? schema.anyOf ?? []) as Record<string, unknown>[])] : [];
+    if (!tool || !branches.some(b => b.properties && "context" in (b.properties as object))) return raw;
     const defs = (tool.inputSchema.$defs ?? {}) as Record<string, unknown>;
     const input = raw as Record<string, unknown>;
     const context: Record<string, unknown> = { ...((input.context as Record<string, unknown> | undefined) ?? {}) };

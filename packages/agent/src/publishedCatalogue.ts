@@ -35,9 +35,9 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   resume_edit: "Take your draft back after a reconnect, restart, Durdur or finish_edit (transactionId + resumeToken). Earlier work is kept.",
   paint_grid: "Paint any area of varied tiles in one call: rows (equal-length strings, one char per cell from origin, default 0,0) + legend char → tile | null (erase) | 'keep' | {random:[{tilesetId,tileId,weight?}],seed?} | {collision:n}. Space keeps a cell. layers:[{layerName|layerId,origin?,rows,legend?}] paints several layers at once. ≤16384 cells per layer.",
   paint_cells: "Sparse cells: points:[[x,y],...] with one value (cheapest scatter), or cells:[{x,y,value}]. value = tile, null (erase) or {collision:n}.",
-  paint_rect: "Fill a region with one value (outline:n for a frame). Any size.",
+  paint_rect: "Fill a region with one value, or {random:[{tilesetId,tileId,weight?},...]} for natural ground (e.g. whole-map grass with 2–3 variants; stable per cell). outline:n for a frame. Any size.",
   paint_line: "Straight line from→to with one value; width 1–16.",
-  fill: "Flood fill from start (4-neighbour, same original value), optionally inside region.",
+  fill: "Flood fill from start (4-neighbour, same original value), optionally inside region. value may be {random:[...]} like paint_rect.",
   replace_tiles: "Replace one tile with another (to:null erases) keeping flips; scope region|layer|map|world. Returns the count.",
   clear_region: "Erase cells in region (default whole map) on layerIds or all visible unlocked tile/collision layers.",
   prepare_smart_source: "Optional: prepare smart art once and get a sourceId. draw_path/smart_brush accept source directly.",
@@ -65,9 +65,9 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   get_world_settings: "World defaults for new maps (tile size, size, layer template, background).",
   configure_world: "Change world defaults for new maps inside your edit.",
   join_edit: "Join a shared (collaborative) draft claiming map/layer rectangles; then write with context.expectedMemberRevision.",
-  reference_add: "Load a reference picture: path (absolute .png/.jpg/.webp), imageBase64, or selectedReferenceToken. Pictures the user dropped are already in get_session.references.",
+  reference_add: "First step whenever the user gives a map picture (never trace it by eye). Load it: path (absolute .png/.jpg/.webp), imageBase64, or selectedReferenceToken. Pictures the user dropped are already in get_session.references.",
   reference_view: "Show a reference picture resampled onto the map grid with coordinates, to read features as cells.",
-  reference_quantize: "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
+  reference_quantize: "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
   render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; returns mismatching cells.",
   editor_ui: "Editor UI, not the map (no begin_edit): action state | configure {activeMapId, activeLayerId, tool, camera:{zoom,center,frame}, gridVisible, …} | layout {action reset|zone|show|hide|move, panel, zone} | application {locale, shortcuts} | commands {query} | run_command {commandId} | export_settings | configure_export {preferences}. args holds the action's arguments.",
 };
@@ -178,6 +178,7 @@ function publish(tool: AgentToolDefinition): AgentToolDefinition {
   // Repeated value unions are described once (legend values in the tool description).
   if (tool.name === "paint_grid" && isObject(properties.layers) && isObject(properties.layers.items) && isObject(properties.layers.items.properties))
     properties.layers = { ...properties.layers, items: { ...properties.layers.items, properties: { ...properties.layers.items.properties, legend: { type: "object", description: "Same values as legend; merged over it." } } } };
+  if (tool.name === "paint_grid") properties.proposalId = { type: "string", description: "reference_quantize's proposalId: paints its grid.layers unchanged (no rows needed)." };
   if (tool.name === "reference_quantize") properties.colorLegend = { type: "object", description: "'#rrggbb' → tile | tag word | {stampId,ground?} | {overlay,ground?} | null | 'keep'" };
   for (const [name, note] of Object.entries(PROPERTY_NOTES[tool.name] ?? {}))
     if (isObject(properties[name])) properties[name] = { ...(properties[name] as Schema), description: note };

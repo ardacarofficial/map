@@ -784,7 +784,7 @@ const DEFINITIONS = [
   {
     "name": "paint_rect",
     "title": "Paint Rect",
-    "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), or collision value on a collision layer. Uniform: any size up to the whole map in one call (only the edit's total cell budget applies); full region must fit, protected layers reject. Requires begin_edit; context is optional. Finish with finish_edit for human review.",
+    "description": "Fill a half-open map-cell region {x,y,width,height} on explicit mapId/layerId with one value; optional outline 1–16 cells, default 0 fills. value is a tile reference, null (erase), collision value on a collision layer, or {random:[{tilesetId,tileId,flags?,weight?}],seed?} (deterministic per cell by hash(seed,x,y); seed defaults to the map seed). Uniform: any size up to the whole map in one call (only the edit's total cell budget applies); full region must fit, protected layers reject. Requires begin_edit; context is optional. Finish with finish_edit for human review.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -878,7 +878,7 @@ const DEFINITIONS = [
   {
     "name": "fill",
     "title": "Fill",
-    "description": "Four-neighbor flood fill from start (map cells) inside region (half-open; defaults to the whole map). Matches the full original value including orientation. Optional maxCells guard rejects before any mutation when exceeded; otherwise only the edit's total cell budget applies. Explicit mapId/layerId and compatible value required. Requires begin_edit; context is optional.",
+    "description": "Four-neighbor flood fill from start (map cells) inside region (half-open; defaults to the whole map). Matches the full original value including orientation. Optional maxCells guard rejects before any mutation when exceeded; otherwise only the edit's total cell budget applies. Explicit mapId/layerId and compatible value required; value may be {random:[...],seed?} like paint_rect. Requires begin_edit; context is optional.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1903,8 +1903,16 @@ const editEntitySchema = { oneOf: [
 ] };
 const claimSchema=objectSchema({mapId:ref("Id"),layerIds:{type:"array",minItems:1,maxItems:8,uniqueItems:true,items:ref("Id")},region:ref("Rect")});
 const claimsSchema:Schema={type:"array",minItems:1,maxItems:16,items:claimSchema};
+/** paint_rect/fill: natural variation in one call, picked per cell by hash(seed,x,y). */
+const randomAreaValue: Schema = objectSchema({
+  random: { type: "array", minItems: 1, maxItems: 64, items: objectSchema({ tilesetId: ref("Id"), tileId: { type: "integer", minimum: 0, maximum: 4294967295 },
+    flags: { type: "integer", minimum: 0, maximum: 7 }, weight: { type: "number", minimum: 0, maximum: 1000000 } }, ["tilesetId", "tileId"]) },
+  seed: { type: "integer", minimum: 0, maximum: 4294967295 },
+}, ["random"]);
 const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
   let schema: Schema = tool.inputSchema;
+  if (tool.name === "paint_rect" || tool.name === "fill")
+    schema = { ...schema, properties: { ...(schema.properties as Record<string, JsonValue>), value: { oneOf: [ref("PaintValue"), randomAreaValue] } } };
   if(tool.name==="begin_edit")schema={...schema,properties:{...(schema.properties as Record<string,JsonValue>),collaboration:objectSchema({mode:{const:"regions"},claims:claimsSchema},["mode"])}};
   if (tool.name === "smart_brush" || tool.name === "draw_path") {
     // Inline source (prepared once per edit and reused) or an explicit prepared sourceId; exactly one.
@@ -2096,8 +2104,9 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
   const legendValue: Schema = { anyOf: [
     ref("Tile"), { type: "null" }, { const: "keep" },
     { type: "string", minLength: 1, maxLength: 48, description: "AI tag word such as \"su\" or \"water\"." },
-    object({ stampId: ref("Id"), ground: { anyOf: [ref("Tile"), { type: "null" }] } }, ["stampId"]),
-    object({ overlay: ref("Tile"), ground: { anyOf: [ref("Tile"), { type: "null" }] } }, ["overlay"]),
+    randomAreaValue,
+    object({ stampId: ref("Id"), ground: { anyOf: [ref("Tile"), { type: "null" }, randomAreaValue] } }, ["stampId"]),
+    object({ overlay: ref("Tile"), ground: { anyOf: [ref("Tile"), { type: "null" }, randomAreaValue] } }, ["overlay"]),
   ] };
 
   const VISION_DEFINITIONS: readonly AgentToolDefinition[] = [
@@ -2109,7 +2118,7 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
       "Show a reference picture resampled onto the map cell grid (same gutters, coordinates and scale as render_preview), so picture features can be read as map cells. fit:stretch (default) or contain; optional region crops map cells; sourceRect overrides the automatic trim of dark gutters. Writes nothing.",
       object({ ...optionalContext, ...mapping, grid: { type: "boolean", default: true }, coordinates: { type: "boolean", default: true }, zoom: { type: "integer", minimum: 1, maximum: 8 }, maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["referenceId", "mapId"])),
     tool("reference_quantize", "Quantize Reference To Tiles",
-      "Turn a reference picture into a ready-to-paint tile grid proposal. Each map cell gets the nearest candidate tile by colour and structure (mode render: screenshots/renders, also scaled or blurred) or by dominant colour (mode sketch: flat-colour drawings; auto picks). Render mode also proposes the overlay layer (transparent tiles over ground) and reports stamp placements it recognises. Returns grid.layers in paint_grid format (rows + legend per layer; space = keep), per-cell confidence summary with low-confidence cells, and a preview PNG of the proposal. For sketches, pass colorLegend {\"#rrggbb\": Tile | tag word | {stampId} | {overlay} | null | \"keep\"}; without it every colour gets its closest tile and data.palette lists the colours found. candidates limits tilesets/tiles/stamps. layers.ground/overlay choose target layers (overlay:null = ground only). Writes nothing: paint the grid with paint_grid, place stamps with place_stamp, then render_compare.",
+      "Turn a reference picture into a ready-to-paint tile grid proposal. Each map cell gets the nearest candidate tile by colour and structure (mode render: screenshots/renders, also scaled or blurred) or by dominant colour (mode sketch: flat-colour drawings; auto picks). Render mode also proposes the overlay layer (transparent tiles over ground) and reports stamp placements it recognises. Returns grid.layers in paint_grid format (rows + legend per layer; space = keep), per-cell confidence summary with low-confidence cells, and a preview PNG of the proposal. For sketches, pass colorLegend {\"#rrggbb\": Tile | {random:[...]} (varied ground, kept as a random legend entry) | tag word | {stampId,ground?} | {overlay,ground?} | null | \"keep\"}; without it every colour gets its closest tile and data.palette lists the colours found. candidates limits tilesets/tiles/stamps. layers.ground/overlay choose target layers (overlay:null = ground only). Writes nothing: paint the grid with paint_grid, place stamps with place_stamp, then render_compare.",
       object({ ...optionalContext, ...mapping,
         mode: { type: "string", enum: ["auto", "render", "sketch"], default: "auto" },
         candidates: object({ tilesetIds: ids(32), tiles: { type: "array", minItems: 1, maxItems: 1024, items: ref("Tile") }, stamps: { type: "array", maxItems: 128, uniqueItems: true, items: ref("Id") } }, []),

@@ -716,6 +716,7 @@ async function validateMap(
     if (inspection) await inspection;
     scannedCells++;
   }
+  const hints = a.region ? [] : designHints(store);
   return {
     valid: issueCount === 0,
     issueCount,
@@ -723,5 +724,50 @@ async function validateMap(
     issues,
     ...(issueCount > issues.length ? { moreIssues: issueCount - issues.length } : {}),
     scannedCells,
+    ...(hints.length ? { hints } : {}),
   };
+}
+
+/** Deterministic craft hints (never errors): flat one-tile ground, holes in the ground, an almost empty map. */
+function designHints(store: MapStore): string[] {
+  const { width, height } = store.document.map, area = width * height;
+  const layers = store.document.layers.filter(l => !isEntityLayer(l) && !isGridLayer(l) && l.visible);
+  const ground = layers[0];
+  if (!ground || isEntityLayer(ground) || area < 256) return [];
+  const counts = new Map<number, number>();
+  let filled = 0, firstGap: { x: number; y: number } | undefined;
+  const occupied = new Uint8Array(area);
+  for (const chunk of ground.chunks())
+    for (let i = 0; i < chunk.data.length; i++) {
+      const cell = chunk.data[i]!, x = chunk.cx * 32 + (i % 32), y = chunk.cy * 32 + Math.floor(i / 32);
+      if (!cell || x >= width || y >= height) continue;
+      filled++; occupied[y * width + x] = 1;
+      counts.set(cell, (counts.get(cell) ?? 0) + 1);
+    }
+  const hints: string[] = [];
+  if (filled >= area / 2 && filled < area) {
+    const gap = occupied.indexOf(0);
+    firstGap = { x: gap % width, y: Math.floor(gap / width) };
+    hints.push(`GROUND_GAPS: ${area - filled} empty cells in bottom layer '${ground.name}' (first at ${firstGap.x},${firstGap.y}); fill them.`);
+  }
+  const [topCell, topCount] = [...counts].sort((p, q) => q[1] - p[1])[0] ?? [0, 0];
+  if (topCount >= area * 0.9) {
+    const ref = store.document.palette.get(cellPaletteIndex(topCell));
+    hints.push(`FLAT_GROUND: ${Math.round(100 * topCount / area)}% of '${ground.name}' is one tile${ref ? ` (${ref.tilesetId}:${ref.tileId})` : ""}; looks flat. Repaint it with paint_rect value {random:[that tile weight 8, 1–2 similar tiles weight 1–2]} before roads and water.`);
+  }
+  if (filled >= area / 2) {
+    let detail = 0;
+    const upper = new Uint8Array(area);
+    for (const l of layers.slice(1)) {
+      if (isEntityLayer(l)) continue;
+      for (const chunk of l.chunks())
+        for (let i = 0; i < chunk.data.length; i++) {
+          const x = chunk.cx * 32 + (i % 32), y = chunk.cy * 32 + Math.floor(i / 32);
+          if (chunk.data[i] && x < width && y < height && !upper[y * width + x]) { upper[y * width + x] = 1; detail++; }
+        }
+    }
+    if (layers.length > 1 && detail < area * 0.08)
+      hints.push(`SPARSE: objects cover ${Math.round(100 * detail / area)}% of the map; hand-made maps use ~10–20%: tree clumps and edge forests, bushes/flowers/rocks near paths and houses (paint_cells points), fenced gardens.`);
+  }
+  return hints;
 }

@@ -19,7 +19,9 @@ export interface ReferenceAddArgs { context?: ReadContext; path?: string; imageB
 interface ReferenceMapping { referenceId: Id; mapId: Id; region?: Rect; fit?: ReferenceFit; sourceRect?: Rect }
 export interface ReferenceViewArgs extends ReferenceMapping { context?: ReadContext; grid?: boolean; coordinates?: boolean; maxSide?: number; zoom?: number }
 /** Colour legend value: a C1 cell, a tag word, a stamp or an overlay tile. */
-export type ColorLegendValue = Tile | null | "keep" | string | { stampId: Id; ground?: Tile | null } | { overlay: Tile; ground?: Tile | null };
+/** {random} keeps natural variation: the proposal legend gets the same random entry (hash(seed,x,y) when painted). */
+export type LegendRandom = { random: (Tile & { weight?: number })[]; seed?: number };
+export type ColorLegendValue = Tile | null | "keep" | string | LegendRandom | { stampId: Id; ground?: Tile | null | LegendRandom } | { overlay: Tile; ground?: Tile | null | LegendRandom };
 export interface ReferenceQuantizeArgs extends ReferenceMapping {
   context?: ReadContext;
   mode?: "auto" | QuantizeMode;
@@ -30,8 +32,10 @@ export interface ReferenceQuantizeArgs extends ReferenceMapping {
 }
 export interface RenderCompareArgs { context?: ReadContext; mapId: Id; referenceId?: Id; baseline?: "draftStart"; mode?: "side" | "overlay" | "diff"; region?: Rect; fit?: ReferenceFit; sourceRect?: Rect; maxSide?: number; layerIds?: Id[] }
 
-export interface QuantizeLayerProposal { layerId: Id; layerName: string; origin: Point; rows: string[]; legend: Record<string, ProposalCell>; counts: Record<string, number> }
+export interface QuantizeLayerProposal { layerId: Id; layerName: string; origin: Point; rows: string[]; legend: Record<string, ProposalCell | LegendRandom>; counts: Record<string, number> }
 export interface ReferenceQuantizeData {
+  /** paint_grid {proposalId} paints grid.layers unchanged (no retyping). */
+  proposalId?: Id;
   mapId: Id; referenceId: Id; region: Rect; mode: QuantizeMode; fit: ReferenceFit; sourceRect: Rect;
   /** Reference pixels per map cell. */
   cellPixels: { width: number; height: number };

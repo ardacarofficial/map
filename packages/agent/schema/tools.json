@@ -483,7 +483,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Fill a region with one value (outline:n for a frame). Any size.",
+      "description": "Fill a region with one value, or {random:[{tilesetId,tileId,weight?},...]} for natural ground (e.g. whole-map grass with 2–3 variants; stable per cell). outline:n for a frame. Any size.",
       "inputSchema": {
         "properties": {
           "layerId": {
@@ -524,34 +524,73 @@
           "value": {
             "anyOf": [
               {
-                "type": "null"
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "properties": {
+                      "flags": {
+                        "type": "integer"
+                      },
+                      "tileId": {
+                        "type": "integer"
+                      },
+                      "tilesetId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "tilesetId",
+                      "tileId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "collision": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "collision"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
               {
                 "properties": {
-                  "flags": {
-                    "type": "integer"
+                  "random": {
+                    "items": {
+                      "properties": {
+                        "flags": {
+                          "type": "integer"
+                        },
+                        "tileId": {
+                          "type": "integer"
+                        },
+                        "tilesetId": {
+                          "type": "string"
+                        },
+                        "weight": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "tilesetId",
+                        "tileId"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
-                  "tileId": {
+                  "seed": {
                     "type": "integer"
-                  },
-                  "tilesetId": {
-                    "type": "string"
                   }
                 },
                 "required": [
-                  "tilesetId",
-                  "tileId"
-                ],
-                "type": "object"
-              },
-              {
-                "properties": {
-                  "collision": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "collision"
+                  "random"
                 ],
                 "type": "object"
               }
@@ -671,7 +710,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Flood fill from start (4-neighbour, same original value), optionally inside region.",
+      "description": "Flood fill from start (4-neighbour, same original value), optionally inside region. value may be {random:[...]} like paint_rect.",
       "inputSchema": {
         "properties": {
           "layerId": {
@@ -727,34 +766,73 @@
           "value": {
             "anyOf": [
               {
-                "type": "null"
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "properties": {
+                      "flags": {
+                        "type": "integer"
+                      },
+                      "tileId": {
+                        "type": "integer"
+                      },
+                      "tilesetId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "tilesetId",
+                      "tileId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "collision": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "collision"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
               {
                 "properties": {
-                  "flags": {
-                    "type": "integer"
+                  "random": {
+                    "items": {
+                      "properties": {
+                        "flags": {
+                          "type": "integer"
+                        },
+                        "tileId": {
+                          "type": "integer"
+                        },
+                        "tilesetId": {
+                          "type": "string"
+                        },
+                        "weight": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "tilesetId",
+                        "tileId"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
-                  "tileId": {
+                  "seed": {
                     "type": "integer"
-                  },
-                  "tilesetId": {
-                    "type": "string"
                   }
                 },
                 "required": [
-                  "tilesetId",
-                  "tileId"
-                ],
-                "type": "object"
-              },
-              {
-                "properties": {
-                  "collision": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "collision"
+                  "random"
                 ],
                 "type": "object"
               }
@@ -1901,6 +1979,10 @@
             ],
             "type": "object"
           },
+          "proposalId": {
+            "description": "reference_quantize's proposalId: paints its grid.layers unchanged (no rows needed).",
+            "type": "string"
+          },
           "rows": {
             "description": "One string per map row; all the same length.",
             "items": {
@@ -2614,7 +2696,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Load a reference picture: path (absolute .png/.jpg/.webp), imageBase64, or selectedReferenceToken. Pictures the user dropped are already in get_session.references.",
+      "description": "First step whenever the user gives a map picture (never trace it by eye). Load it: path (absolute .png/.jpg/.webp), imageBase64, or selectedReferenceToken. Pictures the user dropped are already in get_session.references.",
       "inputSchema": {
         "properties": {
           "imageBase64": {
@@ -2728,7 +2810,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
+      "description": "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
       "inputSchema": {
         "properties": {
           "candidates": {
