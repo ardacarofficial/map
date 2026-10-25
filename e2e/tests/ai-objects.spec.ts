@@ -75,12 +75,19 @@ test("suggested stamps are created on approval and found in a reference picture,
     const detected = success(raw).data;
     expect(raw.content.some(block => block.type === "image")).toBe(true);
     expect(detected.matches.map(m => `${m.stampId === cartId ? "cart" : "crate"}@${m.x},${m.y},${m.pixelResidual.dy}`).sort()).toEqual(["cart@3,2,0", "crate@8,4,6", "crate@8,5,0"]);
-    expect(detected.positionsByStamp[crateId]!.sort()).toEqual([[8, 4], [8, 5]]);
+    // The crate half on top of the other is in front: a stacked entry, placed last on the layer above.
+    expect(detected.positionsByStamp[crateId]).toEqual([[8, 5]]);
+    expect(detected.stacked?.map(g => [g.stampId, g.positions])).toEqual([[crateId, [[8, 4]]]]);
 
     for (const [stampId, sourceLayerId] of [[cartId, cart.created!.sourceLayerIds![0]!], [crateId, crate.created!.sourceLayerIds![0]!]] as const) {
       // positions (many copies in one call) is schema-only; the typed args name the single-copy form.
       const args = { context, mapId, stampId, positions: detected.positionsByStamp[stampId]!, layerMapping: [{ sourceLayerId, targetLayerId: layerId }] } as unknown as ToolArguments["place_stamp"];
       const placed = success(await client.callTool("place_stamp", args));
+      expect(placed.changed).toBeGreaterThan(0);
+      context = { ...context, expectedRevision: placed.revision, idempotencyKey: randomUUID() };
+    }
+    for (const entry of detected.stacked ?? []) {
+      const placed = success(await client.callTool("place_stamp", { context, mapId, ...entry, layerMapping: entry.layerMapping ?? [{ sourceLayerId: crate.created!.sourceLayerIds![0]!, targetLayerId: layerId }] } as unknown as ToolArguments["place_stamp"]));
       expect(placed.changed).toBeGreaterThan(0);
       context = { ...context, expectedRevision: placed.revision, idempotencyKey: randomUUID() };
     }
