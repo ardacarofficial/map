@@ -226,7 +226,9 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
           call.signal.throwIfAborted();
           const message = error instanceof Error ? error.message : String(error);
           const cause = /not ?found|enoent|no such/i.test(message) ? "notFound" : /large|size/i.test(message) ? "fileTooLarge" : /type|extension/i.test(message) ? "unsupportedType" : "readFailed";
-          return fail(cause === "fileTooLarge" ? AgentErrorCode.LIMIT_EXCEEDED : AgentErrorCode.INVALID_ARGUMENT, `Could not read ${args.path}`, { cause, nextAction: "Check the absolute path, or ask the user to drop the picture onto the AI activity panel." });
+          return fail(cause === "fileTooLarge" ? AgentErrorCode.LIMIT_EXCEEDED : AgentErrorCode.INVALID_ARGUMENT, `Could not read ${args.path}`, { cause, nextAction: cause === "notFound"
+            ? "No file exists at this exact path. Compare it segment by segment with your working directory (a '/' written as '-' is a common slip), or ask the user to drop the picture onto the AI activity panel."
+            : "Check the absolute path, or ask the user to drop the picture onto the AI activity panel." });
         }
       } else {
         const value = args.imageBase64!.replace(/^data:image\/[a-z]+;base64,/, "");
