@@ -101,6 +101,24 @@ describe("render_compare region crop", () => {
     expect(good[1]!, JSON.stringify({ good, rect, contentRect, cellSize })).toBeGreaterThan(good[0]!);
     expect(bad[0]!).toBeGreaterThan(bad[1]!);
   });
+  it("cells:true normalizes light: a lit picture of the right tiles has no worst cells, wrong tiles still rank", async () => {
+    const { art, port, paint } = setup();
+    const lit = decodeWorkingSourcePng(picture(art, 3));
+    // Warm glow over the right half: brighter and redder.
+    for (let y = 0; y < lit.height; y++) for (let x = lit.width / 2; x < lit.width; x++) {
+      const p = (y * lit.width + x) * 4;
+      lit.data[p] = Math.min(255, Math.round(lit.data[p]! * 1.35)); lit.data[p + 1] = Math.min(255, Math.round(lit.data[p + 1]! * 1.2)); lit.data[p + 2] = Math.min(255, Math.round(lit.data[p + 2]! * 1.1));
+    }
+    const ref = await port.add({ imageBase64: base64(encodeRgbaPng(lit.width, lit.height, new Uint8Array(lit.data))) }, call);
+    paint(LAYOUT);
+    const right = await port.compare({ mapId: "m", referenceId: ref.referenceId, cells: true, alignment: "none" }, call);
+    expect(right.data.worst).toEqual([]);
+    expect(right.data.stats!.pctBelow.deltaE5).toBe(100);
+    paint([[0, 0, 0, 0, 0, 0], [1, 1, 1, 1, 1, 1], [0, 0, 2, 2, 1, 0]]);
+    const wrong = await port.compare({ mapId: "m", referenceId: ref.referenceId, cells: true, alignment: "none" }, call);
+    expect(wrong.data.worst!.map(w => [w.x, w.y])).toEqual([[4, 2]]);
+    expect(wrong.data.worst![0]!.alternatives[0]!.tile).toEqual({ tilesetId: "art", tileId: 0 });
+  });
   it("reference_view crops the region from the whole-map picture", async () => {
     const { art, port } = setup();
     const ref = await port.add({ imageBase64: base64(picture(art, 3)) }, call);

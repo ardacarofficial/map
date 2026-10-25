@@ -83,7 +83,7 @@ export interface RenderCompareData {
   mapId: Id; region: Rect; mode: "side" | "overlay" | "diff"; against: "reference" | "draftStart"; image: PreviewImage; mismatch: { cells: number; ratio: number; sample: Point[] }; mapRevision: Revision;
   /** Grid used (reference only): the alignment, or null when the picture was fitted onto the whole map (none / unsure). */
   alignment?: ReferenceAlignment | null; cellPixels?: { width: number; height: number }; warnings?: string[];
-  /** cells:true — per-cell perceptual error (mean Lab ΔE over the cell's pixels). */
+  /** cells:true — per-cell perceptual error (mean Lab ΔE after fitting the picture light per cell). */
   stats?: { cells: number; meanErr: number; pctBelow: { deltaE5: number } };
   worst?: CompareWorstCell[];
   /** cells:true — heatmap panel inside the returned image (green ΔE<5 … red ≥20; worst cells numbered). */

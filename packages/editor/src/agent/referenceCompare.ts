@@ -41,3 +41,23 @@ export function heatColor(err: number): [number, number, number, number] {
   }
   return [226, 84, 84, 255];
 }
+const GAIN_MIN = 0.6, GAIN_MAX = 1.7;
+/** Mean ΔE76 of `tile` against the picture patch after fitting the picture's light: one gain per channel
+ * (0.6–1.7, least squares), so glows and shading do not count as errors. Channels that need different gains
+ * (a recolour, not light) and strong gains are penalised. refLab = toLab(ref). */
+export function litDeltaE(tile: ArrayLike<number>, ref: ArrayLike<number>, pixels: number, refLab: Float32Array): number {
+  const tt = [0, 0, 0], tr = [0, 0, 0];
+  for (let i = 0; i < pixels; i++) {
+    const w = (ref[i * 4 + 3]! / 255) * (tile[i * 4 + 3]! / 255);
+    for (let c = 0; c < 3; c++) { const t = tile[i * 4 + c]!; tt[c]! += w * t * t; tr[c]! += w * t * ref[i * 4 + c]!; }
+  }
+  const gain = tt.map((v, c) => v > 0 ? Math.min(GAIN_MAX, Math.max(GAIN_MIN, tr[c]! / v)) : 1);
+  const logs = gain.map(Math.log), mean = (logs[0]! + logs[1]! + logs[2]!) / 3;
+  const lit = new Uint8Array(pixels * 4);
+  for (let i = 0; i < pixels; i++) {
+    for (let c = 0; c < 3; c++) lit[i * 4 + c] = Math.min(255, Math.round(tile[i * 4 + c]! * gain[c]!));
+    lit[i * 4 + 3] = tile[i * 4 + 3]!;
+  }
+  const spread = Math.max(...logs.map(l => Math.abs(l - mean)));
+  return meanDeltaE(toLab(lit, pixels), refLab) + 20 * spread + 4 * Math.abs(mean);
+}

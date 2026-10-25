@@ -12,7 +12,7 @@ import { encodeAgentPng, imagePixels } from "./images";
 import { drawPreviewOverlays, previewLayout, renderPreviewPixelsAsync, type PreviewLayout } from "./preview";
 import { RasterReplay, textWidth } from "./raster";
 import { regionCompositeSteps } from "../export/pngComposite";
-import { heatColor, meanDeltaE, over, toLab } from "./referenceCompare";
+import { heatColor, litDeltaE, over, toLab } from "./referenceCompare";
 import { imageWork } from "./imageWork";
 import { changedCells, draftStartDocument, noteLastCall } from "./draftBaseline";
 import { resolveSelectedReference } from "./selectedReference";
@@ -344,14 +344,14 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
     return renderPreviewPixelsAsync(doc, region, { ...options, entityNames, ...(options.highlight ? { highlight: options.highlight } : {}) }, id => images.get(id), call);
   }
   const worldIndex = (call: AgentCallContext) => () => worldTileIndex(world, revision, call);
-  /** render_compare cells:true — per-cell mean Lab ΔE between the native-size map render and the aligned picture,
-   * plus the worst cells with matcher alternatives (layered + light-aware), each scored by the same ΔE. */
+  /** render_compare cells:true — per-cell light-normalized mean Lab ΔE between the native-size map render and the
+   * aligned picture, plus the worst cells with matcher alternatives (layered + light-aware), scored the same way. */
   async function cellErrors(doc: MapDocument, region: Rect, grid: Grid, pixels: RgbaImage, layerIds: readonly string[] | undefined, call: AgentCallContext) {
     const map = doc.map, tw = map.tileWidth, th = map.tileHeight, n = tw * th, a = grid.alignment;
     const images = await sources(usedTilesets(doc), call);
     const checkpoint = imageWork(call);
     const errors = new Float32Array(region.width * region.height).fill(-1);
-    const refLabs = new Map<number, Float32Array>();
+    const refs = new Map<number, { ref: ArrayLike<number>; lab: Float32Array }>();
     const band = Math.max(1, Math.floor(1048576 / (region.width * n)));
     for (let by = 0; by < region.height; by += band) {
       const rows = { x: region.x, y: region.y + by, width: region.width, height: Math.min(band, region.height - by) };
@@ -372,9 +372,9 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
           const mx = region.x + x, my = rows.y + y;
           if (!cellCovered(a, mx, my, tw, th, grid.content)) continue;
           for (let r = 0; r < th; r++) { const p = ((y * th + r) * canvas.width + x * tw) * 4; cell.set(canvas.data.subarray(p, p + tw * 4), r * tw * 4); }
-          const i = (by + y) * region.width + x, refLab = toLab(samplePatch(pixels, a, mx, my, { width: tw, height: th }, grid.content).data, n);
-          refLabs.set(i, refLab);
-          errors[i] = meanDeltaE(toLab(cell, n), refLab);
+          const i = (by + y) * region.width + x, ref = samplePatch(pixels, a, mx, my, { width: tw, height: th }, grid.content).data, refLab = toLab(ref, n);
+          refs.set(i, { ref, lab: refLab });
+          errors[i] = litDeltaE(cell, ref, n, refLab);
         }
       }
     }
@@ -407,7 +407,7 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
           const ground = rgbaOf.get(key(option.ground)), top = option.overlay ? rgbaOf.get(key(option.overlay)) : undefined;
           if (!ground || (option.overlay && !top)) continue;
           if ([key(option.ground), ...(option.overlay ? [key(option.overlay)] : [])].join("|") === nowKey) continue;
-          const optionErr = meanDeltaE(toLab(top ? over(ground, top) : ground, n), refLabs.get(i)!);
+          const r = refs.get(i)!, optionErr = litDeltaE(top ? over(ground, top) : ground, r.ref, n, r.lab);
           if (optionErr >= err - 0.5) continue;
           alternatives.push({ tile: { ...option.ground }, ...(option.overlay ? { overlay: { ...option.overlay } } : {}), err: Math.round(optionErr * 10) / 10 });
           if (alternatives.length >= 3) break;
@@ -537,20 +537,25 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
         const candidateOf = (i: number) => i < 0 ? -1 : byKey.get(`${index.tiles[i]!.ref.tilesetId}\u0000${index.tiles[i]!.ref.tileId}`) ?? -1;
         const cellJson = (i: number): ProposalCell => ({ tilesetId: candidates[i]!.tile.tilesetId, tileId: candidates[i]!.tile.tileId });
         const cells: CellResult[] = [], groundValues: (ProposalCell | undefined)[] = [], overlayValues: (ProposalCell | undefined)[] = [];
+        // Stamp art (crates, torches…) is placed with reference_detect_objects/place_stamp, not painted as overlay tiles.
+        const stampTiles = new Set(probes.flatMap(p => p.cells.map(c => `${c.tile.tilesetId}\u0000${c.tile.tileId}`)));
+        const topOverlay: number[] = [];
         let overlayCells = 0, exact = 0, errSum = 0, covered = 0;
         for (const cell of matches) {
           const mt = cell.match;
-          if (!cell.covered || !mt || !mt.ground) { cells.push({ ground: -1, overlay: -1, error: 0, confidence: 0, legend: -1, covered: false }); groundValues.push(undefined); overlayValues.push(undefined); continue; }
+          if (!cell.covered || !mt || !mt.ground) { cells.push({ ground: -1, overlay: -1, error: 0, confidence: 0, legend: -1, covered: false }); groundValues.push(undefined); overlayValues.push(undefined); topOverlay.push(-1); continue; }
           const g = candidateOf(mt.groundIndex), o = candidateOf(mt.overlayIndex);
-          if (o >= 0) overlayCells++;
-          const useOverlay = o >= 0 && !!args.overlayLayer;
+          topOverlay.push(o);
+          const stampArt = o >= 0 && stampTiles.has(`${candidates[o]!.tile.tilesetId}\u0000${candidates[o]!.tile.tileId}`);
+          if (o >= 0 && !stampArt) overlayCells++;
+          const useOverlay = o >= 0 && !stampArt && !!args.overlayLayer;
           cells.push({ ground: g, overlay: useOverlay ? o : -1, error: mt.err, confidence: mt.confidence, legend: -1, covered: true });
           groundValues.push(g >= 0 ? cellJson(g) : undefined); overlayValues.push(useOverlay ? cellJson(o) : undefined);
           covered++; errSum += mt.err; if (mt.err <= EXACTISH_ERR) exact++;
         }
         if (overlayCells && !args.overlayLayer) warnings.push(`${overlayCells} cells show a transparent overlay tile, but the map has no second visible tile layer; create one with edit_layer (or pass layers.overlay) and call again.`);
         const ground = encodeLayer(region.width, region.height, groundValues), overlay = encodeLayer(region.width, region.height, overlayValues);
-        const topKeys = cells.map(c => c.overlay >= 0 ? tileKey(candidates[c.overlay]!.tile) : c.ground >= 0 ? tileKey(candidates[c.ground]!.tile) : "");
+        const topKeys = cells.map((c, i) => topOverlay[i]! >= 0 ? tileKey(candidates[topOverlay[i]!]!.tile) : c.ground >= 0 ? tileKey(candidates[c.ground]!.tile) : "");
         const ch = cellHeightPx(grid.alignment, map.tileWidth, map.tileHeight);
         out = {
           cells, groundRows: ground.rows, groundLegend: ground.legend,
