@@ -17,6 +17,8 @@ import { suggestStampCandidates } from "./objects/suggest";
 const fail = (code: AgentErrorCode, message: string, details: Record<string, string | number | boolean> = {}): never => { throw new AgentError(code, message, details); };
 /** Template ids of mirrored variants: stampId + FLIP_SEP + 1 (flipX) | 2 (flipY). */
 const FLIP_SEP = "\u0000";
+/** Mirrors must score clearly better than the plain stamp (thin line art is nearly symmetric when blurred). */
+const MIRROR_BIAS = 0.02;
 /** Whole-image mirror: 1 = horizontal (flipX), 2 = vertical (flipY). */
 function mirror(image: RgbaImage, flip: 1 | 2): RgbaImage {
   const { width, height, data } = image, out = new Uint8Array(data.length);
@@ -68,7 +70,7 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
         // Mirrored placements (place_stamp flipX/flipY) unless the art is symmetric that way.
         if (args.flips !== false) for (const flip of [1, 2] as const) {
           const mirrored = mirror(image, flip);
-          if (!sameArt(mirrored, image)) templates.push({ id: `${stamp.id}${FLIP_SEP}${flip}`, family: stamp.id, cellsW: stamp.width, cellsH: stamp.height, image: mirrored });
+          if (!sameArt(mirrored, image)) templates.push({ id: `${stamp.id}${FLIP_SEP}${flip}`, family: stamp.id, bias: MIRROR_BIAS, cellsW: stamp.width, cellsH: stamp.height, image: mirrored });
         }
         const pause = checkpoint(); if (pause) await pause;
       }

@@ -12,7 +12,7 @@
  * one in front. */
 import type { RgbaImage } from "@smap/core";
 
-export interface DetectTemplate { id: string; cellsW: number; cellsH: number; image: RgbaImage; /** Variants of one object (mirrors) share a family: one match per place. */ family?: string }
+export interface DetectTemplate { id: string; cellsW: number; cellsH: number; image: RgbaImage; /** Variants of one object (mirrors) share a family: one match per place. */ family?: string; /** Subtracted from the score (mirrors lose near ties to the plain stamp). */ bias?: number }
 export interface DetectInput {
   /** Map-pixel picture (cols*tileWidth × rows*tileHeight). */
   work: RgbaImage;
@@ -56,7 +56,7 @@ const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi :
 /** Scored template pixels for one plane: index offsets (row stride of that plane), colours and luminance. */
 interface Points { o: Int32Array; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; w: number; h: number; textured: boolean }
 interface Plane { width: number; height: number; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; valid: Uint8Array }
-interface Prepared { id: string; family: string; /** Template pixels with art (alpha ≥ 128). */ mask: Uint8Array; cellsW: number; cellsH: number; width: number; height: number; holes: Points | null; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
+interface Prepared { id: string; family: string; bias: number; /** Template pixels with art (alpha ≥ 128). */ mask: Uint8Array; cellsW: number; cellsH: number; width: number; height: number; holes: Points | null; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
 
 function textured(image: RgbaImage, xs: readonly number[], ys: readonly number[]): boolean {
   let s = 0, ss = 0;
@@ -303,7 +303,7 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
     const holes = all.textured ? null : points(invertAlpha(t.image), 192, work.width, 256);
     const mask = new Uint8Array(t.image.width * t.image.height);
     for (let i = 0; i < mask.length; i++) mask[i] = t.image.data[i * 4 + 3]! >= 128 ? 1 : 0;
-    prepared.push({ id: t.id, family: t.family ?? t.id, mask, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, holes: holes && holes.o.length >= 8 ? holes : null, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
+    prepared.push({ id: t.id, family: t.family ?? t.id, bias: t.bias ?? 0, mask, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, holes: holes && holes.o.length >= 8 ? holes : null, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
   }
   const owner = new Int32Array(work.width * work.height).fill(-1);
   const coarseOwner = new Int32Array(coarseWork.width * coarseWork.height).fill(-1);
@@ -370,6 +370,7 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
         }
         if (bs < minScore - 0.1) continue;
         const exact = score(work, p.all, bx, by, owner);
+        exact.score -= p.bias;
         if (exact.score >= minScore && standsOut(work, p, bx, by)) found.push({ t, px: bx, py: by, score: exact.score, visible: exact.visible, dirty: false, dead: false });
       }
     }
@@ -408,7 +409,7 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
       await pause();
       for (const c of candidates) if (c.dirty && !c.dead) {
         const s = score(work, prepared[c.t]!.all, c.px, c.py, owner);
-        c.score = s.score; c.visible = s.visible; c.dirty = false;
+        c.score = s.score - prepared[c.t]!.bias; c.visible = s.visible; c.dirty = false;
         if (s.score < minScore) c.dead = true;
       }
       // Big and confident first; ties in reading order.
