@@ -69,7 +69,7 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   reference_view: "Show a reference picture resampled onto the map grid with coordinates, to read features as cells.",
   reference_align: "Detect how a reference picture lies on the map grid (cellPx, scale, offset of cell 0,0) with a grid preview; saved for reference_view/reference_quantize. hint fixes known scale/offsets.",
   reference_quantize: "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
-  render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; returns mismatching cells.",
+  render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; region crops the same cells of picture and map; returns mismatching cells. cells:true adds an error heatmap, stats and worst cells with alternatives for you to paint.",
   editor_ui: "Editor UI, not the map (no begin_edit): action state | configure {activeMapId, activeLayerId, tool, camera:{zoom,center,frame}, gridVisible, …} | layout {action reset|zone|show|hide|move, panel, zone} | application {locale, shortcuts} | commands {query} | run_command {commandId} | export_settings | configure_export {preferences}. args holds the action's arguments.",
 };
 

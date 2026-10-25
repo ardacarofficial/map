@@ -3033,11 +3033,17 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; returns mismatching cells.",
+      "description": "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; region crops the same cells of picture and map; returns mismatching cells. cells:true adds an error heatmap, stats and worst cells with alternatives for you to paint.",
       "inputSchema": {
         "properties": {
+          "alignment": {
+            "description": "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align"
+          },
           "baseline": {
             "const": "draftStart"
+          },
+          "cells": {
+            "type": "boolean"
           },
           "fit": {
             "enum": [

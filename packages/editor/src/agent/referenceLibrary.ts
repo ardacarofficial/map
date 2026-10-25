@@ -2,22 +2,27 @@
  * agent (reference_add). Decoded once in memory; never written to the project, disk or history. */
 import {
   AGENT_LIMITS, AgentError, AgentErrorCode, REFERENCE_LIMITS, autoTrim, detectStampProbes, encodeLayer, looksLikeSketch, quantizeReference, referencePlacement, summarizeConfidence, tileKey,
-  type AgentCallContext, type AgentReferencePort, type AgentWorldPort, type ReferenceAlignmentChoice, type CellResult, type PreviewImage, type ProposalCell, type QuantizeCandidate, type QuantizeLayerProposal,
+  type AgentCallContext, type AgentReferencePort, type AgentWorldPort, type ReferenceAlignmentChoice, type CellResult, type CompareWorstCell, type Tile, type PreviewImage, type ProposalCell, type QuantizeCandidate, type QuantizeLayerProposal,
   type QuantizeOutput, type Rect, type ReferenceAlignment, type ReferenceFit, type ReferenceSummary, type RenderCompareData, type StampProbe, type ColorLegendEntry, parseHexColor,
 } from "@smap/agent";
-import { BUILTIN_ENTITY_TYPES, createDocument, makeCell, MapStore, tileRect, type MapDocument, type RgbaImage } from "@smap/core";
+import { BUILTIN_ENTITY_TYPES, cellFlags, cellPaletteIndex, createDocument, FLIP_D, FLIP_H, FLIP_V, isTileLayer, makeCell, MapStore, tileRect, type MapDocument, type RgbaImage } from "@smap/core";
 import { decodeWorkingSourcePng } from "../io/sourcePng";
 import { getAgentWorldSessionId } from "./editGate";
 import { encodeAgentPng, imagePixels } from "./images";
 import { drawPreviewOverlays, previewLayout, renderPreviewPixelsAsync, type PreviewLayout } from "./preview";
-import { RasterReplay } from "./raster";
+import { RasterReplay, textWidth } from "./raster";
+import { regionCompositeSteps } from "../export/pngComposite";
+import { heatColor, meanDeltaE, over, toLab } from "./referenceCompare";
 import { imageWork } from "./imageWork";
 import { changedCells, draftStartDocument, noteLastCall } from "./draftBaseline";
 import { resolveSelectedReference } from "./selectedReference";
-import { cellHeightPx, detectAlignment, pictureContent } from "./match/alignment";
+import { cellCovered, cellHeightPx, detectAlignment, pictureContent, sampleCell, samplePatch } from "./match/alignment";
+import { matchResampled } from "./match/matchCell";
 import { quantizeAligned } from "./match/quantize";
 import { buildTileIndex, type TileIndex } from "./match/tileIndex";
 
+/** Worst cells listed by render_compare cells:true. */
+const COMPARE_WORST = 12;
 interface StoredReference extends ReferenceSummary { pixels: RgbaImage; world: string | null }
 const references = new Map<string, StoredReference>();
 /** K1: saved grid alignments per (referenceId, mapId); memory only, gone with the reference. */
@@ -175,6 +180,7 @@ function cellFeature(image: RgbaImage, x0: number, y0: number, w: number, h: num
   const mx = w * 0.1, my = h * 0.1, ax = Math.floor(x0 + mx), ay = Math.floor(y0 + my), bx = Math.max(ax + 1, Math.ceil(x0 + w - mx)), by = Math.max(ay + 1, Math.ceil(y0 + h - my));
   const step = Math.max(1, Math.floor(Math.min(bx - ax, by - ay) / 16));
   for (let y = ay; y < by && y < image.height; y += step) for (let x = ax; x < bx && x < image.width; x += step) {
+    if (x < 0 || y < 0) continue;
     const p = (y * image.width + x) * 4, a = image.data[p + 3]! / 255;
     const k = Math.min(3, Math.floor((y - ay) / (by - ay) * 4)) * 4 + Math.min(3, Math.floor((x - ax) / (bx - ax) * 4));
     for (let c = 0; c < 3; c++) out[k * 3 + c]! += image.data[p + c]! * a;
@@ -332,6 +338,79 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
     return { alignment: detected.alignment, reported: detected.alignment, content: detected.content, fit: "stretch", warnings };
   }
   const worldIndex = (call: AgentCallContext) => async () => tileIndexFor(await candidateTiles(world, undefined, call, true), 16, revision());
+  /** render_compare cells:true — per-cell mean Lab ΔE between the native-size map render and the aligned picture,
+   * plus the worst cells with matcher alternatives (layered + light-aware), each scored by the same ΔE. */
+  async function cellErrors(doc: MapDocument, region: Rect, grid: Grid, pixels: RgbaImage, layerIds: readonly string[] | undefined, call: AgentCallContext) {
+    const map = doc.map, tw = map.tileWidth, th = map.tileHeight, n = tw * th, a = grid.alignment;
+    const images = await sources(usedTilesets(doc), call);
+    const checkpoint = imageWork(call);
+    const errors = new Float32Array(region.width * region.height).fill(-1);
+    const refLabs = new Map<number, Float32Array>();
+    const band = Math.max(1, Math.floor(1048576 / (region.width * n)));
+    for (let by = 0; by < region.height; by += band) {
+      const rows = { x: region.x, y: region.y + by, width: region.width, height: Math.min(band, region.height - by) };
+      const canvas = new RasterReplay(rows.width * tw, rows.height * th), ox = rows.x * tw, oy = rows.y * th;
+      for (const op of regionCompositeSteps(doc, rows, 1, layerIds)) {
+        if (!op) { const pause = checkpoint(); if (pause) await pause; continue; }
+        if (op.kind === "alpha") { canvas.globalAlpha = op.alpha; continue; }
+        const source = images.get(op.tilesetId);
+        if (!source) continue;
+        const [m0, m1, m2, m3, m4, m5] = op.transform;
+        canvas.setTransform(m0, m1, m2, m3, m4 - ox, m5 - oy);
+        canvas.drawImage(source as unknown as CanvasImageSource, op.sx, op.sy, op.sw, op.sh, 0, 0, op.dw, op.dh);
+      }
+      const cell = new Uint8Array(n * 4);
+      for (let y = 0; y < rows.height; y++) {
+        const pause = checkpoint(); if (pause) await pause;
+        for (let x = 0; x < rows.width; x++) {
+          const mx = region.x + x, my = rows.y + y;
+          if (!cellCovered(a, mx, my, tw, th, grid.content)) continue;
+          for (let r = 0; r < th; r++) { const p = ((y * th + r) * canvas.width + x * tw) * 4; cell.set(canvas.data.subarray(p, p + tw * 4), r * tw * 4); }
+          const i = (by + y) * region.width + x, refLab = toLab(samplePatch(pixels, a, mx, my, { width: tw, height: th }, grid.content).data, n);
+          refLabs.set(i, refLab);
+          errors[i] = meanDeltaE(toLab(cell, n), refLab);
+        }
+      }
+    }
+    let covered = 0, sum = 0, good = 0;
+    for (const err of errors) if (err >= 0) { covered++; sum += err; if (err < 5) good++; }
+    const order = [...errors.keys()].filter(i => errors[i]! >= 5).sort((p, q) => errors[q]! - errors[p]! || p - q).slice(0, COMPARE_WORST);
+    const layers = doc.layers.filter(l => isTileLayer(l) && l.visible && l.opacity > 0 && (!layerIds || layerIds.includes(l.id)));
+    const current = (x: number, y: number) => layers.flatMap(l => {
+      const value = l.getCell(x, y), entry = value ? doc.palette.get(cellPaletteIndex(value)) : undefined;
+      if (!entry) return [];
+      const raw = cellFlags(value), flags = (raw & FLIP_H ? 1 : 0) | (raw & FLIP_V ? 2 : 0) | (raw & FLIP_D ? 4 : 0);
+      const tile: Tile = flags ? { tilesetId: entry.tilesetId, tileId: entry.tileId, flags: flags as NonNullable<Tile["flags"]> } : { tilesetId: entry.tilesetId, tileId: entry.tileId };
+      return [{ layerId: l.id, tile }];
+    });
+    const candidates = order.length ? await candidateTiles(world, undefined, call, true) : [];
+    const index = candidates.length ? tileIndexFor(candidates, 16, revision()) : null;
+    const key = (t: { tilesetId: string; tileId: number }) => `${t.tilesetId}\u0000${t.tileId}`;
+    const rgbaOf = new Map(candidates.filter(c => c.pixels.width === tw && c.pixels.height === th).map(c => [key(c.tile), c.pixels.data]));
+    const indexOf = new Map(index?.tiles.map((t, i) => [key(t.ref), i]) ?? []);
+    const worst: CompareWorstCell[] = [];
+    for (const i of order) {
+      const pause = checkpoint(); if (pause) await pause;
+      const x = region.x + i % region.width, y = region.y + Math.floor(i / region.width), now = current(x, y), err = errors[i]!;
+      const alternatives: CompareWorstCell["alternatives"] = [];
+      if (index) {
+        const nowKey = now.map(c => key(c.tile) + (c.tile.flags ? `/${c.tile.flags}` : "")).join("|");
+        const hint = now[0] && !now[0].tile.flags ? indexOf.get(key(now[0].tile)) : undefined;
+        const match = matchResampled(sampleCell(pixels, a, x, y, tw, th, index.size, grid.content), index, { layered: true, normalizeLight: true, topK: 6, ...(hint !== undefined ? { groundHints: [hint] } : {}) });
+        for (const option of match.alternatives) {
+          const ground = rgbaOf.get(key(option.ground)), top = option.overlay ? rgbaOf.get(key(option.overlay)) : undefined;
+          if (!ground || (option.overlay && !top)) continue;
+          if ([key(option.ground), ...(option.overlay ? [key(option.overlay)] : [])].join("|") === nowKey) continue;
+          const optionErr = meanDeltaE(toLab(top ? over(ground, top) : ground, n), refLabs.get(i)!);
+          if (optionErr >= err - 0.5) continue;
+          alternatives.push({ tile: { ...option.ground }, ...(option.overlay ? { overlay: { ...option.overlay } } : {}), err: Math.round(optionErr * 10) / 10 });
+          if (alternatives.length >= 3) break;
+        }
+      }
+      worst.push({ x, y, err: Math.round(err * 10) / 10, current: now, alternatives });
+    }
+    return { errors, worst, stats: { cells: covered, meanErr: covered ? Math.round(sum / covered * 10) / 10 : 0, pctBelow: { deltaE5: covered ? Math.round(good / covered * 1000) / 10 : 0 } } };
+  }
   return {
     list: listReferences,
     noteChange: noteLastCall,
@@ -521,36 +600,43 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
       const { doc, store: mapStore } = await documentFor(args.mapId), map = doc.map, mapRevision = mapStore.revision;
       const region = args.region ?? { x: 0, y: 0, width: map.width, height: map.height };
       const mode = args.mode ?? "side";
-      // Side by side stays within the 1568 px clients show unscaled.
-      const maxSide = Math.min(args.maxSide ?? 1536, mode === "side" ? 752 : 2048);
+      const cellsWanted = !!args.cells && !!args.referenceId;
+      // Side by side stays within the 1568 px clients show unscaled; the heatmap is one more panel.
+      const panels = (mode === "side" ? 2 : 1) + (cellsWanted ? 1 : 0);
+      const maxSide = Math.min(args.maxSide ?? 1536, panels === 1 ? 2048 : panels === 2 ? 752 : 512);
       const before = args.baseline ? draftStartDocument(args.mapId, doc) : undefined;
       if (args.baseline && !before) fail(AgentErrorCode.INVALID_ARGUMENT, "This map has no draft start in the pending edit", { nextAction: "Compare a map that your pending edit includes." });
       const layerIds = args.layerIds;
       const options = { coordinates: true, maxSide, ...(layerIds ? { layerIds } : {}) };
       const plain = await renderMap(doc, region, { ...options, grid: false }, call);
       const layout = previewLayout(region, map.tileWidth, map.tileHeight, { coordinates: true, maxSide });
-      const m = args.referenceId ? mapping(args.referenceId, region, args.fit, args.sourceRect, map.tileWidth, map.tileHeight) : undefined;
+      // The picture lies on the whole map (or where the alignment says); region crops the same cells of both.
+      const pixels = args.referenceId ? referencePixels(args.referenceId) ?? fail(AgentErrorCode.UNKNOWN_ID, "Unknown referenceId") : undefined;
+      if (pixels && args.sourceRect && (args.sourceRect.x + args.sourceRect.width > pixels.width || args.sourceRect.y + args.sourceRect.height > pixels.height)) fail(AgentErrorCode.OUT_OF_BOUNDS, "sourceRect lies outside the picture", { width: pixels.width, height: pixels.height });
+      const grid = pixels ? await resolveGrid({ referenceId: args.referenceId!, mapId: args.mapId, ...(args.alignment !== undefined ? { alignment: args.alignment } : {}), ...(args.fit ? { fit: args.fit } : {}), ...(args.sourceRect ? { sourceRect: args.sourceRect } : {}) }, doc, region, call, worldIndex(call)) : undefined;
+      const tw = map.tileWidth, th = map.tileHeight;
+      const m: Mapping | undefined = pixels && grid ? { pixels, sourceRect: alignedSourceRect(grid.alignment, region, tw, th), placement: { x: 0, y: 0, width: region.width, height: region.height }, fit: grid.fit } : undefined;
       // Mismatching cells: exact identity against the draft start, appearance against a picture.
       const mismatch = new Set<number>();
       if (before) for (const i of changedCells(before, doc, region)) mismatch.add(i);
-      else if (m) {
-        const sketch = looksLikeSketch(m.pixels, m.sourceRect);
-        const pxX = m.sourceRect.width / m.placement.width, pxY = m.sourceRect.height / m.placement.height;
+      else if (m && grid) {
+        const a = grid.alignment, ch = cellHeightPx(a, tw, th);
+        const sketch = looksLikeSketch(m.pixels, grid.content);
         const checkpoint = imageWork(call);
         for (let y = 0; y < region.height; y++) {
           const pause = checkpoint(); if (pause) await pause;
           for (let x = 0; x < region.width; x++) {
-            const lx = x - m.placement.x, ly = y - m.placement.y;
-            if (lx + 0.5 < 0 || ly + 0.5 < 0 || lx + 0.5 > m.placement.width || ly + 0.5 > m.placement.height) continue;
-            const a = cellFeature(m.pixels, m.sourceRect.x + lx * pxX, m.sourceRect.y + ly * pxY, pxX, pxY);
+            if (!cellCovered(a, region.x + x, region.y + y, tw, th, grid.content)) continue;
+            const f = cellFeature(m.pixels, a.offsetX + (region.x + x) * a.cellPx, a.offsetY + (region.y + y) * ch, a.cellPx, ch);
             const b = cellFeature(plain, layout.left + x * layout.cw, layout.top + y * layout.ch, layout.cw, layout.ch);
-            if (featureDistance(a, b, sketch) > (sketch ? 56 : 36)) mismatch.add(y * region.width + x);
+            if (featureDistance(f, b, sketch) > (sketch ? 56 : 36)) mismatch.add(y * region.width + x);
           }
         }
       }
+      const cellReport = cellsWanted && grid && pixels ? await cellErrors(doc, region, grid, pixels, layerIds, call) : undefined;
       const sample = [...mismatch].slice(0, 32).map(i => ({ x: region.x + i % region.width, y: region.y + Math.floor(i / region.width) }));
       const withOverlays = (base: RgbaImage) => { const c = new RasterReplay(base.width, base.height); c.data.set(base.data); drawPreviewOverlays(c, layout, region, { grid: true, coordinates: true }); return c; };
-      let picture: RgbaImage;
+      let shown: RgbaImage[];
       if (mode === "diff") {
         const canvas = withOverlays(plain);
         canvas.fill(layout.contentRect, [11, 18, 23, 130]);
@@ -560,7 +646,7 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
           canvas.fill(cell, [240, 112, 122, 90]);
           if (layout.cw >= 6) canvas.outline(cell, [240, 112, 122, 255], layout.cw >= 24 ? 2 : 1);
         }
-        picture = canvas;
+        shown = [canvas];
       } else {
         let base: RgbaImage;
         if (m) {
@@ -574,13 +660,34 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
           blended.data.set(base.data);
           blended.globalAlpha = 0.5;
           blended.drawImage(plain as unknown as CanvasImageSource, 0, 0, plain.width, plain.height, 0, 0, plain.width, plain.height);
-          picture = withOverlays(blended);
-        } else picture = compose([withOverlays(base), withOverlays(plain)], 8);
+          shown = [withOverlays(blended)];
+        } else shown = [withOverlays(base), withOverlays(plain)];
       }
+      let heatmap: { rect: Rect } | undefined;
+      if (cellReport) {
+        const panel = new RasterReplay(plain.width, plain.height, layout.contentRect);
+        panel.fill({ x: 0, y: 0, width: plain.width, height: plain.height }, [27, 33, 42, 255]); panel.checker(layout.contentRect);
+        const box = (x: number, y: number) => ({ x: layout.left + Math.floor(x * layout.cw), y: layout.top + Math.floor(y * layout.ch), width: Math.max(1, Math.ceil(layout.cw)), height: Math.max(1, Math.ceil(layout.ch)) });
+        cellReport.errors.forEach((err, i) => { if (err >= 0) panel.fill(box(i % region.width, Math.floor(i / region.width)), heatColor(err)); });
+        drawPreviewOverlays(panel, layout, region, { grid: true, coordinates: true });
+        cellReport.worst.forEach((w, rank) => {
+          const cell = box(w.x - region.x, w.y - region.y);
+          if (layout.cw >= 6) panel.outline(cell, [255, 255, 255, 255], layout.cw >= 24 ? 2 : 1);
+          const scale = layout.cw >= 24 ? 2 : 1, label = String(rank + 1);
+          if (layout.cw >= textWidth(label, scale) + 2 * scale + 2) panel.label(label, cell.x + 1, cell.y + 1, scale);
+        });
+        heatmap = { rect: { x: shown.reduce((n, i) => n + i.width + 8, 0), y: 0, width: panel.width, height: panel.height } };
+        shown.push(panel);
+      }
+      const picture = shown.length === 1 ? shown[0]! : compose(shown, 8);
       call.signal.throwIfAborted();
       if (mapStore.revision !== mapRevision) fail(AgentErrorCode.REVISION_CONFLICT, "Map changed during comparison");
       const image: PreviewImage = { ...metadata(layout, region, map.tileWidth, map.tileHeight, true, true), width: picture.width, height: picture.height };
-      const data: RenderCompareData = { mapId: args.mapId, region, mode, against: m ? "reference" : "draftStart", image, mismatch: { cells: mismatch.size, ratio: +(mismatch.size / (region.width * region.height)).toFixed(4), sample }, mapRevision };
+      const data: RenderCompareData = {
+        mapId: args.mapId, region, mode, against: m ? "reference" : "draftStart", image, mismatch: { cells: mismatch.size, ratio: +(mismatch.size / (region.width * region.height)).toFixed(4), sample }, mapRevision,
+        ...(grid ? { alignment: grid.reported, cellPixels: { width: +grid.alignment.cellPx.toFixed(2), height: +cellHeightPx(grid.alignment, tw, th).toFixed(2) }, ...(grid.warnings.length ? { warnings: grid.warnings } : {}) } : {}),
+        ...(cellReport ? { stats: cellReport.stats, worst: cellReport.worst, heatmap: heatmap! } : {}),
+      };
       return { data, image: { png: encodeAgentPng(picture), width: picture.width, height: picture.height, revision: revision(), warnings: [] } };
     },
   };
