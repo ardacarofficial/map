@@ -34,8 +34,11 @@ import { validateGoals } from "./tools/goals";
 import { pruneReplayCache, type ReplayRecord } from "./replayCache";
 import { vision } from "./tools/vision";
 import { VISION_TOOL_NAMES, type VisionToolName } from "./vision";
+import { objects } from "./tools/objects";
+import { OBJECT_TOOL_NAMES, type ObjectToolName } from "./objects";
 
 const visionTools = new Set<string>(VISION_TOOL_NAMES);
+const objectTools = new Set<string>(OBJECT_TOOL_NAMES);
 /** Reference intake reads a picture, not the map: map edits never interrupt it. */
 const mapIndependent = new Set<string>(["visual_ingest_reference", "reference_add"]);
 
@@ -641,6 +644,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
             : port.matchReference(args as ToolArguments["visual_match_reference"], callContext), signal), image: undefined };
         } else if (visionTools.has(name)) {
           output = await vision(tx, name as VisionToolName, args as ToolArguments[VisionToolName], callContext);
+        } else if (objectTools.has(name)) {
+          output = await objects(tx, name as ObjectToolName, args as ToolArguments[ObjectToolName], callContext);
         } else output = await read(tx, name, args, callContext);
         signal.throwIfAborted();
         check(

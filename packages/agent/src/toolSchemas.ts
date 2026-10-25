@@ -2086,18 +2086,24 @@ function optionalContext(schema: Schema): Schema {
   return out;
 }
 /** Reference images (picture → map) and visual options of existing read tools. */
+/** K1 ReferenceAlignment input shared by the reference tools (reference_align's result), or "auto" | "none". */
+const REFERENCE_ALIGNMENT_SCHEMA: Schema = (() => {
+  const px: Schema = { type: "number", minimum: -65536, maximum: 65536 };
+  return { anyOf: [
+    { type: "string", enum: ["auto", "none"] },
+    { type: "object", additionalProperties: false, required: ["cellPx", "offsetX", "offsetY"], properties: {
+      cellPx: { type: "number", minimum: 1, maximum: 4096 }, cellPxY: { type: "number", minimum: 1, maximum: 4096 }, scale: { type: "number", exclusiveMinimum: 0, maximum: 256 },
+      offsetX: px, offsetY: px, cols: { type: "integer", minimum: 0, maximum: 65536 }, rows: { type: "integer", minimum: 0, maximum: 65536 },
+      confidence: { type: "number", minimum: 0, maximum: 1 }, method: { type: "string", enum: ["auto", "manual"] } } },
+  ], description: "auto (default): the saved reference_align grid, else detection (falls back to fit when unsure); none: fit the picture onto the whole map; or an alignment object from reference_align. region crops the same cells either way." };
+})();
 const { VISION_DEFINITIONS, withVisionOptions } = (() => {
   const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
   const object = (properties: Record<string, JsonValue>, required: string[]): Schema => ({ type: "object", additionalProperties: false, properties, required });
   const fit: Schema = { type: "string", enum: ["stretch", "contain"], default: "stretch", description: "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged." };
   const sourceRect: Schema = { ...ref("Rect"), description: "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically." };
   const px: Schema = { type: "number", minimum: -65536, maximum: 65536 };
-  const alignment: Schema = { anyOf: [
-    { type: "string", enum: ["auto", "none"] },
-    object({ cellPx: { type: "number", minimum: 1, maximum: 4096 }, cellPxY: { type: "number", minimum: 1, maximum: 4096 }, scale: { type: "number", exclusiveMinimum: 0, maximum: 256 },
-      offsetX: px, offsetY: px, cols: { type: "integer", minimum: 0, maximum: 65536 }, rows: { type: "integer", minimum: 0, maximum: 65536 },
-      confidence: { type: "number", minimum: 0, maximum: 1 }, method: { type: "string", enum: ["auto", "manual"] } }, ["cellPx", "offsetX", "offsetY"]),
-  ], description: "auto (default): the saved reference_align grid, else detection (falls back to fit when unsure); none: fit the picture onto the whole map; or an alignment object from reference_align. region crops the same cells either way." };
+  const alignment = REFERENCE_ALIGNMENT_SCHEMA;
   const mapping = { referenceId: ref("Id"), mapId: ref("Id"), region: ref("Rect"), fit, sourceRect, alignment };
   const optionalContext = { context: { ...ref("ReadContext"), description: "Optional; the current world is used when omitted." } };
   const ids = (max: number): Schema => ({ type: "array", minItems: 1, maxItems: max, uniqueItems: true, items: ref("Id") });
@@ -2163,7 +2169,28 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
   }
   return { VISION_DEFINITIONS, withVisionOptions };
 })();
-export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...LIFECYCLE_DEFINITIONS, ...GRID_DEFINITIONS, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS, ...VISION_DEFINITIONS].map(withVisionOptions).map(tool => {
+/** Object tools (v2.2): stamps found in a reference picture; stamp candidates from a tileset sheet. Read-only. */
+const OBJECT_DEFINITIONS: readonly AgentToolDefinition[] = (() => {
+  const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
+  const object = (properties: Record<string, JsonValue>, required: string[]): Schema => ({ type: "object", additionalProperties: false, properties, required });
+  const optionalContext = { context: { ...ref("ReadContext"), description: "Optional; the current world is used when omitted." } };
+  const tool = (name: string, title: string, description: string, schema: Schema): AgentToolDefinition => ({
+    name: name as AgentToolDefinition["name"], title, description,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    inputSchema: { ...schema, type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" },
+  });
+  const alignment = REFERENCE_ALIGNMENT_SCHEMA;
+  return [
+    tool("reference_detect_objects", "Detect Stamps In Reference",
+      "Find stamps (crates, barrels, torches, houses…) in a reference picture by masked template matching of each stamp's composited art at the aligned scale; big confident objects first, then the rest of the picture again, so stacked objects are found too. Returns matches {stampId,x,y,score,pixelResidual}, positionsByStamp ready for place_stamp positions, and a preview with numbered boxes. Writes nothing.",
+      object({ ...optionalContext, referenceId: ref("Id"), mapId: ref("Id"), stampIds: { type: "array", minItems: 1, maxItems: 64, uniqueItems: true, items: ref("Id") },
+        minScore: { type: "number", minimum: 0.5, maximum: 1, default: 0.85 }, alignment, preview: { type: "boolean", default: true } }, ["referenceId", "mapId"])),
+    tool("suggest_stamps", "Suggest Stamps From Tileset",
+      "Propose multi-tile objects of a tileset sheet as stamp candidates: connected non-transparent parts (bounding box in sheet cells, tile ids) and a sheet preview with numbered candidates. Show the candidates to the user; call create_stamp only for ones the user accepts. Writes nothing.",
+      object({ ...optionalContext, tilesetId: ref("Id"), region: { ...ref("Rect"), description: "Tileset sheet cells to look in (default: whole sheet)." }, minTiles: { type: "integer", minimum: 1, maximum: 64, default: 2 } }, ["tilesetId"])),
+  ];
+})();
+export const TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [...hardenedDefinitions, ...LIFECYCLE_DEFINITIONS, ...GRID_DEFINITIONS, ...featureDefinitions, ...EDITOR_CONTROL_DEFINITIONS, ...LIBRARY_DEFINITIONS,...JOIN_DEFINITIONS, ...VISION_DEFINITIONS, ...OBJECT_DEFINITIONS].map(withVisionOptions).map(tool => {
   const inputSchema = (tool.name === "join_edit" ? tool.inputSchema : optionalContext(tool.inputSchema)) as AgentToolDefinition["inputSchema"];
   return { ...tool, annotations: annotate(tool), inputSchema: { ...inputSchema, $defs: reachableSchemaDefinitions(inputSchema, SHARED_DEFS) } };
 });

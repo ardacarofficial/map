@@ -7,7 +7,7 @@ import { guideResponse } from "./guideProtocol.ts";
 const catalogue: unknown = JSON.parse(readFileSync(new URL("../../agent/schema/tools.json", import.meta.url), "utf8"));
 // Draft writes and whole-map checks get the long budget too, so a big paint is not cut off at 10 s.
 const LONG_TOOLS = new Set<string>([
-  "begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference", "reference_add", "reference_view", "reference_quantize", "render_compare", "reference_align",
+  "begin_edit", "render_preview", "prepare_smart_source", "get_tile_catalog", "list_stamps", "visual_ingest_reference", "visual_match_reference", "reference_add", "reference_view", "reference_quantize", "render_compare", "reference_align", "reference_detect_objects", "suggest_stamps",
   "validate_map", "validate_goals", "read_region",
   ...((catalogue as { tools?: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools ?? []).filter((tool) => tool.annotations?.readOnlyHint === false).map((tool) => tool.name),
 ]);

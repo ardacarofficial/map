@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "8886797f489e5716d0dd1461c81f30b92d636595d749572366f05e565dbd0f53",
+  "catalogueSha256": "6ce9e7585ef781aaf6994e5bb4cb145c0ba2a97cc55f2dd0e940c9dc9c20dee0",
   "tools": {
     "get_session": {
       "valid": [
@@ -2932,8 +2932,22 @@
           "mapId": "m",
           "referenceId": "ref-1",
           "cells": true,
-          "region": { "x": 0, "y": 0, "width": 8, "height": 8 },
-          "alignment": { "cellPx": 64, "scale": 4, "offsetX": -13, "offsetY": 7, "cols": 12, "rows": 8, "confidence": 0.9, "method": "auto" }
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 8,
+            "height": 8
+          },
+          "alignment": {
+            "cellPx": 64,
+            "scale": 4,
+            "offsetX": -13,
+            "offsetY": 7,
+            "cols": 12,
+            "rows": 8,
+            "confidence": 0.9,
+            "method": "auto"
+          }
         },
         {
           "mapId": "m",
@@ -2948,7 +2962,11 @@
         {
           "mapId": "m",
           "referenceId": "r",
-          "alignment": { "cellPx": 0, "offsetX": 0, "offsetY": 0 }
+          "alignment": {
+            "cellPx": 0,
+            "offsetX": 0,
+            "offsetY": 0
+          }
         },
         {
           "mapId": "m",
@@ -3007,6 +3025,106 @@
           "mapId": "m",
           "hint": {
             "scale": 0
+          }
+        }
+      ]
+    },
+    "reference_detect_objects": {
+      "valid": [
+        {
+          "mapId": "m",
+          "referenceId": "ref-1"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "stampIds": [
+            "crate",
+            "barrel"
+          ],
+          "minScore": 0.9,
+          "alignment": "none",
+          "preview": false
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": {
+            "cellPx": 64,
+            "scale": 4,
+            "offsetX": -13.5,
+            "offsetY": 7,
+            "cols": 48,
+            "rows": 32,
+            "confidence": 0.8,
+            "method": "auto"
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "mapId": "m"
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "minScore": 1.5
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "stampIds": []
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": {
+            "cellPx": 0,
+            "scale": 4,
+            "offsetX": 0,
+            "offsetY": 0,
+            "cols": 4,
+            "rows": 4,
+            "confidence": 1,
+            "method": "manual"
+          }
+        },
+        {
+          "mapId": "m",
+          "referenceId": "ref-1",
+          "alignment": "exact"
+        }
+      ]
+    },
+    "suggest_stamps": {
+      "valid": [
+        {
+          "tilesetId": "tiles"
+        },
+        {
+          "tilesetId": "tiles",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 4
+          },
+          "minTiles": 1
+        }
+      ],
+      "invalid": [
+        {},
+        {
+          "tilesetId": "tiles",
+          "minTiles": 0
+        },
+        {
+          "tilesetId": "tiles",
+          "region": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 4
           }
         }
       ]

@@ -289,7 +289,43 @@ async function sketchInRegion(m: Mapping, region: Rect, tileWidth: number, tileH
 }
 
 /** The grid a call uses: explicit, saved, detected (fit fallback when unsure) or fitted ("none"). */
-interface Grid { alignment: ReferenceAlignment; reported: ReferenceAlignment | null; content: Rect; fit: ReferenceFit; warnings: string[] }
+export interface Grid { alignment: ReferenceAlignment; reported: ReferenceAlignment | null; content: Rect; fit: ReferenceFit; warnings: string[] }
+
+/** The grid a reference call uses (shared by view, quantize, compare and object detection). */
+export async function resolveGrid(args: { referenceId: string; mapId: string; alignment?: ReferenceAlignmentChoice; fit?: ReferenceFit; sourceRect?: Rect }, doc: MapDocument, region: Rect, call: AgentCallContext, index: () => Promise<TileIndex>): Promise<Grid> {
+  const map = doc.map, pixels = referencePixels(args.referenceId) ?? fail(AgentErrorCode.UNKNOWN_ID, "Unknown referenceId");
+  const option = args.alignment ?? "auto", warnings: string[] = [];
+  // "none" (and the unsure fallback): the picture fitted onto the whole map; a region crops the same cells.
+  const whole = { x: 0, y: 0, width: map.width, height: map.height };
+  const fitted = (): Grid => { const m = mapping(args.referenceId, whole, args.fit, args.sourceRect, map.tileWidth, map.tileHeight); return { alignment: fittedAlignment(m, whole, map.tileWidth), reported: null, content: m.sourceRect, fit: m.fit, warnings }; };
+  if (option === "none") return fitted();
+  if (typeof option === "object") {
+    const content = pictureContent(pixels), ch = option.cellPxY ?? option.cellPx * map.tileHeight / map.tileWidth;
+    const a: ReferenceAlignment = {
+      cellPx: option.cellPx, ...(option.cellPxY !== undefined ? { cellPxY: option.cellPxY } : {}), scale: option.scale ?? r3(option.cellPx / map.tileWidth),
+      offsetX: option.offsetX, offsetY: option.offsetY,
+      cols: option.cols ?? Math.max(0, Math.ceil((content.x + content.width - option.offsetX) / option.cellPx - 0.5)),
+      rows: option.rows ?? Math.max(0, Math.ceil((content.y + content.height - option.offsetY) / ch - 0.5)),
+      confidence: option.confidence ?? 1, method: option.method ?? "manual",
+    };
+    return { alignment: a, reported: a, content, fit: "stretch", warnings };
+  }
+  const saved = getAlignment(args.referenceId, args.mapId);
+  if (saved) return { alignment: saved, reported: saved, content: pictureContent(pixels), fit: "stretch", warnings };
+  const tiles = await index();
+  if (!tiles.ground.length) { warnings.push("No opaque candidate tiles to detect the grid; the picture was fitted onto the whole map."); return fitted(); }
+  const detected = await detectAlignment(pixels, { tileWidth: map.tileWidth, tileHeight: map.tileHeight, index: tiles, fit: { region, mapWidth: map.width, mapHeight: map.height }, checkpoint: imageWork(call) });
+  if (detected.alignment.confidence < AUTO_MIN_CONFIDENCE) {
+    warnings.push(`Grid alignment unsure (confidence ${detected.alignment.confidence}); the picture was fitted onto the whole map. Call reference_align (check its preview, give hint scale/offsetX/offsetY) or pass alignment.`);
+    return fitted();
+  }
+  setAlignment(args.referenceId, args.mapId, detected.alignment);
+  return { alignment: detected.alignment, reported: detected.alignment, content: detected.content, fit: "stretch", warnings };
+}
+/** Tile index of the world's candidate art (cached per revision). */
+export async function worldTileIndex(world: AgentWorldPort, revision: () => number, call: AgentCallContext): Promise<TileIndex> {
+  return tileIndexFor(await candidateTiles(world, undefined, call, true), 16, revision());
+}
 
 export function createReferencePort(world: AgentWorldPort, revision: () => number): AgentReferencePort {
   async function documentFor(mapId: string): Promise<{ doc: MapDocument; store: MapStore }> {
@@ -307,37 +343,7 @@ export function createReferencePort(world: AgentWorldPort, revision: () => numbe
     const entityNames = new Map<string, string>([...BUILTIN_ENTITY_TYPES, ...doc.entityTypes].map(type => [type.id, type.name]));
     return renderPreviewPixelsAsync(doc, region, { ...options, entityNames, ...(options.highlight ? { highlight: options.highlight } : {}) }, id => images.get(id), call);
   }
-  async function resolveGrid(args: { referenceId: string; mapId: string; alignment?: ReferenceAlignmentChoice; fit?: ReferenceFit; sourceRect?: Rect }, doc: MapDocument, region: Rect, call: AgentCallContext, index: () => Promise<TileIndex>): Promise<Grid> {
-    const map = doc.map, pixels = referencePixels(args.referenceId) ?? fail(AgentErrorCode.UNKNOWN_ID, "Unknown referenceId");
-    const option = args.alignment ?? "auto", warnings: string[] = [];
-    // "none" (and the unsure fallback): the picture fitted onto the whole map; a region crops the same cells.
-    const whole = { x: 0, y: 0, width: map.width, height: map.height };
-    const fitted = (): Grid => { const m = mapping(args.referenceId, whole, args.fit, args.sourceRect, map.tileWidth, map.tileHeight); return { alignment: fittedAlignment(m, whole, map.tileWidth), reported: null, content: m.sourceRect, fit: m.fit, warnings }; };
-    if (option === "none") return fitted();
-    if (typeof option === "object") {
-      const content = pictureContent(pixels), ch = option.cellPxY ?? option.cellPx * map.tileHeight / map.tileWidth;
-      const a: ReferenceAlignment = {
-        cellPx: option.cellPx, ...(option.cellPxY !== undefined ? { cellPxY: option.cellPxY } : {}), scale: option.scale ?? r3(option.cellPx / map.tileWidth),
-        offsetX: option.offsetX, offsetY: option.offsetY,
-        cols: option.cols ?? Math.max(0, Math.ceil((content.x + content.width - option.offsetX) / option.cellPx - 0.5)),
-        rows: option.rows ?? Math.max(0, Math.ceil((content.y + content.height - option.offsetY) / ch - 0.5)),
-        confidence: option.confidence ?? 1, method: option.method ?? "manual",
-      };
-      return { alignment: a, reported: a, content, fit: "stretch", warnings };
-    }
-    const saved = getAlignment(args.referenceId, args.mapId);
-    if (saved) return { alignment: saved, reported: saved, content: pictureContent(pixels), fit: "stretch", warnings };
-    const tiles = await index();
-    if (!tiles.ground.length) { warnings.push("No opaque candidate tiles to detect the grid; the picture was fitted onto the whole map."); return fitted(); }
-    const detected = await detectAlignment(pixels, { tileWidth: map.tileWidth, tileHeight: map.tileHeight, index: tiles, fit: { region, mapWidth: map.width, mapHeight: map.height }, checkpoint: imageWork(call) });
-    if (detected.alignment.confidence < AUTO_MIN_CONFIDENCE) {
-      warnings.push(`Grid alignment unsure (confidence ${detected.alignment.confidence}); the picture was fitted onto the whole map. Call reference_align (check its preview, give hint scale/offsetX/offsetY) or pass alignment.`);
-      return fitted();
-    }
-    setAlignment(args.referenceId, args.mapId, detected.alignment);
-    return { alignment: detected.alignment, reported: detected.alignment, content: detected.content, fit: "stretch", warnings };
-  }
-  const worldIndex = (call: AgentCallContext) => async () => tileIndexFor(await candidateTiles(world, undefined, call, true), 16, revision());
+  const worldIndex = (call: AgentCallContext) => () => worldTileIndex(world, revision, call);
   /** render_compare cells:true — per-cell mean Lab ΔE between the native-size map render and the aligned picture,
    * plus the worst cells with matcher alternatives (layered + light-aware), each scored by the same ΔE. */
   async function cellErrors(doc: MapDocument, region: Rect, grid: Grid, pixels: RgbaImage, layerIds: readonly string[] | undefined, call: AgentCallContext) {

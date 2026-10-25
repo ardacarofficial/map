@@ -70,6 +70,8 @@ const DESCRIPTIONS: Partial<Record<ToolName, string>> = {
   reference_align: "Detect how a reference picture lies on the map grid (cellPx, scale, offset of cell 0,0) with a grid preview; saved for reference_view/reference_quantize. hint fixes known scale/offsets.",
   reference_quantize: "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
   render_compare: "Compare the map with a reference (referenceId) or with the draft start (baseline:'draftStart'); mode side|overlay|diff; region crops the same cells of picture and map; returns mismatching cells. cells:true adds an error heatmap, stats and worst cells with alternatives for you to paint.",
+  reference_detect_objects: "Find stamps in a reference picture (masked template match at the aligned scale; stacked objects too). Returns matches and positionsByStamp for place_stamp positions, plus a preview. Writes nothing.",
+  suggest_stamps: "Suggest multi-tile objects of a tileset sheet as stamp candidates (numbered preview). Show them to the user; call create_stamp only for ones the user accepts.",
   editor_ui: "Editor UI, not the map (no begin_edit): action state | configure {activeMapId, activeLayerId, tool, camera:{zoom,center,frame}, gridVisible, …} | layout {action reset|zone|show|hide|move, panel, zone} | application {locale, shortcuts} | commands {query} | run_command {commandId} | export_settings | configure_export {preferences}. args holds the action's arguments.",
 };
 
@@ -183,6 +185,7 @@ function publish(tool: AgentToolDefinition): AgentToolDefinition {
   if (tool.name === "paint_grid" && isObject(properties.layers) && isObject(properties.layers.items) && isObject(properties.layers.items.properties))
     properties.layers = { ...properties.layers, items: { ...properties.layers.items, properties: { ...properties.layers.items.properties, legend: { type: "object", description: "Same values as legend; merged over it." } } } };
   if (tool.name === "paint_grid") properties.proposalId = { type: "string", description: "reference_quantize's proposalId: paints its grid.layers unchanged (no rows needed)." };
+  if (tool.name === "reference_detect_objects") properties.alignment = { description: "\"auto\" (default) | \"none\" | reference_align's alignment object, unchanged." };
   if (tool.name === "reference_quantize") properties.colorLegend = { type: "object", description: "'#rrggbb' → tile | tag word | {stampId,ground?} | {overlay,ground?} | null | 'keep'" };
   if (isObject(properties.alignment)) properties.alignment = { description: "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align" };
   for (const [name, note] of Object.entries(PROPERTY_NOTES[tool.name] ?? {}))

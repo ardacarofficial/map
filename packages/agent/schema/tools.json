@@ -3171,6 +3171,90 @@
         "type": "object"
       },
       "name": "reference_align"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Find stamps in a reference picture (masked template match at the aligned scale; stacked objects too). Returns matches and positionsByStamp for place_stamp positions, plus a preview. Writes nothing.",
+      "inputSchema": {
+        "properties": {
+          "alignment": {
+            "description": "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align"
+          },
+          "mapId": {
+            "type": "string"
+          },
+          "minScore": {
+            "type": "number"
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "stampIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "referenceId"
+        ],
+        "type": "object"
+      },
+      "name": "reference_detect_objects"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Suggest multi-tile objects of a tileset sheet as stamp candidates (numbered preview). Show them to the user; call create_stamp only for ones the user accepts.",
+      "inputSchema": {
+        "properties": {
+          "minTiles": {
+            "type": "integer"
+          },
+          "region": {
+            "properties": {
+              "height": {
+                "type": "integer"
+              },
+              "width": {
+                "type": "integer"
+              },
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "tilesetId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilesetId"
+        ],
+        "type": "object"
+      },
+      "name": "suggest_stamps"
     }
   ]
 }
