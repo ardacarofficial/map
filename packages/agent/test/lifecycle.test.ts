@@ -648,3 +648,26 @@ it("releases save admission before notifying persistence and reports post-commit
       .some((e) => e.status === "failed" && e.code === "INTERNAL_ERROR"),
   ).toBe(true);
 });
+
+it("begin_edit with empty or omitted mapIds defaults to the active map", async () => {
+  for (const mapIds of [[], undefined]) {
+    const h = harness();
+    const args: Record<string, unknown> = { context: { worldSessionId: h.host.session().worldSessionId! }, idempotencyKey: "begin-key-1", requestLabel: "AI request" };
+    if (mapIds) args.mapIds = mapIds;
+    const r = success(await h.run("begin_edit", args)) as { data?: { transactionId: string } };
+    expect(r).toBeTruthy();
+    expect(h.api.getState().transaction?.affectedMapIds).toEqual(["map-1"]);
+  }
+});
+
+it("finish_edit truncates summaries over 512 characters with a warning instead of rejecting", async () => {
+  const h = harness();
+  await h.begin();
+  success(await h.edit("paint_cells", paint));
+  const r = success(await h.edit("finish_edit", { summary: "x".repeat(900) })) as { data?: { summary: string }; summary?: string; warnings?: string[] };
+  const d = (r.data ?? r) as { summary: string; warnings?: string[] };
+  expect(d.summary.length).toBe(512);
+  expect(d.summary.endsWith("…")).toBe(true);
+  expect((d.warnings ?? r.warnings ?? []).join(" ")).toMatch(/truncated/);
+  expect(h.api.getState().phase).toBe("awaitingApproval");
+});

@@ -252,15 +252,6 @@
           "context": {
             "worldSessionId": "world-1"
           },
-          "idempotencyKey": "begin-0001",
-          "expectedRevision": 0,
-          "requestLabel": "Build village",
-          "mapIds": []
-        },
-        {
-          "context": {
-            "worldSessionId": "world-1"
-          },
           "idempotencyKey": "short",
           "expectedRevision": 0,
           "requestLabel": "Build village",

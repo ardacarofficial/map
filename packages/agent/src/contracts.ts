@@ -280,7 +280,7 @@ export interface ToolData extends VisionToolData, ObjectToolData {
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId?: Id; sheet?: { stampId: Id; label: string; rect: Rect }[] } };
   begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; resumeToken: string; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; unlockedLayers?: { mapId: Id; layerId: Id }[]; limits: EssentialLimits; leaseDeadline: number; budget: EditBudget };
   resume_edit: { transactionId: Id; state: "running"; resumedFrom: TransactionState; revision: Revision; counters: TransactionCounters; affectedMapIds: Id[]; leaseDeadline: number; budget: EditBudget };
-  finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
+  finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; warnings?: string[]; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
   cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true; scope?: "member"; memberId?: Id; sharedResourcesRetained?: boolean };
   paint_cells: ChangedData; paint_rect: ChangedData; paint_line: ChangedData; fill: ChangedData & { filledCells: number };
   paint_grid: CompactChange; clear_region: CompactChange & { removedEntities?: number };

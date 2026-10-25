@@ -81,6 +81,14 @@ interface Cached extends ReplayRecord {
   tool?: ToolName;
 }
 
+export /** finish_edit accepts long summaries; the stored/UI text stays within the limit, with an ellipsis and a warning. */
+const SUMMARY_LIMIT = 512;
+function clipSummary(summary: string | undefined, warnings: string[]): string | undefined {
+  if (summary === undefined || summary.length <= SUMMARY_LIMIT) return summary;
+  warnings.push(`summary was ${summary.length} characters; truncated to ${SUMMARY_LIMIT}. Keep finish_edit summary short.`);
+  return `${summary.slice(0, SUMMARY_LIMIT - 1).trimEnd()}…`;
+}
+
 export function createAgentApi(host: AgentHost): AgentApi {
   const tx = new Transactions(host),
     cache = new Map<string, Cached>();
@@ -194,6 +202,15 @@ export function createAgentApi(host: AgentHost): AgentApi {
       && input.cells.every(c => Array.isArray(c) || (c !== null && typeof c === "object" && !("value" in c)))) {
       input.points = input.cells.map(c => Array.isArray(c) ? c : [(c as { x: unknown }).x, (c as { y: unknown }).y]);
       delete input.cells;
+    }
+    // begin_edit with omitted/empty mapIds: the active map (or the only map); otherwise say which ids are valid.
+    if (name === "begin_edit" && props.mapIds && (input.mapIds === undefined || (Array.isArray(input.mapIds) && input.mapIds.length === 0))) {
+      const maps = host.world.maps(), only = maps.length === 1 ? maps[0]!.id : undefined, active = host.session().activeMapId ?? only;
+      if (active && maps.some(m => m.id === active)) input.mapIds = [active];
+      else throw new AgentError(E.INVALID_ARGUMENT, "mapIds: name the map(s) this edit may change (no active map to default to)", {
+        validIds: maps.slice(0, 64).map(m => ({ id: m.id, name: m.name })),
+        nextAction: `pass mapIds:["<id>"] — maps: ${maps.slice(0, 16).map(m => `${m.id} (${m.name})`).join(", ") || "none, create a map first"}`,
+      });
     }
     if (props.mapId && input.mapId === undefined) {
       const pending = tx.pending, targets = pending ? [...pending.participants.keys()] : [];
@@ -440,6 +457,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
       }
       const callContext: AgentCallContext = { ...call, signal };
       let data: unknown, image: ImageBlock | Uint8Array | undefined;
+      const warnings: string[] = [];
       if(name==="join_edit"){data=await tx.join(args as ToolArguments["join_edit"],callContext);transactionId=tx.pending!.summary.id;}
       else if (name === "begin_edit") {
         data = await tx.begin(args as ToolArguments["begin_edit"], callContext);
@@ -462,7 +480,8 @@ export function createAgentApi(host: AgentHost): AgentApi {
         );
         transactionId = pending.summary.id;
         if (name === "finish_edit" && pending.collaboration) {
-          data=tx.finishMember(callContext,(args as ToolArguments["finish_edit"]).summary??pending.summary.label);
+          data=tx.finishMember(callContext,clipSummary((args as ToolArguments["finish_edit"]).summary,warnings)??pending.summary.label);
+          if (warnings.length && data !== null && typeof data === "object") data = { ...data, warnings };
         } else if (name === "finish_edit") {
           // No interrupt here: this is the active call that is sealing the writer.
           pending.summary.state = "awaitingApproval";
@@ -473,8 +492,9 @@ export function createAgentApi(host: AgentHost): AgentApi {
             transactionId,
             state: "awaitingApproval",
             summary:
-              (args as ToolArguments["finish_edit"]).summary ??
+              clipSummary((args as ToolArguments["finish_edit"]).summary, warnings) ??
               pending.summary.label,
+            ...(warnings.length ? { warnings } : {}),
             counters: { ...pending.summary.counters },
             requiresUserApproval: true,
           };

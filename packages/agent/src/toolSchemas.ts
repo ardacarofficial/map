@@ -637,7 +637,7 @@ const DEFINITIONS = [
         },
         "summary": {
           "type": "string",
-          "maxLength": 512
+          "maxLength": 20000
         }
       },
       "required": [
