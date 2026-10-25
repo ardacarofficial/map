@@ -23,7 +23,9 @@ export const OBJECT_LIMITS = {
 /** "auto" (default): stored alignment or detection; "none": the trimmed picture fitted onto the map; or reference_align's alignment. */
 export type ReferenceAlignmentArg = ReferenceAlignmentChoice;
 
-export interface DetectObjectsArgs { context?: ReadContext; referenceId: Id; mapId: Id; stampIds?: Id[]; minScore?: number; alignment?: ReferenceAlignmentArg; preview?: boolean }
+export interface DetectObjectsArgs { context?: ReadContext; referenceId: Id; mapId: Id; stampIds?: Id[]; minScore?: number; alignment?: ReferenceAlignmentArg; flips?: boolean; preview?: boolean }
+/** Mirrored matches grouped as ready place_stamp arguments. */
+export interface FlippedPlacement { stampId: Id; flipX?: true; flipY?: true; positions: [number, number][] }
 export interface DetectObjectsRequest extends DetectObjectsArgs { stampIds: Id[] }
 export interface ObjectMatch {
   stampId: Id;
@@ -33,14 +35,18 @@ export interface ObjectMatch {
   score: number;
   /** Object top-left minus the cell's top-left, in map pixels (a misaligned picture or an off-grid object). */
   pixelResidual: { dx: number; dy: number };
+  /** The stamp appears mirrored: place it with these flags. */
+  flipX?: true; flipY?: true;
 }
 export interface DetectObjectsData {
   mapId: Id; referenceId: Id;
   alignment: ReferenceAlignment;
   /** Box n in the preview is matches[n-1]. */
   matches: ObjectMatch[];
-  /** Ready for place_stamp {stampId, positions}. */
+  /** Unmirrored matches, ready for place_stamp {stampId, positions}. */
   positionsByStamp: Record<Id, [number, number][]>;
+  /** Mirrored matches: place_stamp {stampId, flipX|flipY, positions}. */
+  flipped?: FlippedPlacement[];
   truncated: boolean;
   warnings: string[];
   image?: PreviewImage;

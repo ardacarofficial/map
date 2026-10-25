@@ -2920,7 +2920,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
+      "description": "Turn a reference picture into paint_grid layers (ground + transparent overlay per cell, light-normalized) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
       "inputSchema": {
         "properties": {
           "alignment": {
@@ -3173,7 +3173,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Detect how a reference picture lies on the map grid (cellPx, scale, offset of cell 0,0) with a grid preview; saved for reference_view/reference_quantize. hint fixes known scale/offsets.",
+      "description": "Detect how a reference picture lies on the map grid (cellPx, scale, offset of cell 0,0) with a grid preview; saved for the reference tools (alignment auto). Check the preview; hint fixes known scale/offsets.",
       "inputSchema": {
         "properties": {
           "hint": {
@@ -3219,11 +3219,14 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Find stamps in a reference picture (masked template match at the aligned scale; stacked objects too). Returns matches and positionsByStamp for place_stamp positions, plus a preview. Writes nothing.",
+      "description": "Find stamps in a reference picture (masked template match at the aligned scale; stacked and mirrored objects too). Returns matches, positionsByStamp and flipped[] (flipX/flipY) for place_stamp positions, plus a preview. Writes nothing.",
       "inputSchema": {
         "properties": {
           "alignment": {
             "description": "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align"
+          },
+          "flips": {
+            "type": "boolean"
           },
           "mapId": {
             "type": "string"

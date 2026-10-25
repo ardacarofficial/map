@@ -314,6 +314,12 @@ Gerçek Claude Code/Codex denemelerinde bulunan sorunlar için. Editör yine har
 
 ### v2.2 — Referansa sadakat (Ekim 2026, Arda onayladı)
 
+Arda'nın denemesi: hazır bir tile paketinin örnek resmini birebir haritaya çevirmek tutmadı (ızgara kayık ve ölçekli, saydam kıyı/şelale tile'ları zeminin üstünde, ışık parlaklığı değiştiriyor, nesneler gözle tahmin ediliyor). Editör yine harita üretmez; ölçer, önerir, ajan uygular.
+
+- **Hizalama:** `reference_align` resmin harita ızgarasına nasıl oturduğunu bulur: hücre başına resim pikseli (`cellPx`), ölçek, hücre (0,0)'ın resimdeki yeri (eksi olabilir), güven. Önizlemede ızgara çizilir; ajan yanlışsa `hint` verir. Hizalama (referans, harita) başına yalnız bellekte saklanır. `reference_view` / `reference_quantize` / `render_compare` / `reference_detect_objects` varsayılan `alignment:"auto"` kullanır (kayıtlı, yoksa algılama; güven < 0.35 ise tüm haritaya sığdırır ve uyarır); `region` her araçta resmin aynı hücrelerini keser
+- **Katmanlı eşleme + ışık:** hücre önce en iyi opak zemin tile'ıyla, sonra artığa saydam üst tile (kıyı, şelale) bindirilerek eşlenir; `reference_quantize` C1 ızgarasına `overlay` katmanı ekler. Hücre başına basit ışık düzeltmesi (`normalizeLight`, varsayılan açık) parlama ve gölgeyi tolere eder. Çıktı `proposalId` ile `paint_grid`'e gider
+- **Nesne bulma:** `reference_detect_objects` stamp'lerin tüm katmanlı görüntüsünü hizalanmış ölçekte maskeli şablonla arar (aynalı X/Y halleri dahil); önce büyük ve emin olanlar, sonra kalan resimde tekrar, böylece üst üste kasalar da bulunur. `positionsByStamp` ve `flipped[]` doğrudan `place_stamp`'e verilir. Kütüphanede olmayan nesneler için `suggest_stamps` tileset'teki bitişik parçaları numaralı önizlemeyle önerir; **kullanıcı onaylamadan stamp eklenmez** (ajan sorar, sonra `create_stamp`)
+- **Karşılaştırma:** `render_compare {cells:true}` hücre başına ΔE ısı haritası, istatistik ve en kötü hücreleri mevcut tile'lar ve eşleyicinin alternatifleriyle (zemin + üst) döner. Düzeltmeyi ajan yapar; editör kendiliğinden değiştirmez
 - **Basit Tiled içe aktarma** ("Sonra"dan taşındı): Dosya → İçe aktar → Tiled haritası… ve MCP `import_tiled {path}` dikdörtgen TMX/TMJ haritayı geçerli dünyada yeni harita yapar. Yalnız tile katmanları (çevirme bitleri, köşegen dahil; gruptaki tile katmanları düz alınır), harici `.tsx`/`.tsj` ve gömülü tileset'lerin PNG'leri dünyaya yeni tileset olarak kopyalanır (aynı PNG ve ızgara zaten varsa o kullanılır; kullanıcı dosyasına yazılmaz). CSV, Base64, zlib/gzip okunur; nesne/resim katmanı, grup yapısı, animasyon, tile çarpışma şekli, Wang seti, izometrik/altıgen, zstd ve PNG olmayan resimler alınmaz ve tek listede gösterilir. Elle içe aktarma "Yeni harita" gibidir (geri alma adımı yok, harita silinerek geri alınır); ajan içinde taslağa girer, Onayla/Vazgeç uygular. Dosya başına ≤ 32 MB, yalnız okuma
 
 ### Sonra
@@ -364,6 +370,7 @@ Kaynaklardan doğrulanmış; ilgili sürüme gelince uygulanır.
 | Canlı bağlantılı prefab, iç içe prefab | Haritanın bütün okuma mantığını değiştirir; düz stamp yeterli |
 | Checkpoint, dallanan geçmiş, crash journal | Undo + otomatik kayıt + yedek klasörü aynı ihtiyacı karşılıyor |
 | Sonsuz tuval | Fill, dışa aktarma ve minimap'i sınır sorusuyla uğraştırır |
+| Hücre başına piksel kaydırma, serbest tile konumu; tileset'ten öğrenilen komşuluk kuralları | Biri formatı, diğeri autotile'ı geri getirir; v2.2 referans sadakati hizalama + eşleme ile çözülür (Arda) |
 | Görsel kural editörlü autotile, editör içinde otomatik/prosedürel harita üretimi | Kullanıcıya programlama yaptırır. v2.0'da haritayı dışarıdaki AI ajanı tasarlar; editör yalnız komutları yürütür |
 | Altı aşamalı tile kimlik eşleme | Nadir durum için haftalarca iş |
 | Aseprite'ı komut satırından çalıştırma | Çıktısı güvenilmez; PNG izleme yetiyor |

@@ -56,6 +56,18 @@ describe("object tools host", () => {
     expect(quiet.data.alignment).toMatchObject({ cellPx: 32, offsetX: 0, offsetY: 0, confidence: 0 });
   }, 30000);
 
+  it("finds mirrored stamps and returns them as flipped place_stamp groups", async () => {
+    const { references, objects } = setup();
+    const ref = await references.add({ imageBase64: base64(png(hardReference(2, 6, 4, 9, [{ stampId: "torch", x: 22, y: 6, flip: 2 }]))) }, call);
+    const alignment: ReferenceAlignment = { cellPx: 32, scale: 2, offsetX: 6, offsetY: 4, cols: SCENE.width, rows: SCENE.height, confidence: 1, method: "manual" };
+    const out = await objects.detect({ referenceId: ref.referenceId, mapId: "m", stampIds: ["torch", "barrel"], alignment, preview: false }, call);
+    expect(out.data.flipped).toEqual([{ stampId: "torch", flipY: true, positions: [[22, 6]] }]);
+    expect(out.data.positionsByStamp.torch!.sort()).toEqual([[16, 9], [8, 1]].sort());
+    expect(out.data.matches.filter(m => m.flipX)).toEqual([]);
+    const plain = await objects.detect({ referenceId: ref.referenceId, mapId: "m", stampIds: ["torch"], alignment, flips: false, preview: false }, call);
+    expect(plain.data.flipped).toBeUndefined();
+  }, 30000);
+
   it("suggests stamp candidates with a numbered sheet preview", async () => {
     const { objects } = setup();
     const out = await objects.suggest({ tilesetId: pack.id }, call);

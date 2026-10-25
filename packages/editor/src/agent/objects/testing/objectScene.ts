@@ -59,7 +59,7 @@ export const stamps: Stamp[] = [
   stamp("torch", 1, 2, [12, 20]), stamp("bigCrate", 2, 2, [13, 14, 21, 22]), stamp("net", 1, 2, [15, 23]),
 ];
 
-export interface Placement { stampId: string; x: number; y: number; dx?: number; dy?: number }
+export interface Placement { stampId: string; x: number; y: number; dx?: number; dy?: number; /** 1 mirrored horizontally, 2 vertically. */ flip?: 1 | 2 }
 export const SCENE = { width: 24, height: 16 };
 /** Drawn in order: big crate before the small crate stacked on it. */
 export const placements: Placement[] = [
@@ -73,16 +73,16 @@ export const placements: Placement[] = [
 const groundAt = (x: number, y: number) => y >= 11 ? 1 : x >= 15 && y <= 7 ? 2 : x >= 9 && x <= 13 && y >= 9 ? 3 : 0;
 
 /** The scene in map pixels (opaque). */
-export function sceneMapPixels(): RgbaImage {
+export function sceneMapPixels(extra: readonly Placement[] = []): RgbaImage {
   const art = packPixels(), width = SCENE.width * T, height = SCENE.height * T, data = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const tile = groundAt(Math.floor(x / T), Math.floor(y / T)), s = (((Math.floor(tile / COLUMNS) * T + y % T) * art.width) + (tile % COLUMNS) * T + x % T) * 4;
     data.set(art.data.subarray(s, s + 4), (y * width + x) * 4);
   }
-  for (const p of placements) {
+  for (const p of [...placements, ...extra]) {
     const s = stamps.find(st => st.id === p.stampId)!, { image } = stampRgba(s, [pack], () => art, T, T);
     for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
-      const q = (y * image.width + x) * 4, a = image.data[q + 3]! / 255;
+      const q = ((p.flip === 2 ? image.height - 1 - y : y) * image.width + (p.flip === 1 ? image.width - 1 - x : x)) * 4, a = image.data[q + 3]! / 255;
       if (!a) continue;
       const X = p.x * T + (p.dx ?? 0) + x, Y = p.y * T + (p.dy ?? 0) + y;
       if (X < 0 || Y < 0 || X >= width || Y >= height) continue;
@@ -95,8 +95,8 @@ export function sceneMapPixels(): RgbaImage {
 
 /** Scaled ×scale, shifted so map cell (0,0) starts at (offsetX, offsetY), right/bottom cropped, lit by a
  * horizontal gradient and a radial glow, with mild deterministic noise. */
-export function hardReference(scale: number, offsetX: number, offsetY: number, crop = 9): RgbaImage {
-  const scene = sceneMapPixels(), width = offsetX + scene.width * scale - crop, height = offsetY + scene.height * scale - crop, data = new Uint8Array(width * height * 4);
+export function hardReference(scale: number, offsetX: number, offsetY: number, crop = 9, extra: readonly Placement[] = []): RgbaImage {
+  const scene = sceneMapPixels(extra), width = offsetX + scene.width * scale - crop, height = offsetY + scene.height * scale - crop, data = new Uint8Array(width * height * 4);
   const glow = { x: offsetX + 16.5 * T * scale, y: offsetY + 9.5 * T * scale, r: 3.5 * T * scale };
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const o = (y * width + x) * 4, sx = Math.floor((x - offsetX) / scale), sy = Math.floor((y - offsetY) / scale);

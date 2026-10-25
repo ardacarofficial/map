@@ -80,6 +80,21 @@ Bir ekran görüntüsü, render veya elle çizilmiş taslak verebilirsin. Resmi 
 
 AI resmi `reference_view` ile harita ızgarasında görür, `reference_quantize` ile her hücre için en yakın tile’ı önerir (taslakta renk → tile/stamp eşlemesiyle), boyadıktan sonra `render_compare` ile resimle karşılaştırır. Öneri hiçbir şey yazmaz; çizim yine onayına gelir.
 
+### Resimden birebir harita
+
+Hazır bir tile paketinin örnek resmini (render veya ekran görüntüsü) aynı tile'larla haritaya çevirmek için `map_from_image` istemini kullan; paketin tileset'leri dünyada olmalı. AI sırasıyla:
+
+1. `reference_align`: resmin ızgarasını bulur (ölçek, kayma). Önizlemede çizgiler tile sınırlarına oturmalı; oturmuyorsa AI ipucu verip tekrar dener.
+2. `reference_quantize` → `paint_grid`: her hücreye zemin ve gerekiyorsa üstüne saydam tile (kıyı, şelale); parlama ve gölge tolere edilir.
+3. `reference_detect_objects` → `place_stamp`: kasa, fıçı, meşale gibi stamp'leri resimde bulur (üst üste duranlar ve aynalı olanlar dahil). Kütüphanede olmayan nesneler için `suggest_stamps` aday gösterir; hangilerinin stamp olacağına **sen** karar verirsin.
+4. `render_compare {cells:true}`: hata ısı haritası ve en kötü hücreler; AI bunları düzeltir. Editör kendiliğinden hiçbir şeyi değiştirmez.
+
+Paketle birlikte örnek bir `.tmx`/`.tmj` geldiyse resim yerine onu içe aktarmak daha kesindir.
+
+### Tiled haritası içe aktarma
+
+**Dosya → İçe aktar → Tiled haritası…** bir TMX veya TMJ dosyasını geçerli dünyada yeni harita olarak açar; AI aynı işi `import_tiled {path}` ile yapar (taslağa girer, onayına gelir). Yalnız dikdörtgen haritaların tile katmanları alınır; tileset PNG'leri dünyaya kopyalanır, senin dosyalarına yazılmaz. Nesne/resim katmanları, animasyonlar, izometrik/altıgen haritalar gibi alınamayanlar tek listede gösterilir.
+
 ## Onayla, Vazgeç, Durdur
 
 - **Onayla:** İstekteki bütün harita değişikliklerini kabul eder. Bir normal **Geri al** hepsini birlikte geri alır. Yeni harita listede kalır, içeriği geri alınır. Ardından normal kayıt/otomatik kayıt çalışır.

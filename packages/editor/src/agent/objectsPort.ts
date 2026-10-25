@@ -2,7 +2,7 @@
  * tileset art; never writes the map, the stamp library or any PNG. */
 import {
   AgentError, AgentErrorCode, OBJECT_LIMITS,
-  type AgentObjectsPort, type AgentWorldPort, type DetectObjectsRequest, type ObjectMatch, type PreviewImage,
+  type AgentObjectsPort, type AgentWorldPort, type DetectObjectsRequest, type FlippedPlacement, type ObjectMatch, type PreviewImage,
 } from "@smap/agent";
 import type { RgbaImage, Stamp } from "@smap/core";
 import { encodeAgentPng, imagePixels } from "./images";
@@ -15,6 +15,27 @@ import { resampleToMapPixels, stampRgba } from "./objects/raster";
 import { suggestStampCandidates } from "./objects/suggest";
 
 const fail = (code: AgentErrorCode, message: string, details: Record<string, string | number | boolean> = {}): never => { throw new AgentError(code, message, details); };
+/** Template ids of mirrored variants: stampId + FLIP_SEP + 1 (flipX) | 2 (flipY). */
+const FLIP_SEP = "\u0000";
+/** Whole-image mirror: 1 = horizontal (flipX), 2 = vertical (flipY). */
+function mirror(image: RgbaImage, flip: 1 | 2): RgbaImage {
+  const { width, height, data } = image, out = new Uint8Array(data.length);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const sx = flip === 1 ? width - 1 - x : x, sy = flip === 2 ? height - 1 - y : y;
+    out.set(data.subarray((sy * width + sx) * 4, (sy * width + sx) * 4 + 4), (y * width + x) * 4);
+  }
+  return { width, height, data: out };
+}
+/** Nearly the same art (mirror-symmetric stamps are searched once). */
+function sameArt(a: RgbaImage, b: RgbaImage): boolean {
+  let diff = 0, n = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (!a.data[i + 3] && !b.data[i + 3]) continue;
+    n++;
+    if (Math.abs(a.data[i + 3]! - b.data[i + 3]!) > 64 || Math.abs(a.data[i]! - b.data[i]!) + Math.abs(a.data[i + 1]! - b.data[i + 1]!) + Math.abs(a.data[i + 2]! - b.data[i + 2]!) > 48) diff++;
+  }
+  return diff <= n * 0.03;
+}
 const BOX_COLORS = [[105, 201, 174, 255], [231, 183, 95, 255], [240, 112, 122, 255], [120, 170, 255, 255], [200, 140, 255, 255], [250, 240, 120, 255]] as const;
 
 export function createObjectsPort(world: AgentWorldPort, revision: () => number): AgentObjectsPort {
@@ -44,6 +65,11 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
         const { image, missing } = stampRgba(stamp, world.tilesets(), id => sources.get(id), map.tileWidth, map.tileHeight);
         if (missing.length) warnings.push(`${stamp.id}: artwork of ${missing.join(", ")} is unavailable`);
         templates.push({ id: stamp.id, cellsW: stamp.width, cellsH: stamp.height, image });
+        // Mirrored placements (place_stamp flipX/flipY) unless the art is symmetric that way.
+        if (args.flips !== false) for (const flip of [1, 2] as const) {
+          const mirrored = mirror(image, flip);
+          if (!sameArt(mirrored, image)) templates.push({ id: `${stamp.id}${FLIP_SEP}${flip}`, cellsW: stamp.width, cellsH: stamp.height, image: mirrored });
+        }
         const pause = checkpoint(); if (pause) await pause;
       }
       const out = await detectObjects({ work, tileWidth: map.tileWidth, tileHeight: map.tileHeight, templates, minScore: args.minScore ?? 0.85, maxMatches: OBJECT_LIMITS.matches, checkpoint }).catch((error: unknown) => {
@@ -53,10 +79,18 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
       });
       call.signal.throwIfAborted();
       if (store.revision !== mapRevision) fail(AgentErrorCode.REVISION_CONFLICT, "Map changed during detection", { nextAction: "Call reference_detect_objects again." });
-      const matches: ObjectMatch[] = out.matches.map(m => ({ stampId: m.id, x: m.x, y: m.y, score: m.score, pixelResidual: { dx: m.dx, dy: m.dy } }));
-      const positionsByStamp: Record<string, [number, number][]> = {};
-      for (const m of matches) (positionsByStamp[m.stampId] ??= []).push([m.x, m.y]);
-      const data = { mapId: args.mapId, referenceId: args.referenceId, alignment, matches, positionsByStamp, truncated: out.truncated, warnings, mapRevision };
+      const matches: ObjectMatch[] = out.matches.map(m => {
+        const [stampId, flip] = m.id.split(FLIP_SEP) as [string, string | undefined];
+        return { stampId, x: m.x, y: m.y, score: m.score, pixelResidual: { dx: m.dx, dy: m.dy }, ...(flip === "1" ? { flipX: true as const } : flip === "2" ? { flipY: true as const } : {}) };
+      });
+      const positionsByStamp: Record<string, [number, number][]> = {}, mirrored = new Map<string, FlippedPlacement>();
+      for (const m of matches) {
+        if (!m.flipX && !m.flipY) { (positionsByStamp[m.stampId] ??= []).push([m.x, m.y]); continue; }
+        const key = `${m.stampId}${FLIP_SEP}${m.flipX ? 1 : 2}`;
+        if (!mirrored.has(key)) mirrored.set(key, { stampId: m.stampId, ...(m.flipX ? { flipX: true } : { flipY: true }), positions: [] });
+        mirrored.get(key)!.positions.push([m.x, m.y]);
+      }
+      const data = { mapId: args.mapId, referenceId: args.referenceId, alignment, matches, positionsByStamp, ...(mirrored.size ? { flipped: [...mirrored.values()] } : {}), truncated: out.truncated, warnings, mapRevision };
       if (args.preview === false) return { data };
       // Preview: the aligned picture on the map grid, box n = matches[n-1].
       const region = { x: 0, y: 0, width: cols, height: rows };
@@ -69,7 +103,7 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
       drawPreviewOverlays(canvas, layout, region, { grid: true, coordinates: true });
       const order = [...new Set(matches.map(m => m.stampId))];
       out.matches.forEach((m, i) => {
-        const color = BOX_COLORS[order.indexOf(m.id) % BOX_COLORS.length]!;
+        const color = BOX_COLORS[order.indexOf(matches[i]!.stampId) % BOX_COLORS.length]!;
         const box = { x: Math.round(layout.left + m.px * layout.scale), y: Math.round(layout.top + m.py * layout.scale), width: Math.max(2, Math.round(m.width * layout.scale)), height: Math.max(2, Math.round(m.height * layout.scale)) };
         canvas.outline(box, color, box.width >= 24 ? 2 : 1);
         canvas.label(String(i + 1), box.x + 1, box.y + 1, box.width >= 32 ? 2 : 1);
