@@ -71,7 +71,8 @@ impl Options {
         let renders_image = match name {
             "render_preview" | "prepare_smart_source" | "begin_edit"
             | "visual_ingest_reference" | "visual_match_reference"
-            | "reference_add" | "reference_view" | "reference_quantize" | "render_compare" => true,
+            | "reference_add" | "reference_view" | "reference_quantize" | "render_compare"
+            | "reference_align" => true,
             // Draft writes and whole-map checks share the long budget (agent mutationTimeoutMs).
             "paint_cells" | "paint_rect" | "paint_line" | "fill" | "smart_brush" | "draw_path"
             | "place_stamp" | "place_entity" | "edit_entity" | "edit_layer" | "create_map"
@@ -983,6 +984,7 @@ mod deadline_tests {
             "reference_view",
             "reference_quantize",
             "render_compare",
+            "reference_align",
         ] {
             assert_eq!(options.tool_timeout(name, &json!({})), options.image_timeout, "{name}");
         }

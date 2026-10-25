@@ -133,4 +133,16 @@ describe("reference tools", () => {
     error(await h.run("render_compare", { mapId: "map-1", baseline: "draftStart" }), "INVALID_ARGUMENT");
     error(await h.run("reference_add", { path: "/tmp/notes.txt" }), "INVALID_ARGUMENT");
   });
+  it("routes reference_align to the host with the active map and validates hints", async () => {
+    const h = harness();
+    const seen: unknown[] = [];
+    const alignment = { cellPx: 64, scale: 4, offsetX: 13, offsetY: 7, cols: 30, rows: 21, confidence: 0.9, method: "auto" as const };
+    h.host.references = { ...port([]), align: async args => { seen.push(args); return { data: { mapId: args.mapId, referenceId: args.referenceId, alignment, saved: args.save !== false, content: { x: 0, y: 0, width: 64, height: 64 }, image: { width: 1, height: 1, scale: 1 }, warnings: [] } }; } };
+    expect(success(await h.run("reference_align", { referenceId: "ref-1", hint: { scale: 4 } })).data).toMatchObject({ mapId: "map-1", alignment, saved: true });
+    expect(seen[0]).toMatchObject({ mapId: "map-1", hint: { scale: 4 } });
+    error(await h.run("reference_align", { referenceId: "ref-1", hint: { scale: -1 } }), "INVALID_ARGUMENT");
+    error(await h.run("reference_align", { referenceId: "nope" }), "UNKNOWN_ID");
+    success(await h.run("reference_quantize", { referenceId: "ref-1", mapId: "map-1", alignment: { cellPx: 64, offsetX: 13, offsetY: 7 }, normalizeLight: false }));
+    error(await h.run("reference_quantize", { referenceId: "ref-1", mapId: "map-1", alignment: "grid" }), "INVALID_ARGUMENT");
+  });
 });

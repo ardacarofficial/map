@@ -10,7 +10,7 @@ export function selectAiControls(phase: AgentPhase, applying: boolean) {
   };
 }
 export type ActivityOutcome = "running" | "applied" | "tentative" | "rejected" | "approved" | "rolledBack" | "stopped" | "succeeded";
-const READ_TOOLS = new Set(["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "list_entity_types", "render_preview", "validate_map", "get_tags", "set_tags", "reference_add", "reference_view", "reference_quantize", "render_compare"]);
+const READ_TOOLS = new Set(["get_session", "get_map_info", "read_region", "list_tilesets", "get_tile_catalog", "list_stamps", "list_entity_types", "render_preview", "validate_map", "get_tags", "set_tags", "reference_add", "reference_view", "reference_quantize", "render_compare", "reference_align"]);
 export function activityOutcome(entry: ActivityLogEntry, entries: readonly ActivityLogEntry[]): ActivityOutcome {
   if (entry.status === "failed") return "rejected";
   if (entry.status === "started") return "running";

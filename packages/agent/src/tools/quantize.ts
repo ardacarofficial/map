@@ -162,7 +162,7 @@ function legendChars(count: number): string[] {
 }
 
 /** Rows + legend from per-cell values; most frequent value gets the first letter. */
-function encodeLayer(width: number, height: number, values: (ProposalCell | undefined)[]): { rows: string[]; legend: Record<string, ProposalCell>; counts: Record<string, number> } {
+export function encodeLayer(width: number, height: number, values: (ProposalCell | undefined)[]): { rows: string[]; legend: Record<string, ProposalCell>; counts: Record<string, number> } {
   const freq = new Map<string, { cell: ProposalCell; n: number; first: number }>();
   values.forEach((cell, i) => {
     if (cell === undefined || cell === "keep") return;
@@ -307,32 +307,16 @@ export async function quantizeReference(input: QuantizeInput): Promise<QuantizeO
     for (const p of await legendStampPlacements(input, placement, pxPerCellX, pxPerCellY)) stamps.push(p);
   }
   // Detected stamps: every non-empty stamp cell equals the topmost proposed tile (overlay, else ground).
-  if (mode === "render" && input.stamps?.length) {
-    const overlayKeys = cells.map(c => c.overlay >= 0 ? key(input.candidates[c.overlay]!.tile) : c.ground >= 0 ? key(input.candidates[c.ground]!.tile) : "");
-    const claimed = new Set<number>();
-    for (const probe of [...input.stamps].sort((a, b) => b.cells.length - a.cells.length || (a.stampId < b.stampId ? -1 : 1))) {
-      if (!probe.cells.length) continue;
-      for (let y = 0; y + probe.height <= H; y++) for (let x = 0; x + probe.width <= W; x++) {
-        if (probe.cells.some(c => claimed.has((y + c.y) * W + x + c.x) || overlayKeys[(y + c.y) * W + x + c.x] !== key(c.tile))) continue;
-        for (const c of probe.cells) claimed.add((y + c.y) * W + x + c.x);
-        stamps.push({ stampId: probe.stampId, at: { x: x + region.x, y: y + region.y }, source: "detected" });
-      }
-    }
-  }
+  if (mode === "render" && input.stamps?.length)
+    stamps.push(...detectStampProbes(region, cells.map(c => c.overlay >= 0 ? key(input.candidates[c.overlay]!.tile) : c.ground >= 0 ? key(input.candidates[c.ground]!.tile) : ""), input.stamps));
   const ground = encodeLayer(W, H, groundValues), overlay = encodeLayer(W, H, overlayValues);
-  let high = 0, medium = 0, low = 0, uncovered = 0, errorSum = 0, covered = 0;
-  const lowCells: Point[] = [];
-  cells.forEach((c, i) => {
-    if (!c.covered) { uncovered++; return; }
-    covered++; errorSum += c.error;
-    if (c.confidence >= 0.6) high++; else if (c.confidence >= 0.3) medium++; else { low++; if (lowCells.length < 64) lowCells.push({ x: region.x + i % W, y: region.y + Math.floor(i / W) }); }
-  });
+  const confidence = summarizeConfidence(cells, region);
   return {
     cells,
     groundRows: ground.rows, groundLegend: ground.legend,
     overlayRows: input.overlay || overlayValues.some(v => v !== undefined) ? overlay.rows : null, overlayLegend: overlay.legend,
     counts: { ground: ground.counts, overlay: overlay.counts },
-    confidence: { high, medium, low, uncovered, meanError: covered ? Math.round(errorSum / covered * 10) / 10 : 0, lowCells, lowCellsTruncated: low > lowCells.length },
+    confidence,
     stamps,
     palette: clusters.sort((a, b) => b.n - a.n).slice(0, 16).map(c => ({
       hex: "#" + c.rgb.map(v => Math.round(v).toString(16).padStart(2, "0")).join(""), cells: c.n,
@@ -342,6 +326,33 @@ export async function quantizeReference(input: QuantizeInput): Promise<QuantizeO
     placement,
   };
 }
+
+/** Stamps whose every non-empty cell equals the topmost proposed tile key (row-major cells of region). */
+export function detectStampProbes(region: Rect, topKeys: readonly string[], probes: readonly StampProbe[]): QuantizeOutput["stamps"] {
+  const W = region.width, H = region.height, claimed = new Set<number>(), out: QuantizeOutput["stamps"] = [];
+  for (const probe of [...probes].sort((a, b) => b.cells.length - a.cells.length || (a.stampId < b.stampId ? -1 : 1))) {
+    if (!probe.cells.length) continue;
+    for (let y = 0; y + probe.height <= H; y++) for (let x = 0; x + probe.width <= W; x++) {
+      if (probe.cells.some(c => claimed.has((y + c.y) * W + x + c.x) || topKeys[(y + c.y) * W + x + c.x] !== key(c.tile))) continue;
+      for (const c of probe.cells) claimed.add((y + c.y) * W + x + c.x);
+      out.push({ stampId: probe.stampId, at: { x: x + region.x, y: y + region.y }, source: "detected" });
+    }
+  }
+  return out;
+}
+/** Confidence bands (≥0.6 high, ≥0.3 medium) and the first low cells. */
+export function summarizeConfidence(cells: readonly CellResult[], region: Rect): QuantizeOutput["confidence"] {
+  const W = region.width;
+  let high = 0, medium = 0, low = 0, uncovered = 0, errorSum = 0, covered = 0;
+  const lowCells: Point[] = [];
+  cells.forEach((c, i) => {
+    if (!c.covered) { uncovered++; return; }
+    covered++; errorSum += c.error;
+    if (c.confidence >= 0.6) high++; else if (c.confidence >= 0.3) medium++; else { low++; if (lowCells.length < 64) lowCells.push({ x: region.x + i % W, y: region.y + Math.floor(i / W) }); }
+  });
+  return { high, medium, low, uncovered, meanError: covered ? Math.round(errorSum / covered * 10) / 10 : 0, lowCells, lowCellsTruncated: low > lowCells.length };
+}
+export const tileKey = (t: ResolvedTile): string => key(t);
 
 /** One stamp per pixel blob of its legend colours (small dots such as trees rarely dominate a whole cell). */
 async function legendStampPlacements(input: QuantizeInput, placement: Rect, pxPerCellX: number, pxPerCellY: number): Promise<QuantizeOutput["stamps"]> {
