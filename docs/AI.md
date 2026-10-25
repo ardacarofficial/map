@@ -62,7 +62,7 @@ AI’ın çizdiği her şey sen **Onayla** diyene kadar taslaktır; **Vazgeç** 
 
 **Codex:** Yukarıdaki bloktaki `default_tools_approval_mode = "approve"` satırı Harita araçlarını onay sormadan çalıştırır. Yalnız bu sunucuyu etkiler. `tool_timeout_sec = 120` uzun önizleme ve büyük çizim çağrılarının yarıda kesilmesini önler.
 
-Harita’da kalıcı etkisi olan, taslağa girmeyen araçlar (etiket yazma, dışa aktarma, panel düzeni ve uygulama ayarları) MCP’de “yıkıcı” olarak işaretlidir; istemci bunlar için ayrıca sorabilir. Hiçbir araç PNG yazamaz, dosya veya kabuk çalıştıramaz ve AI kendi işini onaylayamaz.
+Taslağa yazan araçlar geri alınabildiği için “yıkıcı” sayılmaz. Etiket yazma (`set_tags`) taslağa girmeyip doğrudan kaydedildiği için “yıkıcı” işaretlidir; istemci onun için ayrıca sorabilir. `editor_ui` (panel düzeni, uygulama ve dışa aktarma ayarları) yalnız arayüz tercihlerini değiştirir, harita içeriğine dokunmaz. Hiçbir araç PNG yazamaz, dosya veya kabuk çalıştıramaz ve AI kendi işini onaylayamaz.
 
 ## Örnek istekler
 
