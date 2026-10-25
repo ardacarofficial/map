@@ -2185,7 +2185,7 @@ const OBJECT_DEFINITIONS: readonly AgentToolDefinition[] = (() => {
   const alignment = REFERENCE_ALIGNMENT_SCHEMA;
   return [
     tool("reference_detect_objects", "Detect Stamps In Reference",
-      "Find stamps (crates, barrels, torches, houses…) in a reference picture by masked template matching of each stamp's composited art at the aligned scale; big confident objects first, then the rest of the picture again, so stacked objects are found too. Mirrored placements are searched too (flips:false skips them). Returns matches {stampId,x,y,score,pixelResidual,flipX?,flipY?}, positionsByStamp and flipped[] ready for place_stamp positions (with flipX/flipY), and a preview with numbered boxes. Writes nothing.",
+      "Find stamps (crates, barrels, torches, houses…) in a reference picture by masked template matching of each stamp's composited art at the aligned scale; big confident objects first, then the rest of the picture again, so stacked objects are found too. Mirrored placements are searched too (flips:false skips them). Returns matches, positionsByStamp, flipped[] (with flipX/flipY) and stacked[] (in front of another object: place last with its layerMapping) ready for place_stamp positions, and a preview with numbered boxes. Writes nothing.",
       object({ ...optionalContext, referenceId: ref("Id"), mapId: ref("Id"), stampIds: { type: "array", minItems: 1, maxItems: 64, uniqueItems: true, items: ref("Id") },
         minScore: { type: "number", minimum: 0.5, maximum: 1, default: 0.85 }, alignment, flips: { type: "boolean", default: true }, preview: { type: "boolean", default: true } }, ["referenceId", "mapId"])),
     tool("suggest_stamps", "Suggest Stamps From Tileset",

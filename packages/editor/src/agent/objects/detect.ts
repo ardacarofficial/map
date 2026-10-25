@@ -29,6 +29,8 @@ export interface DetectedObject {
   /** Top-left in work pixels and template size. */
   px: number; py: number; width: number; height: number;
   score: number;
+  /** In front of another match it overlaps (stacked): its art explains the shared pixels better. */
+  front?: true;
 }
 export interface DetectOutput { matches: DetectedObject[]; truncated: boolean }
 
@@ -54,7 +56,7 @@ const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi :
 /** Scored template pixels for one plane: index offsets (row stride of that plane), colours and luminance. */
 interface Points { o: Int32Array; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; w: number; h: number; textured: boolean }
 interface Plane { width: number; height: number; r: Float32Array; g: Float32Array; b: Float32Array; l: Float32Array; valid: Uint8Array }
-interface Prepared { id: string; family: string; cellsW: number; cellsH: number; width: number; height: number; holes: Points | null; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
+interface Prepared { id: string; family: string; /** Template pixels with art (alpha ≥ 128). */ mask: Uint8Array; cellsW: number; cellsH: number; width: number; height: number; holes: Points | null; all: Points; refine: Points; probe: Points; gate: Points; coarse: Points | null; cw: number; ch: number }
 
 function textured(image: RgbaImage, xs: readonly number[], ys: readonly number[]): boolean {
   let s = 0, ss = 0;
@@ -299,7 +301,9 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
     const refine = points(t.image, threshold, work.width, REFINE_POINTS), probe = points(t.image, threshold, work.width, PROBE_POINTS), gate = points(t.image, threshold, work.width, GATE_POINTS);
     // Transparent pixels inside the box: flat-coloured art must stand out from what shows through them.
     const holes = all.textured ? null : points(invertAlpha(t.image), 192, work.width, 256);
-    prepared.push({ id: t.id, family: t.family ?? t.id, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, holes: holes && holes.o.length >= 8 ? holes : null, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
+    const mask = new Uint8Array(t.image.width * t.image.height);
+    for (let i = 0; i < mask.length; i++) mask[i] = t.image.data[i * 4 + 3]! >= 128 ? 1 : 0;
+    prepared.push({ id: t.id, family: t.family ?? t.id, mask, cellsW: t.cellsW, cellsH: t.cellsH, width: t.image.width, height: t.image.height, holes: holes && holes.o.length >= 8 ? holes : null, all, refine, probe, gate, coarse, cw: small.width, ch: small.height });
   }
   const owner = new Int32Array(work.width * work.height).fill(-1);
   const coarseOwner = new Int32Array(coarseWork.width * coarseWork.height).fill(-1);
@@ -428,11 +432,32 @@ export async function detectObjects(input: DetectInput): Promise<DetectOutput> {
     }
     if (!added) break;
   }
+  // Stacking order: of two overlapping objects, the one whose art fits the shared visible pixels better is in front.
+  const front = new Set<number>();
+  /** Mean lit distance of a's art over the picture pixels that both a's and b's art cover. */
+  const sharedError = (a: Candidate, b: Candidate) => {
+    const pa = prepared[a.t]!, pb = prepared[b.t]!;
+    const m = visibleLight(work, pa.all, a.py * work.width + a.px, null);
+    let sum = 0, n = 0;
+    for (let j = 0; j < m; j++) {
+      const i = scratch.i[j]!, k = scratch.k[j]!, x = k % work.width - b.px, y = Math.floor(k / work.width) - b.py;
+      if (x < 0 || y < 0 || x >= pb.width || y >= pb.height || !pb.mask[y * pb.width + x]) continue;
+      sum += litDistance(pa.all, i, work, k); n++;
+    }
+    return n ? sum / n : Infinity;
+  };
+  for (let a = 0; a < accepted.length; a++) for (let b = a + 1; b < accepted.length; b++) {
+    const A = accepted[a]!, B = accepted[b]!;
+    if (!overlaps(A, B)) continue;
+    const ea = sharedError(A, B), eb = sharedError(B, A);
+    if (ea === Infinity || eb === Infinity) continue;
+    front.add(ea <= eb ? a : b);
+  }
   const columns = Math.floor(work.width / tileWidth), rows = Math.floor(work.height / tileHeight);
-  const matches = accepted.map(c => {
+  const matches = accepted.map((c, index) => {
     const p = prepared[c.t]!;
     const x = clamp(Math.round(c.px / tileWidth), 0, Math.max(0, columns - p.cellsW)), y = clamp(Math.round(c.py / tileHeight), 0, Math.max(0, rows - p.cellsH));
-    return { id: p.id, x, y, dx: c.px - x * tileWidth, dy: c.py - y * tileHeight, px: c.px, py: c.py, width: p.width, height: p.height, score: Math.round(c.score * 1000) / 1000 };
+    return { id: p.id, x, y, dx: c.px - x * tileWidth, dy: c.py - y * tileHeight, px: c.px, py: c.py, width: p.width, height: p.height, score: Math.round(c.score * 1000) / 1000, ...(front.has(index) ? { front: true as const } : {}) };
   });
   return { matches, truncated };
 }

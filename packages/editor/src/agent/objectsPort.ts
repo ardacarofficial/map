@@ -4,7 +4,7 @@ import {
   AgentError, AgentErrorCode, OBJECT_LIMITS,
   type AgentObjectsPort, type AgentWorldPort, type DetectObjectsRequest, type FlippedPlacement, type ObjectMatch, type PreviewImage,
 } from "@smap/agent";
-import type { RgbaImage, Stamp } from "@smap/core";
+import { isGridLayer, isTileLayer, stampLayerMapping, type RgbaImage, type Stamp } from "@smap/core";
 import { encodeAgentPng, imagePixels } from "./images";
 import { imageWork } from "./imageWork";
 import { drawPreviewOverlays, previewLayout } from "./preview";
@@ -81,16 +81,27 @@ export function createObjectsPort(world: AgentWorldPort, revision: () => number)
       if (store.revision !== mapRevision) fail(AgentErrorCode.REVISION_CONFLICT, "Map changed during detection", { nextAction: "Call reference_detect_objects again." });
       const matches: ObjectMatch[] = out.matches.map(m => {
         const [stampId, flip] = m.id.split(FLIP_SEP) as [string, string | undefined];
-        return { stampId, x: m.x, y: m.y, score: m.score, pixelResidual: { dx: m.dx, dy: m.dy }, ...(flip === "1" ? { flipX: true as const } : flip === "2" ? { flipY: true as const } : {}) };
+        return { stampId, x: m.x, y: m.y, score: m.score, pixelResidual: { dx: m.dx, dy: m.dy }, ...(flip === "1" ? { flipX: true as const } : flip === "2" ? { flipY: true as const } : {}), ...(m.front ? { front: true as const } : {}) };
       });
-      const positionsByStamp: Record<string, [number, number][]> = {}, mirrored = new Map<string, FlippedPlacement>();
+      // Plain matches by stamp; mirrored and in-front (stacked) ones as ready place_stamp groups.
+      const positionsByStamp: Record<string, [number, number][]> = {}, groups = new Map<string, FlippedPlacement>();
       for (const m of matches) {
-        if (!m.flipX && !m.flipY) { (positionsByStamp[m.stampId] ??= []).push([m.x, m.y]); continue; }
-        const key = `${m.stampId}${FLIP_SEP}${m.flipX ? 1 : 2}`;
-        if (!mirrored.has(key)) mirrored.set(key, { stampId: m.stampId, ...(m.flipX ? { flipX: true } : { flipY: true }), positions: [] });
-        mirrored.get(key)!.positions.push([m.x, m.y]);
+        if (!m.flipX && !m.flipY && !m.front) { (positionsByStamp[m.stampId] ??= []).push([m.x, m.y]); continue; }
+        const key = `${m.stampId}${FLIP_SEP}${m.flipX ? 1 : m.flipY ? 2 : 0}${m.front ? "f" : ""}`;
+        if (!groups.has(key)) groups.set(key, { stampId: m.stampId, ...(m.flipX ? { flipX: true } : m.flipY ? { flipY: true } : {}), ...(m.front ? { front: true } : {}), positions: [] });
+        groups.get(key)!.positions.push([m.x, m.y]);
       }
-      const data = { mapId: args.mapId, referenceId: args.referenceId, alignment, matches, positionsByStamp, ...(mirrored.size ? { flipped: [...mirrored.values()] } : {}), truncated: out.truncated, warnings, mapRevision };
+      const flipped = [...groups.values()].filter(g => !g.front), stacked = [...groups.values()].filter(g => g.front);
+      // Stacked objects go one tile layer above where the stamp would land, so the object behind keeps its cells.
+      const doc = store.document, tileLayers = doc.layers.filter(l => isTileLayer(l) && !isGridLayer(l));
+      for (const g of stacked) {
+        const stamp = stamps.find(s => s.id === g.stampId)!, targets = stampLayerMapping(doc, stamp).filter(t => !stamp.layers.find(l => l.layerId === t.clipLayerId)?.grid);
+        if (targets.length !== 1 || !targets[0]!.targetLayerId) continue;
+        const above = tileLayers[tileLayers.findIndex(l => l.id === targets[0]!.targetLayerId) + 1];
+        if (above) g.layerMapping = [{ sourceLayerId: targets[0]!.clipLayerId, targetLayerId: above.id }];
+        else warnings.push(`${g.stampId}: stacked in front of another object, but no tile layer lies above its layer`);
+      }
+      const data = { mapId: args.mapId, referenceId: args.referenceId, alignment, matches, positionsByStamp, ...(flipped.length ? { flipped } : {}), ...(stacked.length ? { stacked } : {}), truncated: out.truncated, warnings, mapRevision };
       if (args.preview === false) return { data };
       // Preview: the aligned picture on the map grid, box n = matches[n-1].
       const region = { x: 0, y: 0, width: cols, height: rows };

@@ -33,6 +33,9 @@ describe("object tools host", () => {
     expect(out.data.matches.map(m => `${m.stampId}@${m.x},${m.y}`).sort()).toEqual(expected);
     expect(out.data.positionsByStamp.crate!.sort()).toEqual([[13, 13], [2, 2], [3, 2]].sort());
     expect(out.data.matches.find(m => m.stampId === "smallCrate" && m.y === 8)!.pixelResidual).toEqual({ dx: 0, dy: 6 });
+    // Small crates stacked in front of the big crates / crate: placed last, on the layer above.
+    expect(out.data.stacked!.map(g => [g.stampId, [...g.positions].sort()])).toEqual([["smallCrate", [[11, 6], [13, 12], [4, 8]].sort()]]);
+    expect(out.data.matches.filter(m => m.front).every(m => m.stampId === "smallCrate")).toBe(true);
     const preview = decodeWorkingSourcePng(out.image!.png);
     expect([preview.width, preview.height]).toEqual([out.data.image!.width, out.data.image!.height]);
     // Narrowed search, stricter score, no preview.

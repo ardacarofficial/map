@@ -25,7 +25,7 @@ export type ReferenceAlignmentArg = ReferenceAlignmentChoice;
 
 export interface DetectObjectsArgs { context?: ReadContext; referenceId: Id; mapId: Id; stampIds?: Id[]; minScore?: number; alignment?: ReferenceAlignmentArg; flips?: boolean; preview?: boolean }
 /** Mirrored matches grouped as ready place_stamp arguments. */
-export interface FlippedPlacement { stampId: Id; flipX?: true; flipY?: true; positions: [number, number][] }
+export interface FlippedPlacement { stampId: Id; flipX?: true; flipY?: true; front?: true; positions: [number, number][]; /** stacked: pass to place_stamp (the tile layer above the stamp's usual one). */ layerMapping?: { sourceLayerId: Id; targetLayerId: Id }[] }
 export interface DetectObjectsRequest extends DetectObjectsArgs { stampIds: Id[] }
 export interface ObjectMatch {
   stampId: Id;
@@ -37,6 +37,8 @@ export interface ObjectMatch {
   pixelResidual: { dx: number; dy: number };
   /** The stamp appears mirrored: place it with these flags. */
   flipX?: true; flipY?: true;
+  /** Stacked in front of an overlapping match: place it on a tile layer above the others. */
+  front?: true;
 }
 export interface DetectObjectsData {
   mapId: Id; referenceId: Id;
@@ -47,6 +49,8 @@ export interface DetectObjectsData {
   positionsByStamp: Record<Id, [number, number][]>;
   /** Mirrored matches: place_stamp {stampId, flipX|flipY, positions}. */
   flipped?: FlippedPlacement[];
+  /** Objects stacked in front of others (a small crate on a big one): place_stamp them last, on a tile layer above. */
+  stacked?: FlippedPlacement[];
   truncated: boolean;
   warnings: string[];
   image?: PreviewImage;

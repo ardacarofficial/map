@@ -3219,7 +3219,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Find stamps in a reference picture (masked template match at the aligned scale; stacked and mirrored objects too). Returns matches, positionsByStamp and flipped[] (flipX/flipY) for place_stamp positions, plus a preview. Writes nothing.",
+      "description": "Find stamps in a reference picture (masked template match at the aligned scale; stacked and mirrored objects too). Returns positionsByStamp, flipped[] (flipX/flipY) and stacked[] (place last with its layerMapping) for place_stamp positions, plus a preview. Writes nothing.",
       "inputSchema": {
         "properties": {
           "alignment": {
