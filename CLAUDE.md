@@ -322,6 +322,19 @@ Arda'nın denemesi: hazır bir tile paketinin örnek resmini birebir haritaya ç
 - **Karşılaştırma:** `render_compare {cells:true}` hücre başına ışığa göre düzeltilmiş ΔE ısı haritası, istatistik ve en kötü hücreleri mevcut tile'lar ve eşleyicinin alternatifleriyle (zemin + üst) döner. Düzeltmeyi ajan yapar; editör kendiliğinden değiştirmez
 - **Basit Tiled içe aktarma** ("Sonra"dan taşındı): Dosya → İçe aktar → Tiled haritası… ve MCP `import_tiled {path}` dikdörtgen TMX/TMJ haritayı geçerli dünyada yeni harita yapar. Yalnız tile katmanları (çevirme bitleri, köşegen dahil; gruptaki tile katmanları düz alınır), harici `.tsx`/`.tsj` ve gömülü tileset'lerin PNG'leri dünyaya yeni tileset olarak kopyalanır (aynı PNG ve ızgara zaten varsa o kullanılır; kullanıcı dosyasına yazılmaz). CSV, Base64, zlib/gzip okunur; nesne/resim katmanı, grup yapısı, animasyon, tile çarpışma şekli, Wang seti, izometrik/altıgen, zstd ve PNG olmayan resimler alınmaz ve tek listede gösterilir. Elle içe aktarma "Yeni harita" gibidir (geri alma adımı yok, harita silinerek geri alınır); ajan içinde taslağa girer, Onayla/Vazgeç uygular. Dosya başına ≤ 32 MB, yalnız okuma
 
+### v2.3 — Arda'nın denemesi: hız, sadelik, ürünleşme (planlandı; "başla" bekliyor)
+
+- **Alt anında gelsin:** Alt ile geçici damlalık tuşa basıldığı an açılır; basılı tutmak da çalışmaya devam eder, iptal etmez. Bugünkü gecikme kalkar
+- **Alınan tile'a yakınlaş:** haritadan tile alınınca (Alt/sağ tık/I) soldaki Tileset görünümü o sprite'ı okunur bir zoom'da ortalar; çok uzaktan başlamaz
+- **Renk paneli baştan:** sağdaki Renk paneli geniş ve dar halde de güzel görünür; renk seçici, son renkler ve paletler yeniden tasarlanır (DESIGN.md'ye göre)
+- **Tile ve Piksel mod anahtarı kalkar:** B tile koyan fırçadır; piksel kalemi araç rayında ayrı bir araçtır. Kalemde "Tile | Piksel" bölmesi olmaz
+- **Dünya görünümü keskin:** uzaktan bakınca haritalar bulanık görünmez
+- **Tileset "Tümü" sabit:** Tümü görünümündeki sağa/sola kayma ve zıplamalar giderilir
+- **Katmanlar paneli kapanır:** Geçmiş gibi çarpıyla tamamen kapatılır ve Görünüm menüsünden/sağ bölgeden yeniden açılır
+- **Ürünleşme:** sol alttaki dil seçici kalkar, dil yalnız Ayarlar → Dil'de; Ayarlar'a **Hakkında** (sürüm numarası ve kısa bilgi) eklenir; benzer "geliştirici gibi duran" yerler taranıp düzeltilir
+- **Kısayol:** G = Doldur (F de ikinci kısayol olarak kalır). Damlalık I, Kalem, Dikdörtgen R aynı kalır
+- Genel cila turu: bunlar yapılırken görülen diğer pürüzler listelenip Arda'ya sunulur
+
 ### Sonra
 
 - Katı işareti ve arazi fırçası: gerekirse yeniden düşünülür
