@@ -38,7 +38,7 @@ function pointer(root: unknown, path: string): unknown {
   }
   return value;
 }
-const DISCRIMINATORS = new Set(["tool", "action", "mode", "kind"]);
+const DISCRIMINATORS = new Set(["tool", "op", "action", "mode", "kind"]);
 function deref(root: unknown, schema: unknown): Schema | undefined {
   let value = schema;
   for (let i = 0; i < 16 && value !== null && typeof value === "object" && typeof (value as Schema).$ref === "string"; i++)
@@ -57,50 +57,89 @@ function schemaAt(root: unknown, schema: Schema, path: string): Schema | undefin
   }
   return current;
 }
-function describe(issue: SchemaIssue): string {
-  const p = issue.params;
-  if (issue.keyword === "additionalProperties") return `unknown property '${String(p.additionalProperty)}'`;
-  if (issue.keyword === "required") return `missing required property '${String(p.missingProperty)}'`;
-  if (issue.keyword === "const") return `must be ${JSON.stringify(p.allowedValue)}`;
-  if (issue.keyword === "enum") return `must be one of ${JSON.stringify(p.allowedValues)}`;
-  if (issue.keyword === "not") return "uses a combination of properties that is not allowed";
-  return issue.message ?? issue.keyword;
+/** JSON pointer -> `operations[2].args.layerMapping`; the root is "/". */
+function dotted(base: string, path: string): string {
+  const full = (base + path).split("/").slice(1)
+    .map(raw => raw.replace(/~1/g, "/").replace(/~0/g, "~"));
+  return full.reduce((out, key) => /^\d+$/.test(key) ? `${out}[${key}]` : out ? `${out}.${key}` : key, "") || "/";
 }
-function explain(schema: Schema, defs: unknown, data: unknown, base: string, depth: number): string[] {
+function line(base: string, issue: SchemaIssue, label: string | undefined): string {
+  const p = issue.params;
+  const suffix = label ? ` (${label})` : "";
+  if (issue.keyword === "required") return `${dotted(base, `${issue.instancePath}/${String(p.missingProperty)}`)}: required${suffix}`;
+  let problem: string;
+  if (issue.keyword === "additionalProperties") problem = `unknown property '${String(p.additionalProperty)}'`;
+  else if (issue.keyword === "const") problem = `must be ${JSON.stringify(p.allowedValue)}`;
+  else if (issue.keyword === "enum") problem = `must be one of ${JSON.stringify(p.allowedValues)}`;
+  else if (issue.keyword === "not") problem = "uses a combination of properties that is not allowed";
+  else problem = issue.message ?? issue.keyword;
+  return `${dotted(base, issue.instancePath)}: ${problem}${suffix}`;
+}
+/** The discriminator value a branch pins (const or enum on tool/op/action/mode/kind), if any. */
+function discriminatorOf(root: unknown, branch: Schema): { key: string; values: unknown[] } | undefined {
+  const properties = deref(root, branch)?.properties as Record<string, unknown> | undefined;
+  if (!properties) return undefined;
+  for (const key of DISCRIMINATORS) {
+    const prop = Object.hasOwn(properties, key) ? deref(root, properties[key]) : undefined;
+    if (prop && "const" in prop) return { key, values: [prop.const] };
+    if (prop && Array.isArray(prop.enum)) return { key, values: prop.enum };
+  }
+  return undefined;
+}
+function branchScore(errors: SchemaIssue[]): [number, number, number] {
+  let penalty = 0;
+  let depth = 0;
+  for (const e of errors) {
+    const parts = e.instancePath.split("/").slice(1);
+    if ((e.keyword === "const" || e.keyword === "enum") && parts.length === 1 && DISCRIMINATORS.has(parts[0]!)) penalty += 1e6;
+    else if (e.keyword === "type" && parts.length === 0) penalty += 1e5;
+    const at = parts.length + (e.keyword === "required" ? 1 : 0);
+    if (at > depth) depth = at;
+  }
+  return [penalty, errors.length, -depth];
+}
+const lessScore = (a: number[], b: number[]) => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
+  return false;
+};
+function explain(schema: Schema, defs: unknown, data: unknown, base: string, depth: number, label?: string): string[] {
   const validator = detailedValidator(schema, defs);
   if (validator(data)) return [];
   const issues = (validator.errors ?? []) as SchemaIssue[];
-  const wrappers = issues.filter(e => e.keyword === "oneOf" || e.keyword === "anyOf")
-    .sort((a, b) => a.instancePath.length - b.instancePath.length);
-  const wrapper = wrappers[0];
-  const root = defs && !("$defs" in schema) ? { ...schema, $defs: defs } : schema;
-  const located = wrapper ? schemaAt(root, schema, wrapper.instancePath)?.[wrapper.keyword] : undefined;
-  const branches = Array.isArray(located) ? located : wrapper ? pointer(root, wrapper.schemaPath) : undefined;
+  const root = (defs && !("$defs" in schema) ? { ...schema, $defs: defs } : schema) as Schema;
+  const flat = (list: SchemaIssue[]) => list.map(e => line(base, e, label));
   const plain = issues.filter(e => !["oneOf", "anyOf", "if", "allOf"].includes(e.keyword));
-  if (!wrapper || !Array.isArray(branches) || depth > 6) {
-    const out = plain.length ? plain : issues;
-    return out.map(e => `${base}${e.instancePath || ""}`.replace(/^$/, "/") + `: ${describe(e)}`);
+  const all = issues.filter(e => e.keyword === "oneOf" || e.keyword === "anyOf");
+  if (!all.length || depth > 6) return flat(plain.length ? plain : issues);
+  // Outermost wrappers only (one per instance path): errors beneath them belong to their branches.
+  const paths = [...new Set(all.map(e => e.instancePath))];
+  const top = paths.filter(p => !paths.some(q => q !== p && p.startsWith(q + "/") || q === "" && p !== ""));
+  const lines = flat(plain.filter(e => !top.some(p => e.instancePath === p || e.instancePath.startsWith(p + "/") || p === "")));
+  for (const path of top) {
+    const wrapper = all.find(e => e.instancePath === path)!;
+    const located = schemaAt(root, schema, path)?.[wrapper.keyword];
+    const branches = Array.isArray(located) ? located : pointer(root, wrapper.schemaPath);
+    if (!Array.isArray(branches)) { lines.push(...flat(issues.filter(e => e.instancePath.startsWith(path)))); continue; }
+    if (wrapper.keyword === "oneOf" && Array.isArray(wrapper.params.passingSchemas)) {
+      lines.push(`${dotted(base, path)}: matches more than one alternative; remove the ambiguous properties`);
+      continue;
+    }
+    const value = pointer(data, "#" + path);
+    const candidates: { schema: Schema; label?: string; score: number[] }[] = [];
+    for (const branch of branches as Schema[]) {
+      const v = detailedValidator(branch, root.$defs);
+      if (v(value)) continue;
+      const pinned = discriminatorOf(root, branch);
+      const actual = value !== null && typeof value === "object" ? (value as Record<string, unknown>)[pinned?.key ?? ""] : undefined;
+      const matches = pinned !== undefined && pinned.values.includes(actual);
+      candidates.push({ schema: branch, ...(matches ? { label: String(actual) } : {}),
+        score: [matches ? 0 : pinned ? 2 : 1, ...branchScore((v.errors ?? []) as SchemaIssue[])] });
+    }
+    let best: (typeof candidates)[number] | undefined;
+    for (const c of candidates) if (!best || lessScore(c.score, best.score)) best = c;
+    if (best) lines.push(...explain(best.schema, root.$defs, value, base + path, depth + 1, best.label ?? label));
   }
-  if (wrapper.keyword === "oneOf" && Array.isArray(wrapper.params.passingSchemas))
-    return [`${base}${wrapper.instancePath}`.replace(/^$/, "/") + ": matches more than one alternative; remove the ambiguous properties"];
-  const value = pointer(data, "#" + wrapper.instancePath);
-  let best: { score: number; schema: Schema } | undefined;
-  for (const branch of branches as Schema[]) {
-    const v = detailedValidator(branch, (root as Schema).$defs);
-    if (v(value)) continue;
-    const errors = (v.errors ?? []) as SchemaIssue[];
-    const score = errors.reduce((sum, e) => {
-      const parts = e.instancePath.split("/").slice(1);
-      if ((e.keyword === "const" || e.keyword === "enum") && parts.length === 1 && DISCRIMINATORS.has(parts[0]!)) return sum + 1e6;
-      if (e.keyword === "type" && parts.length === 0) return sum + 1e5;
-      return sum + 1;
-    }, 0);
-    if (!best || score < best.score) best = { score, schema: branch };
-  }
-  const outside = plain.filter(e => !e.instancePath.startsWith(wrapper.instancePath))
-    .map(e => `${base}${e.instancePath || ""}`.replace(/^$/, "/") + `: ${describe(e)}`);
-  const inside = best ? explain(best.schema, (root as Schema).$defs, value, base + wrapper.instancePath, depth + 1) : [];
-  return [...outside, ...inside];
+  return lines;
 }
 /** "path: problem" lines for an invalid call, following only the best-matching oneOf branch (C4). */
 export function explainSchemaErrors(name: string, args: unknown): string {

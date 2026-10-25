@@ -163,12 +163,12 @@ it("schema errors report only the best-matching oneOf branch as path: problem", 
   await h.run("begin_edit", { requestLabel: "Schema", mapIds: ["map-1"] });
   const batch = await h.run("apply_operations", { operations: [{ tool: "paint_rect", args: { mapId: "map-1", layerId: "ground", region: { x: 0, y: 0, width: 2 }, value: tile } }] });
   error(batch, "INVALID_ARGUMENT");
-  expect(batch.structuredContent.ok ? "" : batch.structuredContent.message).toBe("/operations/0/args/region: missing required property 'height'");
+  expect(batch.structuredContent.ok ? "" : batch.structuredContent.message).toBe("operations[0].args.region.height: required (paint_rect)");
   const layer = await h.run("edit_layer", { mapId: "map-1", action: "update", layerId: "ground", props: { locked: "no" } });
   error(layer, "INVALID_ARGUMENT");
-  expect(layer.structuredContent.ok ? "" : layer.structuredContent.message).toBe("/props/locked: must be boolean");
+  expect(layer.structuredContent.ok ? "" : layer.structuredContent.message).toBe("props.locked: must be boolean (update)");
   const value = await h.run("paint_cells", { mapId: "map-1", layerId: "ground", cells: [{ x: 0, y: 0, value: { tilesetId: "tiles" } }] });
-  expect(value.structuredContent.ok ? "" : value.structuredContent.message).toBe("/cells/0/value: missing required property 'tileId'");
+  expect(value.structuredContent.ok ? "" : value.structuredContent.message).toBe("cells[0].value.tileId: required");
   await h.api.userAction("discard");
 });
 
