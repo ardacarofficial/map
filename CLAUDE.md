@@ -302,6 +302,16 @@ Claude Code veya Codex'te çalışan bir ajan, açık editörü MCP üzerinden k
 
 **Bitti:** gerçek bir Codex ajanı MCP ile bağlanıp örnek dünyada nehirli, köprülü, yollu, evli 48×32 köy taslağı çizer; Onayla tek undo, Vazgeç birebir eski hal, ajan kapandıktan sonra da onay verilebilir; Rust sunucu güvenlik testleri, Agent API özellik testleri ve AI e2e'leri geçer.
 
+### v2.1 — AI kumanda iyileştirmesi (Ekim 2026, Arda istedi)
+
+Gerçek Claude Code/Codex denemelerinde bulunan sorunlar için. Editör yine harita üretmez; tasarımı ajan yapar.
+- **İzin ve bağlantı:** Ayarlar → AI, Claude Code için `-s user` ekleme komutunu ve `mcp__harita` izin kuralını, Codex için `http_headers` + `default_tools_approval_mode = "approve"` içeren düz TOML'u kopyalar. Taslak yazımları `destructiveHint:false`'tur. Sunucu `localhost`/`[::1]` kabul eder, hatalar ipuçlu JSON döner, oturum sınırında en eski sessiz oturum düşürülür
+- **Taslak kaybolmaz:** bağlantı kopması, boşta kalma veya süre dolması geri sarmaz; taslak "sahipsiz" olarak kullanıcı kararını bekler. `begin_edit` bir `resumeToken` verir; `resume_edit` aynı ajanın çalışan veya onay bekleyen işine dönüp düzeltmesini sağlar. Başarısız çağrı yalnız kendini geri alır
+- **Az token:** bağlam alanları isteğe bağlı; `paint_grid` lejant + satırlarla boyar, `read_region` aynı biçimde okur; `replace_tiles`, `clear_region`; yanıtlar kısa zarftır; araç listesi 40 KB altı, UI/ayar araçları tek `editor_ui`
+- **Görsel referans:** kullanıcı resmi AI paneline bırakır veya ajan yerel yol verir (yalnız okunur, hiçbir yere yazılmaz); `reference_view`, `reference_quantize` (önerilen ızgara, `paint_grid {proposalId}` ile boyanır), `render_compare`; tam sayı ölçekli, yakınlaştırılabilir önizleme
+- **Akıllı kaynak:** üretilen atlaslarda iç köşe kenar şeritlerinden birleşir (`innerJoin: "miter"`, eski atlaslar aynı kalır); harita kenarına değen yol/nehir açık kalır; ajan akıllı kaynakları `get_session.smart` ile görür
+- **Rehber:** sunucu talimatları ve `map_from_image` / `map_from_text` istemleri; `validate_map` düz zemin ve boş harita uyarısı verir. Belge formatı 6 kalır
+
 ### Sonra
 
 - Katı işareti ve arazi fırçası: gerekirse yeniden düşünülür
