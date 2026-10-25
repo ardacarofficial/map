@@ -19,6 +19,9 @@ import {
 } from "./contracts";
 import { EDITOR_CONTROL_TOOLS, type EditorControlToolName } from "./editorControls";
 import { TOOL_DEFINITIONS, canonicalJson } from "./toolSchemas";
+import { EDITOR_UI_ACTIONS, type EditorUiAction } from "./publishedCatalogue";
+import { compactWrite, writeEnvelope } from "./tools/envelope";
+import { resolveLayer } from "./tools/grid";
 import { toMcpToolResult } from "./result";
 import { CallSignal, Transactions, waitFor, type CallCheckpoint } from "./transactions";
 import { check, validate } from "./validation";
@@ -38,7 +41,7 @@ const mapIndependent = new Set<string>(["visual_ingest_reference", "reference_ad
 
 const writes = new Set(
   TOOL_DEFINITIONS.filter(
-    (t) => !t.annotations.readOnlyHint && t.name !== "set_tags" && !EDITOR_CONTROL_TOOLS.includes(t.name as EditorControlToolName),
+    (t) => !t.annotations.readOnlyHint && t.name !== "set_tags" && t.name !== "editor_ui" && !EDITOR_CONTROL_TOOLS.includes(t.name as EditorControlToolName),
   ).map((t) => t.name),
 );
 const RETRYABLE = new Set<E>([E.REVISION_CONFLICT, E.TIMEOUT, E.WRITER_BUSY, E.EDITOR_UNAVAILABLE]);
@@ -135,6 +138,51 @@ export function createAgentApi(host: AgentHost): AgentApi {
     };
     return toMcpToolResult(result);
   }
+  /** Forgiving input: the mistakes real agents make most, resolved before strict validation.
+   * mapId defaults to the edit's (or world's) only map, layerName/layer names resolve to ids,
+   * stringified JSON objects are parsed, tile is value, cells without values become points. */
+  function aliases(name: string, raw: unknown, call: AgentCall): unknown {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    const tool = TOOL_DEFINITIONS.find(t => t.name === name);
+    if (!tool || name === "join_edit") return raw;
+    const schema = tool.inputSchema as Record<string, unknown>;
+    const branches = [schema, ...((schema.oneOf ?? schema.anyOf ?? []) as Record<string, unknown>[])];
+    const props: Record<string, Record<string, unknown>> = Object.assign({}, ...branches.map(b => (b.properties ?? {}) as Record<string, Record<string, unknown>>));
+    const required = new Set(branches.flatMap(b => (b.required ?? []) as string[]));
+    const input: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+    if ("tile" in input && !props.tile && props.value && input.value === undefined) { input.value = input.tile; delete input.tile; }
+    for (const [key, value] of Object.entries(input))
+      if (typeof value === "string" && /^\s*[[{]/.test(value) && props[key] && props[key]!.type !== "string")
+        try { input[key] = JSON.parse(value); } catch { /* strict validation explains it */ }
+    if (name === "paint_cells" && Array.isArray(input.cells) && input.value !== undefined && input.points === undefined
+      && input.cells.every(c => Array.isArray(c) || (c !== null && typeof c === "object" && !("value" in c)))) {
+      input.points = input.cells.map(c => Array.isArray(c) ? c : [(c as { x: unknown }).x, (c as { y: unknown }).y]);
+      delete input.cells;
+    }
+    if (props.mapId && input.mapId === undefined) {
+      const pending = tx.pending, targets = pending ? [...pending.participants.keys()] : [];
+      const maps = host.world.maps();
+      const fallback = targets.length === 1 ? targets[0] : maps.length === 1 ? maps[0]!.id
+        : tool.annotations.readOnlyHint && !targets.length ? host.session().activeMapId ?? undefined : undefined;
+      if (fallback) input.mapId = fallback;
+      else if (required.has("mapId"))
+        throw new AgentError(E.INVALID_ARGUMENT, "mapId: required here (more than one map could be meant)", {
+          validIds: (targets.length ? maps.filter(m => targets.includes(m.id)) : maps).slice(0, 64).map(m => ({ id: m.id, name: m.name })),
+          nextAction: "Pass mapId (one of validIds).",
+        });
+    }
+    const store = typeof input.mapId === "string" ? tx.pending?.participants.get(input.mapId)?.store : undefined;
+    if (store && props.layerId && !props.layerName && typeof input.layerName === "string" && input.layerId === undefined) {
+      input.layerId = resolveLayer(store, { layerName: input.layerName }, "layerName").id;
+      delete input.layerName;
+    }
+    if (store && props.layerIds && Array.isArray(input.layerIds))
+      input.layerIds = input.layerIds.map(id => typeof id === "string" && !store.document.getLayer(id) ? resolveLayer(store, { layerName: id }, "layerIds").id : id);
+    if (name === "apply_operations" && Array.isArray(input.operations))
+      input.operations = input.operations.map(op => op !== null && typeof op === "object" && typeof (op as { tool?: unknown }).tool === "string"
+        ? { ...op, args: aliases((op as { tool: string }).tool, (op as { args?: unknown }).args, call) } : op);
+    return input;
+  }
   /** C2: fill omitted context fields from the open world and the caller's own draft. */
   function normalize(name: string, raw: unknown, call: AgentCall): unknown {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
@@ -208,6 +256,10 @@ export function createAgentApi(host: AgentHost): AgentApi {
     const previous = c.result.structuredContent;
     if (!previous.ok) return c.result;
     const state = tx.state();
+    if (!("data" in previous)) {
+      const now = terminal?.state ?? (c.transactionId === tx.pending?.summary.id ? tx.pending!.summary.state : undefined);
+      return toMcpToolResult({ ...previous, revision: state.revision, replayed: true, ...(now && now !== "running" ? { transactionState: now } : {}) } as ToolSuccess, c.result.content[1]);
+    }
     const result = {
       ...previous,
       ...(member?{memberId:member.id,memberRevision:member.revision}:{}),
@@ -229,21 +281,24 @@ export function createAgentApi(host: AgentHost): AgentApi {
     startedAt: number,
     result: AgentToolResult,
     replayed = false,
+    raw?: unknown,
   ): void {
     const s = result.structuredContent;
-    const data = s.ok ? s.data : undefined;
+    // Compact write envelopes carry no change summary; the raw tool data does.
+    const data = (raw ?? (s.ok && "data" in s ? s.data : undefined)) as Record<string, unknown> | undefined;
     // C3 compact tools report {changed, maps?} instead of a full ChangeSummary.
     const compact = data && "changed" in data && typeof data.changed === "number"
       ? { plannedCells: data.changed, changedCells: data.changed,
           affected: "maps" in data && Array.isArray(data.maps) ? data.maps.map(m => ({ mapId: (m as { mapId: string }).mapId })) : [] }
       : undefined;
-    const changed = data && "change" in data ? data.change : compact;
+    const changed = (data && "change" in data ? data.change : compact) as { plannedCells: number; changedCells: number; affected: { mapId: string }[] } | undefined;
     // Only inspect schema-validated successful arguments. Never retain raw requests.
     const args = s.ok ? call.arguments as ToolArguments[ToolName] : undefined;
     const transaction = s.ok && "transactionId" in s && (call.name === "finish_edit" || call.name === "cancel_edit")
       ? tx.pending?.summary.id === s.transactionId ? tx.pending.summary : tx.terminals.get(s.transactionId)?.summary : null;
     const targets = args && "mapId" in args && typeof args.mapId === "string" ? [args.mapId] :
-      args && "mapIds" in args && Array.isArray(args.mapIds) ? args.mapIds.filter((id): id is string => typeof id === "string") : [];
+      args && "mapIds" in args && Array.isArray(args.mapIds) ? args.mapIds.filter((id): id is string => typeof id === "string") :
+      args && "operations" in args && Array.isArray(args.operations) ? args.operations.map(op => (op.args as { mapId?: unknown }).mapId).filter((id): id is string => typeof id === "string") : [];
     const mapIds = [...targets, ...(changed?.affected.map(a => a.mapId) ?? []), ...(transaction?.affectedMapIds ?? [])];
     try {
       host.activity.append({
@@ -277,12 +332,13 @@ export function createAgentApi(host: AgentHost): AgentApi {
     }
   }
   async function execute(
-    call: AgentCall,
+    received: AgentCall,
     signal: CallSignal,
   ): Promise<AgentToolResult> {
+    let call = received;
     const startedAt = host.clock.now();
     let result: AgentToolResult | undefined;
-    let transactionId: string | undefined, replayed = false;
+    let transactionId: string | undefined, replayed = false, rawData: unknown;
     active = signal;
     activeClient = call.clientSessionId;
     activeTool = call.name;
@@ -294,6 +350,15 @@ export function createAgentApi(host: AgentHost): AgentApi {
       if (ended) throw new AgentError(E.CANCELLED, "Authenticated client session has ended",
         { cause: ended, nextAction: "Reconnect (a new MCP session) and call resume_edit with your transactionId and resumeToken." });
       syncReferenceWorld();
+      if (call.name === "editor_ui") {
+        // One listed tool for all UI controls; the chosen action keeps its own strict schema and handler.
+        validate("editor_ui", call.arguments);
+        const ui = call.arguments as { context?: unknown; action: EditorUiAction; args?: Record<string, unknown> };
+        const args = { ...(ui.args ?? {}) };
+        if (ui.context !== undefined && args.context === undefined) args.context = ui.context;
+        call = { ...call, name: EDITOR_UI_ACTIONS[ui.action], arguments: args };
+      }
+      call = { ...call, arguments: aliases(call.name, call.arguments, call) };
       validate(call.name, call.arguments);
       const name = call.name as ToolName,
         rawArgs = call.arguments,
@@ -495,7 +560,14 @@ export function createAgentApi(host: AgentHost): AgentApi {
             case "configure_editor": controlData = await waitFor(port.configure(args as ToolArguments["configure_editor"], callContext), signal); break;
             case "configure_layout": controlData = port.configureLayout(args as ToolArguments["configure_layout"]); break;
             case "configure_application": controlData = await waitFor(port.configureApplication(args as ToolArguments["configure_application"], callContext), signal); break;
-            case "list_editor_commands": controlData = port.listCommands(args as ToolArguments["list_editor_commands"]); break;
+            case "list_editor_commands": {
+              // Compact rows: defaults (enabled, no shortcut, not executable remotely) are omitted.
+              const page = port.listCommands(args as ToolArguments["list_editor_commands"]);
+              controlData = { ...page, items: page.items.map(c => ({ id: c.id, title: c.title, category: c.category,
+                ...(c.enabled ? {} : { enabled: false }), ...(c.checked === null ? {} : { checked: c.checked }), ...(c.keys.length ? { keys: c.keys } : {}),
+                ...(c.remoteExecutable ? { remoteExecutable: true } : {}), ...(c.alternatives.length ? { alternatives: c.alternatives } : {}), ...(c.reason ? { reason: c.reason } : {}) })) };
+              break;
+            }
             case "run_editor_command": controlData = port.runCommand(args as ToolArguments["run_editor_command"]); break;
           }
           output = { data: controlData, image: undefined };
@@ -543,7 +615,12 @@ export function createAgentApi(host: AgentHost): AgentApi {
       // A write that completed is kept and replay-cached even if its caller gave up meanwhile.
       if (!completed) signal.throwIfAborted();
       const state = tx.state();
-      const success = {
+      const success = writes.has(name) && compactWrite(name)
+        ? writeEnvelope(name, data, state.revision, tx.pending ? tx.budgetLeft() : undefined, {
+            transactionState: tx.pending?.summary.state ?? tx.terminals.get(transactionId!)?.summary.state ?? "cancelled",
+            ...tx.memberRevision(callContext, transactionId),
+          }) as unknown as ToolSuccess
+        : {
         ok: true,
         instanceId: state.instanceId,
         worldSessionId: state.worldSessionId,
@@ -564,6 +641,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
             ? { replayed: false }
             : {}),
       } as ToolSuccess;
+      rawData = data;
       result = toMcpToolResult(success, image);
       const serializedResult = JSON.stringify(result);
       check(
@@ -631,6 +709,7 @@ export function createAgentApi(host: AgentHost): AgentApi {
         startedAt,
         result,
         replayed,
+        rawData,
       );
     }
     return result;

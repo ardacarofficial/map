@@ -9,6 +9,7 @@
     { "uri": "harita://guide/validation", "name": "harita_validation", "title": "Review the actual result", "description": "Combine visual inspection, structural validation and explicit gameplay or preservation checks.", "mimeType": "text/markdown", "contentPath": "../guide/validation.md" },
     { "uri": "harita://guide/editor", "name": "harita_editor", "title": "Navigate and configure the editor", "description": "Inspect settings, arrange panels and change UI preferences independently of document proposals.", "mimeType": "text/markdown", "contentPath": "../guide/editor.md" },
     { "uri": "harita://guide/workflow", "name": "harita_workflow", "title": "Edit, submit and review", "description": "Write without context inside your draft, resume it with resumeToken after a disconnect, recover from errors and hand off for human review.", "mimeType": "text/markdown", "contentPath": "../guide/workflow.md" },
+    { "uri": "harita://guide/limits", "name": "harita_limits", "title": "All limits", "description": "Every numeric limit (cells per call, edit budget, timeouts, image and page sizes); get_session shows only the essentials.", "mimeType": "text/markdown", "contentPath": "../guide/limits.md" },
     { "uri": "harita://guide/skill", "name": "harita_map_authoring_skill", "title": "Harita map authoring skill", "description": "A portable skill entry point with progressive links to the application guide.", "mimeType": "text/markdown", "contentPath": "../../../.agents/skills/harita-map-authoring/SKILL.md" }
   ]
 }

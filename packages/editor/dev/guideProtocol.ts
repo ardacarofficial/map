@@ -14,7 +14,7 @@ const sources = new Map(manifest.resources.map(resource => {
 }));
 if (sources.size !== resources.length) throw new Error("Duplicate authoring guide URI");
 const PROMPT = "harita-map-task";
-const prompts = [{
+const prompts: { name: string; title: string; description: string; arguments: { name: string; description: string; required: boolean }[] }[] = [{
   name: PROMPT, title: "Plan a Harita map task",
   description: "Start a bounded map task with the editor guide and relevant topic; inspect live state separately.",
   arguments: [
@@ -22,6 +22,22 @@ const prompts = [{
     { name: "topic", description: "Optional guide topic: planning, assets, painting, collaboration, validation, editor, workflow or skill.", required: false },
   ],
 }];
+/** Workflow prompts shared with the desktop server (schema/prompts.json). */
+interface TemplatePrompt { name: string; title: string; description: string; arguments: { name: string; description: string; required: boolean; default?: string }[]; template: string }
+const templates = (JSON.parse(readFileSync(new URL("../../agent/schema/prompts.json", import.meta.url), "utf8")) as { version: number; prompts: TemplatePrompt[] }).prompts;
+prompts.push(...templates.map(({ name, title, description, arguments: args }) => ({ name, title, description, arguments: args.map(({ name, description, required }) => ({ name, description, required })) })));
+function templatePrompt(prompt: TemplatePrompt, args: Record<string, unknown>): ProtocolResponse {
+  if (Object.keys(args).some(key => !prompt.arguments.some(a => a.name === key))) return invalid();
+  let text = prompt.template;
+  for (const a of prompt.arguments) {
+    const value = args[a.name];
+    if (value !== undefined && (typeof value !== "string" || [...value].length > 2000)) return invalid();
+    const given = typeof value === "string" && /\P{White_Space}/u.test(value) ? value.trim() : undefined;
+    if (a.required && given === undefined) return invalid();
+    text = text.split(`{{${a.name}}}`).join(given ?? a.default ?? "");
+  }
+  return { result: { description: prompt.description, messages: [{ role: "user", content: { type: "text", text } }] } };
+}
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 const invalid = (): ProtocolResponse => ({ error: { code: -32602, message: "Invalid guide parameters" } });
 
@@ -43,6 +59,8 @@ export function guideResponse(method: string, params: unknown): ProtocolResponse
         : { result: { contents: [{ uri, mimeType: "text/markdown", text }] } };
     }
     case "prompts/get": {
+      const template = object(params) ? templates.find(p => p.name === params.name) : undefined;
+      if (template && object(params)) return object(params.arguments) || params.arguments === undefined ? templatePrompt(template, (params.arguments ?? {}) as Record<string, unknown>) : invalid();
       if (!object(params) || params.name !== PROMPT || !object(params.arguments)) return invalid();
       const args = params.arguments;
       if (Object.keys(args).some(key => key !== "task" && key !== "topic")) return invalid();

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createAgentApi, createMemoryHost, memoryCall } from "@smap/agent";
+import { createAgentApi, createMemoryHost, memoryCall, type AnyToolSuccess } from "@smap/agent";
 import { MemoryFileSystem } from "../io/memoryFs";
 import { createTagsPort, serializeTagsSidecar } from "./tagsIo";
 
@@ -20,7 +20,7 @@ it("measures a 50000 tile atlas with ten sparse tags through the editor adapter 
     do {
       const result=await api.executeTool(memoryCall("get_tags",{context:{worldSessionId:id},query:"stairs",...(cursor?{cursor}:{})}));
       expect(result.structuredContent.ok).toBe(true);if(!result.structuredContent.ok)throw Error(result.structuredContent.message);
-      const data=result.structuredContent.data as {items:unknown[];nextCursor:string|null};
+      const data=(result.structuredContent as AnyToolSuccess).data as {items:unknown[];nextCursor:string|null};
       cursor=data.nextCursor??undefined;items+=data.items.length;calls++;bytes+=JSON.stringify(result).length;
     } while(cursor);
     expect(items).toBe(10);
@@ -51,7 +51,7 @@ it("measures real pixel fingerprint caching on the same sparse 50000 tile query"
       const result=await api.executeTool(memoryCall("get_tags",{context,query:"stairs"}));
       expect(result.structuredContent.ok).toBe(true);
       if(!result.structuredContent.ok)throw Error(result.structuredContent.message);
-      const data=result.structuredContent.data as {items:unknown[];nextCursor:string|null};
+      const data=(result.structuredContent as AnyToolSuccess).data as {items:unknown[];nextCursor:string|null};
       expect(data.items).toHaveLength(10);expect(data.nextCursor).toBeNull();
       const hashes=hash.mock.calls.length-before;expect(hashes).toBe(temperature==="cold"?10:0);
       runs.push({temperature,pixelHashes:hashes,mcpCalls:1,wireBytes:JSON.stringify(result).length,items:data.items.length,milliseconds:performance.now()-start});

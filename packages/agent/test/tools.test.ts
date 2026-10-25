@@ -269,7 +269,7 @@ describe("bounded painting", () => {
         value: tile,
       }),
     );
-    expect(again.data).toMatchObject({ filledCells: 0 });
+    expect(again).toMatchObject({ changed: 0 });
     expect(store.revision).toBe(revision);
   });
 });
@@ -287,10 +287,9 @@ it("edit_layer creates, reorders, updates, and enforces layer count and index li
       index: 1,
     }),
   );
-  expect(created.data).toMatchObject({
-    layer: { kind: "collision", index: 1 },
-  });
   const id = h.host.stores.get("map-1")!.document.layers[1]!.id;
+  expect(created.created).toEqual({ layerIds: [id] });
+  expect(h.host.stores.get("map-1")!.document.layers[1]).toMatchObject({ name: "Walls" });
   success(
     await h.edit("edit_layer", {
       mapId: "map-1",
@@ -434,9 +433,8 @@ it("entity tools resolve defaults and reject invalid schema, duplicate spawn and
       at: { x: 2, y: 3 },
     }),
   );
-  expect(entity.data).toMatchObject({
-    entity: { pixelX: 64, pixelY: 96, fields: { health: 10 } },
-  });
+  const placedId = entity.created!.entityIds![0]!;
+  expect(h.host.stores.get("map-1")!.document.entityLayers()[0]!.entities.find(e => e.id === placedId)).toMatchObject({ x: 64, y: 96 });
   error(
     await h.edit("place_entity", {
       mapId: "map-1",
@@ -536,11 +534,8 @@ it("prepare_smart_source, smart_brush and draw_path reuse the core planners and 
       force: true,
     }),
   );
-  expect(prepared.data).toMatchObject({
-    usages: ["area", "road"],
-    forced: true,
-  });
-  const sourceId = "sourceId" in prepared.data ? prepared.data.sourceId : "";
+  expect(prepared).toMatchObject({ usages: ["area", "road"], band: 1 });
+  const sourceId = prepared.created?.sourceId ?? "";
   success(
     await h.edit("smart_brush", {
       mapId: "map-1",
@@ -604,7 +599,7 @@ it("render_preview returns a bounded PNG; validate_map is structural and leaves 
   expect(valid.data).toMatchObject({
     valid: true,
     issues: [],
-    truncated: false,
+    issueCount: 0,
   });
   error(
     await h.read("render_preview", { mapId: "map-1", layerIds: ["missing"] }),
@@ -732,7 +727,7 @@ it("a single-layer smart source writes the explicit requested layer", async () =
       force: true,
     }),
   );
-  const sourceId = "sourceId" in prepared.data ? prepared.data.sourceId : "";
+  const sourceId = prepared.created?.sourceId ?? "";
   success(
     await h.edit("smart_brush", {
       mapId: "map-1",

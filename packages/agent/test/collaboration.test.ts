@@ -222,7 +222,7 @@ describe("collaborative live region edits", () => {
     await h.begin("A", null);
     const prepared = await h.ok("A", "prepare_smart_source", { mapId: "map-1",
       source: { tilesetId: "tiles", region: { x: 0, y: 0, width: 3, height: 3 } }, force: true });
-    const { sourceId } = prepared.data as { sourceId: string };
+    const { sourceId } = prepared.created as { sourceId: string };
     const foundation = h.store.document.tilesets.map(tileset => tileset.id);
     await h.join("A", [westClaim()]); await h.join();
     const before = h.host.snapshot();
@@ -247,7 +247,7 @@ describe("collaborative live region edits", () => {
     const h = setup({ entityTypes: [{ id: "tree", name: "Tree", color: "#008800", fields: [] }] });
     await h.begin("A", [westClaim(["entities"])]); await h.join("B", [eastClaim(["entities"])]);
     const placed = await h.ok("A", "place_entity", { mapId: "map-1", layerId: "entities", typeId: "tree", at: { x: 1, y: 1 } });
-    const { entity } = placed.data as { entity: { id: string } };
+    const entity = { id: placed.created!.entityIds![0]! };
     const before = h.host.snapshot();
     error(await h.edit("A", "edit_entity", { mapId: "map-1", entityId: entity.id, action: "move", at: { x: 5, y: 1 } }), "OUTSIDE_REGION");
     error(await h.edit("B", "edit_entity", { mapId: "map-1", entityId: entity.id, action: "remove" }), "OUTSIDE_REGION");
@@ -315,7 +315,7 @@ describe("collaborative live region edits", () => {
     await h.ok("A", "edit_entity", { mapId: "map-1", entityId: "west-1", action: "remove" });
     await h.ok("B", "edit_entity", { mapId: "map-1", entityId: "east-1", action: "remove" });
     const added = await h.ok("B", "place_entity", { mapId: "map-1", layerId: "entities", typeId: "tree", at: { x: 7, y: 2 } });
-    const { entity } = added.data as { entity: { id: string } };
+    const entity = { id: added.created!.entityIds![0]! };
     await h.ok("A", "cancel_edit", { reason: "Restore west" });
     expect(h.store.document.entityLayers()[0]!.entities.map(item => item.id)).toEqual(["west-1", "west-2", "east-2", entity.id]);
     await h.ok("B", "cancel_edit", { reason: "Restore east" });
@@ -389,7 +389,7 @@ describe("collaborative live region edits", () => {
     await h.paint("A", 1, 1); await h.paint("B", 5, 1, 1);
     const portal = await h.ok("A", "place_entity", { mapId: "map-1", layerId: "entities", typeId: "portal", at: { x: 2, y: 2 },
       fields: { targetLevel: "map-1", targetPoint: { x: 32, y: 32 } } });
-    const { entity } = portal.data as { entity: { id: string } };
+    const entity = { id: portal.created!.entityIds![0]! };
     const memberId = h.api.getState().transaction!.collaboration!.members.find(member => member.clientSessionId === "A")!.id;
     const peer = h.cell(5, 1), original = h.host.loadMap; let release: (() => void) | undefined;
     h.host.loadMap = async (...args) => { await new Promise<void>(resolve => { release = resolve; }); return original(...args); };

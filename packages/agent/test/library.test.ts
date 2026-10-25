@@ -3,7 +3,7 @@ import { error, harness, stamp, success } from "./helpers";
 
 it("stamp metadata operations replay once, preserve map cells and undo together with map/world edits", async()=>{
  const h=harness({stamps:[stamp]}),before=h.host.snapshot();await h.begin();
- const args={context:h.writeContext(),stampId:stamp.id,action:"duplicate",name:"Villa"};const duplicate=success(await h.run("edit_stamp",args));const replay=success(await h.run("edit_stamp",args));expect(replay).toMatchObject({replayed:true,data:duplicate.data});expect(h.host.world.stamps()).toHaveLength(2);
+ const args={context:h.writeContext(),stampId:stamp.id,action:"duplicate",name:"Villa"};const duplicate=success(await h.run("edit_stamp",args));const replay=success(await h.run("edit_stamp",args));expect(replay).toMatchObject({replayed:true,created:duplicate.created});expect(duplicate.created?.stampId).toBeTruthy();expect(h.host.world.stamps()).toHaveLength(2);
  success(await h.edit("edit_stamp",{stampId:stamp.id,action:"update",props:{name:"Home",category:"Buildings",tags:["roof"],favorite:true}}));
  success(await h.edit("edit_map",{mapId:"map-1",name:"Village",world:{x:-64,y:32}}));success(await h.edit("configure_world",{settings:{tileWidth:16,newLevel:{width:20,height:20},background:"#abcdef"}}));
  expect(h.host.world.maps()[0]).toMatchObject({name:"Village",world:{x:-64,y:32}});expect(h.host.world.settings()).toMatchObject({tileWidth:16,background:"#abcdef"});

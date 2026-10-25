@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { serializeLevel } from "@smap/core";
-import { AGENT_LIMITS, type BatchOperation, type ToolData } from "../src/contracts";
+import { AGENT_LIMITS, type BatchOperation } from "../src/contracts";
 import { error, harness, stamp, success, tile } from "./helpers";
 
 const paint = (x: number, y: number): BatchOperation => ({ tool: "paint_cells", args: { mapId: "map-1", layerId: "ground", cells: [{ x, y, value: tile }] } });
@@ -15,7 +15,7 @@ describe("bounded operation batches", () => {
     await batch.begin(); await sequential.begin();
     const args = { context: batch.writeContext(), operations };
     const result = success(await batch.run("apply_operations", args));
-    expect(result.data).toMatchObject({ change: { plannedCells: 5, changedCells: 5 }, items: operations.map(op => ({ tool: op.tool })) });
+    expect(result).toMatchObject({ changed: 5, items: operations.map(op => ({ tool: op.tool })) });
     expect(batch.api.getState().transaction!.counters.mutationCalls).toBe(4);
     success(await batch.run("apply_operations", args));
     for (const operation of operations) success(await sequential.edit(operation.tool, operation.args));
@@ -41,7 +41,7 @@ describe("bounded operation batches", () => {
 
   it("preflights sequential entity removal dependencies and preserves the existing entity on a late error", async () => {
     const h = harness(); await h.begin();
-    const placed = success(await h.edit("place_entity", spawn.args)).data as ToolData["place_entity"];
+    const placed = { entity: { id: success(await h.edit("place_entity", spawn.args)).created!.entityIds![0]! } };
     const before = serializeLevel(h.host.stores.get("map-1")!.document), state = h.api.getState();
     error(await h.edit("apply_operations", { operations: [
       { tool: "edit_entity", args: { mapId: "map-1", entityId: placed.entity.id, action: "remove" } },
@@ -75,7 +75,7 @@ describe("bounded operation batches", () => {
     h.host.loadMap = async id => { loads++; if (loads > 1) throw new Error("Live replay must not load portal maps"); return load(id); };
     const result = success(await h.edit("apply_operations", { operations: [paint(0, 0), { tool: "place_entity", args: { mapId: "map-1", layerId: "entities", typeId: "portal", at: { x: 1, y: 0 }, fields: { targetLevel: "map-1", targetPoint: { x: 0, y: 0 } } } }] }));
     expect(loads).toBe(1);
-    expect(result.data).toMatchObject({ change: { plannedCells: 1, changedCells: 0 }, items: [{ changedCells: 0 }, { tool: "place_entity" }] });
+    expect(result).toMatchObject({ changed: 0, items: [{ changed: 0 }, { tool: "place_entity" }] });
   });
 
   it("stopping during asynchronous preflight retains surrounding work without a partial batch", async () => {
@@ -97,7 +97,7 @@ describe("bounded operation batches", () => {
     const h = harness(); await h.begin();
     error(await h.edit("apply_operations", { operations: [paint(0, 0), { tool: "place_entity", args: { mapId: "map-1", layerId: "entities", typeId: "portal", at: { x: 0, y: 0 }, fields: { targetLevel: "map-1", targetPoint: { x: 9999, y: 0 } } } }] }), "ENTITY_SCHEMA");
     expect(h.host.stores.get("map-1")!.document.getLayer("ground")!.getCell(0, 0)).toBe(0);
-    const entity = success(await h.edit("place_entity", spawn.args)).data as ToolData["place_entity"];
+    const entity = { entity: { id: success(await h.edit("place_entity", spawn.args)).created!.entityIds![0]! } };
     const args = { context: h.writeContext(), operations: [{ tool: "edit_entity", args: { mapId: "map-1", entityId: entity.entity.id, action: "remove" } }] };
     success(await h.run("apply_operations", args)); success(await h.run("apply_operations", args));
     expect(h.host.stores.get("map-1")!.document.spawn()).toBe(null);
@@ -107,8 +107,8 @@ describe("bounded operation batches", () => {
 describe("existing entity correction", () => {
   it("moves the same spawn ID, updates valid portal fields and discards/undoes corrections", async () => {
     const h = harness(); await h.begin();
-    const spawnData = success(await h.edit("place_entity", spawn.args)).data as ToolData["place_entity"];
-    const portal = success(await h.edit("place_entity", { ...spawn.args, typeId: "portal", at: { x: 1, y: 1 } })).data as ToolData["place_entity"];
+    const spawnData = { entity: { id: success(await h.edit("place_entity", spawn.args)).created!.entityIds![0]! } };
+    const portal = { entity: { id: success(await h.edit("place_entity", { ...spawn.args, typeId: "portal", at: { x: 1, y: 1 } })).created!.entityIds![0]! } };
     await h.api.userAction("approve");
     const initial = serializeLevel(h.host.stores.get("map-1")!.document); await h.begin();
     success(await h.edit("edit_entity", { mapId: "map-1", entityId: spawnData.entity.id, action: "move", at: { x: 2, y: 3 } }));
@@ -129,7 +129,7 @@ describe("existing entity correction", () => {
   it("keeps layer membership when reading entities from two requested layers", async () => {
     const h = harness(); await h.begin();
     success(await h.edit("place_entity", spawn.args));
-    const created = success(await h.edit("edit_layer", { mapId: "map-1", action: "create", name: "Doors", kind: "entity" })).data as ToolData["edit_layer"];
+    const created = { layer: { id: success(await h.edit("edit_layer", { mapId: "map-1", action: "create", name: "Doors", kind: "entity" })).created!.layerIds![0]! } };
     success(await h.edit("place_entity", { ...spawn.args, layerId: created.layer.id, typeId: "portal", at: { x: 1, y: 1 } }));
     const read = success(await h.read("read_region", { mapId: "map-1", region: { x: 0, y: 0, width: 4, height: 4 }, layerIds: ["entities", created.layer.id], includeEntities: true }));
     expect(read.data).toMatchObject({ entities: [{ typeId: "spawn", layerId: "entities" }, { typeId: "portal", layerId: created.layer.id }] });
@@ -138,7 +138,7 @@ describe("existing entity correction", () => {
   it("honors initial locked/hidden protection until this draft unlocks/shows the layer itself", async () => {
     for (const props of [{ locked: true }, { visible: false }]) {
       const h = harness(); await h.begin();
-      const entity = success(await h.edit("place_entity", spawn.args)).data as ToolData["place_entity"];
+      const entity = { entity: { id: success(await h.edit("place_entity", spawn.args)).created!.entityIds![0]! } };
       success(await h.edit("edit_layer", { mapId: "map-1", action: "update", layerId: "entities", props }));
       await h.api.userAction("approve"); await h.begin();
       error(await h.edit("edit_entity", { mapId: "map-1", entityId: entity.entity.id, action: "remove" }), "locked" in props ? "LAYER_LOCKED" : "LAYER_HIDDEN");

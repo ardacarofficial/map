@@ -16,6 +16,7 @@ import {
 } from "@smap/core";
 import {
   AGENT_LIMITS as L,
+  ESSENTIAL_LIMITS,
   AgentErrorCode as E,
   type AgentCallContext,
   type AgentImageResult,
@@ -185,7 +186,7 @@ export async function read<N extends ToolName>(
           activeLayerId: s.activeLayerId,
           clients: s.clients.map((client) => client.id === undefined ? client : { ...client, isSelf: call.clientSessionId.startsWith(client.id) }),
           transaction: tx.copy(transaction),
-          limits: L,
+          limits: ESSENTIAL_LIMITS,
           references: tx.host.references?.list() ?? [],
           ...await (async () => {
             const smart = await smartCandidates(tx, tx.host.world.tilesets(), call);
@@ -532,7 +533,7 @@ export async function read<N extends ToolName>(
         const nextCursor = page.nextCursor === null ? null : next(tx, {
           ...c, filter: canonicalJson(filter()), hostCursor: page.nextCursor,
         }, c.offset + page.items.length);
-        return { data: { ...page, nextCursor } };
+        return { data: { ...page, items: page.items.map(compactTag), nextCursor } };
       }
       const queryFilter = () => ["tags-query", a.kind, a.tilesetId, a.status, a.query, a.limit, hashCanonical(tx.host.tags.availability())];
       const c = cursor(tx, a.cursor, queryFilter());
@@ -558,22 +559,30 @@ export async function read<N extends ToolName>(
         if (semanticMatches(a.query, [...record.tags, record.note, ...(stamp ? [stamp.name, stamp.category ?? "", ...(stamp.tags ?? [])] : [])])) items.push(record);
       }
       const nextCursor = more || remainder.length ? next(tx, { ...c, filter: canonicalJson(queryFilter()), hostCursor, hostItems: remainder, hostMore: more }, c.offset + scanned) : null;
-      return { data: { items, nextCursor } };
+      return { data: { items: items.map(compactTag), nextCursor } };
     }
     default:
       fail(E.INVALID_ARGUMENT, "Unknown read tool");
   }
+}
+/** Tag listings omit empty words/notes and a stored fingerprint equal to the current one. */
+function compactTag(record: TagRecord): TagRecord {
+  const { tags, note, storedFingerprint, ...rest } = record;
+  return { ...rest, ...(tags.length ? { tags } : {}), ...(note ? { note } : {}),
+    ...(storedFingerprint !== undefined && storedFingerprint !== record.currentFingerprint ? { storedFingerprint } : {}) } as TagRecord;
 }
 async function validateMap(
   tx: Transactions,
   a: ToolArguments["validate_map"],
   call: AgentCallContext,
 ) {
-  const store = await storeFor(tx, a.mapId, call),
-    c = cursor(tx, a.cursor, ["validate", a.mapId, a.region, a.limit]);
+  const store = await storeFor(tx, a.mapId, call);
   if (a.region) rect(store, a.region);
+  // One call scans the whole map (or region): counts by code plus the first `limit` issues.
   const issues: ValidationIssue[] = [],
-    limit = a.limit ?? 128;
+    limit = a.limit ?? 32,
+    byCode: Record<string, number> = {};
+  let issueCount = 0;
   const maps = new Map(tx.host.world.maps().map(map => [map.id, map]));
   type Dimensions = Pick<CoreMapInfo, "width" | "height" | "tileWidth" | "tileHeight">;
   const targets = new Map<string, Promise<Dimensions>>([[a.mapId, Promise.resolve(store.document.map)]]);
@@ -592,8 +601,11 @@ async function validateMap(
     code: string,
     detail: string,
     extra: Partial<ValidationIssue> = {},
-  ) =>
-    issues.push({ severity: "error", code, detail, mapId: a.mapId, ...extra });
+  ) => {
+    issueCount++;
+    byCode[code] = (byCode[code] ?? 0) + 1;
+    if (issues.length < limit) issues.push({ severity: "error", code, detail, mapId: a.mapId, ...extra });
+  };
   function* records(): Generator<() => void | Promise<void>> {
     // Sparse chunks keep whole-map validation independent of a map's empty area.
     for (const entry of store.document.palette.entries())
@@ -693,37 +705,23 @@ async function validateMap(
             );
         };
   }
-  let offset = 0,
-    scannedCells = 0,
-    truncated = false;
+  let scannedCells = 0;
   for (const inspect of records()) {
-    if (offset % 1024 === 0) {
+    if (scannedCells % 1024 === 0) {
       call.signal.throwIfAborted();
-      check(
-        tx.host.clock.now() < call.deadline,
-        E.TIMEOUT,
-        "Validation deadline expired",
-      );
-    }
-    if (offset < c.offset) {
-      offset++;
-      continue;
-    }
-    if (scannedCells >= 4096 || issues.length >= limit) {
-      truncated = true;
-      break;
+      check(tx.host.clock.now() < call.deadline, E.TIMEOUT, "Validation deadline expired",
+        { nextAction: "Validate a smaller region at a time." });
     }
     const inspection = inspect();
     if (inspection) await inspection;
-    offset++;
     scannedCells++;
   }
-  const invalid = !!c.invalid || issues.some((i) => i.severity === "error");
   return {
-    valid: truncated ? null : !invalid,
+    valid: issueCount === 0,
+    issueCount,
+    ...(issueCount ? { byCode } : {}),
     issues,
+    ...(issueCount > issues.length ? { moreIssues: issueCount - issues.length } : {}),
     scannedCells,
-    nextCursor: truncated ? next(tx, c, offset, invalid) : null,
-    truncated,
   };
 }

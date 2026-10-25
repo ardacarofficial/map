@@ -87,17 +87,17 @@ test("explicit reference becomes an approved stamp and placement in one undo gro
     const created = success(await client.callTool("create_stamp", {
       context, source: { tilesetId, region: candidate.region }, name: "Reference courtyard", category: "Garden", tags: ["village"],
     }));
-    expect(created.data).toMatchObject({ width: 2, height: 2 });
-    const stampId = created.data.stampId;
+    expect(created.created).toMatchObject({ stampId: expect.any(String) });
+    const stampId = created.created!.stampId!;
     context = { ...context, expectedRevision: created.revision, idempotencyKey: randomUUID() };
     const libraryPreview = await client.callTool("list_stamps", { context: readContext, previewStampId: stampId });
     expect(success(libraryPreview).data.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: stampId, tags: ["village"] })]));
     expectPng(libraryPreview);
     const placed = success(await client.callTool("place_stamp", {
       context, mapId, stampId, at: { x: 2, y: 2 },
-      layerMapping: [{ sourceLayerId: created.data.sourceLayerIds[0]!, targetLayerId: layerId }],
+      layerMapping: [{ sourceLayerId: created.created!.sourceLayerIds![0]!, targetLayerId: layerId }],
     }));
-    expect(placed.data.change.changedCells).toBe(4);
+    expect(placed.changed).toBe(4);
     context = { ...context, expectedRevision: placed.revision, idempotencyKey: randomUUID() };
     expect(await cells(environment)).not.toEqual(original);
     const preview = await client.callTool("render_preview", { context: readContext, mapId, region: { x: 0, y: 0, width: 6, height: 6 } });
@@ -146,7 +146,7 @@ test("semantic searches find current tags and map captures disappear on human di
       name: "River edge", category: "Nature", tags: ["shore"],
     }));
     context = { ...context, expectedRevision: captured.revision, idempotencyKey: randomUUID() };
-    const stampId = captured.data.stampId;
+    const stampId = captured.created!.stampId!;
     const found = success(await client.callTool("list_stamps", { context: readContext, query: " SHORE " }));
     expect(found.data.items.map(stamp => stamp.id)).toEqual([stampId]);
     const annotated = success(await client.callTool("set_tags", {

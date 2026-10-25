@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "878c429153000f89eed90d650e9b5f296450b98cbb81c89a966527c273c75865",
+  "catalogueSha256": "94b5b33170dd59ddd6f55ae7a5ffe8e607423401374c2ffe6c1c3c915b55e426",
   "tools": {
     "get_session": {
       "valid": [
@@ -27,7 +27,8 @@
         {
           "context": {
             "worldSessionId": "world-1"
-          }
+          },
+          "mapId": 5
         }
       ]
     },
@@ -2766,7 +2767,8 @@
             "y": 1,
             "width": 3,
             "height": 2
-          }
+          },
+          "mapId": 7
         }
       ]
     },
@@ -2822,7 +2824,10 @@
       ],
       "invalid": [
         {
-          "referenceId": "ref-1"
+          "referenceId": "ref-1",
+          "mapId": [
+            "m"
+          ]
         },
         {
           "referenceId": "ref-1",
@@ -2904,6 +2909,27 @@
         {
           "mapId": "m",
           "baseline": "now"
+        }
+      ]
+    },
+    "editor_ui": {
+      "valid": [
+        {
+          "action": "state"
+        },
+        {
+          "action": "configure",
+          "args": {
+            "gridVisible": true
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "action": "explode"
+        },
+        {
+          "args": {}
         }
       ]
     }

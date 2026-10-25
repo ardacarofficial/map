@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "name": "map_from_image",
+      "title": "Draw a map from a picture",
+      "description": "Recreate a reference picture (screenshot, render or hand sketch) as a tile map with the user's tilesets and stamps.",
+      "arguments": [
+        { "name": "reference", "description": "Absolute path of the picture (.png/.jpg/.webp), or a referenceId from get_session.references.", "required": true },
+        { "name": "map", "description": "Map name or id to draw on (default: the active map).", "required": false, "default": "the active map" }
+      ],
+      "template": "Recreate the picture {{reference}} as a tile map on {{map}} in Harita. Use only Harita tools (no shell, Python or files).\n\n1. get_session: find the map id, layers, smart sources (smart) and references. If {{reference}} is a file path, call reference_add {path}; if it is already listed in references, use its referenceId.\n2. reference_view {referenceId, mapId} to read the picture on the map grid. Look at the art: get_tile_catalog for each tileset, list_stamps {includeSheet:true}.\n3. begin_edit {mapIds:[mapId], requestLabel}. Keep transactionId and resumeToken.\n4. reference_quantize {referenceId, mapId} (mode sketch with colorLegend for flat-colour drawings: map each colour to a tile, tag word or {stampId}). Paint its grid.layers with one paint_grid call (layers:[...]).\n5. Redraw rivers and roads with draw_path (smart source from get_session.smart, points at the bends, width 2–3) so banks and corners are proper; ponds and lakes with smart_brush mode area.\n6. Place houses, bridges and trees with place_stamp (positions for many copies), matching the picture's sizes and colours.\n7. render_compare {referenceId, mapId, mode:\"side\"}; fix the listed mismatches with paint_grid / replace_tiles / clear_region; repeat until it matches.\n8. validate_map, finish_edit {summary}, and tell the user the draft waits for Onayla."
+    },
+    {
+      "name": "map_from_text",
+      "title": "Draw a map from a description",
+      "description": "Design a tile map from a text description with the user's tilesets and stamps.",
+      "arguments": [
+        { "name": "description", "description": "What to draw, e.g. 'a village with a river, a bridge, a road and five houses'.", "required": true },
+        { "name": "map", "description": "Map name or id to draw on (default: the active map).", "required": false, "default": "the active map" }
+      ],
+      "template": "Draw this on {{map}} in Harita: {{description}}\nUse only Harita tools (no shell, Python or files).\n\n1. get_session: map id, layers, smart sources (smart). get_tile_catalog for each tileset and list_stamps {includeSheet:true} to see the art and stamp sizes.\n2. Plan the layout in map cells (x right, y down): main features first (water, roads), then buildings and details. Keep paths connected and leave room around stamps.\n3. begin_edit {mapIds:[mapId], requestLabel}. Keep transactionId and resumeToken.\n4. Ground: one paint_grid call over the whole map with a {random:[...]} legend entry for natural grass variation.\n5. Rivers and roads: draw_path with a smart source (points at the bends; width 3 for a river, 1–2 for a road). Ponds and lakes: smart_brush mode area. Bridges with place_stamp where a road crosses water.\n6. Buildings, trees and fences: place_stamp (positions for many copies of one stamp).\n7. render_preview {grid:true, coordinates:true}; zoom into details; fix with paint_grid / replace_tiles / clear_region.\n8. validate_map, finish_edit {summary}, and tell the user the draft waits for Onayla."
+    }
+  ]
+}

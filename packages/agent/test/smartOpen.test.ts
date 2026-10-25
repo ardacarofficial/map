@@ -35,13 +35,13 @@ function fixture() {
 it("reuses one preparation per source and accepts an inline source on smart tools", async () => {
   const { h } = fixture();
   await h.begin();
-  const first = success(await h.edit("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } })).data as { sourceId: string };
+  const first = success(await h.edit("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } })).created as { sourceId: string };
   const tilesets = h.host.stores.get("map-1")!.document.tilesets.length;
-  const second = success(await h.edit("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } })).data as { sourceId: string };
+  const second = success(await h.edit("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } })).created as { sourceId: string };
   expect(second.sourceId).toBe(first.sourceId);
   expect(h.host.stores.get("map-1")!.document.tilesets.length).toBe(tilesets);
-  const path = success(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] })).data as { sourceId: string; band: number };
-  expect(path).toMatchObject({ sourceId: first.sourceId, band: 1 });
+  const path = success(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }));
+  expect(path.changed).toBeGreaterThan(0);
   error(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }), "INVALID_ARGUMENT");
   error(await h.edit("draw_path", { mapId: "map-1", layerId: "ground", sourceId: first.sourceId, source: { stampId: "river" }, kind: "river", points: [{ x: 2, y: 2 }, { x: 8, y: 2 }] }), "INVALID_ARGUMENT");
 });
@@ -106,7 +106,7 @@ it("parallel context-free smart calls with one inline source serialise without r
     h.run("draw_path", { mapId: "map-1", layerId: "ground", source: { stampId: "river" }, kind: "river", points: [{ x: 1, y: 5 }, { x: 10, y: 5 }] }),
     h.run("smart_brush", { mapId: "map-1", layerId: "ground", source: { stampId: "river" }, mode: "area", region: { x: 2, y: 8, width: 5, height: 3 } }),
   ]);
-  const ids = results.map(result => (success(result).data as { sourceId: string }).sourceId);
+  const ids = results.map(result => success(result).created!.sourceId!);
   expect(new Set(ids).size).toBe(1);
   const added = h.host.stores.get("map-1")!.document.tilesets.length - before;
   success(await h.run("prepare_smart_source", { mapId: "map-1", source: { stampId: "river" } }));

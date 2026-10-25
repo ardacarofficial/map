@@ -57,7 +57,7 @@ test("a missing AI map file is rewritten on save; the review bar lists touched m
 
     // The AI creates Zindan; the user approves it and the world is saved.
     const create = await Draft.begin(client, [mainId]);
-    const zindan = (await create.call("create_map", { name: "Zindan", width: 10, height: 8, tileWidth: 32, tileHeight: 32 })).data.map;
+    const zindan = { id: (await create.call("create_map", { name: "Zindan", width: 10, height: 8, tileWidth: 32, tileHeight: 32 })).created!.mapId! };
     const zindanLayer = success(await client.callTool("get_map_info", { context: { worldSessionId: create.context.worldSessionId }, mapId: zindan.id })).data.layers[0]!.id;
     await create.call("paint_rect", { mapId: zindan.id, layerId: zindanLayer, region: { x: 0, y: 0, width: 3, height: 3 }, value: { tilesetId, tileId: 0 } });
     await create.call("finish_edit", { summary: "Zindan" });

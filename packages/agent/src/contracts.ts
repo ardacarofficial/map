@@ -88,7 +88,7 @@ export type SmartBrushArgs = LayerWrite & SmartSourceRef & { orientation?: Orien
   { mode: "road"; cells: Point[]; region?: never; erase?: boolean }
 );
 export type DrawPathArgs = LayerWrite & SmartSourceRef & { kind: "path" | "river"; points: Point[]; width?: number; orientation?: Orientation; openEdges?: boolean };
-export interface PlaceStampArgs extends MapWrite { stampId: Id; at: Point; rotation?: 0 | 1 | 2 | 3; flipX?: boolean; flipY?: boolean; layerMapping?: LayerMapping[]; allowCreateLayers?: boolean; emptyCells?: "skip" | "erase" }
+export interface PlaceStampArgs extends MapWrite { stampId: Id; at: Point; positions?: [number, number][]; rotation?: 0 | 1 | 2 | 3; flipX?: boolean; flipY?: boolean; layerMapping?: LayerMapping[]; allowCreateLayers?: boolean; emptyCells?: "skip" | "erase" }
 export type EditLayerArgs = MapWrite & (
   { action: "create"; name: string; kind: LayerKind; index?: number } |
   { action: "update"; layerId: Id; props: LayerPropsInput } |
@@ -123,6 +123,7 @@ export interface ToolArguments extends VisionToolArguments {
   join_edit: CollaborativeJoin;
   get_export_settings: EditorControlContext; configure_export: ConfigureExportArgs;
   edit_map: EditMapArgs; edit_stamp: EditStampArgs; configure_world: ConfigureWorldArgs; get_world_settings: { context: ReadContext };
+  editor_ui: EditorControlContext & { action: "state" | "configure" | "layout" | "application" | "commands" | "run_command" | "export_settings" | "configure_export"; args?: JsonObject };
   get_editor_state: EditorControlContext; configure_editor: ConfigureEditorArgs; configure_layout: ConfigureLayoutArgs; configure_application: ConfigureApplicationArgs; list_editor_commands: ListEditorCommandsArgs; run_editor_command: RunEditorCommandArgs;
   get_editor_context: GetEditorContextArgs; apply_operations: ApplyOperationsArgs; edit_entity: EditEntityArgs; validate_goals: ValidateGoalsArgs;
   visual_ingest_reference: IngestReferenceArgs; visual_match_reference: MatchReferenceArgs; create_stamp: CreateStampArgs;
@@ -158,6 +159,13 @@ export const AGENT_LIMITS = {
   proxyPingMs: 30000, defaultDesktopPort: 48765, defaultDevPort: 48766,
 } as const;
 export type AgentLimits = typeof AGENT_LIMITS;
+/** The few limits an agent plans with (get_session, begin_edit); the full table is resource harita://guide/limits. */
+export const ESSENTIAL_LIMITS = {
+  cellsPerCall: AGENT_LIMITS.cellsPerCall, gridCellsPerLayer: AGENT_LIMITS.gridCells, batchCells: AGENT_LIMITS.batchCells,
+  readCellsPerLayer: AGENT_LIMITS.readCellsPerLayer, editCells: AGENT_LIMITS.transactionPlannedWrites, editCalls: AGENT_LIMITS.mutationCalls,
+  editIdleMs: AGENT_LIMITS.editLifetimeMs, writeTimeoutMs: AGENT_LIMITS.mutationTimeoutMs, more: "harita://guide/limits",
+} as const;
+export type EssentialLimits = typeof ESSENTIAL_LIMITS;
 /** Stable application diagnostics; protocol and HTTP errors are separate. */
 export enum AgentErrorCode {
   REGION_CONFLICT = "REGION_CONFLICT", OUTSIDE_REGION = "OUTSIDE_REGION", MEMBER_REVISION_CONFLICT = "MEMBER_REVISION_CONFLICT", EXCLUSIVE_OPERATION_REQUIRED = "EXCLUSIVE_OPERATION_REQUIRED",
@@ -245,6 +253,7 @@ export interface ToolData extends VisionToolData {
   get_export_settings: EditorExportPreferences; configure_export: EditorExportPreferences;
   edit_map: ChangedData & { map: MapSummary }; edit_stamp: ChangedData & { stamp: {id: Id;name:string;width:number;height:number;category:string;tags:string[];favorite:boolean}|null;stampId:Id;action:EditStampArgs["action"] };
   configure_world: ChangedData & { settings: ProjectSettings }; get_world_settings: { settings: ProjectSettings };
+  editor_ui: EditorControlState;
   get_editor_state: EditorControlState; configure_editor: EditorControlState; configure_layout: EditorControlState; configure_application: EditorControlState;
   list_editor_commands: ReturnType<AgentEditorControlsPort["listCommands"]>; run_editor_command: ReturnType<AgentEditorControlsPort["runCommand"]>;
   get_editor_context: EditorContext;
@@ -254,7 +263,7 @@ export interface ToolData extends VisionToolData {
   visual_ingest_reference: ReferenceInfo;
   visual_match_reference: ReferenceMatches;
   create_stamp: ChangedData & { stampId: Id; name: string; width: number; height: number; sourceLayerIds: Id[] };
-  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: AgentLimits; smart?: SmartCandidateInfo[];
+  get_session: { currentClientSessionId: Id; apiVersion: 1; toolCatalogueHash: string; world: WorldInfo | null; maps: MapSummary[]; activeMapId: Id | null; activeLayerId: Id | null; clients: SessionClient[]; transaction: TransactionSummary | null; limits: EssentialLimits; smart?: SmartCandidateInfo[];
     /** Reference images the user dropped/pasted or the agent added (reference_add). */
     references: ReferenceSummary[] };
   get_map_info: { map: MapInfo; layers: LayerInfo[]; entityCount: number; dirty: boolean };
@@ -262,7 +271,7 @@ export interface ToolData extends VisionToolData {
   list_tilesets: { items: TilesetInfo[]; nextCursor: string | null };
   get_tile_catalog: { tilesetId: Id; items: TileCatalogItem[]; image?: CatalogImage; nextOffset?: number };
   list_stamps: { items: StampInfo[]; nextCursor: string | null; image?: { width: number; height: number; stampId?: Id; sheet?: { stampId: Id; label: string; rect: Rect }[] } };
-  begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; resumeToken: string; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; unlockedLayers?: { mapId: Id; layerId: Id }[]; limits: AgentLimits; leaseDeadline: number; budget: EditBudget };
+  begin_edit: { memberId?:Id;memberRevision?:Revision;revisionMode?:"member";transactionId: Id; state: "running"; baseRevision: Revision; resumeToken: string; protectedLayers: { mapId: Id; layerId: Id; locked: boolean; hidden: boolean }[]; unlockedLayers?: { mapId: Id; layerId: Id }[]; limits: EssentialLimits; leaseDeadline: number; budget: EditBudget };
   resume_edit: { transactionId: Id; state: "running"; resumedFrom: TransactionState; revision: Revision; counters: TransactionCounters; affectedMapIds: Id[]; leaseDeadline: number; budget: EditBudget };
   finish_edit: { transactionId: Id; state: "running" | "awaitingApproval"; summary: string; counters: TransactionCounters; requiresUserApproval: true; memberId?: Id; memberState?: "ready" };
   cancel_edit: { transactionId: Id; state: "cancelled"; reason: string; rolledBack: true; scope?: "member"; memberId?: Id; sharedResourcesRetained?: boolean };
@@ -279,13 +288,23 @@ export interface ToolData extends VisionToolData {
   create_map: ChangedData & { map: CreatedMapInfo; layers: LayerInfo[] };
   resize_map: ChangedData & { map: MapInfo; cropped: { cells: number; entities: number } };
   render_preview: { mapId: Id; region: Rect; mapRevision: Revision; image: PreviewImage; warnings: AgentWarning[] };
-  validate_map: { valid: boolean | null; issues: ValidationIssue[]; scannedCells: number; nextCursor: string | null; truncated: boolean };
+  validate_map: { valid: boolean; issueCount: number; byCode?: Record<string, number>; issues: ValidationIssue[]; moreIssues?: number; scannedCells: number };
   get_tags: { items: TagRecord[]; nextCursor: string | null };
   set_tags: ChangedData & { updated: UpdatedTag[] };
 }
-export type MutationToolName = Exclude<ToolName, EditorControlToolName | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags" | VisionToolName>;
+export type MutationToolName = Exclude<ToolName, EditorControlToolName | "editor_ui" | "get_world_settings" | "get_editor_context" | "validate_goals" | "visual_ingest_reference" | "visual_match_reference" | "get_session" | "get_map_info" | "read_region" | "list_tilesets" | "get_tile_catalog" | "list_stamps" | "list_entity_types" | "render_preview" | "validate_map" | "get_tags" | "set_tags" | VisionToolName>;
+/** C3 compact answer of every map mutation (lifecycle tools keep AgentEnvelope). */
+export interface WriteEnvelope {
+  ok: true; revision: Revision; changed: number; bounds?: Rect;
+  created?: { mapId?: Id; layerIds?: Id[]; entityIds?: Id[]; stampId?: Id; sourceId?: Id; sourceLayerIds?: Id[]; layers?: { id: Id; name: string; kind: LayerKind }[] };
+  warnings?: string[]; budget?: EditBudget; replayed?: true; transactionState?: TransactionState; memberId?: Id; memberRevision?: Revision;
+  band?: number; usages?: SmartUsage[]; items?: { tool: BatchToolName; changed: number; entityId?: Id }[]; removedEntities?: number; cropped?: { cells: number; entities: number }; maps?: { mapId: Id; changed: number }[];
+}
+export type CompactWriteToolName = Exclude<MutationToolName, "begin_edit" | "resume_edit" | "finish_edit" | "cancel_edit" | "join_edit">;
+/** Either success shape, for callers that inspect results generically (tests, diagnostics). */
+export type AnyToolSuccess = Extract<ToolSuccess, { data: unknown }> & Partial<Omit<WriteEnvelope, "ok" | "revision">>;
 export interface AgentEnvelope<T> { memberId?: Id; memberRevision?: Revision; ok: true; instanceId: Id; worldSessionId: Id | null; revision: Revision; tentative: boolean; data: T }
-export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
+export type ToolSuccess<N extends ToolName = ToolName> = N extends ToolName ? N extends CompactWriteToolName ? WriteEnvelope : AgentEnvelope<ToolData[N]> & (N extends MutationToolName ? { transactionId: Id; transactionState: TransactionState; replayed: boolean } : N extends "set_tags" ? { replayed: boolean } : object) : never;
 export interface AgentFailure { memberId?:Id;memberRevision?:Revision;ok: false; code: AgentErrorCode; message: string; worldSessionId: Id | null; revision: Revision; transactionId?: Id; retryable: boolean; details: JsonObject }
 export interface TextBlock { type: "text"; text: string }
 export interface ImageBlock { type: "image"; mimeType: "image/png"; data: string }

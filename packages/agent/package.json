@@ -12,7 +12,7 @@
   "sideEffects": false,
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "gen": "node --experimental-strip-types scripts/gen-tools.ts"
+    "gen": "node --experimental-transform-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/gen-tools.ts"
   },
   "dependencies": {
     "@smap/core": "workspace:*",

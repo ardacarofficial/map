@@ -5,7 +5,9 @@ import {
   memoryCall,
   type MemoryHostOptions,
 } from "../src/testing/memoryHost";
-import type { AgentToolResult, ToolName } from "../src/contracts";
+import type { AgentToolResult, AnyToolSuccess, ToolName } from "../src/contracts";
+/** Reads/lifecycle keep {data}; map writes answer the compact C3 envelope. Tests read either shape. */
+export type AnySuccess = AnyToolSuccess;
 export function harness(options: MemoryHostOptions = {}) {
   const host = createMemoryHost(options),
     api = createAgentApi(host);
@@ -46,7 +48,7 @@ export function success(result: AgentToolResult) {
   ).toBe(true);
   if (!result.structuredContent.ok)
     throw new Error(result.structuredContent.message);
-  return result.structuredContent;
+  return result.structuredContent as AnySuccess;
 }
 export function error(result: AgentToolResult, code: string) {
   expect(result.structuredContent).toMatchObject({ ok: false, code });

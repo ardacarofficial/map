@@ -1,1 +1,30 @@
-Harita is a live, human-reviewed map editor. Start with get_session and get_editor_context; inspect actual art before painting. Read MCP resource harita://guide/overview (resources/list and resources/read) for a short authoring entry point, then load only needed sections: planning, assets, painting, collaboration, validation, editor or workflow. harita://guide/skill is the portable skill. Prefer meaningful names and reusable semantic layers; adapt structure to the task. Tool schemas define current arguments, limits and capabilities. Exclusive edits use begin_edit → document tools (context optional) → finish_edit; keep begin_edit's resumeToken and call resume_edit after a disconnect or to amend submitted work, nothing is rolled back on disconnect; shared region drafts also use join_edit and explicit per-member ownership/revisions. After uncertain outcomes inspect session state. Preview and validate before submitting. Only the human approves the common draft; agents cannot save/export documents or discard peers' contributions. UI setters remain independent of document review.
+Harita is a live tile-map editor. You draw with these tools; the human reviews your draft in the editor (Onayla approves, Vazgeç discards). You never approve, save or export. Do everything with Harita tools: no shell, Python or files.
+
+Workflow
+1. get_session: maps, active map/layer, pictures (references), smart sources (smart), limits.
+2. Look before painting: get_tile_catalog {tilesetId} (PNG with tile ids), list_stamps {includeSheet:true} (stamp looks and sizes), get_map_info for layer names.
+3. begin_edit {mapIds, requestLabel}. Keep transactionId and resumeToken: after a reconnect, or to amend after finish_edit, call resume_edit. Nothing is rolled back on disconnect.
+4. Paint with few, large calls (table below).
+5. render_preview {grid:true, coordinates:true} (region+zoom for close-ups, highlight:"draft"); with a picture use render_compare. Fix and repeat.
+6. validate_map, then finish_edit {summary}; tell the user it waits for Onayla.
+
+Which tool for what
+- Ground and varied terrain, any area of mixed tiles: paint_grid (rows + legend; {random:[...]} for natural variation). Never per-cell JSON lists.
+- One tile over a rectangle / line / flood area: paint_rect / paint_line / fill.
+- Scatter one tile (flowers, rocks): paint_cells {points:[[x,y],...], value}.
+- Roads, paths, rivers: draw_path {source, points (the bends), width}. source = an entry of get_session.smart as {tilesetId, region:rect}.
+- Lakes, ponds, fields with borders: smart_brush {mode:"area", region, source}; overlapping areas merge into one shape.
+- Houses, bridges, trees, fences: place_stamp {stampId, at}, or positions:[[x,y],...] for many copies. Check list_stamps includeSheet for look and size first.
+- Recreate a picture: reference_add {path} (or use get_session.references) → reference_quantize → paint_grid with its grid.layers → redraw rivers/roads with draw_path for proper banks → place_stamp for objects → render_compare and fix.
+- Change existing work: read_region (rows) then paint_grid; replace_tiles; clear_region.
+- Many small mixed writes: apply_operations (≤32 children, one action).
+- Editor UI (camera, tools, panels, export preferences): editor_ui.
+
+Conventions
+- Cells are zero-based, x right, y down; regions are half-open {x,y,width,height}.
+- A tile is {tilesetId, tileId, flags?}; flags 1 = flip X, 2 = flip Y, 4 = diagonal. Use ids from get_tile_catalog.
+- mapId may be omitted when your edit (or the world) has one map; layerName works wherever layerId does.
+- Writes need begin_edit and take no context. Collaborative drafts add context.expectedRevision or expectedMemberRevision; context.idempotencyKey makes a retry safe.
+- Writes answer {ok, revision, changed, bounds?, created?, warnings?, budget?}. Read warnings.
+- Errors: follow details.nextAction. REVISION_CONFLICT and TIMEOUT are retryable.
+- More detail: resources harita://guide/painting, assets, workflow, limits.

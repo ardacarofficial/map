@@ -342,6 +342,9 @@ async fn lifecycle_versions_catalogue_and_sessions() {
         .unwrap();
     let tools = body["result"]["tools"].as_array().unwrap();
     assert!(tools.len() >= 33);
+    // tools/list stays compact: the whole catalogue is under 40 KB on the wire.
+    assert!(serde_json::to_string(&body["result"]).unwrap().len() < 40 * 1024);
+    assert!(tools.iter().any(|tool| tool["name"] == "editor_ui"));
     for name in ["visual_ingest_reference", "visual_match_reference", "create_stamp"] {
         assert!(tools.iter().any(|tool| tool["name"] == name), "missing {name}");
     }
@@ -1252,7 +1255,7 @@ async fn guide_resources_and_prompts_are_discoverable_and_bound_to_authenticated
     assert_eq!(h.message(&session, json!({"jsonrpc":"2.0","method":"notifications/initialized"})).send().await.unwrap().status(), 202);
     let listing: Value = request("resources/list", json!({})).send().await.unwrap().json().await.unwrap();
     let resources = listing["result"]["resources"].as_array().unwrap();
-    assert_eq!(resources.len(), 9);
+    assert_eq!(resources.len(), 10);
     assert!(!listing.to_string().contains("contentPath"));
     for resource in resources {
         assert!(resource.get("text").is_none());
@@ -1279,6 +1282,11 @@ async fn guide_resources_and_prompts_are_discoverable_and_bound_to_authenticated
     }
     let prompts: Value = request("prompts/list", json!({})).send().await.unwrap().json().await.unwrap();
     assert_eq!(prompts["result"]["prompts"][0]["name"], "harita-map-task");
+    let names: Vec<&str> = prompts["result"]["prompts"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["harita-map-task", "map_from_image", "map_from_text"]);
+    let image: Value = request("prompts/get", json!({"name":"map_from_image","arguments":{"reference":"/home/me/köy.png","map":"Köy"}})).send().await.unwrap().json().await.unwrap();
+    let text = image["result"]["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(text.contains("/home/me/köy.png") && text.contains("reference_quantize") && text.contains("render_compare"));
     let prompt: Value = request("prompts/get", json!({"name":"harita-map-task","arguments":{"task":"Design a village","topic":"collaboration"}})).send().await.unwrap().json().await.unwrap();
     let message = prompt["result"]["messages"][0]["content"]["text"].as_str().unwrap();
     assert!(message.contains("Design a village"));

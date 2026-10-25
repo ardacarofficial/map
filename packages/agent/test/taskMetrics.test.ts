@@ -64,8 +64,8 @@ it("runs reproducible bounded MCP task metrics", async () => {
     await b.edit("paint_cells",{mapId:"map-1",layerId:"ground",cells:[{x:12,y:12,value:tile}]});
     const prepared=await b.edit("prepare_smart_source",{mapId:"map-1",source:{tilesetId:"tiles",region:{x:0,y:0,width:3,height:3}},force:true});
     if (!prepared.structuredContent.ok) throw Error("prepare source failed");
-    const data=prepared.structuredContent.data as {sourceId:string};
-    await b.edit("smart_brush",{mapId:"map-1",layerId:"ground",sourceId:data.sourceId,mode:"area"});
+    const data=prepared.structuredContent as unknown as {created:{sourceId:string}};
+    await b.edit("smart_brush",{mapId:"map-1",layerId:"ground",sourceId:data.created.sourceId,mode:"area"});
     const priorWorkPreserved = h.host.stores.get("map-1")!.document.getLayer("ground")!.getCell(12,12)!==0;
     rows.push({task:"malformed-brush-recovery",...b.m,priorWorkPreserved,transactionState:h.api.getState().transaction?.state});
     expect(priorWorkPreserved).toBe(!baseline);

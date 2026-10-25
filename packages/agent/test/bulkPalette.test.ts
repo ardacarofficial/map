@@ -14,8 +14,8 @@ for (const tool of ["place_stamp", "smart_brush"] as const)
         const prepared = success(await h.edit("prepare_smart_source", {
           mapId: "map-1", source: { tilesetId: "tiles", region: { x: 0, y: 0, width: 3, height: 3 } }, force: true,
         }));
-        if (!("sourceId" in prepared.data)) throw new Error("Missing prepared source");
-        success(await h.edit(tool, { mapId: "map-1", layerId: "ground", sourceId: prepared.data.sourceId, mode: "area", region: { x: 1, y: 1, width: 4, height: 4 } }));
+        if (!prepared.created?.sourceId) throw new Error("Missing prepared source");
+        success(await h.edit(tool, { mapId: "map-1", layerId: "ground", sourceId: prepared.created.sourceId, mode: "area", region: { x: 1, y: 1, width: 4, height: 4 } }));
       }
       const afterText = serializeLevel(store.document);
       expect(afterText).not.toBe(beforeText);

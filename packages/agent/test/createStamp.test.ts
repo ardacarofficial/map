@@ -15,15 +15,14 @@ it("captures explicit map layers, palette and flags as a reusable tentative stam
     cells: [{ x: 2, y: 1, value: { collision: 2 } }] }));
   const args = { context: h.writeContext(), source, name: " House ", category: " Buildings ", tags: ["home", " home ", " "] };
   const created = success(await h.run("create_stamp", args));
-  expect(created).toMatchObject({ tentative: true, data: { stampId: "house-2", name: "House",
-    width: 2, height: 1, sourceLayerIds: ["ground", "collision"] } });
+  expect(created).toMatchObject({ ok: true, created: { stampId: "house-2", sourceLayerIds: ["ground", "collision"] } });
   const captured = h.host.world.stamps().find(s => s.id === "house-2")!;
   expect(captured).toMatchObject({ category: "Buildings", tags: ["home"], palette: [tile] });
   expect(cellFlags(captured.layers[0]!.cells[0]!)).toBe((FLIP_H | FLIP_D) >>> 0);
   expect([...captured.layers[1]!.cells]).toEqual([0, 2]);
   const capturedText = serializeStamp(captured);
   const replay = success(await h.run("create_stamp", args));
-  expect(replay).toMatchObject({ replayed: true, data: { stampId: "house-2" } });
+  expect(replay).toMatchObject({ replayed: true, created: { stampId: "house-2" } });
   expect(h.host.world.stamps()).toHaveLength(2);
   const listed = success(await h.read("list_stamps", { query: "House", previewStampId: "house-2" }));
   expect(listed.data).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: "house-2", tags: ["home"] })]) });

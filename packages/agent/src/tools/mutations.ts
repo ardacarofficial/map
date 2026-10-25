@@ -36,6 +36,7 @@ import {
 } from "@smap/core";
 import {
   AGENT_LIMITS as L,
+  AgentError,
   AgentErrorCode as E,
   type AgentCallContext,
   type ChangeSummary,
@@ -48,7 +49,7 @@ import {
   type ToolName,
 } from "../contracts";
 import { utf8ByteLength } from "../tags";
-import { clearRegion, compact, paintGrid, replaceTiles, wholeMap } from "./grid";
+import { clearRegion, paintGrid, replaceTiles, wholeMap } from "./grid";
 import { canonicalJson } from "../toolSchemas";
 import { linePoints, rectanglePoints } from "../geometry";
 import { layerProtectionKey, type Transactions, waitFor } from "../transactions";
@@ -271,18 +272,14 @@ function applyPaint(
 ) {
   return applyLayers(tx, mapId, [{ layerId, writes }], perCall);
 }
-/** Grid-era tools answer with the compact C3 data; batch children keep the internal change. */
-const COMPACT = new Set<ToolName>(["paint_grid", "replace_tiles", "clear_region"]);
+/** Internal results keep their change summary; api.ts turns them into the C3 envelope. */
 export async function mutate<N extends ToolName>(
   tx: Transactions,
   name: N,
   args: ToolArguments[N],
   call: AgentCallContext,
 ): Promise<unknown> {
-  const result = await mutateRaw(tx, name, args, call);
-  if (!COMPACT.has(name)) return result;
-  const { change: summary, ...rest } = result as { change: ChangeSummary } & Record<string, unknown>;
-  return "changed" in rest ? rest : compact(summary);
+  return mutateRaw(tx, name, args, call);
 }
 export async function mutateRaw<N extends ToolName>(
   tx: Transactions,
@@ -667,8 +664,32 @@ export async function mutateRaw<N extends ToolName>(
         ),
       };
     }
-    case "place_stamp":
-      return place(tx, args as ToolArguments["place_stamp"]);
+    case "place_stamp": {
+      const a = args as ToolArguments["place_stamp"];
+      if (!a.positions) {
+        check(a.at, E.INVALID_ARGUMENT, "place_stamp: supply at or positions", { nextAction: "Add at:{x,y} (top-left cell) or positions:[[x,y],...]." });
+        return place(tx, a);
+      }
+      check(!a.at, E.INVALID_ARGUMENT, "place_stamp: use either at or positions, not both");
+      uniquePoints(a.positions.map(([x, y]) => ({ x, y })));
+      // Every copy is one outer action: a single revision and one undo step with the rest of the call.
+      return tx.run(() => {
+        const results = a.positions!.map(([x, y], i) => {
+          try { return place(tx, { ...a, at: { x, y } }); }
+          catch (error) {
+            if (error instanceof AgentError) throw new AgentError(error.code, `positions[${i}]: ${error.message}`, { ...error.details, operationIndex: i }, error.retryable);
+            throw error;
+          }
+        });
+        return { ...results[results.length - 1]!, change: {
+          plannedCells: results.reduce((sum, r) => sum + r.change.plannedCells, 0),
+          changedCells: results.reduce((sum, r) => sum + r.change.changedCells, 0),
+          affected: results.flatMap(r => r.change.affected),
+          createdLayerIds: results.flatMap(r => r.change.createdLayerIds),
+          createdEntityIds: [],
+        } };
+      });
+    }
     case "create_stamp":
       return createStamp(tx, args as ToolArguments["create_stamp"]);
     case "prepare_smart_source":

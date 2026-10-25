@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createAgentApi, CallSignal, memoryCall, type AgentApi, type AgentToolResult, type ToolName } from "@smap/agent";
+import { createAgentApi, CallSignal, memoryCall, type AgentApi, type AgentToolResult, type AnyToolSuccess, type ToolName } from "@smap/agent";
 import { serializeLevel } from "@smap/core";
 import { browserPlatform, setPlatform } from "../platform";
 import { closeProject, getLevelWorkspace, newProject } from "../io/session";
@@ -14,7 +14,7 @@ import { setCanvasHandle } from "../ui/canvas/canvasHandle";
 import type { CanvasHandle } from "../canvas";
 let api: AgentApi | undefined;
 afterEach(async()=>{await api?.dispose();api=undefined;closeProject();setPlatform(browserPlatform);useAppSettings.setState({dialogOpen:false});usePixelUi.setState({mode:"tile",pending:false});setCanvasHandle(null);vi.restoreAllMocks();});
-function ok(result: AgentToolResult){expect(result.structuredContent, JSON.stringify(result.structuredContent)).toMatchObject({ok:true});if(!result.structuredContent.ok)throw Error(result.structuredContent.message);return result.structuredContent;}
+function ok(result: AgentToolResult){expect(result.structuredContent, JSON.stringify(result.structuredContent)).toMatchObject({ok:true});if(!result.structuredContent.ok)throw Error(result.structuredContent.message);return result.structuredContent as AnyToolSuccess;}
 async function setup(){setPlatform({...browserPlatform,watchProject(){}});await newProject({name:"Controls",width:16,height:16,tileSize:16});const host=createEditorHost();api=createAgentApi(host);let key=0;
   const run=(name:ToolName,args:object={})=>api!.executeTool({name,arguments:args,clientSessionId:"client",clientInfo:{name:"Test",version:"1"},bridgeEpoch:"epoch",deadline:Date.now()+30000,signal:{aborted:false,throwIfAborted(){},onAbort:()=>()=>{}}});
   const context=()=>({worldSessionId:api!.getState().worldSessionId!});const edit=(name:ToolName,args:object={})=>run(name,{...args,context:{...context(),transactionId:api!.getState().transaction!.id,expectedRevision:api!.getState().revision,idempotencyKey:`control-edit-${++key}`}});
@@ -47,7 +47,7 @@ it("preflights mixed UI requests completely, supports navigation during review a
 });
 it("discovers real enablement and executes only audited UI commands",async()=>{
   const h=await setup();const safe=vi.fn(),unsafe=vi.fn();registerCommands([{id:"view.toggleGrid",title:"commands.view.toggleGrid",category:"view",run:safe},{id:"file.save",title:"commands.file.save",category:"file",run:unsafe}]);
-  const list=ok(await h.run("list_editor_commands",{query:"view.toggleGrid"}));expect(list.data).toMatchObject({items:[{id:"view.toggleGrid",remoteExecutable:true,enabled:true}]});
+  const list=ok(await h.run("list_editor_commands",{query:"view.toggleGrid"}));expect(list.data).toMatchObject({items:[{id:"view.toggleGrid",remoteExecutable:true}]});expect((list.data as {items:{enabled?:boolean}[]}).items[0]!.enabled).toBeUndefined();
   ok(await h.run("run_editor_command",{commandId:"view.toggleGrid"}));expect(safe).toHaveBeenCalledTimes(1);
   expect((await h.run("run_editor_command",{commandId:"file.save"})).structuredContent).toMatchObject({ok:false,code:"INVALID_ARGUMENT"});expect(unsafe).not.toHaveBeenCalled();
   useDockStore.getState().beginGesture();expect((await h.run("configure_layout",{action:"reset"})).structuredContent).toMatchObject({ok:false,code:"WRITER_BUSY"});useDockStore.getState().endGesture();
@@ -61,7 +61,7 @@ it.each(["approve","discard"] as const)("library and world metadata %s are atomi
   const h=await setup(),ws=getLevelWorkspace()!,id=ws.activeId,beforeName=ws.activeLevel.name,beforeWorld={...ws.activeLevel.world},settings=useProjectLibrary.getState().settings,depth=ws.history.undoDepth;
   useProjectLibrary.getState().addStamp({id:"house",name:"House",width:1,height:1,palette:[],layers:[{layerId:"source",name:"Ground",cells:Uint32Array.of(0)}]});
   await h.begin();ok(await h.edit("edit_map",{mapId:id,name:"Village",world:{x:-32,y:96}}));ok(await h.edit("configure_world",{settings:{tileWidth:24,newLevel:{width:20},background:"#112233",layerTemplate:[{name:"Ground",kind:"tile"},{name:"Collision",kind:"collision"}]}}));
-  ok(await h.edit("edit_stamp",{stampId:"house",action:"update",props:{name:"Home",category:"Buildings",tags:["roof"],favorite:true}}));const duplicate=ok(await h.edit("edit_stamp",{stampId:"house",action:"duplicate",name:"Villa"}));expect(duplicate.data).toMatchObject({stamp:{name:"Villa",category:"Buildings"}});
+  ok(await h.edit("edit_stamp",{stampId:"house",action:"update",props:{name:"Home",category:"Buildings",tags:["roof"],favorite:true}}));const duplicate=ok(await h.edit("edit_stamp",{stampId:"house",action:"duplicate",name:"Villa"}));expect(duplicate.created?.stampId).toBeTruthy();expect(h.host.world.stamps().find(s=>s.id===duplicate.created!.stampId)).toMatchObject({name:"Villa",category:"Buildings"});
   expect(ws.activeLevel.name).toBe("Village");expect(useProjectLibrary.getState().levels.find(level=>level.id===id)).toMatchObject({name:"Village",world:{x:-32,y:96}});expect(ws.history.undoDepth).toBe(depth);ok(await h.edit("finish_edit"));await api!.userAction(outcome);
   if(outcome==="approve"){expect(ws.history.undoDepth).toBe(depth+1);ws.history.undo();}
   expect(ws.activeLevel.name).toBe(beforeName);expect(ws.activeLevel.world).toEqual(beforeWorld);expect(useProjectLibrary.getState().settings).toEqual(settings);expect(useProjectLibrary.getState().stamps).toMatchObject([{id:"house",name:"House"}]);expect(useProjectLibrary.getState().stamps).toHaveLength(1);

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type * as BakeModule from "../ui/stamps/smartStampBake";
-import { createAgentApi, type AgentApi, type ToolName } from "@smap/agent";
+import { createAgentApi, type AgentApi, type AnyToolSuccess, type ToolName } from "@smap/agent";
 import { encodeRgbaPng, makeCell, serializeLevel, type Stamp, type Tileset } from "@smap/core";
 import { browserPlatform, setPlatform } from "../platform";
 import { closeProject, getLevelWorkspace, newProject, openLevel, saveCurrentProject } from "../io/session";
@@ -34,16 +34,16 @@ for (const action of ["approve", "discard"] as const) it(`live smart source + dr
     const result = await api!.executeTool({ name, arguments: args, clientSessionId: "client", clientInfo: { name: "Smart", version: "1" }, bridgeEpoch: "epoch", deadline: Date.now() + 30000, signal: { aborted: false, throwIfAborted() {}, onAbort: () => () => {} } });
     expect(result.structuredContent, `${name}: ${JSON.stringify(result.structuredContent)}`).toMatchObject({ ok: true });
     if (!result.structuredContent.ok) throw Error(result.structuredContent.message);
-    return result.structuredContent;
+    return result.structuredContent as AnyToolSuccess;
   }
   const readContext = { worldSessionId: api.getState().worldSessionId! };
   const context = () => ({ ...readContext, transactionId: api!.getState().transaction!.id, expectedRevision: api!.getState().revision, idempotencyKey: crypto.randomUUID() });
   await call("begin_edit", { context: readContext, expectedRevision: api.getState().revision, idempotencyKey: "begin-smart", requestLabel: "Road", mapIds: [mapId] });
   const source = await call("prepare_smart_source", { context: context(), mapId, source: { stampId: stamp.id }, force: true });
-  const sourceId = (source.data as { sourceId: string }).sourceId;
+  const sourceId = source.created!.sourceId!;
   await call("draw_path", { context: context(), mapId, layerId, sourceId, kind: "path", points: [{ x: 3, y: 3 }, { x: 7, y: 3 }, { x: 7, y: 8 }], width: 1 });
   const created=await call("create_map", {context:context(),name:"After smart",width:8,height:8,tileWidth:5,tileHeight:5});
-  const createdId=(created.data as {map:{id:string}}).map.id;
+  const createdId=created.created!.mapId!;
   const generated = store.document.tilesets.find(ts => ts.generated)!;
   expect(generated).toBeDefined();
   expect(ws.entry(follower.id)!.store.document.getTileset(generated.id)).toEqual(generated);

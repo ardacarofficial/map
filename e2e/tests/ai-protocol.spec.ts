@@ -14,16 +14,26 @@ test("SDK initialize, catalogue and get_session traverse the paired dev transpor
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   const agent = await connect(pair, process.env.HARITA_MCP_TOKEN ?? "e2e-token-harita-protocol");
   try {
-    const tools = (await agent.listTools()).tools;
-    expect(tools).toHaveLength(54);
+    const listed = await agent.listTools();
+    const tools = listed.tools;
+    // Compact catalogue: UI/settings/export controls are one editor_ui tool; the whole list stays under 40 KB.
+    expect(tools).toHaveLength(47);
+    expect(Buffer.byteLength(JSON.stringify(listed), "utf8")).toBeLessThan(40 * 1024);
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-      "get_session", "get_editor_state", "configure_editor", "configure_layout",
-      "configure_application", "list_editor_commands", "run_editor_command",
-      "get_export_settings", "configure_export", "get_world_settings",
-      "configure_world", "edit_map", "edit_stamp", "join_edit",
+      "get_session", "editor_ui", "get_world_settings", "paint_grid", "draw_path", "place_stamp",
+      "configure_world", "edit_map", "edit_stamp", "join_edit", "reference_quantize",
     ]));
+    expect(tools.map(tool => tool.name)).not.toContain("configure_editor");
+    expect(agent.client.getInstructions()).toContain("Which tool for what");
+    const state = await agent.client.callTool({ name: "editor_ui", arguments: { action: "state" } });
+    expect(state.isError).toBeFalsy();
+    const prompts = (await agent.client.listPrompts()).prompts.map(p => p.name);
+    expect(prompts).toEqual(["harita-map-task", "map_from_image", "map_from_text"]);
+    const fromText = await agent.client.getPrompt({ name: "map_from_text", arguments: { description: "a small village" } });
+    expect(fromText.messages[0]?.content).toMatchObject({ type: "text", text: expect.stringContaining("a small village") });
     const resources = (await agent.client.listResources()).resources;
-    expect(resources).toHaveLength(9);
+    expect(resources).toHaveLength(10);
+    expect(resources.map(resource => resource.uri)).toContain("harita://guide/limits");
     expect(resources.map(resource => resource.uri)).toContain("harita://guide/collaboration");
     const overview = await agent.client.readResource({ uri: "harita://guide/overview" });
     expect(overview.contents[0]).toMatchObject({ uri: "harita://guide/overview", mimeType: "text/markdown" });

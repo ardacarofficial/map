@@ -1916,6 +1916,11 @@ const hardenedDefinitions: AgentToolDefinition[] = DEFINITIONS.map(tool => {
     { if: { properties: { mode: { const: "area" } } }, then: { ...requiredKeys("region"), not: { anyOf: [requiredKeys("cells"), { ...requiredKeys("erase"), properties: { erase: { const: true } } }] } } },
     { if: { properties: { mode: { const: "road" } } }, then: { ...requiredKeys("cells"), not: requiredKeys("region") } },
   ] };
+  if (tool.name === "place_stamp") schema = { ...schema,
+    // Many copies of one stamp in a single call/action (trees, fences); at stays the single-copy form.
+    properties: { ...(schema.properties as Record<string, JsonValue>), positions: { type: "array", minItems: 1, maxItems: 256,
+      items: { type: "array", prefixItems: [{ type: "integer", minimum: 0, maximum: 4095 }, { type: "integer", minimum: 0, maximum: 4095 }], minItems: 2, maxItems: 2 } } },
+    required: (schema.required as string[]).filter(key => key !== "at"), anyOf: [requiredKeys("at"), requiredKeys("positions")] };
   if (tool.name === "get_tile_catalog") schema = { ...schema, allOf: [
     { not: { ...requiredKeys("tileIds"), anyOf: [requiredKeys("offset"), requiredKeys("limit")] } },
     { if: requiredKeys("sheetRegion"), then: { ...requiredKeys("image"), properties: { image: { const: "sheet" } } } },
@@ -2033,6 +2038,8 @@ export const EDITOR_CONTROL_DEFINITIONS: readonly AgentToolDefinition[] = [
   ]}),
   controlTool("configure_application", "Persist locale and shortcut overrides with the application's serialized settings writer, rejecting unknown commands, malformed chords and shortcut conflicts. null removes an override and restores defaults; [] unbinds. Read get_editor_state for available locales and defaults. Rejects an open settings preview to preserve the user's draft. Never changes MCP server/token or writes document/PNG data. Works without a world and during proposal review.", controlPatch({...context,locale:{type:"string",minLength:1,maxLength:32},shortcuts:{type:"object",maxProperties:512,propertyNames:{type:"string",minLength:1,maxLength:128},additionalProperties:controlNullable({type:"array",maxItems:4,uniqueItems:true,items:{type:"string",minLength:1,maxLength:64}})}})),
   controlTool("list_editor_commands", "Discover current command IDs, translated labels, categories, enabled/check state, shortcuts and remoteExecutable status/reason. Query matches ID/title/category. Only the explicit UI allowlist can execute via run_editor_command; document mutations use transaction tools and AI approval remains human-only. Paginated, at most 128 commands per page.", controlObject({...context,query:{type:"string",maxLength:256},offset:controlInteger(0,10000),limit:controlInteger(1,128)}), true),
+  controlTool("editor_ui", "Editor UI controls through one tool: action selects get_editor_state/configure_editor/configure_layout/configure_application/list_editor_commands/run_editor_command/get_export_settings/configure_export; args are that tool's arguments.",
+    controlObject({ ...context, action: controlEnumeration("state", "configure", "layout", "application", "commands", "run_command", "export_settings", "configure_export"), args: { type: "object" } }, ["action"])),
   controlTool("run_editor_command", "Invoke one enabled UI command from list_editor_commands where remoteExecutable=true. Explicit allowlist covers view navigation/toggles, tool switches, settings dialogs, palette, pixel colors and selection-only commands. Does not execute arbitrary command IDs, file operations, document mutations or AI approval/discard. This action is not replay-cached: toggles execute once per call; use configure_editor/configure_layout for retry-safe absolute setters.", controlObject({...context,commandId:id},["commandId"])),
 ];
 
@@ -2151,7 +2158,3 @@ export function canonicalJson(value: unknown, pretty = true): string {
   return pretty ? JSON.stringify(sorted(value), null, 2) + "\n" : JSON.stringify(sorted(value));
 }
 
-/** The root is an MCP tools/list result, directly embeddable by Rust. */
-export function generateToolsJson(): string {
-  return canonicalJson({ tools: TOOL_DEFINITIONS });
-}

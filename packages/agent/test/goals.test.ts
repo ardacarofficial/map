@@ -22,7 +22,7 @@ describe("explicit map goals", () => {
     expect(await inspect(h, [{ ...connection, emptyIsBlocked: true }])).toMatchObject({ valid: false });
     await h.begin();
     success(await h.edit("paint_rect", { mapId: "map-1", layerId: "collision", region, value: { collision: 1 } }));
-    const created = success(await h.edit("edit_layer", { mapId: "map-1", action: "create", name: "Bridge", kind: "collision" })).data as ToolData["edit_layer"];
+    const created = { layer: { id: success(await h.edit("edit_layer", { mapId: "map-1", action: "create", name: "Bridge", kind: "collision" })).created!.layerIds![0]! } };
     success(await h.edit("paint_rect", { mapId: "map-1", layerId: created.layer.id, region: { x: 0, y: 1, width: 5, height: 1 }, value: { collision: 2 } }));
     expect(await inspect(h, [{ ...connection, collisionLayerIds: [created.layer.id, "collision"] }])).toMatchObject({ valid: true });
     expect(await inspect(h, [{ ...connection, collisionLayerIds: ["collision", created.layer.id], blockedValues: [2] }])).toMatchObject({ valid: false });

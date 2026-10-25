@@ -70,6 +70,8 @@ Harita’da kalıcı etkisi olan, taslağa girmeyen araçlar (etiket yazma, dı�
 - “Haritanın ortasına dikey bir nehir ve üstüne köprü yerleştir; iki kıyıdaki yolları bağla. Uygun akıllı kaynak yoksa mevcut tile ve stamp’leri kullan. Bitince onay bekle.”
 - “Tileset görsellerini inceleyip çimen, su, çatı, kapı ve köprü parçalarını Türkçe etiketle. Emin olmadıklarını atla.”
 
+Hazır iki istem de var: `map_from_text` (açıklama → harita) ve `map_from_image` (resim yolu → harita). MCP istemlerini gösteren istemcilerde seçilir; Claude Code’da `/mcp__harita__map_from_text` gibi komut olarak çıkar. İkisi de AI’a doğru araç sırasını verir: zemin için `paint_grid`, yol ve nehir için `draw_path`, ev ve köprü için `place_stamp`, sonra önizleme ve onaya sunma.
+
 AI önce `get_session` ile açık dünyayı, katalog görselleriyle gerçek tile’ları öğrenir. `begin_edit` ile işe başlar; çizim canlı görünür. `render_preview` ile bakar, `finish_edit` ile sana sunar. Uygun görsel yoksa söylemesini iste; “nehir” sözcüğü otomatik su görseli seçmez.
 
 ## Referans resim

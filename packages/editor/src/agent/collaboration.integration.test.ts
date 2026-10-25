@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { encodeRgbaPng, serializeLevel } from "@smap/core";
-import type { AgentConnection, AgentConnectionStatus, AgentToolResult, BridgeControl, BridgeReply, BridgeRequest } from "@smap/agent";
+import type { AnyToolSuccess, AgentConnection, AgentConnectionStatus, AgentToolResult, BridgeControl, BridgeReply, BridgeRequest } from "@smap/agent";
 import { browserPlatform, setPlatform } from "../platform";
 import { MemoryFileSystem } from "../io/memoryFs";
 import { closeProject, getLevelWorkspace, newProject, saveCurrentProject } from "../io/session";
@@ -63,7 +63,7 @@ async function setup() {
     if (!result.ok) throw new Error(result.message);
     const memberRevision = (result as unknown as { memberRevision?: number }).memberRevision;
     if (memberRevision !== undefined) revisions.set(client, memberRevision);
-    return result;
+    return result as AnyToolSuccess;
   }
   const writeContext = (client: string) => ({ ...context(), transactionId: runtime.api.getState().transaction!.id,
     expectedMemberRevision: revisions.get(client)!, idempotencyKey: `collab-write-${++next}` });

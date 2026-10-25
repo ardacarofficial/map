@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { AgentError, AgentErrorCode, type TagRecord, type TagTarget, type TagWrite, type ToolArguments, type ToolData, type ToolName } from "@smap/agent";
+import { AgentError, AgentErrorCode, type AnyToolSuccess, type TagRecord, type TagTarget, type TagWrite, type ToolArguments, type ToolData, type ToolName } from "@smap/agent";
 import { useAgentUiState } from "./agentUiState";
 import { getAgentRuntime, createAgentSignal } from "./runtime";
 
@@ -8,7 +8,7 @@ async function execute<N extends ToolName>(name: N, args: ToolArguments[N]): Pro
   if (!runtime) throw new Error("Agent runtime unavailable");
   const result = await runtime.api.executeTool({ name, arguments: args, clientSessionId: "editor-tags", clientInfo: { name: "Harita", version: "2.0" }, bridgeEpoch: runtime.bridgeEpoch, deadline: Date.now() + 30000, signal: createAgentSignal(new AbortController()) });
   if (!result.structuredContent.ok) throw new AgentError(result.structuredContent.code, result.structuredContent.message);
-  return result.structuredContent.data as ToolData[N];
+  return (result.structuredContent as AnyToolSuccess).data as ToolData[N];
 }
 const context = () => {
   const worldSessionId = getAgentRuntime()?.api.getState().worldSessionId;

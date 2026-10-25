@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createAgentApi, memoryCall, createMemoryHost, type AgentCallContext } from "@smap/agent";
+import { createAgentApi, memoryCall, createMemoryHost, type AgentCallContext, type AnyToolSuccess } from "@smap/agent";
 import { encodeRgbaPng } from "@smap/core";
 import { useEditorStore } from "../state/editorStore";
 import { clearTilesetImages, setTilesetImage } from "../state/tilesetImages";
@@ -60,12 +60,12 @@ it("serves the editor snapshot through MCP and changes its token without changin
   const api=createAgentApi(host),context={worldSessionId:host.session().worldSessionId!};
   const first=await api.executeTool(memoryCall("get_editor_context",{context}));
   expect(first.structuredContent.ok).toBe(true);if(!first.structuredContent.ok)throw Error(first.structuredContent.message);
-  const snapshot=first.structuredContent.data as ReturnType<typeof captureEditorContext>;
+  const snapshot=(first.structuredContent as AnyToolSuccess).data as ReturnType<typeof captureEditorContext>;
   expect(snapshot.selection).toMatchObject({tileIds:[0,1],grid:{columns:2,tileWidth:2,spacing:1}});
   useEditorStore.getState().setRegion({x:1,y:2,width:3,height:4});
   const second=await api.executeTool(memoryCall("get_editor_context",{context}));
   expect(second.structuredContent.ok).toBe(true);if(!second.structuredContent.ok)throw Error(second.structuredContent.message);
   expect(second.structuredContent.revision).toBe(first.structuredContent.revision);
-  expect((second.structuredContent.data as ReturnType<typeof captureEditorContext>).contextToken).not.toBe(snapshot.contextToken);
+  expect(((second.structuredContent as AnyToolSuccess).data as ReturnType<typeof captureEditorContext>).contextToken).not.toBe(snapshot.contextToken);
   expect(api.getState().transaction).toBeNull();
 });

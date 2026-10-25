@@ -37,7 +37,7 @@ test("auth, origin, Host, method, protocol, and initialization checks precede di
   const id = await init();
   expect((await post({ jsonrpc: "2.0", id: 2, method: "ping" }, id, undefined, { "MCP-Protocol-Version": "wrong" })).status).toBe(400);
   const catalogue = await (await post({ jsonrpc: "2.0", id: 2, method: "tools/list" }, id)).json();
-  expect(catalogue.result.tools).toHaveLength(54);
+  expect(catalogue.result.tools).toHaveLength(47);
 });
 
 test("pairing pins a session to exactly one page; disconnect fails pending calls", async () => {
@@ -230,7 +230,7 @@ test("guide resources and prompts require authenticated initialized sessions and
   expect((await (await post({ jsonrpc: "2.0", id: 2, method: "resources/list" }, session)).json()).error).toBeDefined();
   await post({ jsonrpc: "2.0", method: "notifications/initialized" }, session);
   const list = await (await post({ jsonrpc: "2.0", id: 3, method: "resources/list" }, session)).json();
-  expect(list.result.resources).toHaveLength(9);
+  expect(list.result.resources).toHaveLength(10);
   const read = await (await post({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "harita://guide/skill" } }, session)).json();
   expect(read.result.contents[0].text).toContain("harita://guide/overview");
   const unknown = await (await post({ jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "file:///etc/passwd" } }, session)).json();
@@ -244,7 +244,7 @@ test("guide resources and prompts require authenticated initialized sessions and
   // Guide reads need no paired renderer and cannot dispatch an editor request.
   expect(host.sessionCount).toBe(1);
   const paired = await init("absent");
-  expect((await (await post({ jsonrpc: "2.0", id: 9, method: "resources/list" }, paired)).json()).result.resources).toHaveLength(9);
+  expect((await (await post({ jsonrpc: "2.0", id: 9, method: "resources/list" }, paired)).json()).result.resources).toHaveLength(10);
 });
 
 test("token rotation rejects an initialize whose authenticated body is still arriving (#4)", async () => {

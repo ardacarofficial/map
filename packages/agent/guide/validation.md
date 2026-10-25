@@ -6,7 +6,7 @@ Use `read_region` to verify exact cells, orientations, entities and collision wh
 
 ## Separate the checks
 
-`validate_map` checks structural integrity. Each page is bounded: follow every `nextCursor` with the same arguments and unchanged world until the final `valid:true`. `valid:null` means validation is incomplete. A structurally valid map can still have disconnected paths or poor composition.
+`validate_map` checks structural integrity of the whole map (or a region) in one call: `issueCount`, counts per code in `byCode` and the first `limit` issues (default 32). A structurally valid map can still have disconnected paths or poor composition.
 
 `validate_goals` checks explicit caller-defined goals:
 

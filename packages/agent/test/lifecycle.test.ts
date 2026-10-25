@@ -265,7 +265,7 @@ it("approval survives throwing commit subscribers and a failed dispatch rolls ba
   expect(k.host.snapshot()).toEqual(before);
   expect(k.host.transactions.writeGate.blocked).toBe(false);
 });
-it("a mutation whose result exceeds the response budget rolls back only that call instead of leaving an uncached write", async () => {
+it("write envelopes never echo large payloads, so a big entity default still answers compactly", async () => {
   const h = harness({ entityTypes: [{
     id: "large-default", name: "Large default", color: "#ffffff",
     fields: [{ name: "text", type: "string", default: "x".repeat(L.responseBytes / 2) }],
@@ -275,13 +275,12 @@ it("a mutation whose result exceeds the response budget rolls back only that cal
   success(await h.edit("paint_cells", paint));
   const painted = h.host.snapshot(), counters = { ...h.api.getState().transaction!.counters };
   const args = { context: h.writeContext(), mapId: "map-1", layerId: "entities", typeId: "large-default", at: { x: 0, y: 0 } };
-  const failed = await h.run("place_entity", args);
-  error(failed, "LIMIT_EXCEEDED");
-  expect(failed.structuredContent).toMatchObject({ details: { applied: false } });
+  const placed = await h.run("place_entity", args);
+  expect(success(placed).created?.entityIds).toHaveLength(1);
+  expect(placed.content[0].text.length).toBeLessThan(512);
   expect(h.api.getState().phase).toBe("running");
-  expect(h.host.snapshot()).toEqual(painted);
-  expect(h.api.getState().transaction!.counters).toEqual(counters);
-  error(await h.run("place_entity", { ...args, context: { ...args.context, expectedRevision: h.api.getState().revision } }), "LIMIT_EXCEEDED");
+  expect(h.host.snapshot()).not.toEqual(painted);
+  expect(h.api.getState().transaction!.counters.mutationCalls).toBe(counters.mutationCalls + 1);
   await h.api.userAction("discard");
   expect(h.host.snapshot()).toEqual(before);
   expect(h.host.transactions.writeGate.blocked).toBe(false);

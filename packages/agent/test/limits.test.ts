@@ -46,9 +46,9 @@ it("bounds sparse, grid and read payloads before dispatch while uniform tools ma
   error(await h.read("read_region", { mapId: "map-1" }), "LIMIT_EXCEEDED");
   expect(h.host.snapshot()).toEqual(before);
   const rect = success(await h.edit("paint_rect", { mapId: "map-1", layerId: "ground", region: { x: 0, y: 0, width: 256, height: 128 }, value: tile }));
-  expect((rect.data as { change: { changedCells: number } }).change.changedCells).toBe(256 * 128);
+  expect(rect.changed).toBe(256 * 128);
   const filled = success(await h.edit("fill", { mapId: "map-1", layerId: "ground", start: { x: 0, y: 200 }, value: { ...tile, tileId: 1 } }));
-  expect((filled.data as { filledCells: number }).filledCells).toBe(256 * 128);
+  expect(filled.changed).toBe(256 * 128);
 });
 it("splitting calls cannot bypass the cumulative planned-write limit or mutation-call cap", async () => {
   const h = harness({ width: 64, height: 64 });

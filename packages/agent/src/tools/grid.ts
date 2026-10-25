@@ -212,8 +212,9 @@ export function expandGrid(store: MapStore, target: TileLayer, grid: { origin?: 
   const rows = grid.rows.map(r => [...r]);
   check(rows.length > 0 && rows[0]!.length > 0, E.INVALID_ARGUMENT, `${path}.rows: must contain at least one non-empty row`);
   const width = rows[0]!.length;
-  rows.forEach((r, i) => check(r.length === width, E.INVALID_ARGUMENT,
-    `${path}.rows[${i}]: has ${r.length} characters, expected ${width} (all rows must be equal length)`));
+  const ragged = rows.flatMap((r, i) => r.length === width ? [] : [`rows[${i}] has ${r.length}`]);
+  check(!ragged.length, E.INVALID_ARGUMENT, `${path}.rows: every row must have ${width} characters (like rows[0]); ${ragged.slice(0, 8).join(", ")}${ragged.length > 8 ? ", …" : ""}`,
+    { nextAction: `Make every row exactly ${width} characters (pad with " " to keep cells), then call again.` });
   budget(width * rows.length, L.gridCells);
   inside(store, { x: origin.x, y: origin.y, width, height: rows.length });
   for (const symbol of Object.keys(grid.legend))
@@ -266,11 +267,16 @@ export function paintGrid(tx: Transactions, a: ToolArguments["paint_grid"]): { c
     ? [{ layerId: a.layerId, layerName: a.layerName, origin: a.origin, rows: a.rows!, legend: a.legend ?? {}, path: "" }]
     : a.layers!.map((l, i) => ({ ...l, origin: l.origin ?? a.origin, legend: { ...a.legend, ...l.legend }, path: `layers[${i}]` }));
   budget(grids.length, L.readLayers);
-  const items = grids.map(g => {
+  // The same layer may appear several times (e.g. one entry per object); later entries win per cell.
+  const merged = new Map<Id, Map<string, LayerWrites["writes"][number]>>();
+  for (const g of grids) {
     const target = resolveLayer(store, g, g.path ? `${g.path}.layerId` : "layerId");
-    return expandGrid(store, target, g, g.path || "grid");
-  });
-  return applyLayers(tx, a.mapId, items, L.gridCells);
+    const item = expandGrid(store, target, g, g.path || "grid");
+    const cells = merged.get(item.layerId) ?? new Map<string, LayerWrites["writes"][number]>();
+    for (const w of item.writes) cells.set(`${w.x},${w.y}`, w);
+    merged.set(item.layerId, cells);
+  }
+  return applyLayers(tx, a.mapId, [...merged].map(([layerId, cells]) => ({ layerId, writes: [...cells.values()] })), L.gridCells);
 }
 
 /** Nonzero cells of a layer inside region, chunk-sparse. */

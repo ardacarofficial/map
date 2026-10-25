@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { cellFlags, serializeLevel } from "@smap/core";
 import { harness, success, error, tile } from "./helpers";
 import { gridSymbol } from "../src/tools/grid";
-import type { GridLayerOutput, ReadRegionGrid, ToolData } from "../src/contracts";
+import type { GridLayerOutput, ReadRegionGrid } from "../src/contracts";
 
 const t = (tileId: number, flags = 0) => (flags ? { tilesetId: "tiles", tileId, flags } : { tilesetId: "tiles", tileId });
 const cellsOf = (h: ReturnType<typeof harness>, layerId = "ground", mapId = "map-1") => {
@@ -72,7 +72,8 @@ describe("paint_grid", () => {
     const before = h.api.getState().transaction!.counters.mutationCalls;
     const r = success(await h.edit("paint_grid", { mapId: "map-1", layerId: "ground", origin: { x: 1, y: 1 },
       rows: ["ab~", "x b"], legend: { a: t(2), b: t(4, 3), x: null, "~": "keep" } }));
-    expect(r.data).toEqual({ changed: 4, bounds: { x: 1, y: 1, width: 3, height: 2 } });
+    expect(r).toMatchObject({ ok: true, changed: 4, bounds: { x: 1, y: 1, width: 3, height: 2 } });
+    expect(Object.keys(r).sort()).toEqual(["bounds", "budget", "changed", "ok", "revision"]);
     expect(h.api.getState().transaction!.counters.mutationCalls).toBe(before + 1);
     const g = await readGrid(h, { region: { x: 0, y: 0, width: 5, height: 3 } });
     expect(g.layers[0]!.rows).toEqual(["AAAAA", "ABCAA", "A.ACA"]);
@@ -80,7 +81,7 @@ describe("paint_grid", () => {
     const layer = h.host.stores.get("map-1")!.document.getLayer("ground")!;
     expect(cellFlags(layer.getCell(3, 2))).not.toBe(0);
     const same = success(await h.edit("paint_grid", { mapId: "map-1", layerId: "ground", origin: { x: 1, y: 1 }, rows: ["a"], legend: { a: t(2) } }));
-    expect(same.data).toEqual({ changed: 0, warnings: ["No cells changed: every write already matched the map."] });
+    expect(same).toMatchObject({ changed: 0, warnings: ["No cells changed: every write already matched the map."] });
   });
   it("resolves unique layer names, multi-layer grids with shared legend, and collision values in one action", async () => {
     const h = harness({ width: 4, height: 4 });
@@ -89,7 +90,7 @@ describe("paint_grid", () => {
       { layerName: "ground", rows: ["gw", "wg"] },
       { layerId: "collision", origin: { x: 2, y: 0 }, rows: ["#"], legend: { "#": { collision: 1 } } },
     ] }));
-    expect((r.data as ToolData["paint_grid"]).changed).toBe(5);
+    expect(r.changed).toBe(5);
     expect(h.api.getState().transaction!.counters.mutationCalls).toBe(1);
     const g = await readGrid(h, { region: { x: 0, y: 0, width: 4, height: 2 } });
     expect(g.layers.map(l => l.rows)).toEqual([[".AB.", ".BA."], ["..#.", "...."]]);
@@ -110,8 +111,11 @@ describe("paint_grid", () => {
     const out = await h.edit("paint_grid", { mapId: "map-1", layerId: "ground", origin: { x: 3, y: 0 }, rows: ["gg"], legend: { g: t(0) } });
     error(out, "OUT_OF_BOUNDS");
     expect(out.structuredContent).toMatchObject({ details: { mapSize: { width: 4, height: 4 } } });
-    error(await h.edit("paint_grid", { mapId: "map-1", layers: [{ layerId: "ground", rows: ["g"] }, { layerId: "ground", rows: ["g"] }], legend: { g: t(0) } }), "INVALID_ARGUMENT");
     expect(h.host.snapshot()).toEqual(before);
+    // A layer may repeat (one entry per object); later entries win per cell, still one action.
+    const twice = success(await h.edit("paint_grid", { mapId: "map-1", layers: [{ layerId: "ground", rows: ["gg"] }, { layerName: "Ground", origin: { x: 1, y: 0 }, rows: ["h"] }], legend: { g: t(0), h: t(1) } }));
+    expect(twice.changed).toBe(2);
+    expect((await readGrid(h, { region: { x: 0, y: 0, width: 2, height: 1 } })).layers[0]!.rows).toEqual(["AB"]);
   });
   it("random legend entries are deterministic per cell and seed, and survive cancel/redo", async () => {
     const h = harness({ width: 16, height: 16 });
@@ -134,7 +138,7 @@ describe("paint_grid", () => {
       { tool: "paint_grid", args: { mapId: "map-1", layerId: "ground", rows: ["ab", "ba"], legend: { a: t(1), b: t(2) } } },
       { tool: "paint_cells", args: { mapId: "map-1", layerId: "ground", points: [[5, 5], [6, 6]], value: t(3) } },
     ] }));
-    expect((r.data as ToolData["apply_operations"]).items.map(i => [i.tool, i.changedCells])).toEqual([["paint_grid", 4], ["paint_cells", 2]]);
+    expect(r.items!.map(i => [i.tool, i.changed])).toEqual([["paint_grid", 4], ["paint_cells", 2]]);
     expect((await readGrid(h, { region: { x: 0, y: 0, width: 2, height: 2 } })).layers[0]!.rows).toEqual(["AB", "BA"]);
     error(await h.edit("apply_operations", { operations: [
       { tool: "paint_grid", args: { mapId: "map-1", layerId: "ground", rows: ["z"], legend: { a: t(1) } } },
@@ -147,7 +151,7 @@ describe("paint_cells points", () => {
     const h = harness({ width: 8, height: 8 });
     await h.begin();
     const r = success(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", points: [[0, 0], [7, 7], [3, 4]], value: t(5, 2) }));
-    expect((r.data as ToolData["paint_cells"]).change.changedCells).toBe(3);
+    expect(r.changed).toBe(3);
     expect(cellsOf(h).filter(Boolean)).toHaveLength(3);
     error(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", points: [[0, 0], [0, 0]], value: t(1) }), "INVALID_ARGUMENT");
     error(await h.edit("paint_cells", { mapId: "map-1", layerId: "ground", points: [[8, 0]], value: t(1) }), "OUT_OF_BOUNDS");
@@ -161,13 +165,13 @@ describe("replace_tiles", () => {
     await h.begin();
     success(await h.edit("paint_grid", { mapId: "map-1", layerId: "ground", rows: ["aabbAB", "aaaaaa"], legend: { a: t(1), b: t(2), A: t(1, 1), B: t(1, 6) } }));
     const region = success(await h.edit("replace_tiles", { scope: "region", mapId: "map-1", region: { x: 0, y: 0, width: 6, height: 1 }, from: t(1), to: t(9) }));
-    expect(region.data).toMatchObject({ changed: 4 });
+    expect(region).toMatchObject({ changed: 4 });
     const g = await readGrid(h, { region: { x: 0, y: 0, width: 6, height: 1 } });
     expect(g.layers[0]!.legend).toEqual({ A: t(9), B: t(2), C: t(9, 1), D: t(9, 6) });
     const map = success(await h.edit("replace_tiles", { scope: "map", mapId: "map-1", from: t(1), to: null }));
-    expect(map.data).toEqual({ changed: 6, bounds: { x: 0, y: 1, width: 6, height: 1 } });
+    expect(map).toMatchObject({ changed: 6, bounds: { x: 0, y: 1, width: 6, height: 1 } });
     const none = success(await h.edit("replace_tiles", { scope: "layer", mapId: "map-1", layerIds: ["ground"], from: t(1), to: t(2) }));
-    expect(none.data).toEqual({ changed: 0, warnings: ["No cells use the from tile in the selected scope."] });
+    expect(none).toMatchObject({ changed: 0, warnings: ["No cells use the from tile in the selected scope."] });
     error(await h.edit("replace_tiles", { scope: "layer", mapId: "map-1", layerIds: ["collision"], from: t(1), to: t(2) }), "LAYER_KIND");
     error(await h.edit("replace_tiles", { scope: "region", mapId: "map-1", from: t(1), to: t(2) }), "INVALID_ARGUMENT");
     error(await h.edit("replace_tiles", { scope: "map", mapId: "map-1", from: t(2), to: t(999) }), "UNKNOWN_ID");
@@ -180,12 +184,12 @@ describe("replace_tiles", () => {
     for (const layerId of ["ground", "upper"])
       success(await h.edit("paint_rect", { mapId: "map-1", layerId, region: { x: 0, y: 0, width: 4, height: 1 }, value: t(1) }));
     success(await h.edit("edit_layer", { mapId: "map-1", layerId: "upper", action: "update", props: { locked: true } }));
-    const created = success(await h.edit("create_map", { name: "Second", width: 4, height: 4, tileWidth: 32, tileHeight: 32 })).data as ToolData["create_map"];
-    const secondId = created.map.id, secondLayer = created.layers[0]!.id;
+    const created = success(await h.edit("create_map", { name: "Second", width: 4, height: 4, tileWidth: 32, tileHeight: 32 })).created!;
+    const secondId = created.mapId!, secondLayer = created.layers![0]!.id;
     success(await h.edit("paint_rect", { mapId: secondId, layerId: secondLayer, region: { x: 0, y: 0, width: 2, height: 2 }, value: t(1) }));
     const world = success(await h.edit("replace_tiles", { scope: "world", from: t(1), to: t(4) }));
-    expect(world.data).toMatchObject({ changed: 8, maps: [{ mapId: "map-1", changed: 4 }, { mapId: secondId, changed: 4 }], skippedLayerIds: ["upper"] });
-    expect((world.data as ToolData["replace_tiles"]).warnings![0]).toContain("upper");
+    expect(world).toMatchObject({ changed: 8, maps: [{ mapId: "map-1", changed: 4 }, { mapId: secondId, changed: 4 }] });
+    expect(world.warnings![0]).toContain("upper");
     error(await h.edit("replace_tiles", { scope: "layer", mapId: "map-1", layerIds: ["upper"], from: t(1), to: t(4) }), "LAYER_LOCKED");
   });
 });
@@ -198,10 +202,10 @@ describe("clear_region", () => {
     success(await h.edit("paint_rect", { mapId: "map-1", layerId: "collision", region: { x: 0, y: 0, width: 6, height: 6 }, value: { collision: 1 } }));
     success(await h.edit("place_entity", { mapId: "map-1", layerId: "entities", typeId: "spawn", at: { x: 2, y: 2 } }));
     const r = success(await h.edit("clear_region", { mapId: "map-1", region: { x: 1, y: 1, width: 3, height: 3 } }));
-    expect(r.data).toEqual({ changed: 18, bounds: { x: 1, y: 1, width: 3, height: 3 } });
+    expect(r).toMatchObject({ changed: 18, bounds: { x: 1, y: 1, width: 3, height: 3 } });
     expect(h.host.stores.get("map-1")!.document.entityLayers()[0]!.entities).toHaveLength(1);
     const e = success(await h.edit("clear_region", { mapId: "map-1", layerIds: ["entities", "ground"] }));
-    expect(e.data).toMatchObject({ changed: 27, removedEntities: 1 });
+    expect(e).toMatchObject({ changed: 27, removedEntities: 1 });
     expect(cellsOf(h).some(Boolean)).toBe(false);
     expect(cellsOf(h, "collision").filter(Boolean)).toHaveLength(27);
     await h.api.userAction("discard");

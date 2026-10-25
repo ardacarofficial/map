@@ -18,7 +18,7 @@ describe("map validation uses current entity and destination semantics", () => {
   it.each([null, "map-1"])("accepts an omitted level reference with valid default %s", async defaultValue => {
     const h = staleDefault(defaultValue);
     const result = success(await h.read("validate_map", { mapId: "map-1" })).data;
-    expect(result).toMatchObject({ valid: true, issues: [], nextCursor: null });
+    expect(result).toMatchObject({ valid: true, issues: [], issueCount: 0 });
     await h.begin();
     const before = serializeLevel(h.host.stores.get("map-1")!.document);
     success(await h.edit("edit_entity", { mapId: "map-1", entityId: "npc-1", action: "move", at: { x: 1, y: 1 } }));
@@ -108,15 +108,9 @@ describe("map validation uses current entity and destination semantics", () => {
   it("preserves issue limits and earlier failures across pages with many references on one entity", async () => {
     const h = staleDefault("deleted"), store = h.host.stores.get("map-1")!;
     store.dispatch({ type: "defineEntityType", entityType: { ...custom, fields: Array.from({ length: 3 }, (_, i) => ({ name: `target-${i}`, type: "levelRef" as const, default: "deleted" })) } });
-    let cursor: string | undefined;
-    const issues: string[] = [];
-    do {
-      const page = success(await h.read("validate_map", { mapId: "map-1", limit: 1, ...(cursor ? { cursor } : {}) })).data as ToolData["validate_map"];
-      expect(page.issues.length).toBeLessThanOrEqual(1);
-      issues.push(...page.issues.map(issue => issue.entityId!));
-      cursor = page.nextCursor ?? undefined;
-      if (!cursor) expect(page.valid).toBe(false);
-    } while (cursor);
-    expect(issues).toEqual(["npc-1", "npc-1", "npc-1"]);
+    // One call scans everything: the issue list is capped by limit, the counts are complete.
+    const page = success(await h.read("validate_map", { mapId: "map-1", limit: 1 })).data as ToolData["validate_map"];
+    expect(page.issues.map(issue => issue.entityId)).toEqual(["npc-1"]);
+    expect(page).toMatchObject({ valid: false, issueCount: 3, byCode: { PORTAL_TARGET: 3 }, moreIssues: 2 });
   });
 });

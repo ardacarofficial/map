@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { createAgentApi, type AgentApi, type ToolName } from "@smap/agent";
+import { createAgentApi, type AgentApi, type AnyToolSuccess, type ToolName } from "@smap/agent";
 import { serializeLevel } from "@smap/core";
 import { browserPlatform, setPlatform } from "../platform";
 import { closeProject, getLevelWorkspace, newProject } from "../io/session";
@@ -26,7 +26,7 @@ for (const outcome of ["approve", "discard"] as const) it(`real API + live host 
     const result = await api!.executeTool({ name, arguments: args, clientSessionId: "client", clientInfo: { name: "Integration", version: "1" }, bridgeEpoch: "epoch", deadline: Date.now() + 30000, signal: { aborted: false, throwIfAborted() {}, onAbort: () => () => {} } });
     expect(result.structuredContent, `${name}: ${JSON.stringify(result.structuredContent)}`).toMatchObject({ ok: true });
     if (!result.structuredContent.ok) throw Error(result.structuredContent.message);
-    return result.structuredContent;
+    return result.structuredContent as AnyToolSuccess;
   }
   const context = () => ({ worldSessionId: api!.getState().worldSessionId! });
   const edit = (name: ToolName, args: object = {}) => call(name, { context: { ...context(), transactionId: api!.getState().transaction!.id, expectedRevision: api!.getState().revision, idempotencyKey: `edit-call-${++key}` }, ...args });
@@ -37,9 +37,9 @@ for (const outcome of ["approve", "discard"] as const) it(`real API + live host 
   await edit("paint_cells", { mapId, layerId, cells: [{ x: 3, y: 3, value: { tilesetId: "art", tileId: 1, flags: 5 } }] });
   await edit("place_stamp", { mapId, stampId: "house", at: { x: 5, y: 5 } });
   const created = await edit("create_map", { name: "New map", width: 8, height: 8, tileWidth: 16, tileHeight: 16 });
-  const data = created.data as { map: { id: string }; layers: { id: string; name: string }[] };
-  expect(data.layers.map(l => l.name)).toEqual([t("layers.defaultName")]);
-  await edit("paint_cells", { mapId: data.map.id, layerId: data.layers[0]!.id, cells: [{ x: 1, y: 1, value: { tilesetId: "art", tileId: 2 } }] });
+  const data = created.created!;
+  expect(data.layers!.map(l => l.name)).toEqual([t("layers.defaultName")]);
+  await edit("paint_cells", { mapId: data.mapId!, layerId: data.layers![0]!.id, cells: [{ x: 1, y: 1, value: { tilesetId: "art", tileId: 2 } }] });
   await edit("finish_edit");
   expect(ws.history.undoDepth).toBe(depth);
   const after = serializeLevel(store.document);
@@ -54,10 +54,10 @@ for (const outcome of ["approve", "discard"] as const) it(`real API + live host 
     expect(ws.history.undoDepth).toBe(depth + 1);
     ws.history.undo();
     expect(serializeLevel(store.document)).toBe(before);
-    expect(ws.level(data.map.id)).toBeDefined();
-    expect(ws.entry(data.map.id)!.store.document.layers).toHaveLength(0);
+    expect(ws.level(data.mapId!)).toBeDefined();
+    expect(ws.entry(data.mapId!)!.store.document.layers).toHaveLength(0);
     ws.history.redo();
     expect(serializeLevel(store.document)).toBe(after);
-    expect(ws.entry(data.map.id)!.store.document.layers[0]!.getCell(1, 1)).not.toBe(0);
+    expect(ws.entry(data.mapId!)!.store.document.layers[0]!.getCell(1, 1)).not.toBe(0);
   }
 });

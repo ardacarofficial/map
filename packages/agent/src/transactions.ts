@@ -1,6 +1,7 @@
 import { type Entity, type MapStore } from "@smap/core";
 import {
   AGENT_LIMITS as L,
+  ESSENTIAL_LIMITS,
   AgentError,
   AgentErrorCode as E,
   type AgentBaseline,
@@ -468,7 +469,7 @@ export class Transactions {
             })),
         ),
         ...(unlock.length ? { unlockedLayers: unlock } : {}),
-        limits: L,
+        limits: ESSENTIAL_LIMITS,
         leaseDeadline: summary.leaseDeadline,
         budget: this.budgetLeft(),
       };

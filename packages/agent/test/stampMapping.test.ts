@@ -29,7 +29,7 @@ it("creates an unmatched lower stamp layer while reserving the later named desti
   const placed = success(await h.edit("place_stamp", {
     mapId: "map-1", stampId: layered.id, at: { x: 2, y: 3 }, allowCreateLayers: true,
   }));
-  expect(placed.data).toMatchObject({ change: { plannedCells: 2, changedCells: 2 } });
+  expect(placed).toMatchObject({ changed: 2 });
   const foundation = store.document.layers.find(layer => layer.name === "Foundation")!;
   expect(store.document.indexOfLayer(foundation.id)).toBeLessThan(store.document.indexOfLayer("ground"));
   for (const [layerId, tileId] of [[foundation.id, 0], ["ground", 1]] as const)

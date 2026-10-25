@@ -86,7 +86,7 @@ it("capture reserves names belonging to unreadable stamp files", async () => {
   await h.fs.writeText("stamps/collision.json", "unreadable stamp bytes");
   useProjectLibrary.setState({ brokenStampFiles: ["stamps/collision.json"] });
   await h.begin(); await h.paint();
-  expect(await h.capture()).toMatchObject({ data: { stampId: "collision-2" } });
+  expect(await h.capture()).toMatchObject({ created: { stampId: "collision-2" } });
   await h.edit("finish_edit"); await api!.userAction("approve");
   expect(await saveCurrentProject(false)).toBe(true);
   expect(await h.fs.readText("stamps/collision.json")).toBe("unreadable stamp bytes");
