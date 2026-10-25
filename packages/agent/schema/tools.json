@@ -2791,6 +2791,9 @@
       "description": "Show a reference picture resampled onto the map grid with coordinates, to read features as cells.",
       "inputSchema": {
         "properties": {
+          "alignment": {
+            "description": "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align"
+          },
           "coordinates": {
             "type": "boolean"
           },
@@ -2879,6 +2882,9 @@
       "description": "Turn a reference picture into paint_grid layers (nearest tiles per cell) plus confidence and a preview; paint grid.layers with one paint_grid call. mode render|sketch|auto; colorLegend {'#rrggbb': tile | tag word | {stampId} | null} for sketches. Writes nothing.",
       "inputSchema": {
         "properties": {
+          "alignment": {
+            "description": "'auto' (saved/detected grid, default) | 'none' (fit onto whole map) | alignment object from reference_align"
+          },
           "candidates": {
             "description": "Limit to tilesetIds / tiles / stamps.",
             "properties": {
@@ -2957,6 +2963,9 @@
               "sketch"
             ],
             "type": "string"
+          },
+          "normalizeLight": {
+            "type": "boolean"
           },
           "preview": {
             "type": "boolean"
@@ -3110,6 +3119,52 @@
         "type": "object"
       },
       "name": "render_compare"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Detect how a reference picture lies on the map grid (cellPx, scale, offset of cell 0,0) with a grid preview; saved for reference_view/reference_quantize. hint fixes known scale/offsets.",
+      "inputSchema": {
+        "properties": {
+          "hint": {
+            "properties": {
+              "cellPx": {
+                "type": "number"
+              },
+              "offsetX": {
+                "type": "number"
+              },
+              "offsetY": {
+                "type": "number"
+              },
+              "scale": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "mapId": {
+            "type": "string"
+          },
+          "maxSide": {
+            "type": "integer"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "save": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "referenceId"
+        ],
+        "type": "object"
+      },
+      "name": "reference_align"
     }
   ]
 }

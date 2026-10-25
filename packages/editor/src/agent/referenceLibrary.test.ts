@@ -4,7 +4,7 @@ import type { AgentCallContext, AgentWorldPort, ReferenceQuantizeRequest } from 
 import { clearTilesetImages, setTilesetImage } from "../state/tilesetImages";
 import { decodeWorkingSourcePng } from "../io/sourcePng";
 import { clearAgentWorld, resetAgentWorld } from "./editGate";
-import { clearReferences, createReferencePort, declaredSize, decodeReferenceImage, listReferences, removeReference, setLocalImageReader, subscribeReferences } from "./referenceLibrary";
+import { clearReferences, createReferencePort, declaredSize, decodeReferenceImage, getAlignment, listReferences, removeReference, setLocalImageReader, subscribeReferences } from "./referenceLibrary";
 import { previewLayout, renderPreviewPixels } from "./preview";
 import { captureDraftStart, changedCells, clearDraftBaseline, draftStartDocument } from "./draftBaseline";
 
@@ -86,6 +86,33 @@ describe("reference library", () => {
     expect(out.data.confidence).toMatchObject({ low: 0, uncovered: 0 });
     const preview = decodeWorkingSourcePng(out.image!.png);
     expect(preview.width).toBe(out.data.image!.width);
+  });
+  it("aligns the picture on the grid; a region quantizes the same cells, never the squeezed picture", async () => {
+    const { art, port, layerId } = setup();
+    const reference = await port.add({ imageBase64: base64(referencePng(art)) }, call);
+    const aligned = await port.align!({ referenceId: reference.referenceId, mapId: "m" }, call);
+    expect(aligned.data.alignment).toMatchObject({ cellPx: 12, scale: 3, offsetX: 10, offsetY: 10, cols: 6, rows: 3, method: "auto" });
+    expect(aligned.data.alignment.confidence).toBeGreaterThan(0.5);
+    expect(aligned.data.saved).toBe(true);
+    expect(getAlignment(reference.referenceId, "m")).toEqual(aligned.data.alignment);
+    expect(decodeWorkingSourcePng(aligned.image!.png).width).toBe(aligned.data.image.width);
+    const decode = (layer: { rows: string[]; legend: Record<string, unknown> }) => layer.rows.map(row => [...row].map(ch => (layer.legend[ch] as { tileId: number }).tileId));
+    for (const alignment of ["auto", "none"] as const) {
+      const request: ReferenceQuantizeRequest = { referenceId: reference.referenceId, mapId: "m", region: { x: 2, y: 1, width: 3, height: 2 }, alignment, legend: [], probes: [], groundLayer: { id: layerId, name: "Zemin" }, overlayLayer: null, preview: false };
+      const out = await port.quantize(request, call);
+      expect(decode(out.data.grid.layers[0]!), alignment).toEqual([[1, 1, 1], [0, 0, 0]]);
+      expect(out.data.sourceRect, alignment).toEqual({ x: 34, y: 22, width: 36, height: 24 });
+    }
+    const auto = await port.quantize({ referenceId: reference.referenceId, mapId: "m", region: { x: 0, y: 0, width: 6, height: 3 }, legend: [], probes: [], groundLayer: { id: layerId, name: "Zemin" }, overlayLayer: null, preview: false }, call);
+    expect(auto.data.alignment).toMatchObject({ cellPx: 12 });
+    expect(auto.data.stats).toEqual({ exactish: 100, meanErr: 0 });
+    const view = await port.view({ referenceId: reference.referenceId, mapId: "m", region: { x: 2, y: 1, width: 3, height: 2 } }, call);
+    expect(view.data).toMatchObject({ sourceRect: { x: 34, y: 22, width: 36, height: 24 }, cellPixels: { width: 12, height: 12 } });
+    const manual = await port.align!({ referenceId: reference.referenceId, mapId: "m", hint: { scale: 3, offsetX: -2, offsetY: 10 }, save: false }, call);
+    expect(manual.data.alignment).toMatchObject({ cellPx: 12, offsetX: -2, method: "manual", cols: 7 });
+    expect(getAlignment(reference.referenceId, "m")).toEqual(aligned.data.alignment);
+    removeReference(reference.referenceId);
+    expect(getAlignment(reference.referenceId, "m")).toBeUndefined();
   });
   it("views and compares on the render_preview grid; draft compare marks changed cells", async () => {
     const { art, port, store, layerId } = setup();

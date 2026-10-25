@@ -1,5 +1,5 @@
 {
-  "catalogueSha256": "1f2e51b1aa8dd0b60e3546065cff8b415f2121c740705d16a654523cf17278fc",
+  "catalogueSha256": "86d5a65c5ddabd06e428a78bb39d871e99437087ebb104398634337d8ecea248",
   "tools": {
     "get_session": {
       "valid": [
@@ -2820,6 +2820,11 @@
           },
           "zoom": 2,
           "grid": false
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "alignment": "none"
         }
       ],
       "invalid": [
@@ -2833,6 +2838,11 @@
           "referenceId": "ref-1",
           "mapId": "m",
           "fit": "cover"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "alignment": "stretch"
         }
       ]
     },
@@ -2865,6 +2875,21 @@
               "t"
             ]
           }
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "normalizeLight": false,
+          "alignment": {
+            "cellPx": 64,
+            "scale": 4,
+            "offsetX": 13,
+            "offsetY": -7,
+            "cols": 30,
+            "rows": 21,
+            "confidence": 0.9,
+            "method": "auto"
+          }
         }
       ],
       "invalid": [
@@ -2882,6 +2907,13 @@
           "referenceId": "ref-1",
           "mapId": "m",
           "mode": "photo"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "alignment": {
+            "cellPx": 64
+          }
         }
       ]
     },
@@ -2930,6 +2962,35 @@
         },
         {
           "args": {}
+        }
+      ]
+    },
+    "reference_align": {
+      "valid": [
+        {
+          "referenceId": "ref-1",
+          "mapId": "m"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "hint": {
+            "scale": 4,
+            "offsetX": 13
+          },
+          "save": false
+        }
+      ],
+      "invalid": [
+        {
+          "mapId": "m"
+        },
+        {
+          "referenceId": "ref-1",
+          "mapId": "m",
+          "hint": {
+            "scale": 0
+          }
         }
       ]
     }

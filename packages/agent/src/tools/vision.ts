@@ -143,6 +143,14 @@ export async function vision(tx: Transactions, name: VisionToolName, args: ToolA
       const proposalId = tx.keepProposal(out.data.mapId, out.data.grid.layers);
       return { data: { proposalId, ...out.data }, ...(out.image ? { image: out.image } : {}) };
     }
+    case "reference_align": {
+      const a = args as ToolArguments["reference_align"];
+      known(tx, a.referenceId);
+      await storeFor(tx, a.mapId, call);
+      check(references.align, E.EDITOR_UNAVAILABLE, "Grid alignment is unavailable in this host");
+      const out = await waitFor(references.align(a, call), call.signal);
+      return { data: out.data, ...(out.image ? { image: out.image } : {}) };
+    }
     case "render_compare": {
       const a = args as ToolArguments["render_compare"];
       check((a.referenceId === undefined) !== (a.baseline === undefined), E.INVALID_ARGUMENT, "Give exactly one of referenceId or baseline", { nextAction: "Use referenceId to compare with the user's picture, or baseline:\"draftStart\" to see what your edit changed." });

@@ -2091,7 +2091,14 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
   const object = (properties: Record<string, JsonValue>, required: string[]): Schema => ({ type: "object", additionalProperties: false, properties, required });
   const fit: Schema = { type: "string", enum: ["stretch", "contain"], default: "stretch", description: "stretch maps the whole (trimmed) picture onto the region; contain keeps its aspect ratio and leaves uncovered cells unchanged." };
   const sourceRect: Schema = { ...ref("Rect"), description: "Picture pixels that show the map. Default: the picture with dark editor gutters/letterboxing trimmed automatically." };
-  const mapping = { referenceId: ref("Id"), mapId: ref("Id"), region: ref("Rect"), fit, sourceRect };
+  const px: Schema = { type: "number", minimum: -65536, maximum: 65536 };
+  const alignment: Schema = { anyOf: [
+    { type: "string", enum: ["auto", "none"] },
+    object({ cellPx: { type: "number", minimum: 1, maximum: 4096 }, cellPxY: { type: "number", minimum: 1, maximum: 4096 }, scale: { type: "number", exclusiveMinimum: 0, maximum: 256 },
+      offsetX: px, offsetY: px, cols: { type: "integer", minimum: 0, maximum: 65536 }, rows: { type: "integer", minimum: 0, maximum: 65536 },
+      confidence: { type: "number", minimum: 0, maximum: 1 }, method: { type: "string", enum: ["auto", "manual"] } }, ["cellPx", "offsetX", "offsetY"]),
+  ], description: "auto (default): the saved reference_align grid, else detection (falls back to fit when unsure); none: fit the picture onto the whole map; or an alignment object from reference_align. region crops the same cells either way." };
+  const mapping = { referenceId: ref("Id"), mapId: ref("Id"), region: ref("Rect"), fit, sourceRect, alignment };
   const optionalContext = { context: { ...ref("ReadContext"), description: "Optional; the current world is used when omitted." } };
   const ids = (max: number): Schema => ({ type: "array", minItems: 1, maxItems: max, uniqueItems: true, items: ref("Id") });
   function tool(name: string, title: string, description: string, schema: Schema): AgentToolDefinition {
@@ -2124,12 +2131,18 @@ const { VISION_DEFINITIONS, withVisionOptions } = (() => {
         candidates: object({ tilesetIds: ids(32), tiles: { type: "array", minItems: 1, maxItems: 1024, items: ref("Tile") }, stamps: { type: "array", maxItems: 128, uniqueItems: true, items: ref("Id") } }, []),
         layers: object({ ground: ref("Id"), overlay: { anyOf: [ref("Id"), { type: "null" }] } }, []),
         colorLegend: { type: "object", maxProperties: 32, propertyNames: { type: "string", pattern: "^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$" }, additionalProperties: legendValue },
+        normalizeLight: { type: "boolean", default: true, description: "Render mode: cancel lighting gradients and glows per cell before matching." },
         preview: { type: "boolean", default: true },
       }, ["referenceId", "mapId"])),
     tool("render_compare", "Compare Map With Reference",
       "Check the map against the user's picture (referenceId) or against the state before your edit (baseline:\"draftStart\"). mode side (default): picture/before left, current map right, same grid; overlay: current map blended over the picture; diff: dimmed map with mismatching/changed cells outlined. Returns mismatch {cells, ratio, sample} to fix next. Writes nothing.",
       { ...object({ ...optionalContext, mapId: ref("Id"), referenceId: ref("Id"), baseline: { const: "draftStart" }, mode: { type: "string", enum: ["side", "overlay", "diff"], default: "side" }, region: ref("Rect"), fit, sourceRect, layerIds: ids(32), maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1536 } }, ["mapId"]),
         oneOf: [requiredKeys("referenceId"), requiredKeys("baseline")] }),
+    tool("reference_align", "Align Reference To Map Grid",
+      "Find how a reference picture lies on the map grid: reference pixels per cell (cellPx), pixel scale and the picture position of cell (0,0) (offsetX/Y), detected from upscaled pixel blocks and best tile matches. Returns the alignment and a preview with the grid drawn; saved for reference_view/reference_quantize unless save:false. hint fixes scale, cellPx or offsets you know. Writes nothing.",
+      object({ ...optionalContext, referenceId: ref("Id"), mapId: ref("Id"),
+        hint: object({ scale: { type: "number", exclusiveMinimum: 0, maximum: 256 }, cellPx: { type: "number", minimum: 2, maximum: 4096 }, offsetX: px, offsetY: px }, []),
+        save: { type: "boolean", default: true }, maxSide: { type: "integer", minimum: 256, maximum: 2048, default: 1024 } }, ["referenceId", "mapId"])),
   ];
 
   /** Visual additions to existing read tools (kept here so the frozen catalogue stays readable). */
